@@ -53,6 +53,10 @@ function probe(file) {
         vcodec: v ? v.codec_name : '',
         pixFmt: v ? v.pix_fmt : '',
         profile: v ? v.profile || '' : '',
+        // Audio channel count: mono sources get a unity dual-mono pan in the export chains
+        // (see monoUp below); media probed before this field existed reads as undefined and
+        // simply keeps the old upmix behaviour.
+        channels: a ? a.channels || 0 : 0,
       });
     });
   });
@@ -125,6 +129,14 @@ function enhancePathOf(clip) {
 
 // Audio stream [a<i>] for main-track clip i (silence for photos, muted or silent clips).
 // enhIdx: input index of the clip's enhanced file, when the Voice Enhancer replaces its sound.
+// swresample's default mono->stereo upmix renders a mono source 3.01 dB down per channel,
+// while the browser plays (and the level meter reads) the same clip at its true level on both
+// channels — measured on the app's own mix render (a -1.00 dBFS mono voice rendered at
+// -4.01 dBFS). Pan mono sources to dual-mono at unity so the export carries the level the
+// preview presented. Only for the media file itself: enhanced renders are always stereo
+// (electron/enhance.cjs writes -ac 2), so the enhanced path never takes the pan.
+const monoUp = (m, enhanced) => (!enhanced && m && m.channels === 1 ? 'pan=stereo|c0=c0|c1=c0' : null);
+
 function clipAudioFilter(clip, m, idx, i, enhIdx = -1) {
   const len = clipLen(clip);
   if (clip.gap || !m || m.type === 'image' || !m.hasAudio || clip.muted) {
@@ -133,7 +145,8 @@ function clipAudioFilter(clip, m, idx, i, enhIdx = -1) {
   const src = enhIdx >= 0
     ? [`[${enhIdx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
     : [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS'];
-  return [...src, ...atempo(clip.speed || 1),
+  const up = monoUp(m, enhIdx >= 0);
+  return [...src, ...(up ? [up] : []), ...atempo(clip.speed || 1),
     `volume=${clip.volume ?? 1}`, 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
     ...audioFxFilters(clip.audioFx),
     `apad=whole_dur=${num(len)}`, `atrim=duration=${num(len)}`].join(',') + `[a${i}]`;
@@ -470,7 +483,8 @@ function buildExportArgs(project, outFile, opts = {}) {
     const idx = addInput(['-i', enhP || mediaById[c.mediaId].path]);
     const len = (c.out - c.in) / (c.speed || 1); // timeline length (audio clips carry a speed, e.g. detached ones)
     const delay = Math.round(c.start * 1000);
-    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const up = monoUp(mediaById[c.mediaId], !!enhP);
+    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));
@@ -480,7 +494,8 @@ function buildExportArgs(project, outFile, opts = {}) {
   });
   overlayAudio.forEach(({ idx, c, len, start, sp, enh }, j) => {
     const delay = Math.round(start * 1000);
-    const chain = [`atrim=start=${enh ? 0 : num(c.in)}:end=${num(enh ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(sp), `volume=${c.volume ?? 1}`,
+    const up = monoUp(mediaById[c.mediaId], !!enh);
+    const chain = [`atrim=start=${enh ? 0 : num(c.in)}:end=${num(enh ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(sp), `volume=${c.volume ?? 1}`,
       'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', ...audioFxFilters(c.audioFx), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[oa${j}]`);
     mixLabels.push(`[oa${j}]`);
@@ -552,7 +567,8 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     sound = true;
     const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
-    filters.push(`[${addInput(enhP || m.path)}:a]atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFxFilters(c.audioFx)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
+    const upO = monoUp(m, !!enhP);
+    filters.push(`[${addInput(enhP || m.path)}:a]atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFxFilters(c.audioFx)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
   project.audioClips.filter((c) => mediaById[c.mediaId]).forEach((c, j) => {
@@ -560,7 +576,8 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const len = (c.out - c.in) / (c.speed || 1);
     const delay = Math.round(c.start * 1000);
     const enhP = enhancePathOf(c);
-    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const up = monoUp(mediaById[c.mediaId], !!enhP);
+    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));

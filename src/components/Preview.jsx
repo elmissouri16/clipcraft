@@ -4,7 +4,7 @@ import { hasMotion, stateAt } from '../anim.js';
 import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
 import { clipCss, textAnim } from '../effects.js';
 import { drawTextLayer } from '../text/render.js';
-import { resumeAudioGraph, wireElement } from '../audioTap.js';
+import { applyElementVolume, resumeAudioGraph, wireElement } from '../audioTap.js';
 import { fontsReady, onFontsChanged } from '../fonts.js';
 import { isInternal, readPayload } from '../dnd.js';
 import { applyChromaKey, blendOf, chromaOf, cropOf, customMaskCanvas, decoStyle, hasCrop, hasCustomMask, layerStyle } from '../visual.js';
@@ -95,7 +95,7 @@ function syncMedia(el, url, localTime, playing, volume, rate = 1) {
     el.dataset.src = url;
     el.src = url;
   }
-  el.volume = Math.max(0, Math.min(1, volume));
+  applyElementVolume(el, volume);
   if (el.playbackRate !== rate) el.playbackRate = rate;
   if (el.readyState >= 1 && Math.abs(el.currentTime - localTime) > (playing ? DRIFT * rate : 0.01)) el.currentTime = localTime;
   if (playing && el.paused) el.play().catch(() => {});
