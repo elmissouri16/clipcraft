@@ -1,8 +1,13 @@
 // Visual properties of a picture clip (main track or overlay): transform, opacity, blend, chroma key, mask.
 // Shared by the preview, the inspector and (through the same numbers) the export in electron/layers.cjs.
+import { hasCustomMask, rasterizeCustomMask } from './customMask.js';
+export { hasCustomMask };
 
 export const DEFAULT_TRANSFORM = { scale: 1, scaleX: 1, scaleY: 1, uniform: true, x: 0, y: 0, rot: 0 };
 export const DEFAULT_CHROMA = { on: false, color: '#00ff00', intensity: 20, feather: 20, spill: 0 };
+// Crop: the fraction of the SOURCE picture cut away at each edge (0..0.9), applied before the
+// fit / transform, in the preview and the export alike. A static per-clip property (no keyframes).
+export const DEFAULT_CROP = { l: 0, t: 0, r: 0, b: 0 };
 export const DEFAULT_MASK = {
   type: 'none', x: 0, y: 0, rot: 0, w: 0.5, h: 0.5, feather: 0, invert: false, round: 0, text: 'CLIPCRAFT',
   // Outline of the shape and a glow around it (sizes in pixels of a 720p frame, 0 = off).
@@ -38,6 +43,15 @@ export const MASK_SHAPES = [
 
 export const transformOf = (clip) => ({ ...DEFAULT_TRANSFORM, ...(clip.transform || {}) });
 export const chromaOf = (clip) => ({ ...DEFAULT_CHROMA, ...(clip.chroma || {}) });
+export const cropOf = (clip) => {
+  const c = { ...DEFAULT_CROP, ...(clip.crop || {}) };
+  for (const k of ['l', 't', 'r', 'b']) c[k] = Math.min(0.9, Math.max(0, Number(c[k]) || 0));
+  // Never let opposite edges meet: at least 5% of the picture always survives on each axis.
+  if (c.l + c.r > 0.95) { const s = 0.95 / (c.l + c.r); c.l *= s; c.r *= s; }
+  if (c.t + c.b > 0.95) { const s = 0.95 / (c.t + c.b); c.t *= s; c.b *= s; }
+  return c;
+};
+export const hasCrop = (clip) => { const c = cropOf(clip); return c.l > 0 || c.t > 0 || c.r > 0 || c.b > 0; };
 export const maskOf = (clip) => ({ ...DEFAULT_MASK, ...(clip.mask || {}) });
 export const opacityOf = (clip) => (clip.opacity === undefined ? 1 : clip.opacity);
 export const blendOf = (clip) => BLEND_MODES.find((b) => b.id === clip.blend) || BLEND_MODES[0];
@@ -57,7 +71,7 @@ export const hasChroma = (clip) => chromaOf(clip).on;
 
 // True when the clip needs the layered render (alpha, placement or blending) instead of the plain picture path.
 export function isLayered(clip) {
-  return hasTransform(clip) || hasMask(clip) || hasChroma(clip) || opacityOf(clip) < 1 || blendOf(clip).id !== 'normal';
+  return hasTransform(clip) || hasMask(clip) || hasChroma(clip) || hasCrop(clip) || hasCustomMask(clip) || opacityOf(clip) < 1 || blendOf(clip).id !== 'normal';
 }
 
 // CapCut-like sliders (0 to 100) mapped to FFmpeg's chromakey / despill parameters.
@@ -301,6 +315,49 @@ export function maskImages(project) {
   const out = {};
   for (const c of [...project.videoClips, ...(project.overlayClips || [])]) {
     if (!c.gap && hasMask(c)) out[c.id] = maskUrl(c, project.width, project.height);
+  }
+  return out;
+}
+
+// ---- Custom removal mask (painted strokes, src/customMask.js) ----
+// The raster is a grayscale keep-map (white = the picture stays) in SOURCE geometry, capped at
+// 640 px wide: the preview multiplies the frame's alpha by it and the export alphamerge-s the
+// same PNG, so both remove exactly the same pixels.
+const customMaskCache = new Map();
+export function customMaskCanvas(clip, srcW, srcH) {
+  const strokes = (clip.customMask && clip.customMask.strokes) || [];
+  const key = `${JSON.stringify(strokes)}|${srcW}x${srcH}`;
+  const hit = customMaskCache.get(clip.id);
+  if (hit && hit.key === key) return hit.canvas;
+  const w = Math.max(2, Math.min(640, Math.round(srcW) || 640));
+  const h = Math.max(2, Math.round((w * (srcH || w)) / (srcW || w)));
+  const keep = rasterizeCustomMask(strokes, w, h);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let i = 0; i < keep.length; i++) {
+    img.data[i * 4] = keep[i];
+    img.data[i * 4 + 1] = keep[i];
+    img.data[i * 4 + 2] = keep[i];
+    img.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  customMaskCache.set(clip.id, { key, canvas });
+  return canvas;
+}
+export function customMaskUrl(clip, srcW, srcH) {
+  return customMaskCanvas(clip, srcW, srcH).toDataURL('image/png');
+}
+// Custom-mask PNGs keyed by clip id (sent with the project when exporting), in source geometry.
+export function customMaskImages(project) {
+  const mediaById = Object.fromEntries((project.media || []).map((m) => [m.id, m]));
+  const out = {};
+  for (const c of [...project.videoClips, ...(project.overlayClips || [])]) {
+    if (c.gap || !hasCustomMask(c)) continue;
+    const m = mediaById[c.mediaId];
+    out[c.id] = customMaskUrl(c, m?.width || project.width, m?.height || project.height);
   }
   return out;
 }

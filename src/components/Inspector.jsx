@@ -9,6 +9,7 @@ import NumBox from './NumBox.jsx';
 import TextInspector from './TextInspector.jsx';
 import ClipInspector from './ClipInspector.jsx';
 import AudioFxControls from './AudioFx.jsx';
+import EnhanceVoice from './EnhanceVoice.jsx';
 import { isLookPatch, lookAction, selectedPictures } from '../look.js';
 
 function Num({ label, value, onChange, step = 0.1, min, max }) {
@@ -271,7 +272,7 @@ function EffectPanel({ project, selection, dispatch }) {
   );
 }
 
-export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {} }) {
+export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null }) {
   const multi = selection?.items && (
     <div className="multi-note" role="status">
       <b>{selection.items.length} clips selected.</b> Delete removes them all; drag one (off the main track) to move them together.
@@ -351,7 +352,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
 
       {clip && (track === 'video' || track === 'overlay') && !clip.gap && (
         <ClipInspector key={clip.id} clip={clip} media={media} project={project} set={set} dispatch={dispatch} track={track}
-          time={time} onSeek={onSeek}
+          time={time} onSeek={onSeek} onEnhance={onEnhance}
           start={track === 'overlay' ? clip.start : videoLayout(project.videoClips).find((l) => l.clip.id === clip.id)?.start ?? 0} />
       )}
 
@@ -364,6 +365,10 @@ export default function Inspector({ project, selection, dispatch, duration, time
             {S({ label: 'Fade in', value: clip.fadeIn || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeIn) => set({ fadeIn }) })}
             {S({ label: 'Fade out', value: clip.fadeOut || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeOut) => set({ fadeOut }) })}
             <Num label="Timeline start (s)" value={clip.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
+          </div>
+          <div className="insp-card">
+            <div className="insp-card-title">Enhance voice</div>
+            <EnhanceVoice clip={clip} media={media} set={set} onEnhance={onEnhance} />
           </div>
           <div className="insp-card">
             <div className="insp-card-title">Audio effects</div>

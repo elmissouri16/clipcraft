@@ -1201,7 +1201,7 @@ export function formatTime(t) {
 }
 
 // Look and placement of a picture clip, for "Copy / paste attributes".
-export const ATTRIBUTE_KEYS = ['filter', 'filterIntensity', 'adjust', 'grade', 'effects', 'transform', 'opacity', 'blend', 'chroma', 'mask', 'speed', 'volume'];
+export const ATTRIBUTE_KEYS = ['filter', 'filterIntensity', 'adjust', 'grade', 'effects', 'transform', 'opacity', 'blend', 'chroma', 'mask', 'crop', 'customMask', 'bgRemove', 'enhance', 'speed', 'volume'];
 export function pickAttributes(c) {
   return Object.fromEntries(ATTRIBUTE_KEYS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]]));
 }

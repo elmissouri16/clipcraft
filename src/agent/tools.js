@@ -6,7 +6,7 @@ import { clipLen, projectDuration, videoLayout, uid } from '../store.js';
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, STICKERS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
-import { BLEND_MODES, transformOf, opacityOf } from '../visual.js';
+import { BLEND_MODES, cropOf, transformOf, opacityOf } from '../visual.js';
 import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from './motionGuide.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -204,8 +204,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'set_compositing',
-    description: 'Green screen (chroma_key true / false, key_color #rrggbb default #00ff00, key_strength 0-100) and blend mode (list_options blend_modes) of a clip.',
-    parameters: { type: 'OBJECT', properties: { clip_id: S, chroma_key: B, key_color: S, key_strength: N, blend: S }, required: ['clip_id'] },
+    description: 'Green screen (chroma_key true / false, key_color #rrggbb default #00ff00, key_strength 0-100), blend mode (list_options blend_modes) and crop (crop_left / crop_top / crop_right / crop_bottom, percent of the source cut away per edge, 0-90) of a clip.',
+    parameters: { type: 'OBJECT', properties: { clip_id: S, chroma_key: B, key_color: S, key_strength: N, blend: S, crop_left: N, crop_top: N, crop_right: N, crop_bottom: N }, required: ['clip_id'] },
   },
   {
     name: 'set_project',
@@ -959,7 +959,7 @@ export function createToolRunner(ctx) {
       return after({ clips: targets.length });
     },
 
-    async set_compositing({ clip_id, chroma_key, key_color, key_strength, blend }) {
+    async set_compositing({ clip_id, chroma_key, key_color, key_strength, blend, crop_left, crop_top, crop_right, crop_bottom }) {
       const f = needPicture(clip_id);
       if (f.error) return f;
       const patch = {};
@@ -976,7 +976,18 @@ export function createToolRunner(ctx) {
         if (!BLEND_MODES.some((b) => b.id === blend)) return { error: `blend must be one of: ${BLEND_MODES.map((b) => b.id).join(', ')}.` };
         patch.blend = blend;
       }
-      if (!Object.keys(patch).length) return { error: 'Give chroma_key / key_color / key_strength and / or blend.' };
+      const cropIn = { l: crop_left, t: crop_top, r: crop_right, b: crop_bottom };
+      if (Object.values(cropIn).some((v) => v !== undefined)) {
+        const next = { ...cropOf(f.clip) };
+        for (const [k, v] of Object.entries(cropIn)) {
+          if (v === undefined) continue;
+          const n = Number(v);
+          if (!Number.isFinite(n) || n < 0 || n > 90) return { error: 'crop values are percent of the source, 0 to 90.' };
+          next[k] = n / 100;
+        }
+        patch.crop = cropOf({ crop: next }); // re-clamped (opposite edges keep 5% of the picture)
+      }
+      if (!Object.keys(patch).length) return { error: 'Give chroma_key / key_color / key_strength, blend and / or crop_*.' };
       dispatch({ type: 'update', track: f.track, id: clip_id, patch });
       return after();
     },

@@ -6,14 +6,17 @@ import { clipLen, formatTime, uid } from '../store.js';
 import { FILTERS, TRANSITIONS } from '../effects.js';
 import { directionGroupFor } from '../fx/collections.js';
 import {
-  BLEND_MODES, DEFAULT_CHROMA, DEFAULT_MASK, DEFAULT_TRANSFORM, MASK_SHAPES, chromaOf, maskOf, scaleXY, transformOf,
+  BLEND_MODES, DEFAULT_CHROMA, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_TRANSFORM, MASK_SHAPES, chromaOf, cropOf, maskOf, scaleXY, transformOf,
 } from '../visual.js';
+import { hasCustomMask } from '../customMask.js';
+import CustomMaskEditor from './CustomMaskEditor.jsx';
 import Slider from './Slider.jsx';
 import NumBoxBase from './NumBox.jsx';
 import KeyNav from './KeyNav.jsx';
 import AnimationPanel from './AnimationPanel.jsx';
 import GradePanel from './GradePanel.jsx';
 import AudioFxControls from './AudioFx.jsx';
+import EnhanceVoice from './EnhanceVoice.jsx';
 import { baseAt, editAt, hasAnyKeys, localTime, nextArrival, segmentEase, setSegmentEase } from '../anim.js';
 import CurveEditor from './CurveEditor.jsx';
 
@@ -148,9 +151,10 @@ function Stabilize({ clip, media, project, set, dispatch }) {
 
 // Properties of a picture clip (main track or overlay), laid out like CapCut's clip panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
-export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {} }) {
+export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null }) {
   const [tab, setTab] = useState('video');
   const [sub, setSub] = useState('basic');
+  const [maskEdit, setMaskEdit] = useState(false);
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
   // The shared scrub field, with a scrub wrapped in a single undo gesture. The wrapper's identity
   // must be STABLE across renders (useRef), or React remounts the field mid-scrub and kills the drag.
@@ -187,6 +191,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
   const setM = (patch) => set({ mask: { ...mask, ...patch } });
 
   // Align the scaled picture to a frame edge or center (rotation ignored, as in CapCut).
+  const cropNow = cropOf(clip);
   const fitW = media?.width ? Math.min(1, (media.width / media.height) / (W / H)) : 1;
   const fitH = media?.width ? Math.min(1, (media.height / media.width) / (H / W)) : 1;
   const { sx: ex, sy: ey } = scaleXY(t);
@@ -322,6 +327,27 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                   </select>
                 </label>
                 {S({ label: 'Opacity', value: at.opacity, min: 0, max: 1, step: 0.01, fmt: pct, onChange: (opacity) => setT({ opacity }), extra: keys(['opacity'], 'opacity') })}
+                {['mirror', 'flipv'].map((id) => (
+                  <label className="field row" key={id}>
+                    <span>{id === 'mirror' ? 'Flip horizontal' : 'Flip vertical'}</span>
+                    <input type="checkbox" className="switch" aria-label={id === 'mirror' ? 'Flip horizontal' : 'Flip vertical'}
+                      checked={(clip.effects || []).includes(id)}
+                      onChange={(e) => {
+                        const fx = clip.effects || [];
+                        set({ effects: e.target.checked ? [...fx.filter((x) => x !== id), id] : fx.filter((x) => x !== id) });
+                      }} />
+                  </label>
+                ))}
+              </Section>
+              <Section title="Crop" onReset={() => set({ crop: { ...DEFAULT_CROP } })}>
+                <p className="dim small">Cut away the edges of the picture, in percent of the source. The part that remains fills the clip's place, in the preview and the export.</p>
+                {[['l', 'Left'], ['t', 'Top'], ['r', 'Right'], ['b', 'Bottom']].map(([k, name]) => (
+                  <div className="numrow" key={k}>
+                    <span className="numrow-label">{name}</span>
+                    <NumBox label="" value={Math.round(cropNow[k] * 100)} step={1} min={0} max={90} suffix="%"
+                      onChange={(v) => set({ crop: { ...cropNow, [k]: Math.min(90, Math.max(0, v)) / 100 } })} />
+                  </div>
+                ))}
               </Section>
             </>
           )}
@@ -346,6 +372,16 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
               {S({ label: 'Intensity', value: chroma.intensity, min: 0, max: 100, step: 1, onChange: (intensity) => setC({ intensity }) })}
               {S({ label: 'Feather edge', value: chroma.feather, min: 0, max: 100, step: 1, onChange: (feather) => setC({ feather }) })}
               {S({ label: 'Remove color spill', value: chroma.spill, min: 0, max: 100, step: 1, onChange: (spill) => setC({ spill }) })}
+            </Section>
+          )}
+          {sub === 'removebg' && (
+            <Section title="Custom removal">
+              <p className="dim small">Paint over the parts to remove by hand, or paint removed parts back. The painted mask applies to the whole clip, and combines with Auto removal and Chroma key (everything painted or keyed away stays away).</p>
+              {hasCustomMask(clip) && <p className="dim small">{clip.customMask.strokes.length} stroke{clip.customMask.strokes.length === 1 ? '' : 's'} painted.</p>}
+              <div className="fitfill-row">
+                <button type="button" className="btn btn-sm" onClick={() => setMaskEdit(true)}>Paint removal…</button>
+                {hasCustomMask(clip) && <button type="button" className="btn btn-sm" onClick={() => set({ customMask: null })}>Clear</button>}
+              </div>
             </Section>
           )}
 
@@ -420,14 +456,19 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
       {tab === 'animation' && <AnimationPanel clip={clip} len={len} set={set} dispatch={dispatch} />}
 
       {tab === 'audio' && (
-        <Section title="Basic">
-          {S({ label: 'Volume', value: clip.volume ?? 1, max: 2, fmt: pct, onChange: (volume) => set({ volume }) })}
-          <AudioFxControls fx={clip.audioFx} onChange={(audioFx) => set({ audioFx })} />
-          <label className="field row">
-            <span>Mute</span>
-            <input type="checkbox" checked={!!clip.muted} onChange={(e) => set({ muted: e.target.checked })} />
-          </label>
-        </Section>
+        <>
+          <Section title="Basic">
+            {S({ label: 'Volume', value: clip.volume ?? 1, max: 2, fmt: pct, onChange: (volume) => set({ volume }) })}
+            <AudioFxControls fx={clip.audioFx} onChange={(audioFx) => set({ audioFx })} />
+            <label className="field row">
+              <span>Mute</span>
+              <input type="checkbox" checked={!!clip.muted} onChange={(e) => set({ muted: e.target.checked })} />
+            </label>
+          </Section>
+          <Section title="Enhance voice">
+            <EnhanceVoice clip={clip} media={media} set={set} onEnhance={onEnhance} />
+          </Section>
+        </>
       )}
 
       {tab === 'speed' && (
@@ -448,6 +489,11 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
         </Section>
       )}
 
+      {maskEdit && media && (
+        <CustomMaskEditor clip={clip} media={media}
+          onClose={() => setMaskEdit(false)}
+          onSave={(strokes) => { set({ customMask: strokes.length ? { strokes } : null }); setMaskEdit(false); }} />
+      )}
       {tab === 'adjust' && (
         <>
           {track === 'overlay' && (

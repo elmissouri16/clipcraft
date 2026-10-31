@@ -14,7 +14,7 @@ import SlotStrip from './components/SlotStrip.jsx';
 import ConfirmDialog from './components/ConfirmDialog.jsx';
 import { useRecorder } from './useRecorder.js';
 import { useLayout } from './useLayout.js';
-import { decoImages, maskImages } from './visual.js';
+import { customMaskImages, decoImages, maskImages } from './visual.js';
 import { motionData } from './anim.js';
 import { isLookPatch, lookAction, selectedPictures } from './look.js';
 import { loadProjectLuts, onLutLoaded } from './fx/lut.js';
@@ -716,6 +716,29 @@ export default function App() {
     select({ track: 'audio', id: audioId });
   }, [selection, select]);
 
+  // Voice Enhancer: render the clip's range cleaned (electron/enhance.cjs, cached) and point
+  // the clip at the result (clip.enhance = { on, strength, path, from, to }). Preview and export
+  // both substitute that file for the clip's sound. Re-running with another strength re-renders.
+  const enhanceClip = useCallback(async (sel, strength) => {
+    const p = projectRef.current;
+    const c = sel && findClip(p, sel);
+    const m = c && p.media.find((x) => x.id === c.mediaId);
+    if (!c || !m || !m.hasAudio || m.type === 'image') return;
+    setRenderJob({ kind: 'enhance', label: 'Enhancing voice…', fraction: 0 });
+    const off = window.api.onEnhanceProgress((pr) => {
+      if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
+    });
+    let res;
+    try {
+      res = await window.api.enhanceRun({ path: m.path, duration: m.duration, hasAudio: m.hasAudio, type: m.type }, c.in || 0, c.out ?? m.duration, strength);
+    } catch (e) { res = { error: e.message }; }
+    off();
+    if (res.canceled) { setRenderJob(null); return; }
+    if (res.error) { setRenderJob({ error: res.error }); return; }
+    setRenderJob(null);
+    dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { enhance: { on: true, strength, path: res.path, from: c.in || 0, to: c.out ?? m.duration } } });
+  }, []);
+
   // Unlink a linked pair: both clips become independent (one undo step).
   const unlinkClip = useCallback((sel = selection) => {
     const p = projectRef.current;
@@ -1281,7 +1304,7 @@ export default function App() {
     }
     await loadProjectLuts(project);
     // Animated effects and transitions are drawn with the preview's WebGL shaders, frame by frame.
-    let toExport = { ...project, export: eff, maskImages: maskImages(project), decoImages: decoImages(project), motion: motionData(project) };
+    let toExport = { ...project, export: eff, maskImages: maskImages(project), decoImages: decoImages(project), customMaskImages: customMaskImages(project), motion: motionData(project) };
     const fxShare = fxWork(project) ? 0.4 * (1 - textShare) : 0;
     if (fxShare) {
       setExporting((e) => e && { ...e, stage: 'Rendering effects' });
@@ -1342,7 +1365,7 @@ export default function App() {
       dispatch,
       exportData: () => {
         const p = renderable(projectRef.current);
-        return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), motion: motionData(p) }, pngs: stickerPngs(p) };
+        return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionData(p) }, pngs: stickerPngs(p) };
       },
       // Test hook: exports immediately (no summary gate), resolving settings the same way.
       exportNow: () => { const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p)); },
@@ -1460,7 +1483,8 @@ export default function App() {
           onAddPeek={(id) => { setPeekId(null); addToTimeline(id); }}
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
           clockRef={clockRef} />
-        <Inspector project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} onSeek={seek} />
+        <Inspector project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} onSeek={seek}
+          onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)} />
         <Splitter which="left" style={{ left: panes.left }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the left panel" />
         <Splitter which="right" style={{ right: panes.right }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the properties panel" />
       </div>
@@ -1549,7 +1573,7 @@ export default function App() {
           ) : (
             <><Loader2 size={15} className="spin" /><span>{renderJob.label}</span>
               <div className="progress render-job-bar"><div style={{ width: `${Math.round((renderJob.fraction || 0) * 100)}%` }} /></div>
-              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : window.api.reverseCancel())}>Cancel</button></>
+              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : renderJob.kind === 'enhance' ? window.api.enhanceCancel() : window.api.reverseCancel())}>Cancel</button></>
           )}
         </div>
       )}

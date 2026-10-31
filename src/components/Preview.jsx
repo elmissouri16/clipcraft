@@ -7,7 +7,7 @@ import { drawTextLayer } from '../text/render.js';
 import { resumeAudioGraph, wireElement } from '../audioTap.js';
 import { fontsReady, onFontsChanged } from '../fonts.js';
 import { isInternal, readPayload } from '../dnd.js';
-import { applyChromaKey, blendOf, chromaOf, decoStyle, layerStyle } from '../visual.js';
+import { applyChromaKey, blendOf, chromaOf, cropOf, customMaskCanvas, decoStyle, hasCrop, hasCustomMask, layerStyle } from '../visual.js';
 import TransformBox from './TransformBox.jsx';
 import MediaPeek from './MediaPeek.jsx';
 import { fxTransition } from '../fx/catalog.js';
@@ -23,16 +23,25 @@ export function drawFxOverlays(ctx, project, t, W, H) {
   drawOverlayPasses(ctx, project, t, W, H);
 }
 
-// Draws the current picture of a video or image into the slot's canvas with the chroma key and the AI background
-// matte (CPU, at most 640 px wide) and the animated effects (WebGL shaders, the same the export uses, up to 1280 px
-// wide) applied. matte: the hidden video of the clip's matte (white = keep), or null.
+// Draws the current picture of a video or image into the slot's canvas with the crop, the chroma key, the AI
+// background matte and the painted custom-removal mask (CPU, at most 640 px wide) and the animated effects
+// (WebGL shaders, the same the export uses, up to 1280 px wide) applied. matte: the hidden video of the clip's
+// matte (white = keep), or null. opts.crop: source-edge fractions cut away before the fit (the surviving region
+// fills the canvas, exactly like the export); opts.custom: the painted keep-map canvas in source geometry.
+// Every removal multiplies the alpha, so chroma + matte + custom union, as in electron/layers.cjs.
 const matteCv = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-function drawKeyed(cv, src, w, h, chroma, passes = [], matte = null) {
+function drawKeyed(cv, src, w, h, chroma, passes = [], matte = null, opts = {}) {
   if (!w || !h) return;
-  const cpu = chroma.on || !!matte;
-  // CPU work (chroma key, matte) runs at 640 px; otherwise the frame is processed at the playback
+  const crop = opts.crop || null;
+  const custom = opts.custom || null;
+  const cpu = chroma.on || !!matte || !!custom;
+  // CPU work (chroma key, matte, custom mask) runs at 640 px; otherwise the frame is processed at the playback
   // quality's resolution — a scaled proxy needs no more, Full/High keep the 1280 px ceiling.
   const cap = cpu ? 640 : Math.min(1280, QUALITY_MAX_SIDE[getPlaybackQuality()] || 1280);
+  const sw = crop ? w * (1 - crop.l - crop.r) : w;
+  const sh = crop ? h * (1 - crop.t - crop.b) : h;
+  // The canvas keeps the SOURCE's aspect: the cropped region is drawn stretched over the whole
+  // canvas, so it lands where the full picture would (the export scales it to the same fit box).
   const k = Math.min(1, cap / w);
   const cw = Math.max(2, Math.round(w * k));
   const ch = Math.max(2, Math.round(h * k));
@@ -41,26 +50,33 @@ function drawKeyed(cv, src, w, h, chroma, passes = [], matte = null) {
     cv.height = ch;
   }
   const ctx = cv.getContext('2d', { willReadFrequently: true });
+  // The sub-rectangle of a source-geometry companion (matte video, painted mask) that survives the crop,
+  // in that companion's own pixels.
+  const subRect = (ew, eh) => (crop
+    ? [crop.l * ew, crop.t * eh, (1 - crop.l - crop.r) * ew, (1 - crop.t - crop.b) * eh]
+    : [0, 0, ew, eh]);
   try {
-    ctx.drawImage(src, 0, 0, cw, ch);
+    ctx.drawImage(src, ...(crop ? [crop.l * w, crop.t * h, sw, sh] : [0, 0, w, h]), 0, 0, cw, ch);
     if (cpu) {
       const frame = ctx.getImageData(0, 0, cw, ch);
       if (chroma.on) applyChromaKey(frame.data, chroma);
-      if (matte) {
+      const d = frame.data;
+      const multiplyAlpha = (companion, ew, eh) => {
         if (matteCv.width !== cw || matteCv.height !== ch) {
           matteCv.width = cw;
           matteCv.height = ch;
         }
         const mctx = matteCv.getContext('2d', { willReadFrequently: true });
-        mctx.drawImage(matte, 0, 0, cw, ch);
+        mctx.drawImage(companion, ...subRect(ew, eh), 0, 0, cw, ch);
         const a = mctx.getImageData(0, 0, cw, ch).data;
-        const d = frame.data;
         for (let i = 3; i < d.length; i += 4) d[i] = (d[i] * a[i - 3]) / 255;
-      }
+      };
+      if (matte) multiplyAlpha(matte, matte.videoWidth || cw, matte.videoHeight || ch);
+      if (custom) multiplyAlpha(custom, custom.width, custom.height);
       ctx.putImageData(frame, 0, 0);
     }
     if (passes.length) {
-      const out = fxGL().effects(cpu ? cv : src, cw, ch, passes);
+      const out = fxGL().effects(cpu || crop ? cv : src, cw, ch, passes);
       ctx.clearRect(0, 0, cw, ch);
       ctx.drawImage(out, 0, 0);
     }
@@ -107,6 +123,16 @@ function syncMatte(mv, url, lead, playing, rate) {
 }
 const usesMatte = (c, m) => !!(c.bgRemove && m && m.type === 'video' && m.matte);
 
+// The Voice Enhancer's cached file for a clip, when on and rendered for the clip's current
+// range (a re-trim makes it stale and inert, exactly as in the export — electron/ffmpeg.cjs
+// enhancePathOf). The file covers [clip.in, clip.out], so its timeline starts at 0.
+const enhPath = (c) => {
+  const e = c.enhance;
+  if (!e || !e.on || !e.path) return null;
+  if (Math.abs((e.from ?? -1) - (c.in || 0)) > 0.02 || Math.abs((e.to ?? -1) - (c.out ?? -1)) > 0.02) return null;
+  return e.path;
+};
+
 function transitionStyles(type, p) {
   const s = { in: {}, out: {}, flash: null };
   switch (type) {
@@ -145,6 +171,7 @@ export default function Preview({
   const trBufs = useRef({ a: null, b: null });
   const flashRef = useRef(null);
   const audioEls = useRef({});
+  const enhEls = useRef({}); // clip id -> hidden <audio> playing an enhanced picture clip's sound
   const overlayEls = useRef({}); // clip id -> { slot, layer, v, img, cv }
   const stageRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -159,6 +186,7 @@ export default function Preview({
     wireElement(vids[1].current);
     for (const o of Object.values(overlayEls.current)) wireElement(o && o.v);
     for (const el of Object.values(audioEls.current)) wireElement(el);
+    for (const el of Object.values(enhEls.current)) wireElement(el);
   });
   useEffect(() => { if (playing) resumeAudioGraph(); }, [playing]);
   useEffect(() => {
@@ -230,6 +258,7 @@ export default function Preview({
   const apply = (t, isPlaying) => {
     lastApply.current = { t, playing: isPlaying };
     leadRef.current = null;
+    const enhSounding = new Set(); // enhanced picture clips heard at t; the rest get paused below
     const layout = videoLayout(project.videoClips);
     const active = layout.filter((l) => t >= l.start && t < l.end && mediaById[l.clip.mediaId]);
     const incoming = active.length === 2 ? active[1] : null;
@@ -279,7 +308,14 @@ export default function Preview({
         v.style.display = 'block';
         v.style.transform = flip;
         const speed = c.speed || 1;
-        syncMedia(v, toFileUrl(previewPath(m)), c.in + (t - item.start) * speed, isPlaying, c.muted ? 0 : c.volume ?? 1, speed);
+        // Voice Enhancer: the video element goes silent and a hidden audio element plays the
+        // enhanced file (which starts at the clip's in-point, so its time is the local time).
+        const ep = enhPath(c);
+        syncMedia(v, toFileUrl(previewPath(m)), c.in + (t - item.start) * speed, isPlaying, ep || c.muted ? 0 : c.volume ?? 1, speed);
+        if (ep && enhEls.current[c.id]) {
+          enhSounding.add(c.id);
+          syncMedia(enhEls.current[c.id], toFileUrl(ep), (t - item.start) * speed, isPlaying, c.muted ? 0 : c.volume ?? 1, speed);
+        }
         // The playback clock anchors to the lead (non-incoming) clip's element.
         if (item !== incoming || !leadRef.current) leadRef.current = { el: v, item, clip: c };
       }
@@ -289,13 +325,15 @@ export default function Preview({
       // Chroma key / matte: the media element stays (it plays the sound and decodes), the keyed canvas is what shows.
       const src = m.type === 'image' ? img : v;
       const pfx = pixelPasses(project, c, item.start, t - item.start);
-      const processed = chroma.on || pfx.length > 0 || matte;
+      const crop = hasCrop(c) ? cropOf(c) : null;
+      const custom = hasCustomMask(c) ? customMaskCanvas(c, m.width || project.width, m.height || project.height) : null;
+      const processed = chroma.on || pfx.length > 0 || matte || !!crop || !!custom;
       cv.style.display = processed ? 'block' : 'none';
       src.style.visibility = processed ? 'hidden' : ''; // '' inherits: 'visible' would show through a hidden slot
       if (processed) {
         cv.style.transform = flip;
-        if (m.type === 'image') { if (img.complete) drawKeyed(cv, img, img.naturalWidth, img.naturalHeight, chroma, pfx); }
-        else if (v.readyState >= 2) drawKeyed(cv, v, v.videoWidth, v.videoHeight, chroma, pfx, matte && mv.readyState >= 2 ? mv : null);
+        if (m.type === 'image') { if (img.complete) drawKeyed(cv, img, img.naturalWidth, img.naturalHeight, chroma, pfx, null, { crop, custom }); }
+        else if (v.readyState >= 2) drawKeyed(cv, v, v.videoWidth, v.videoHeight, chroma, pfx, matte && mv.readyState >= 2 ? mv : null, { crop, custom });
       }
     });
 
@@ -364,19 +402,26 @@ export default function Preview({
         if (el.img.dataset.src !== url) { el.img.dataset.src = url; el.img.src = url; }
       } else {
         const speed = c.speed || 1;
-        syncMedia(el.v, toFileUrl(previewPath(m)), c.in + lt * speed, isPlaying, c.muted ? 0 : c.volume ?? 1, speed);
+        const ep = enhPath(c);
+        syncMedia(el.v, toFileUrl(previewPath(m)), c.in + lt * speed, isPlaying, ep || c.muted ? 0 : c.volume ?? 1, speed);
+        if (ep && enhEls.current[c.id]) {
+          enhSounding.add(c.id);
+          syncMedia(enhEls.current[c.id], toFileUrl(ep), lt * speed, isPlaying, c.muted ? 0 : c.volume ?? 1, speed);
+        }
       }
       const matte = usesMatte(c, m) && el.mv;
       if (matte) syncMatte(el.mv, toFileUrl(m.matte), el.v, isPlaying, c.speed || 1);
       else if (el.mv && !el.mv.paused) el.mv.pause();
       const pfx = pixelPasses(project, c, c.start, lt);
-      const processed = chroma.on || pfx.length > 0 || !!matte;
+      const crop = hasCrop(c) ? cropOf(c) : null;
+      const custom = hasCustomMask(c) ? customMaskCanvas(c, m.width || project.width, m.height || project.height) : null;
+      const processed = chroma.on || pfx.length > 0 || !!matte || !!crop || !!custom;
       el.cv.style.display = processed ? 'block' : 'none';
       src.style.visibility = processed ? 'hidden' : ''; // '' inherits: 'visible' would show through a hidden slot
       if (processed) {
         el.cv.style.transform = flip;
-        if (m.type === 'image') { if (el.img.complete) drawKeyed(el.cv, el.img, el.img.naturalWidth, el.img.naturalHeight, chroma, pfx); }
-        else if (el.v.readyState >= 2) drawKeyed(el.cv, el.v, el.v.videoWidth, el.v.videoHeight, chroma, pfx, matte && el.mv.readyState >= 2 ? el.mv : null);
+        if (m.type === 'image') { if (el.img.complete) drawKeyed(el.cv, el.img, el.img.naturalWidth, el.img.naturalHeight, chroma, pfx, null, { crop, custom }); }
+        else if (el.v.readyState >= 2) drawKeyed(el.cv, el.v, el.v.videoWidth, el.v.videoHeight, chroma, pfx, matte && el.mv.readyState >= 2 ? el.mv : null, { crop, custom });
       }
     });
 
@@ -390,9 +435,15 @@ export default function Preview({
         let g = c.volume ?? 1;
         if (c.fadeIn > 0) g *= Math.min(1, lt / c.fadeIn);
         if (c.fadeOut > 0) g *= Math.min(1, (len - lt) / c.fadeOut);
-        syncMedia(el, toFileUrl(m.path), c.in + lt * (c.speed || 1), isPlaying, g, c.speed || 1);
+        const ep = enhPath(c);
+        syncMedia(el, toFileUrl(ep || m.path), ep ? lt * (c.speed || 1) : c.in + lt * (c.speed || 1), isPlaying, g, c.speed || 1);
       } else if (!el.paused) el.pause();
     });
+
+    // Enhanced picture clips that are not on screen at t fall silent.
+    for (const [id, el] of Object.entries(enhEls.current)) {
+      if (el && !enhSounding.has(id) && !el.paused) el.pause();
+    }
   };
 
   // Paused: when a seek or an image load finishes, draw again (keyed canvases need the decoded frame).
@@ -533,6 +584,9 @@ export default function Preview({
           })}
           {project.audioClips.map((c) => (
             <audio key={c.id} ref={(el) => { if (el) audioEls.current[c.id] = el; else delete audioEls.current[c.id]; }} preload="auto" />
+          ))}
+          {[...project.videoClips, ...(project.overlayClips || [])].filter((c) => enhPath(c)).map((c) => (
+            <audio key={`enh-${c.id}`} ref={(el) => { if (el) enhEls.current[c.id] = el; else delete enhEls.current[c.id]; }} preload="auto" />
           ))}
           {stickers.map((s) => {
             const a = textAnim(s, time - s.start);

@@ -12,7 +12,8 @@ import { resolveStyle, textBox, textVisible } from '../text/render.js';
 // picked first): the corners change its size, the round handle its rotation.
 const SNAP_PX = 6;
 
-// Size of a clip's picture fitted in the frame, as fractions of the frame.
+// Size of a clip's picture fitted in the frame, as fractions of the frame. (A cropped clip's
+// surviving region takes this same box, so the box does not change with the crop.)
 function fitOf(m, W, H) {
   if (!m?.width || !m?.height) return { fw: 1, fh: 1 };
   const k = Math.min(W / m.width, H / m.height);

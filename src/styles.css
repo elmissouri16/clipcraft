@@ -2263,3 +2263,16 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .layer-band .layer-rename { position: absolute; left: 6px; top: 2px; z-index: 6; }
 .tl-head .layer-rename { position: absolute; left: -3px; top: 50%; transform: translateY(-50%); width: 118px; z-index: 8; }
 .fitfill-row { display: flex; align-items: center; gap: 7px; margin: 2px 0 6px; flex-wrap: wrap; }
+
+/* Custom removal editor (painted mask) */
+.cmask-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(6, 6, 12, 0.72); display: flex; align-items: center; justify-content: center; }
+.cmask-modal { background: var(--panel, #17171f); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 14px; padding: 16px; width: min(880px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.cmask-head { display: flex; align-items: baseline; gap: 10px; }
+.cmask-head .icon-btn { margin-left: auto; }
+.cmask-stage { position: relative; width: 100%; max-height: 56vh; margin: 0 auto; background: repeating-conic-gradient(#23232e 0% 25%, #1b1b24 0% 50%) 0 0 / 24px 24px; border-radius: 8px; overflow: hidden; }
+.cmask-stage video, .cmask-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.cmask-stage canvas.cmask-top { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.cmask-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.cmask-size { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cmask-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cmask-actions { display: flex; gap: 8px; }
