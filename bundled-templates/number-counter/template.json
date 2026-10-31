@@ -1,0 +1,149 @@
+{
+ "format": "clipcraft-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1080:1080",
+  "width": 1080,
+  "height": 1080,
+  "duration": 5,
+  "slots": 1,
+  "texts": 6,
+  "media": 1
+ },
+ "project": {
+  "name": "Number Counter | Stepped Numbers Count Up to the Final Figure",
+  "ratio": "1080:1080",
+  "width": 1080,
+  "height": 1080,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 5,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 720,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t2",
+    "text": "HAPPY CUSTOMERS",
+    "start": 0.2,
+    "duration": 4.6,
+    "y": 0.24,
+    "template": "mat-pill-label",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.5,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t3",
+    "text": "0",
+    "start": 0.3,
+    "duration": 0.55,
+    "y": 0.46,
+    "template": "mat-big-number",
+    "animIn": {
+     "id": "pop",
+     "dur": 0.3,
+     "unit": "whole"
+    },
+    "color": "#4ade80"
+   },
+   {
+    "id": "t4",
+    "text": "250",
+    "start": 0.9,
+    "duration": 0.55,
+    "y": 0.46,
+    "template": "mat-big-number",
+    "animIn": {
+     "id": "pop",
+     "dur": 0.3,
+     "unit": "whole"
+    },
+    "color": "#4ade80"
+   },
+   {
+    "id": "t5",
+    "text": "500",
+    "start": 1.5,
+    "duration": 0.55,
+    "y": 0.46,
+    "template": "mat-big-number",
+    "animIn": {
+     "id": "pop",
+     "dur": 0.3,
+     "unit": "whole"
+    },
+    "color": "#4ade80"
+   },
+   {
+    "id": "t6",
+    "text": "750",
+    "start": 2.1,
+    "duration": 0.55,
+    "y": 0.46,
+    "template": "mat-big-number",
+    "animIn": {
+     "id": "pop",
+     "dur": 0.3,
+     "unit": "whole"
+    },
+    "color": "#4ade80"
+   },
+   {
+    "id": "t7",
+    "text": "1,000+",
+    "start": 2.7,
+    "duration": 2.1,
+    "y": 0.46,
+    "template": "mat-big-number",
+    "animIn": {
+     "id": "zoomIn",
+     "dur": 0.6,
+     "unit": "whole"
+    },
+    "color": "#4ade80"
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Number Counter | Stepped Numbers Count Up to the Final Figure",
+  "category": "Business",
+  "description": "Stepped Numbers Count Up to the Final Figure. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Text Animation",
+   "Promo",
+   "Engagement"
+  ]
+ }
+}

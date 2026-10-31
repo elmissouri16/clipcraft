@@ -1,0 +1,113 @@
+{
+ "format": "clipcraft-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1080:1920",
+  "width": 1080,
+  "height": 1920,
+  "duration": 5,
+  "slots": 1,
+  "texts": 1,
+  "media": 1
+ },
+ "project": {
+  "name": "Phone Mockup Promo | Your Video Plays Inside a Phone Frame",
+  "ratio": "1080:1920",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 5,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 1280,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "frame",
+    "name": "Phone frame.png",
+    "path": "m1.png",
+    "type": "image",
+    "duration": 0,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 0,
+    "width": 720,
+    "height": 1280,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "png",
+    "pixFmt": "rgba",
+    "profile": ""
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [
+   {
+    "id": "o2",
+    "mediaId": "frame",
+    "in": 0,
+    "out": 5,
+    "start": 0,
+    "speed": 1,
+    "volume": 0,
+    "muted": true,
+    "transform": {
+     "scale": 1,
+     "x": 0,
+     "y": 0,
+     "rot": 0
+    }
+   }
+  ],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t3",
+    "text": "SEE IT IN THE APP",
+    "start": 0.3,
+    "duration": 4.4,
+    "y": 0.07,
+    "template": "mat-accent-bar",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Phone Mockup Promo | Your Video Plays Inside a Phone Frame",
+  "category": "Business",
+  "description": "Your Video Plays Inside a Phone Frame. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Mockup",
+   "Promo",
+   "Social"
+  ]
+ }
+}

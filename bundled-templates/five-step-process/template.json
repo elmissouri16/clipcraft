@@ -1,0 +1,143 @@
+{
+ "format": "clipcraft-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "duration": 6,
+  "slots": 1,
+  "texts": 6,
+  "media": 1
+ },
+ "project": {
+  "name": "5-Step Process | Numbered Steps Appear One by One",
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 6,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 6,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t2",
+    "text": "HOW IT WORKS",
+    "start": 0.2,
+    "duration": 5.6,
+    "y": 0.1,
+    "template": "mat-accent-bar",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t3",
+    "text": "1 — TELL US YOUR GOAL",
+    "start": 0.5,
+    "duration": 5.3,
+    "y": 0.28,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t4",
+    "text": "2 — WE PLAN IT WITH YOU",
+    "start": 1.5,
+    "duration": 4.3,
+    "y": 0.42,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t5",
+    "text": "3 — THE WORK BEGINS",
+    "start": 2.5,
+    "duration": 3.3,
+    "y": 0.56,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t6",
+    "text": "4 — YOU REVIEW EVERY STEP",
+    "start": 3.5,
+    "duration": 2.3,
+    "y": 0.7,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t7",
+    "text": "5 — LAUNCH DAY",
+    "start": 4.5,
+    "duration": 1.3,
+    "y": 0.84,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "settleUp",
+     "dur": 0.65,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "5-Step Process | Numbered Steps Appear One by One",
+  "category": "Education",
+  "description": "Numbered Steps Appear One by One. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Process",
+   "UI Animation"
+  ]
+ }
+}

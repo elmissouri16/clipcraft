@@ -1,0 +1,123 @@
+{
+ "format": "clipcraft-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1080:1920",
+  "width": 1080,
+  "height": 1920,
+  "duration": 5,
+  "slots": 2,
+  "texts": 2,
+  "media": 2
+ },
+ "project": {
+  "name": "Reel Hook | Bold Title Pops Over Two Shots — Coral",
+  "ratio": "1080:1920",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 2.5,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 1280,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "m1",
+    "name": "Replace me 2.mp4",
+    "path": "m1.mp4",
+    "type": "video",
+    "duration": 2.5,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 1280,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 2.5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   },
+   {
+    "id": "v2",
+    "mediaId": "m1",
+    "in": 0,
+    "out": 2.5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t3",
+    "text": "STOP SCROLLING",
+    "start": 0.2,
+    "duration": 2.2,
+    "y": 0.16,
+    "template": "cap-hormozi",
+    "animIn": {
+     "id": "pop",
+     "dur": 0.45,
+     "unit": "whole"
+    },
+    "highlight": {
+     "mode": "scale",
+     "color": "#fdba74"
+    }
+   },
+   {
+    "id": "t4",
+    "text": "Watch what happens next",
+    "start": 2.6,
+    "duration": 2,
+    "y": 0.8,
+    "template": "mat-caption-chip",
+    "animIn": {
+     "id": "fadeUp",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Reel Hook | Bold Title Pops Over Two Shots — Coral",
+  "category": "Social",
+  "description": "Bold Title Pops Over Two Shots — Coral. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Promo",
+   "Social",
+   "Text Animation"
+  ]
+ }
+}

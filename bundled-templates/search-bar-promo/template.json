@@ -1,0 +1,100 @@
+{
+ "format": "clipcraft-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1080:1920",
+  "width": 1080,
+  "height": 1920,
+  "duration": 5,
+  "slots": 1,
+  "texts": 3,
+  "media": 1
+ },
+ "project": {
+  "name": "Search Bar Promo | Typewriter Query Types Into a Search Pill",
+  "ratio": "1080:1920",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 5,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 1280,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t2",
+    "text": "SEARCH",
+    "start": 0.3,
+    "duration": 4.4,
+    "y": 0.3,
+    "template": "mat-pill-label",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.5,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t3",
+    "text": "best coffee near me",
+    "start": 0.6,
+    "duration": 4.1,
+    "y": 0.44,
+    "template": "title-typewriter"
+   },
+   {
+    "id": "t4",
+    "text": "Tap the link to try it",
+    "start": 2.8,
+    "duration": 1.8,
+    "y": 0.78,
+    "template": "mat-caption-chip",
+    "animIn": {
+     "id": "fadeUp",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Search Bar Promo | Typewriter Query Types Into a Search Pill",
+  "category": "Business",
+  "description": "Typewriter Query Types Into a Search Pill. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "UI Animation",
+   "Promo",
+   "Text Animation"
+  ]
+ }
+}

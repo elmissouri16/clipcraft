@@ -1,0 +1,123 @@
+{
+ "format": "clipcraft-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "duration": 4,
+  "slots": 2,
+  "texts": 1,
+  "media": 2
+ },
+ "project": {
+  "name": "Logo Reveal | Your Logo Scales and Fades In Over the Shot",
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 4,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "logo",
+    "name": "Your logo.png",
+    "path": "m1.png",
+    "type": "image",
+    "duration": 0,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 0,
+    "width": 512,
+    "height": 512,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "png",
+    "pixFmt": "rgba",
+    "profile": ""
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 4,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [
+   {
+    "id": "o2",
+    "mediaId": "logo",
+    "in": 0,
+    "out": 3.3,
+    "start": 0.4,
+    "speed": 1,
+    "volume": 0,
+    "muted": true,
+    "slot": true,
+    "transform": {
+     "scale": 0.42,
+     "x": 0,
+     "y": -0.06,
+     "rot": 0
+    },
+    "anim": {
+     "in": {
+      "type": "zoom_in",
+      "duration": 0.7
+     },
+     "out": {
+      "type": "fade_out",
+      "duration": 0.5
+     }
+    }
+   }
+  ],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t3",
+    "text": "YOUR TAGLINE HERE",
+    "start": 1.2,
+    "duration": 2.5,
+    "y": 0.68,
+    "template": "mat-caption-chip",
+    "animIn": {
+     "id": "fadeUp",
+     "dur": 0.6,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Logo Reveal | Your Logo Scales and Fades In Over the Shot",
+  "category": "Business",
+  "description": "Your Logo Scales and Fades In Over the Shot. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Logo Animation",
+   "Promo"
+  ]
+ }
+}
