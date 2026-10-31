@@ -1,0 +1,1352 @@
+[
+ {
+  "slug": "cross-dissolve",
+  "name": "Cross Dissolve",
+  "family": "Dissolve & Fade",
+  "behavior": "Outgoing and incoming clips overlap with a gradual blend.",
+  "bestFor": "Interviews, gentle scene changes",
+  "priority": "P0",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "dip-to-black",
+  "name": "Dip to Black",
+  "family": "Dissolve & Fade",
+  "behavior": "Picture fades through black between shots.",
+  "bestFor": "Section breaks, endings, time jumps",
+  "priority": "P0",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "fade-in",
+  "name": "Fade In",
+  "family": "Dissolve & Fade",
+  "behavior": "A clip gradually appears from a chosen color/alpha.",
+  "bestFor": "Opening a shot",
+  "priority": "P0",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "fade-out",
+  "name": "Fade Out",
+  "family": "Dissolve & Fade",
+  "behavior": "A clip gradually disappears to a chosen color/alpha.",
+  "bestFor": "Ending a shot",
+  "priority": "P0",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "blur-dissolve",
+  "name": "Blur Dissolve",
+  "family": "Dissolve & Fade",
+  "behavior": "Blurs while one shot dissolves into the next.",
+  "bestFor": "Soft modern edits",
+  "priority": "P1",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "dip-to-color",
+  "name": "Dip to Color",
+  "family": "Dissolve & Fade",
+  "behavior": "Picture fades through a chosen solid color.",
+  "bestFor": "Brand colors, chapter breaks",
+  "priority": "P1",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "dip-to-white",
+  "name": "Dip to White",
+  "family": "Dissolve & Fade",
+  "behavior": "Picture fades through white between shots.",
+  "bestFor": "Bright, airy scene changes",
+  "priority": "P1",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "film-dissolve",
+  "name": "Film Dissolve",
+  "family": "Dissolve & Fade",
+  "behavior": "A softer film-like dissolve between shots.",
+  "bestFor": "Cinematic edits",
+  "priority": "P1",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "luma-fade",
+  "name": "Luma Fade",
+  "family": "Dissolve & Fade",
+  "behavior": "Uses image brightness to reveal or fade the next shot.",
+  "bestFor": "Moody or graphic scene changes",
+  "priority": "P1",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "additive-dissolve",
+  "name": "Additive Dissolve",
+  "family": "Dissolve & Fade",
+  "behavior": "Highlights brighten as the shots blend.",
+  "bestFor": "Dreamy highlights, music videos",
+  "priority": "P2",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "morph-cut",
+  "name": "Morph Cut",
+  "family": "Dissolve & Fade",
+  "behavior": "Analyzes adjacent footage to visually smooth a jump cut.",
+  "bestFor": "Talking-head edits with a similar framing",
+  "priority": "P2",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "non-additive-dissolve",
+  "name": "Non-Additive Dissolve",
+  "family": "Dissolve & Fade",
+  "behavior": "Blends the shots while maintaining a more controlled brightness mix.",
+  "bestFor": "Natural dissolves",
+  "priority": "P2",
+  "controls": "Duration; midpoint; fade color where relevant; easing",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "circle-reveal",
+  "name": "Circle Reveal",
+  "family": "Wipe & Matte",
+  "behavior": "A circle expands or contracts to switch shots.",
+  "bestFor": "Creator edits / product reveals",
+  "priority": "P0",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Origin point; scale; direction; feather"
+ },
+ {
+  "slug": "diagonal-wipe",
+  "name": "Diagonal Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A diagonal edge sweeps across the picture.",
+  "bestFor": "Fast modern edits",
+  "priority": "P0",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Angle; direction; edge softness"
+ },
+ {
+  "slug": "linear-wipe",
+  "name": "Linear Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A straight line reveals the incoming shot.",
+  "bestFor": "Clean branded transitions",
+  "priority": "P0",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "shape-matte-reveal",
+  "name": "Shape Matte Reveal",
+  "family": "Wipe & Matte",
+  "behavior": "A chosen geometric mask expands to uncover the next clip.",
+  "bestFor": "Brand systems / social content",
+  "priority": "P0",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Shape; direction; feather; scale; easing"
+ },
+ {
+  "slug": "gradient-wipe",
+  "name": "Gradient Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A gradient drives the reveal between shots.",
+  "bestFor": "Stylized reveals",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Gradient; angle; softness; threshold"
+ },
+ {
+  "slug": "ink-paint-reveal",
+  "name": "Ink / Paint Reveal",
+  "family": "Wipe & Matte",
+  "behavior": "Ink-like blobs or strokes reveal the incoming clip.",
+  "bestFor": "Artistic / fashion edits",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Matte source; scale; feather; direction"
+ },
+ {
+  "slug": "iris-round",
+  "name": "Iris Round",
+  "family": "Wipe & Matte",
+  "behavior": "A circular iris opens or closes.",
+  "bestFor": "Retro reveal / vignette transition",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "luma-matte-reveal",
+  "name": "Luma Matte Reveal",
+  "family": "Wipe & Matte",
+  "behavior": "A grayscale matte reveals the incoming clip by luminance.",
+  "bestFor": "Cinematic / texture transitions",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Matte; threshold; softness; invert"
+ },
+ {
+  "slug": "panel-wipe",
+  "name": "Panel Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "Multiple panels slide to reveal the next scene.",
+  "bestFor": "Modern graphic video",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "radial-wipe",
+  "name": "Radial Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A circular/radial edge sweeps to reveal the next clip.",
+  "bestFor": "UI-like, geometric or energetic edits",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "soft-wipe",
+  "name": "Soft Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A feathered edge sweeps across the frame.",
+  "bestFor": "Soft, polished scene changes",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "stripe-band-wipe",
+  "name": "Stripe / Band Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "Parallel bands sweep across the frame.",
+  "bestFor": "Graphic motion design",
+  "priority": "P1",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Band count; width; direction; spacing"
+ },
+ {
+  "slug": "barn-doors",
+  "name": "Barn Doors",
+  "family": "Wipe & Matte",
+  "behavior": "Two or more panels open or close like doors.",
+  "bestFor": "Symmetric scene reveals",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "checkerboard-wipe",
+  "name": "Checkerboard Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A grid of tiles switches from one image to another.",
+  "bestFor": "Retro digital transitions",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "clock-wipe",
+  "name": "Clock Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A clock-hand style sweep reveals the next shot.",
+  "bestFor": "Playful, timed or graphic edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "heart-matte",
+  "name": "Heart Matte",
+  "family": "Wipe & Matte",
+  "behavior": "A heart-shaped matte reveals the next clip.",
+  "bestFor": "Celebrations / playful edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Shape scale; origin; feather"
+ },
+ {
+  "slug": "iris-box",
+  "name": "Iris Box",
+  "family": "Wipe & Matte",
+  "behavior": "A rectangle opens or closes around the image.",
+  "bestFor": "Retro / stylized transitions",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "iris-cross",
+  "name": "Iris Cross",
+  "family": "Wipe & Matte",
+  "behavior": "A cross-shaped iris opens or closes.",
+  "bestFor": "Retro graphic edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "iris-diamond",
+  "name": "Iris Diamond",
+  "family": "Wipe & Matte",
+  "behavior": "A diamond-shaped iris opens or closes.",
+  "bestFor": "Stylized edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "page-peel",
+  "name": "Page Peel",
+  "family": "Wipe & Matte",
+  "behavior": "A page corner peels away to show the next shot.",
+  "bestFor": "Paper / scrapbook storytelling",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "page-turn",
+  "name": "Page Turn",
+  "family": "Wipe & Matte",
+  "behavior": "The image turns like a page.",
+  "bestFor": "Book / magazine visual themes",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "paint-splatter-wipe",
+  "name": "Paint Splatter Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "Irregular splashes reveal the incoming shot.",
+  "bestFor": "Creative / messy motion",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "random-blocks",
+  "name": "Random Blocks",
+  "family": "Wipe & Matte",
+  "behavior": "Rectangular blocks reveal the next shot in a scattered order.",
+  "bestFor": "Digital / playful edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "spiral-wipe",
+  "name": "Spiral Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A spiral pattern reveals the next shot.",
+  "bestFor": "Retro / energetic edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Direction; speed; center; softness"
+ },
+ {
+  "slug": "star-wipe",
+  "name": "Star Wipe",
+  "family": "Wipe & Matte",
+  "behavior": "A star-shaped matte reveals or conceals the next shot.",
+  "bestFor": "Playful / celebratory edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "venetian-blinds-louver",
+  "name": "Venetian Blinds / Louver",
+  "family": "Wipe & Matte",
+  "behavior": "Horizontal or vertical slats reveal the next shot.",
+  "bestFor": "Graphic / tech edits",
+  "priority": "P2",
+  "controls": "Duration; direction; edge softness; start/end alignment",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "camera-push-in",
+  "name": "Camera Push In",
+  "family": "Motion & Transform",
+  "behavior": "The view quickly pushes toward the subject, then lands on next shot.",
+  "bestFor": "Emphasis / creator edits",
+  "priority": "P0",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Scale; focal point; blur; easing"
+ },
+ {
+  "slug": "push",
+  "name": "Push",
+  "family": "Motion & Transform",
+  "behavior": "The next shot pushes the current shot out of frame.",
+  "bestFor": "Travel, explainer, fast-paced content",
+  "priority": "P0",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "slide-left-right-up-down",
+  "name": "Slide Left / Right / Up / Down",
+  "family": "Motion & Transform",
+  "behavior": "Incoming image slides from a chosen edge while replacing the outgoing shot.",
+  "bestFor": "Clean transitions, tutorials, social edits",
+  "priority": "P0",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "whip-pan",
+  "name": "Whip Pan",
+  "family": "Motion & Transform",
+  "behavior": "A rapid directional motion blur simulates a camera whip between shots.",
+  "bestFor": "Vlogs, action, creator edits",
+  "priority": "P0",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "camera-pull-out",
+  "name": "Camera Pull Out",
+  "family": "Motion & Transform",
+  "behavior": "The view pulls away before revealing the next shot.",
+  "bestFor": "Scene reveals",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Scale; focal point; blur; easing"
+ },
+ {
+  "slug": "flip-horizontal-vertical",
+  "name": "Flip Horizontal / Vertical",
+  "family": "Motion & Transform",
+  "behavior": "The image flips on a horizontal or vertical axis into the next shot.",
+  "bestFor": "Playful / short-form edits",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "frame-transition",
+  "name": "Frame Transition",
+  "family": "Motion & Transform",
+  "behavior": "A graphic frame moves/scales as the shot changes.",
+  "bestFor": "Brand frames / product videos",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "pop-motion",
+  "name": "Pop Motion",
+  "family": "Motion & Transform",
+  "behavior": "A quick scale/pop motion reveals the next shot.",
+  "bestFor": "Short-form edits",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "pull-motion",
+  "name": "Pull Motion",
+  "family": "Motion & Transform",
+  "behavior": "Motion pulls the viewer from one shot into the next.",
+  "bestFor": "Action / creator edits",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "slice",
+  "name": "Slice",
+  "family": "Motion & Transform",
+  "behavior": "The image is split into slices that shift or stagger away.",
+  "bestFor": "Music videos / graphic edits",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "spin-transition",
+  "name": "Spin Transition",
+  "family": "Motion & Transform",
+  "behavior": "Image rotates into the next scene.",
+  "bestFor": "Reels, travel, fashion",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Rotation; direction; zoom; blur; easing"
+ },
+ {
+  "slug": "split",
+  "name": "Split",
+  "family": "Motion & Transform",
+  "behavior": "The frame splits into two or more parts that move away or together.",
+  "bestFor": "Social reels, graphic transitions",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "stretch",
+  "name": "Stretch",
+  "family": "Motion & Transform",
+  "behavior": "The frame stretches before resolving into the next shot.",
+  "bestFor": "Elastic / energetic transitions",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "stretch-wipe",
+  "name": "Stretch Wipe",
+  "family": "Motion & Transform",
+  "behavior": "A stretched region sweeps across to reveal the next clip.",
+  "bestFor": "Modern social edits",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "travel-motion",
+  "name": "Travel Motion",
+  "family": "Motion & Transform",
+  "behavior": "One clip moves out as the next moves in.",
+  "bestFor": "Basic dynamic scene changes",
+  "priority": "P1",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "3d-roll",
+  "name": "3D Roll",
+  "family": "Motion & Transform",
+  "behavior": "The image rolls in 3D perspective.",
+  "bestFor": "Dynamic intros and reels",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "3d-spin",
+  "name": "3D Spin",
+  "family": "Motion & Transform",
+  "behavior": "The frame rotates in 3D to bring in the next shot.",
+  "bestFor": "Gaming / energetic edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "3d-spinback",
+  "name": "3D Spinback",
+  "family": "Motion & Transform",
+  "behavior": "A stylized 3D rotation with momentum and blur.",
+  "bestFor": "High-energy creator edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "band-slide",
+  "name": "Band Slide",
+  "family": "Motion & Transform",
+  "behavior": "A band or section of the frame slides to reveal the next shot.",
+  "bestFor": "Graphic edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "block-motion",
+  "name": "Block Motion",
+  "family": "Motion & Transform",
+  "behavior": "The frame breaks into moving blocks between shots.",
+  "bestFor": "Gaming / digital edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "center-split",
+  "name": "Center Split",
+  "family": "Motion & Transform",
+  "behavior": "The image splits from the center into sections.",
+  "bestFor": "Modern graphic reveal",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "film-roll",
+  "name": "Film Roll",
+  "family": "Motion & Transform",
+  "behavior": "A film-reel-style roll switches to the next shot.",
+  "bestFor": "Retro film edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "fold",
+  "name": "Fold",
+  "family": "Motion & Transform",
+  "behavior": "The image folds or unfolds like layered paper.",
+  "bestFor": "Graphic storytelling",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "mirror",
+  "name": "Mirror",
+  "family": "Motion & Transform",
+  "behavior": "A mirror/reflection treatment changes the image during the transition.",
+  "bestFor": "Stylized montage",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "orbit-transition",
+  "name": "Orbit Transition",
+  "family": "Motion & Transform",
+  "behavior": "A simulated orbit around a focal point swaps shots.",
+  "bestFor": "Stylized product / travel edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Focal point; angle; depth; easing"
+ },
+ {
+  "slug": "plateau-wipe",
+  "name": "Plateau Wipe",
+  "family": "Motion & Transform",
+  "behavior": "A stylized flattened surface unfolds into the next clip.",
+  "bestFor": "Motion graphics / abstract edits",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "roll",
+  "name": "Roll",
+  "family": "Motion & Transform",
+  "behavior": "The outgoing image rolls into the incoming image.",
+  "bestFor": "Playful / stylized motion",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "spring-motion",
+  "name": "Spring Motion",
+  "family": "Motion & Transform",
+  "behavior": "A bouncy spring-like movement switches between shots.",
+  "bestFor": "Playful / energetic social clips",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "wave",
+  "name": "Wave",
+  "family": "Motion & Transform",
+  "behavior": "The image ripples or warps like a wave into the next shot.",
+  "bestFor": "Dreamy / artistic scenes",
+  "priority": "P2",
+  "controls": "Duration; direction; distance; easing; motion blur",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "cross-zoom",
+  "name": "Cross Zoom",
+  "family": "Zoom & Speed",
+  "behavior": "Zooms through a blended center between the two shots.",
+  "bestFor": "Fast modern edits",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "directional-blur-transition",
+  "name": "Directional Blur Transition",
+  "family": "Zoom & Speed",
+  "behavior": "Directional blur sweeps across the cut.",
+  "bestFor": "Motion continuity / fast cuts",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "snap-zoom",
+  "name": "Snap Zoom",
+  "family": "Zoom & Speed",
+  "behavior": "A quick punch-in or punch-out bridges the cut.",
+  "bestFor": "Talking heads / emphasis",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "speed-blur-transition",
+  "name": "Speed Blur Transition",
+  "family": "Zoom & Speed",
+  "behavior": "Blur increases during a fast push or pull across the cut.",
+  "bestFor": "Action / sports / creator clips",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Filmora official categories / transition docs; individual preset names vary"
+ },
+ {
+  "slug": "zoom-blur",
+  "name": "Zoom Blur",
+  "family": "Zoom & Speed",
+  "behavior": "A blur radiates along the zoom direction while shots change.",
+  "bestFor": "Dynamic creator / gaming edits",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "zoom-in-transition",
+  "name": "Zoom In Transition",
+  "family": "Zoom & Speed",
+  "behavior": "The image scales into the next shot.",
+  "bestFor": "Beat edits / product reveals",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "zoom-out-transition",
+  "name": "Zoom Out Transition",
+  "family": "Zoom & Speed",
+  "behavior": "The image scales outward to reveal the next scene.",
+  "bestFor": "Reveal / travel edits",
+  "priority": "P0",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "radial-blur-transition",
+  "name": "Radial Blur Transition",
+  "family": "Zoom & Speed",
+  "behavior": "Radial blur swirls or pulls into the next shot.",
+  "bestFor": "High-energy edits",
+  "priority": "P1",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "speed-ramp-match-transition",
+  "name": "Speed Ramp Match Transition",
+  "family": "Zoom & Speed",
+  "behavior": "Playback speed accelerates/decelerates across the cut.",
+  "bestFor": "Action / travel montage",
+  "priority": "P1",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Common editing technique; not a single stock transition"
+ },
+ {
+  "slug": "warp-zoom",
+  "name": "Warp Zoom",
+  "family": "Zoom & Speed",
+  "behavior": "Zoom plus distortion creates a tunnel-like transition.",
+  "bestFor": "High-energy reels",
+  "priority": "P1",
+  "controls": "Zoom amount; direction; blur amount; easing; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "flash",
+  "name": "Flash",
+  "family": "Light & Blur",
+  "behavior": "A bright flash hides the cut.",
+  "bestFor": "Beat cuts, energetic reels",
+  "priority": "P0",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "light-leak",
+  "name": "Light Leak",
+  "family": "Light & Blur",
+  "behavior": "Film-like light leaks wash over the transition.",
+  "bestFor": "Lifestyle / cinematic edits",
+  "priority": "P0",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "white-flash",
+  "name": "White Flash",
+  "family": "Light & Blur",
+  "behavior": "A brief white frame or overexposure bridges clips.",
+  "bestFor": "Music / fast-paced content",
+  "priority": "P0",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "black-flash",
+  "name": "Black Flash",
+  "family": "Light & Blur",
+  "behavior": "A short black frame punctuates the cut.",
+  "bestFor": "Hard rhythmic edits",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "blur-to-color",
+  "name": "Blur to Color",
+  "family": "Light & Blur",
+  "behavior": "Image blurs into a solid color and resolves to the next scene.",
+  "bestFor": "Brand chapters / clean edits",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "chroma-leak",
+  "name": "Chroma Leak",
+  "family": "Light & Blur",
+  "behavior": "Colorful light leaks blend through the transition.",
+  "bestFor": "Music videos / social clips",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "flare",
+  "name": "Flare",
+  "family": "Light & Blur",
+  "behavior": "A lens flare sweeps through the cut.",
+  "bestFor": "Cinematic / outdoor scenes",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "glow",
+  "name": "Glow",
+  "family": "Light & Blur",
+  "behavior": "Highlights bloom across the transition.",
+  "bestFor": "Dreamy / glossy clips",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "lens-blur",
+  "name": "Lens Blur",
+  "family": "Light & Blur",
+  "behavior": "Out-of-focus blur transitions between shots.",
+  "bestFor": "Soft / cinematic scenes",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "light-sweep",
+  "name": "Light Sweep",
+  "family": "Light & Blur",
+  "behavior": "A beam of light sweeps across the frame to reveal the next shot.",
+  "bestFor": "Product / branded videos",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "overexposure-bloom",
+  "name": "Overexposure Bloom",
+  "family": "Light & Blur",
+  "behavior": "Exposure blooms briefly to mask a cut.",
+  "bestFor": "Music videos / warm transitions",
+  "priority": "P1",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "burn-chroma",
+  "name": "Burn Chroma",
+  "family": "Light & Blur",
+  "behavior": "Chromatic burn edges distort the image during the change.",
+  "bestFor": "Experimental / energetic edits",
+  "priority": "P2",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "light-stripe",
+  "name": "Light Stripe",
+  "family": "Light & Blur",
+  "behavior": "A stripe of light travels across the frame while switching shots.",
+  "bestFor": "Tech / product videos",
+  "priority": "P2",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "phosphor-trail",
+  "name": "Phosphor Trail",
+  "family": "Light & Blur",
+  "behavior": "A phosphorescent glow/trail fades through the cut.",
+  "bestFor": "Neon / night visuals",
+  "priority": "P2",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "ray-burst",
+  "name": "Ray Burst",
+  "family": "Light & Blur",
+  "behavior": "Light rays burst or stream during the change.",
+  "bestFor": "Epic / reveal edits",
+  "priority": "P2",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "soft-focus-wipe",
+  "name": "Soft Focus Wipe",
+  "family": "Light & Blur",
+  "behavior": "A soft out-of-focus edge sweeps through the image.",
+  "bestFor": "Dreamy / romantic edits",
+  "priority": "P2",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "solarize",
+  "name": "Solarize",
+  "family": "Light & Blur",
+  "behavior": "Colors invert/highlight in a photographic solarization treatment.",
+  "bestFor": "Retro / experimental edits",
+  "priority": "P2",
+  "controls": "Intensity; color; direction; blur radius; blend; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "glitch",
+  "name": "Glitch",
+  "family": "Distortion & Retro",
+  "behavior": "Digital tearing, jitter and channel shifts bridge the clips.",
+  "bestFor": "Gaming / tech / energetic reels",
+  "priority": "P0",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "burn-alpha",
+  "name": "Burn Alpha",
+  "family": "Distortion & Retro",
+  "behavior": "A burning/eroding alpha edge reveals the next scene.",
+  "bestFor": "Film burn / organic reveals",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "chromatic-aberration",
+  "name": "Chromatic Aberration",
+  "family": "Distortion & Retro",
+  "behavior": "Color fringes intensify around edges during the transition.",
+  "bestFor": "Digital / energetic edits",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "datamosh",
+  "name": "Datamosh",
+  "family": "Distortion & Retro",
+  "behavior": "Compression-like block smears distort the cut.",
+  "bestFor": "Experimental / gaming edits",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Filmora official categories / transition docs; individual preset names vary"
+ },
+ {
+  "slug": "earthquake-shake",
+  "name": "Earthquake / Shake",
+  "family": "Distortion & Retro",
+  "behavior": "A short camera shake with blur bridges scenes.",
+  "bestFor": "Impact / action / gaming",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "flicker",
+  "name": "Flicker",
+  "family": "Distortion & Retro",
+  "behavior": "Rapid brightness changes cover the cut.",
+  "bestFor": "Music / energetic videos",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "liquid-distortion",
+  "name": "Liquid Distortion",
+  "family": "Distortion & Retro",
+  "behavior": "Image warps like fluid during the change.",
+  "bestFor": "Creative / fashion videos",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "mosaic-blocks",
+  "name": "Mosaic Blocks",
+  "family": "Distortion & Retro",
+  "behavior": "Image breaks into tiles/pixels, then reassembles as the next shot.",
+  "bestFor": "Digital / retro edits",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "negative-invert-flash",
+  "name": "Negative / Invert Flash",
+  "family": "Distortion & Retro",
+  "behavior": "A brief inverted-color frame masks the cut.",
+  "bestFor": "Beat edits / music videos",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "neon-wipe",
+  "name": "Neon Wipe",
+  "family": "Distortion & Retro",
+  "behavior": "Neon-like edges travel across the frame and reveal the next clip.",
+  "bestFor": "Night / tech / branded visuals",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "pixelate-reveal",
+  "name": "Pixelate Reveal",
+  "family": "Distortion & Retro",
+  "behavior": "Pixel blocks resolve from coarse to clear across the cut.",
+  "bestFor": "Tech / gaming edits",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "rgb-split",
+  "name": "RGB Split",
+  "family": "Distortion & Retro",
+  "behavior": "Red, green and blue channels separate during the change.",
+  "bestFor": "Digital / music videos",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Premiere effects list includes RGB Split as an effect; transition-style use is a custom combo"
+ },
+ {
+  "slug": "vhs-damage",
+  "name": "VHS Damage",
+  "family": "Distortion & Retro",
+  "behavior": "Tape noise, tracking and color instability switch shots.",
+  "bestFor": "Retro / nostalgic edits",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "wave-warp",
+  "name": "Wave Warp",
+  "family": "Distortion & Retro",
+  "behavior": "Image bends in a wave-like pattern across the cut.",
+  "bestFor": "Stylized / dreamy edits",
+  "priority": "P1",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "chaos-distortion",
+  "name": "Chaos Distortion",
+  "family": "Distortion & Retro",
+  "behavior": "Randomized geometric distortion collapses or explodes into the next shot.",
+  "bestFor": "Experimental transitions",
+  "priority": "P2",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "glass-shatter",
+  "name": "Glass Shatter",
+  "family": "Distortion & Retro",
+  "behavior": "Image breaks into glass-like pieces and resolves into the next shot.",
+  "bestFor": "Stylized reveals",
+  "priority": "P2",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "grunge-distortion",
+  "name": "Grunge Distortion",
+  "family": "Distortion & Retro",
+  "behavior": "Grain, rough edges or distressed texture wipes to the next clip.",
+  "bestFor": "Alternative / music edits",
+  "priority": "P2",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "kaleidoscope",
+  "name": "Kaleidoscope",
+  "family": "Distortion & Retro",
+  "behavior": "Mirrored repeating geometry rotates or morphs across the cut.",
+  "bestFor": "Experimental / psychedelic clips",
+  "priority": "P2",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "posterize-stutter",
+  "name": "Posterize Stutter",
+  "family": "Distortion & Retro",
+  "behavior": "Frames and color levels step during the change.",
+  "bestFor": "Retro / experimental edits",
+  "priority": "P2",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Common editor concept"
+ },
+ {
+  "slug": "tv-power-off",
+  "name": "TV Power Off",
+  "family": "Distortion & Retro",
+  "behavior": "Picture collapses or shuts down like a TV powering off.",
+  "bestFor": "Retro / comedic ending",
+  "priority": "P2",
+  "controls": "Intensity; scale; frequency; channel offset; seed; duration",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "beat-flash",
+  "name": "Beat Flash",
+  "family": "Creator & Social Combos",
+  "behavior": "Flash timing aligns to a beat or audio marker.",
+  "bestFor": "Music-synced edits",
+  "priority": "P0",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "beat-zoom",
+  "name": "Beat Zoom",
+  "family": "Creator & Social Combos",
+  "behavior": "Zoom lands on beat markers between clips.",
+  "bestFor": "Short-form edits",
+  "priority": "P0",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "flash-motion-blur-combo",
+  "name": "Flash + Motion Blur Combo",
+  "family": "Creator & Social Combos",
+  "behavior": "Flash and directional blur combine to hide a quick scene change.",
+  "bestFor": "High-energy reels",
+  "priority": "P0",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "match-cut-zoom",
+  "name": "Match Cut Zoom",
+  "family": "Creator & Social Combos",
+  "behavior": "A zoom lands on a visually similar subject in the next shot.",
+  "bestFor": "Product / tutorial / creator edits",
+  "priority": "P0",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "swipe-left-right",
+  "name": "Swipe Left / Right",
+  "family": "Creator & Social Combos",
+  "behavior": "A quick finger-like swipe replaces the outgoing shot.",
+  "bestFor": "TikTok / Reels / Shorts",
+  "priority": "P0",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "whip-pan-match-cut",
+  "name": "Whip Pan Match Cut",
+  "family": "Creator & Social Combos",
+  "behavior": "Two aligned whip movements disguise the cut.",
+  "bestFor": "Vlogs / travel / action",
+  "priority": "P0",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "foreground-object-wipe",
+  "name": "Foreground Object Wipe",
+  "family": "Creator & Social Combos",
+  "behavior": "A large foreground object passes through frame to hide the cut.",
+  "bestFor": "Travel / lifestyle / commercial",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "freeze-frame-pop",
+  "name": "Freeze-Frame Pop",
+  "family": "Creator & Social Combos",
+  "behavior": "A freeze frame pops or scales while the next clip is revealed.",
+  "bestFor": "Creator intros / social clips",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "hand-cover-object-cover-match",
+  "name": "Hand-Cover / Object-Cover Match",
+  "family": "Creator & Social Combos",
+  "behavior": "A subject/object covers the lens and the next shot starts with a similar cover.",
+  "bestFor": "Vlogs / lifestyle / outfit changes",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "mask-pass-through",
+  "name": "Mask Pass-Through",
+  "family": "Creator & Social Combos",
+  "behavior": "A foreground mask reveals the incoming shot as it crosses frame.",
+  "bestFor": "Cinematic creator edits",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "spin-match-cut",
+  "name": "Spin Match Cut",
+  "family": "Creator & Social Combos",
+  "behavior": "A rotating camera movement bridges similar compositions.",
+  "bestFor": "Travel / fashion / reels",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "split-screen-reveal",
+  "name": "Split-Screen Reveal",
+  "family": "Creator & Social Combos",
+  "behavior": "A divided layout opens to full frame or switches scenes.",
+  "bestFor": "Comparisons / tutorials",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "walk-by-reveal",
+  "name": "Walk-By Reveal",
+  "family": "Creator & Social Combos",
+  "behavior": "A person or foreground object passes the lens to hide the cut.",
+  "bestFor": "Fashion / travel / creator videos",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "zoom-spin-combo",
+  "name": "Zoom + Spin Combo",
+  "family": "Creator & Social Combos",
+  "behavior": "Zoom and rotation are combined into one stylized transition.",
+  "bestFor": "Travel / montage",
+  "priority": "P1",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "clone-echo-transition",
+  "name": "Clone / Echo Transition",
+  "family": "Creator & Social Combos",
+  "behavior": "Repeated subject echoes overlap as the next clip appears.",
+  "bestFor": "Dance / music / stylized reels",
+  "priority": "P2",
+  "controls": "Duration; beat offset; scale; rotation; motion blur; easing",
+  "referenceScope": "Common creator-editing concept; often assembled from effects rather than one preset"
+ },
+ {
+  "slug": "motion-tween",
+  "name": "Motion Tween",
+  "family": "Text & Motion Graphics",
+  "behavior": "Interpolated position, scale or rotation movement between states.",
+  "bestFor": "Custom animated transitions",
+  "priority": "P1",
+  "controls": "Text/shape; timing; easing; position; scale; opacity",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "shape-dissolve",
+  "name": "Shape Dissolve",
+  "family": "Text & Motion Graphics",
+  "behavior": "A patterned shape-based dissolve replaces one shot with another.",
+  "bestFor": "Branded or stylized video",
+  "priority": "P1",
+  "controls": "Text/shape; timing; easing; position; scale; opacity",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "text-animator-transition",
+  "name": "Text Animator Transition",
+  "family": "Text & Motion Graphics",
+  "behavior": "Text or graphics move/scale to bridge two shots.",
+  "bestFor": "Branded social / motion graphics",
+  "priority": "P1",
+  "controls": "Text/shape; timing; easing; position; scale; opacity",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "typewriter-reveal",
+  "name": "Typewriter Reveal",
+  "family": "Text & Motion Graphics",
+  "behavior": "Text or graphic is revealed character by character.",
+  "bestFor": "Titles / lower thirds / captions",
+  "priority": "P1",
+  "controls": "Text/shape; timing; easing; position; scale; opacity",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "motion-camera",
+  "name": "Motion Camera",
+  "family": "Text & Motion Graphics",
+  "behavior": "Adds simulated camera movement to link shots or animate stills.",
+  "bestFor": "Montage / photo animation",
+  "priority": "P2",
+  "controls": "Text/shape; timing; easing; position; scale; opacity",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ },
+ {
+  "slug": "shape-flow",
+  "name": "Shape Flow",
+  "family": "Text & Motion Graphics",
+  "behavior": "Animated shapes flow between or over shots.",
+  "bestFor": "Brand packages / motion design",
+  "priority": "P2",
+  "controls": "Text/shape; timing; easing; position; scale; opacity",
+  "referenceScope": "Adobe Premiere official list / modern transitions"
+ }
+]
