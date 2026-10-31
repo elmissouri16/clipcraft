@@ -39,7 +39,7 @@ const { probe } = require('../electron/ffmpeg.cjs');
   if (!process.argv.includes('--offline')) {
     const dir = path.join(os.tmpdir(), 'fve-piper-cache'); // kept between runs: the engine and voice are big
     await tts.piperPrepare(fetch, dir, 'en_US-joe-medium', (s, f) => process.stdout.write(`\r${s} ${(f * 100).toFixed(0)}%   `));
-    const wav = await tts.piperSpeak(dir, out, { voiceId: 'en_US-joe-medium', text: 'Hello from CapRocket. This voice runs on your computer.' });
+    const wav = await tts.piperSpeak(dir, out, { voiceId: 'en_US-joe-medium', text: 'Hello from ClipCraft. This voice runs on your computer.' });
     const info = await probe(wav);
     console.log(`\npiper: ${info.duration.toFixed(2)} s`);
     assert.ok(info.type === 'audio' && info.duration > 1.5);

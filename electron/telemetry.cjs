@@ -2,13 +2,13 @@
 // State lives in <userData>/telemetry.json: { consent: true | false | null, installId, installSent, lastHeartbeatDay }.
 // A message holds only: a random installation ID (crypto UUID, not derived from the PC), the event and the app version.
 // The server records its own time. Failures are ignored: statistics must never get in the way of the app.
-// Described to users at https://clipcraft.site/privacy and in the API docs in website/docs/API.md.
+// Described to users at https://hamzaabika.com/clipcraft/privacy.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { app, net } = require('electron');
 
-const ENDPOINT = process.env.FVE_TELEMETRY_URL || 'https://clipcraft.site/api/v1/telemetry';
+const ENDPOINT = process.env.FVE_TELEMETRY_URL || 'https://hamzaabika.com/clipcraft/api/v1/telemetry';
 const CHECK_EVERY = 6 * 3600 * 1000; // while the app stays open, send the next day's heartbeat
 
 function stateFile() {

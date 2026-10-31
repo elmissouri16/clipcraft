@@ -1,6 +1,6 @@
 // Tests electron/telemetry.cjs against a running copy of the website (website/tests/README in website/README.md):
 //   FVE_TELEMETRY_URL=http://127.0.0.1:8790/api/v1/telemetry node scripts/test-telemetry.cjs
-// Electron is replaced by a small stub, so the real %APPDATA%\CapRocket\telemetry.json is never touched.
+// Electron is replaced by a small stub, so the real %APPDATA%\ClipCraft\telemetry.json is never touched.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

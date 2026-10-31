@@ -7,7 +7,7 @@ const { execFileSync } = require('child_process');
 const { ffmpegPath, probe, renderMainAudio } = require('../electron/ffmpeg.cjs');
 const whisper = require('../electron/whisper.cjs');
 
-const WHISPER_DIR = path.join(process.env.APPDATA, 'CapRocket', 'whisper');
+const WHISPER_DIR = path.join(process.env.APPDATA, 'ClipCraft', 'whisper');
 
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-cap-'));

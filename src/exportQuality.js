@@ -105,6 +105,22 @@ export function resolveExport(project, caps = {}) {
   };
 }
 
+// Estimated output size for the resolved configuration. Bitrate mode is exact arithmetic from the
+// settings (video bitrate + audio bitrate over the duration). CRF mode is a heuristic: libx264's
+// output is modelled at bits-per-pixel bpp(crf) = 0.22 · 2^(−(crf−18)/5.5), calibrated so a 1080p30
+// High (CRF 18) project estimates ≈ 13.7 Mbps — mid-range for typical footage. Real CRF output is
+// content-dependent, so the UI always labels CRF-mode numbers as estimates.
+export function estimateExport(eff, durationSec) {
+  const dur = Math.max(0, Number(durationSec) || 0);
+  const audioMB = (eff.audioKbps * 1000 * dur) / 8 / 1e6;
+  if (eff.mode === 'bitrate') {
+    return { mb: (eff.bitrateMbps * 1e6 * dur) / 8 / 1e6 + audioMB, videoMbps: eff.bitrateMbps, exact: true };
+  }
+  const bpp = 0.22 * Math.pow(2, -(eff.crf - 18) / 5.5);
+  const videoMbps = (eff.outW * eff.outH * eff.outFps * bpp) / 1e6;
+  return { mb: (videoMbps * 1e6 * dur) / 8 / 1e6 + audioMB, videoMbps, exact: false };
+}
+
 // The pre-export summary rows, rendered by the Export dialog from the resolved object.
 export function summaryRows(eff, project) {
   const rows = [

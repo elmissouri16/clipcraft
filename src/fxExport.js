@@ -4,6 +4,7 @@ import { videoLayout } from './store.js';
 import { FX_TRANSITIONS } from './fx/catalog.js';
 import { clipHasPixelFx, isPixel, pixelPasses } from './fx/apply.js';
 import { fxGL } from './fx/gl.js';
+import { easeValue } from './fx/easing.js';
 
 const fxTr = (c) => c.transition && FX_TRANSITIONS.find((t) => t.id === c.transition.type);
 const unwrap = (r) => {
@@ -77,7 +78,7 @@ export async function renderFxPass(projectIn, onProgress, isCanceled) {
       if (isCanceled()) return null;
       const pair = unwrap(await window.api.fxRead(job.id));
       if (!pair) break;
-      gl.transition({ data: pair.a }, { data: pair.b }, job.width, job.height, k / job.fps / job.len, t.expr);
+      gl.transition({ data: pair.a }, { data: pair.b }, job.width, job.height, easeValue(l.clip.transition?.ease, k / job.fps / job.len), t.expr);
       unwrap(await window.api.fxWrite(job.id, gl.read(job.width, job.height)));
       step();
     }

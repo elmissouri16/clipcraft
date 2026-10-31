@@ -13,6 +13,7 @@ const rootOf = (appRoot) => path.join(appRoot, 'bundled-templates');
 function readDoc(dir) {
   try {
     const doc = JSON.parse(fs.readFileSync(path.join(dir, 'template.json'), 'utf8'));
+    // Both format ids are accepted on read — current packages and the legacy v1 format id alike.
     if (!['caprocket-template', 'clipcraft-template'].includes(doc.format) || doc.version !== 1 || !doc.project) return null;
     return doc;
   } catch {
