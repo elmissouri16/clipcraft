@@ -195,24 +195,28 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
   const fitW = media?.width ? Math.min(1, (media.width / media.height) / (W / H)) : 1;
   const fitH = media?.width ? Math.min(1, (media.height / media.width) / (H / W)) : 1;
   const { sx: ex, sy: ey } = scaleXY(t);
-  const edgeX = (1 - fitW * ex) / 2;
-  const edgeY = (1 - fitH * ey) / 2;
-  // Align pad: a 3×3 anchor grid over the same math — the scaled picture (fitW×fitH of the frame,
-  // centered, then scaled) has its edges at ±edgeX / ±edgeY, so each cell puts the clip's matching
-  // corner/edge/center exactly on the frame's. Writes through setT (keyframe-safe, like typing).
+  // Align pad anchors for one axis, from the scaled picture's size on it as a fraction of the
+  // frame (w). Smaller than the frame: flush inside it (left cell = picture's left edge on the
+  // frame's left edge). Larger: pan, so the chosen edge of the picture meets the frame's edge
+  // and the picture keeps covering the frame. Exactly filling the axis (|w − 1| within half a
+  // percent): edge alignment is vacuous — the picture already touches both edges at once, so
+  // every flush anchor collapses to the centred position and the pad could never move the clip
+  // (the dead pad on a full-frame clip at 100%). There the centre snaps to the frame's
+  // third-points instead, so the cells still take the clip where their labels say.
+  const axisAnchors = (w) => {
+    if (w > 1.005) { const a = (w - 1) / 2; return [a, 0, -a]; }
+    if (w < 0.995) { const a = (1 - w) / 2; return [-a, 0, a]; }
+    return [-1 / 3, 0, 1 / 3];
+  };
+  const anchorsX = axisAnchors(fitW * ex);
+  const anchorsY = axisAnchors(fitH * ey);
   // The pad reflects the current anchor only when BOTH axes sit on one (within a rounding pixel).
-  const anchorsX = [-edgeX, 0, edgeX];
-  const anchorsY = [-edgeY, 0, edgeY];
-  const matchAxis = (v, edge, eps) => {
-    if (Math.abs(v) <= eps) return 1;
-    if (Math.abs(edge) > eps) {
-      if (Math.abs(v + edge) <= eps) return 0;
-      if (Math.abs(v - edge) <= eps) return 2;
-    }
+  const matchAxis = (v, anchors, eps) => {
+    for (let i = 0; i < 3; i++) if (Math.abs(v - anchors[i]) <= eps) return i;
     return -1;
   };
-  const acol = matchAxis(t.x, edgeX, 0.6 / W);
-  const arow = matchAxis(t.y, edgeY, 0.6 / H);
+  const acol = matchAxis(t.x, anchorsX, 0.6 / W);
+  const arow = matchAxis(t.y, anchorsY, 0.6 / H);
   const activeAnchor = acol >= 0 && arow >= 0 ? arow * 3 + acol : -1;
   const PAD_LABELS = ['Align top-left', 'Align top', 'Align top-right', 'Align left', 'Align center', 'Align right', 'Align bottom-left', 'Align bottom', 'Align bottom-right'];
   const alignPad = PAD_LABELS.map((label, i) => ({
