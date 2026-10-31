@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FIT_VIEW, QUALITY_LABELS, QUALITY_MAX_SIDE, applyZoomChoice, clipLen, formatTime, freeLen, getPlaybackQuality, levelCopyState, previewPath, toFileUrl, videoLayout, zoomByFactor, zoomTransform } from '../store.js';
 import { hasMotion, stateAt } from '../anim.js';
-import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, LoaderCircle, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
 import { clipCss, textAnim } from '../effects.js';
 import { drawTextLayer } from '../text/render.js';
 import { applyElementVolume, resumeAudioGraph, wireElement } from '../audioTap.js';
@@ -90,15 +90,37 @@ function drawKeyed(cv, src, w, h, chroma, passes = [], matte = null, opts = {}) 
 // and incoming clips are both on screen, mirroring FFmpeg's xfade at export.
 const DRIFT = 0.25;
 
+// Seamless source swaps (playback-quality copies landing, quality level switched): when the
+// element's file changes, the element reloads and would restart at frame 0 — the playhead
+// jumping back is the visible glitch. Instead the swap is armed: every sync while the new file
+// loads records where playback should be, and the moment its metadata lands the element is
+// placed on that exact position (and resumed, if playing) before any frame of it is shown.
+const swapWants = new WeakMap(); // el -> { time, playing } wanted once the new source can seek
+function armSwap(el) {
+  const onMeta = () => {
+    delete el.dataset.swap;
+    const w = swapWants.get(el);
+    if (!w) return;
+    try { el.currentTime = Math.max(0, w.time); } catch { /* not seekable yet; the drift check below lands it */ }
+    if (w.playing) el.play().catch(() => {});
+  };
+  el.addEventListener('loadedmetadata', onMeta, { once: true });
+}
+
 function syncMedia(el, url, localTime, playing, volume, rate = 1) {
   if (el.dataset.src !== url) {
     el.dataset.src = url;
+    el.dataset.swap = '1';
+    swapWants.set(el, { time: localTime, playing });
     el.src = url;
+    armSwap(el);
+  } else if (el.dataset.swap) {
+    swapWants.set(el, { time: localTime, playing }); // keep the landing spot current while it loads
   }
   applyElementVolume(el, volume);
   if (el.playbackRate !== rate) el.playbackRate = rate;
   if (el.readyState >= 1 && Math.abs(el.currentTime - localTime) > (playing ? DRIFT * rate : 0.01)) el.currentTime = localTime;
-  if (playing && el.paused) el.play().catch(() => {});
+  if (playing && el.paused && !el.dataset.swap) el.play().catch(() => {});
   if (!playing && !el.paused) el.pause();
 }
 
@@ -642,7 +664,11 @@ export default function Preview({
                       onClick={() => { setMenu(null); onQualityChange(id); }}>
                       <span className="tm-check">{quality === id ? <Check size={14} /> : null}</span>
                       <span className="tm-text"><b>{name}</b><small>{desc}</small></span>
-                      {preparing && quality === id && <span className="tm-note">Preparing…</span>}
+                      {preparing && quality === id && (
+                        <span className="tm-busy" role="status" title="Building this level's copies in the background — playback continues with the current copy">
+                          <LoaderCircle size={12} />
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>

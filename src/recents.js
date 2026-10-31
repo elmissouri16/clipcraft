@@ -73,6 +73,29 @@ export function posterSourceFor(p, urlFor) {
   const img = media.find((m) => m.type === 'image');
   return img ? { kind: 'image', media: img, src: urlFor(img.path) } : null;
 }
+// The cover frame the Export dialog shows (and the export embeds) for a TIMELINE time t: the
+// clip under t, mapped to its source time — the same mapping App's cover embed uses, so the
+// preview is the frame that actually lands in the file. Falls back to the first clip's media
+// (its in-point) when t sits in a gap or past the end. Returns { kind: 'video', media, at } or
+// { kind: 'image', media } or null.
+export function coverTargetFor(p, t) {
+  const media = (p && p.media) || [];
+  const byId = new Map(media.map((m) => [m.id, m]));
+  const layout = (p && p.videoClips) ? videoLayout(p.videoClips) : [];
+  const slot = layout.find((l) => !l.clip.gap && t >= l.start && t <= l.end) || layout.find((l) => !l.clip.gap);
+  const m = slot && byId.get(slot.clip.mediaId);
+  if (m && m.type === 'video') {
+    const inside = t >= slot.start && t <= slot.end;
+    const at = inside ? (slot.clip.in || 0) + (t - slot.start) * (slot.clip.speed || 1) : (slot.clip.in || 0);
+    return { kind: 'video', media: m, at };
+  }
+  if (m && m.type === 'image') return { kind: 'image', media: m };
+  const img = media.find((x) => x.type === 'image');
+  if (img) return { kind: 'image', media: img };
+  const vid = media.find((x) => x.type === 'video');
+  return vid ? { kind: 'video', media: vid, at: 0 } : null;
+}
+
 export function posterFracAt(p, t) {
   if (!p || !p.videoClips) return null;
   const byId = new Map((p.media || []).map((m) => [m.id, m]));

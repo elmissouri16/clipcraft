@@ -6,11 +6,14 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 //   updates). Shift = fine (0.1×step), Alt = coarse (10×step). A plain click focuses for typing.
 // - Typing: Enter commits, Esc reverts, blur commits. ArrowUp/Down step (Shift ×10). Mouse wheel
 //   steps while hovered or focused. Dark chevron steppers replace the native spinner (which is
-//   also hidden app-wide in styles.css). The focus ring hugs the box exactly (:focus-within).
+//   also hidden app-wide in styles.css). Focus is ONE calm border (:focus-within in styles.css) —
+//   no ring, no glow.
+// - `precision` sets how many decimals the value shows (trailing zeros trimmed): position fields
+//   pass 1 so a scrub glides −12.3 → −27.9 instead of jumping whole pixels. Callers must pass the
+//   UNROUNDED value for the glide to exist — rounding at the call site quantizes the display.
 // - onDragStart/onDragEnd let callers wrap a whole scrub in one undo gesture.
-// Values and units are the caller's: nothing here rescales or reformats beyond the historical
-// display (two-decimal trim), so migrations change chrome, never numbers.
-export default function NumBox({ label, value, onChange, step = 1, suffix, min, max, ariaLabel, className = '', layout, onDragStart, onDragEnd }) {
+// Values and units are the caller's: nothing here rescales the model — display precision only.
+export default function NumBox({ label, value, onChange, step = 1, suffix, min, max, ariaLabel, className = '', layout, onDragStart, onDragEnd, precision }) {
   const [text, setText] = useState(null); // string while editing, null when showing the prop value
   const [scrubbing, setScrubbing] = useState(false);
   const rootRef = useRef(null);
@@ -22,7 +25,8 @@ export default function NumBox({ label, value, onChange, step = 1, suffix, min, 
   const clampV = (v) => (min !== undefined && v < min ? min : max !== undefined && v > max ? max : v);
   const decimals = Math.min(4, (String(step).split('.')[1] || '').length);
   const tidy = (v) => Number(v.toFixed(Math.max(decimals, 2)));
-  const shown = text !== null ? text : String(Number(Number(value || 0).toFixed(2)));
+  const disp = (v) => String(Number(Number(v || 0).toFixed(precision !== undefined ? precision : 2)));
+  const shown = text !== null ? text : disp(value);
 
   const commit = (raw) => {
     const v = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(',', '.'));
@@ -121,7 +125,7 @@ export default function NumBox({ label, value, onChange, step = 1, suffix, min, 
       <input ref={inputRef} type="text" inputMode="decimal" aria-label={ariaLabel || (label ? `${label} value` : 'value')}
         value={shown}
         onChange={(e) => setText(e.target.value)}
-        onFocus={(e) => { setText(String(Number(Number(value || 0).toFixed(2)))); requestAnimationFrame(() => e.target.select()); }}
+        onFocus={(e) => { setText(disp(value)); requestAnimationFrame(() => e.target.select()); }}
         onBlur={() => { if (suppressCommit.current) { suppressCommit.current = false; setText(null); return; } if (text !== null) { commit(text); setText(null); } }}
         onKeyDown={onKeyDown} />
       {suffix && <i>{suffix}</i>}

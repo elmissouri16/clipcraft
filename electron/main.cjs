@@ -581,6 +581,36 @@ ipcMain.handle('export:run', async (_e, projectIn, target, textFrames, stickerPn
   }
 });
 
+// One full-resolution frame of an original media file at `at` seconds, as a JPEG in the media
+// cache (never scaled — the Export dialog's cover preview shows this, not a thumbnail-sprite
+// frame). Cached per file+position; the cache keeps only the newest few grabs.
+ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
+  const { execFile } = require('child_process');
+  const { ffmpegPath } = require('./ffmpeg.cjs');
+  try {
+    if (!mediaPath || !fs.existsSync(mediaPath)) return { ok: false, error: 'missing file' };
+    const st = fs.statSync(mediaPath);
+    const key = require('crypto').createHash('sha1')
+      .update(`${mediaPath}|${st.size}|${st.mtimeMs}|${(Number(at) || 0).toFixed(2)}`).digest('hex').slice(0, 16);
+    const out = path.join(mediaCacheDir(), `${key}-frame.jpg`);
+    if (!fs.existsSync(out)) {
+      await new Promise((resolve, reject) => execFile(ffmpegPath,
+        ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-q:v', '3', out],
+        (e) => (e ? reject(e) : resolve())));
+      // Prune older grabs (keep the newest 16) so scrubbing the cover chooser cannot fill the cache.
+      try {
+        const grabs = fs.readdirSync(mediaCacheDir()).filter((f) => f.endsWith('-frame.jpg'))
+          .map((f) => path.join(mediaCacheDir(), f))
+          .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+        for (const f of grabs.slice(16)) { try { fs.rmSync(f); } catch { /* in use */ } }
+      } catch { /* cache dir unavailable */ }
+    }
+    return { ok: true, path: out };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // Embed the chosen poster frame as the MP4's attached cover picture: grab the frame from the source
 // media, then a stream-copy remux adds it as attached_pic (the original file is only replaced once
 // the remux succeeds, so a failure leaves the export untouched).

@@ -32,10 +32,11 @@ function qualityTargetSize(width, height, quality) {
 
 // ffmpeg scale expression for a level: longest side capped at the level's max, aspect kept,
 // dimensions rounded to even by ffmpeg itself (-2). Only used when qualityTargetSize() says a
-// copy is needed, so it never upscales in practice.
+// copy is needed, so it never upscales in practice. fast_bilinear: these copies are preview-only
+// (the export never reads them), and the faster scaler measurably shortens the background build.
 function qualityScaleFilter(quality) {
   const max = QUALITY_MAX_SIDE[quality];
-  return `scale=w='if(gt(iw,ih),${max},-2)':h='if(gt(iw,ih),-2,${max})'`;
+  return `scale=w='if(gt(iw,ih),${max},-2)':h='if(gt(iw,ih),-2,${max})':flags=fast_bilinear`;
 }
 
 module.exports = { QUALITIES, QUALITY_MAX_SIDE, isQuality, qualityFromStored, qualityTargetSize, qualityScaleFilter };

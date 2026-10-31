@@ -291,13 +291,13 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                 )}
                 <div className="numrow keyed">
                   <span className="numrow-label">Position</span>
-                  <NumBox label="X" value={Math.round(t.x * W)} onChange={(v) => setT({ x: v / W })} />
-                  <NumBox label="Y" value={Math.round(t.y * H)} onChange={(v) => setT({ y: v / H })} />
+                  <NumBox label="X" value={Number((t.x * W).toFixed(1))} precision={1} suffix="px" onChange={(v) => setT({ x: v / W })} />
+                  <NumBox label="Y" value={Number((t.y * H).toFixed(1))} precision={1} suffix="px" onChange={(v) => setT({ y: v / H })} />
                   {keys(['x', 'y'], 'position')}
                 </div>
                 <div className="numrow keyed">
                   <span className="numrow-label">Rotate</span>
-                  <NumBox label="" value={t.rot} step={1} suffix="°" onChange={(rot) => setT({ rot })} />
+                  <NumBox label="" value={t.rot} step={1} precision={1} suffix="°" onChange={(rot) => setT({ rot })} />
                   <input type="range" className="rot-range" min="-180" max="180" step="1" value={t.rot} aria-label="Rotate"
                     onPointerDown={() => dispatch({ type: 'beginGesture' })} onPointerUp={() => dispatch({ type: 'endGesture' })}
                     onChange={(e) => setT({ rot: Number(e.target.value) })} />
@@ -348,7 +348,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                 {[['l', 'Left'], ['t', 'Top'], ['r', 'Right'], ['b', 'Bottom']].map(([k, name]) => (
                   <div className="numrow" key={k}>
                     <span className="numrow-label">{name}</span>
-                    <NumBox label="" value={Math.round(cropNow[k] * 100)} step={1} min={0} max={90} suffix="%"
+                    <NumBox label="" value={Number((cropNow[k] * 100).toFixed(1))} step={1} precision={1} min={0} max={90} suffix="%"
                       onChange={(v) => set({ crop: { ...cropNow, [k]: Math.min(90, Math.max(0, v)) / 100 } })} />
                   </div>
                 ))}
@@ -413,8 +413,8 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                   )}
                   <div className="numrow">
                     <span className="numrow-label">Position</span>
-                    <NumBox label="X" value={Math.round(mask.x * W)} onChange={(v) => setM({ x: v / W })} />
-                    <NumBox label="Y" value={Math.round(mask.y * H)} onChange={(v) => setM({ y: v / H })} />
+                    <NumBox label="X" value={Number((mask.x * W).toFixed(1))} precision={1} suffix="px" onChange={(v) => setM({ x: v / W })} />
+                    <NumBox label="Y" value={Number((mask.y * H).toFixed(1))} precision={1} suffix="px" onChange={(v) => setM({ y: v / H })} />
                   </div>
                   {S({ label: 'Rotate', value: mask.rot, min: -180, max: 180, step: 1, fmt: (v) => `${v}°`, onChange: (rot) => setM({ rot }) })}
                   {mask.type !== 'split' && S({ label: mask.type === 'filmstrip' ? 'Band height' : 'Height', value: mask.h, min: 0.02, max: 2, step: 0.01, fmt: pct, onChange: (h) => setM({ h }) })}

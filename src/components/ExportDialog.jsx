@@ -6,38 +6,54 @@
 // Durations likewise come from the encoder's own basis, exportDuration() in src/store.js —
 // the video-track layout end the pipeline totals in electron/ffmpeg.cjs — never
 // projectDuration(), which also counts text/audio ends the encode does not follow.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, CircleAlert, CircleCheck, Clapperboard, FolderOpen, ImagePlus, Play, X } from 'lucide-react';
 import {
   AUDIO_RATES, CUSTOM_DEFAULTS, ENCODER_PRESETS, EXPORT_PRESETS, EXPORT_PRESET_ORDER, FPS_CHOICES,
   estimateExport, settingsPatch, storedExportSettings, summaryRows,
 } from '../exportQuality.js';
 import { exportDuration, toFileUrl } from '../store.js';
-import { posterFracAt, posterSourceFor, spriteFrameStyle } from '../recents.js';
+import { coverTargetFor, posterSourceFor, spriteFrameStyle } from '../recents.js';
+import Dropdown from './Dropdown.jsx';
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.floor((s % 1) * 10))}`;
 const fmtMB = (mb) => (mb >= 100 ? mb.toFixed(0) : mb.toFixed(1));
 
+// The cover preview ALWAYS shows a full-resolution frame of the original media at the cover
+// time (grabbed by the main process via media:frame — never a proxy, never a thumbnail-sprite
+// frame; the sprite only fills in for the first instant while the grab is on its way, and the
+// previous grab stays up while scrubbing until the new one lands). The frame shown is the
+// frame the export embeds: coverTargetFor maps the timeline time exactly like the embed does.
 function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt, readOnly = false }) {
-  const src = posterSourceFor(project, toFileUrl);
   const dur = exportDuration(project);
-  const frac = src && src.kind === 'sprite' ? posterFracAt(project, coverT) : null;
-  const outside = src && src.kind === 'sprite' && frac === null;
-  const style = src && src.kind === 'sprite'
-    ? { ...spriteFrameStyle(src.thumb, frac === null ? (coverT > 0 ? 1 : 0) : frac), aspectRatio: `${project.width} / ${project.height}` }
-    : null;
+  const target = coverTargetFor(project, coverT);
+  const tKey = target && target.kind === 'video' ? `${target.media.path}|${target.at.toFixed(2)}` : null;
+  const [frame, setFrame] = useState(null); // { key, url } — the latest full-res grab
+  useEffect(() => {
+    if (!tKey || !window.api?.frameGrab) return undefined;
+    let live = true;
+    const h = setTimeout(() => {
+      window.api.frameGrab(target.media.path, target.at)
+        .then((r) => { if (live && r && r.ok) setFrame({ key: tKey, url: toFileUrl(r.path) }); })
+        .catch(() => {});
+    }, 120);
+    return () => { live = false; clearTimeout(h); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tKey]);
+  const sprite = !frame && target && target.kind === 'video' ? posterSourceFor(project, toFileUrl) : null;
+  const spriteStyle = sprite && sprite.kind === 'sprite' ? spriteFrameStyle(sprite.thumb, 0) : null;
   return (
     <div className="x-cover-col">
-      <div className="x-cover" style={style || undefined}>
-        {src && src.kind === 'image' && <img src={src.src} alt="" draggable={false} />}
-        {!src && <Clapperboard size={30} className="x-cover-icon" />}
-        {src && src.kind === 'sprite' && !style && <Clapperboard size={30} className="x-cover-icon" />}
+      <div className="x-cover" style={{ ...(spriteStyle || {}), aspectRatio: `${project.width} / ${project.height}` }}>
+        {target && target.kind === 'image' && <img src={toFileUrl(target.media.path)} alt="" draggable={false} />}
+        {target && target.kind === 'video' && frame && <img src={frame.url} alt="" draggable={false} />}
+        {!target && <Clapperboard size={30} className="x-cover-icon" />}
+        {target && target.kind === 'video' && !frame && !spriteStyle && <Clapperboard size={30} className="x-cover-icon" />}
       </div>
       {!readOnly && (
       <button type="button" className="btn btn-sm x-cover-btn" onClick={() => setChoosing(!choosing)}>
         <ImagePlus size={14} /> {choosing ? 'Done' : 'Choose cover'}
       </button>)}
-      {!readOnly && outside && <p className="x-note">Preview shows the first clip only — the picked frame is still the one embedded.</p>}
       {!readOnly && choosing && (
         <div className="x-cover-pick">
           <input type="range" min="0" max={Math.max(0.1, dur)} step={1 / (project.fps || 30)} value={coverT}
@@ -183,20 +199,16 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
               <button type="button" className="btn btn-sm" onClick={() => onPickTarget(state.name)}>Browse…</button>
             </Row>
             <Row label="Resolution">
-              <select value={eff.resCap} onChange={(e) => onResolution(Number(e.target.value))} aria-label="Resolution">
-                <option value={0}>Native · {project.width}×{project.height}</option>
-                {capsList.map((c) => (
-                  <option key={c} value={c} disabled={c >= longest}>{c}p{c >= longest ? ' (above project size)' : ''}</option>
-                ))}
-              </select>
+              <Dropdown value={eff.resCap} ariaLabel="Resolution" onChange={(v) => onResolution(v)}
+                options={[
+                  { value: 0, label: `Native · ${project.width}×${project.height}` },
+                  ...capsList.map((c) => ({ value: c, label: `${c}p${c >= longest ? ' (above project size)' : ''}`, disabled: c >= longest })),
+                ]} />
             </Row>
             <Row label="Quality">
-              <select value={eff.preset} aria-label="Quality"
-                onChange={(e) => onSettings(settingsPatch(project, { preset: e.target.value, custom }))}>
-                {EXPORT_PRESET_ORDER.map((id) => (
-                  <option key={id} value={id}>{id === 'custom' ? 'Custom' : EXPORT_PRESETS[id].name}</option>
-                ))}
-              </select>
+              <Dropdown value={eff.preset} ariaLabel="Quality"
+                onChange={(v) => onSettings(settingsPatch(project, { preset: v, custom }))}
+                options={EXPORT_PRESET_ORDER.map((id) => ({ value: id, label: id === 'custom' ? 'Custom' : EXPORT_PRESETS[id].name }))} />
             </Row>
             {eff.preset === 'custom' && (
               <div className="x-custom">
@@ -220,25 +232,23 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
                   </Row>
                 )}
                 <Row label="Codec">
-                  <select value={custom.codec} onChange={(e) => setCustom({ codec: e.target.value })} aria-label="Codec">
-                    <option value="h264">H.264</option>
-                    <option value="h265" disabled={state.caps && state.caps.libx265 === false}>H.265{state.caps && state.caps.libx265 === false ? ' (not in this build)' : ''}</option>
-                  </select>
+                  <Dropdown value={custom.codec} onChange={(v) => setCustom({ codec: v })} ariaLabel="Codec"
+                    options={[
+                      { value: 'h264', label: 'H.264' },
+                      { value: 'h265', label: `H.265${state.caps && state.caps.libx265 === false ? ' (not in this build)' : ''}`, disabled: state.caps && state.caps.libx265 === false },
+                    ]} />
                 </Row>
                 <Row label="Frame rate">
-                  <select value={custom.fps} onChange={(e) => setCustom({ fps: Number(e.target.value) })} aria-label="Frame rate">
-                    {FPS_CHOICES.map((f) => <option key={f} value={f}>{f === 0 ? `Project (${project.fps} fps)` : `${f} fps`}</option>)}
-                  </select>
+                  <Dropdown value={custom.fps} onChange={(v) => setCustom({ fps: v })} ariaLabel="Frame rate"
+                    options={FPS_CHOICES.map((f) => ({ value: f, label: f === 0 ? `Project (${project.fps} fps)` : `${f} fps` }))} />
                 </Row>
                 <Row label="Encoder">
-                  <select value={custom.encoderPreset} onChange={(e) => setCustom({ encoderPreset: e.target.value })} aria-label="Encoder preset">
-                    {ENCODER_PRESETS.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                  <Dropdown value={custom.encoderPreset} onChange={(v) => setCustom({ encoderPreset: v })} ariaLabel="Encoder preset"
+                    options={ENCODER_PRESETS.map((p) => ({ value: p, label: p }))} />
                 </Row>
                 <Row label="Audio">
-                  <select value={custom.audioKbps} onChange={(e) => setCustom({ audioKbps: Number(e.target.value) })} aria-label="Audio bitrate">
-                    {AUDIO_RATES.map((a) => <option key={a} value={a}>{a} kbps</option>)}
-                  </select>
+                  <Dropdown value={custom.audioKbps} onChange={(v) => setCustom({ audioKbps: v })} ariaLabel="Audio bitrate"
+                    options={AUDIO_RATES.map((a) => ({ value: a, label: `${a} kbps` }))} />
                 </Row>
               </div>
             )}
