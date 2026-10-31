@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+.pkg-tmp/
+*.deb
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
