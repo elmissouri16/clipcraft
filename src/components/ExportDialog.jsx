@@ -3,13 +3,16 @@
 // drawn entirely in ClipCraft's own design system. Every number on it comes from the SAME
 // resolved settings object the encoder consumes (src/exportQuality.js) — the form writes the
 // stored settings, App re-resolves, and the summary below is that object, never display text.
+// Durations likewise come from the encoder's own basis, exportDuration() in src/store.js —
+// the video-track layout end the pipeline totals in electron/ffmpeg.cjs — never
+// projectDuration(), which also counts text/audio ends the encode does not follow.
 import React, { useState } from 'react';
 import { ChevronDown, CircleAlert, CircleCheck, Clapperboard, FolderOpen, ImagePlus, Play, X } from 'lucide-react';
 import {
   AUDIO_RATES, CUSTOM_DEFAULTS, ENCODER_PRESETS, EXPORT_PRESETS, EXPORT_PRESET_ORDER, FPS_CHOICES,
   estimateExport, settingsPatch, storedExportSettings, summaryRows,
 } from '../exportQuality.js';
-import { projectDuration, toFileUrl } from '../store.js';
+import { exportDuration, toFileUrl } from '../store.js';
 import { posterFracAt, posterSourceFor, spriteFrameStyle } from '../recents.js';
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.floor((s % 1) * 10))}`;
@@ -17,7 +20,7 @@ const fmtMB = (mb) => (mb >= 100 ? mb.toFixed(0) : mb.toFixed(1));
 
 function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt, readOnly = false }) {
   const src = posterSourceFor(project, toFileUrl);
-  const dur = projectDuration(project);
+  const dur = exportDuration(project);
   const frac = src && src.kind === 'sprite' ? posterFracAt(project, coverT) : null;
   const outside = src && src.kind === 'sprite' && frac === null;
   const style = src && src.kind === 'sprite'
@@ -96,7 +99,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
       // In-progress layout: the chosen cover on the left, a read-only spec list on the right —
       // every value read from the SAME resolved settings object the encoder consumes — and a
       // full-width progress row underneath. No decorative specs: each row is pipeline truth.
-      const dur = projectDuration(project);
+      const dur = exportDuration(project);
       const est = estimateExport(eff, dur);
       const fileName = state.target?.file ? String(state.target.file).split(/[\\/]/).pop() : `${state.name || 'export'}.mp4`;
       const specs = [
@@ -158,7 +161,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
   const stored = storedExportSettings(project);
   const custom = { ...CUSTOM_DEFAULTS, ...(stored.custom || {}) };
   const setCustom = (field) => onSettings(settingsPatch(project, { preset: 'custom', custom: { ...custom, ...field } }));
-  const dur = projectDuration(project);
+  const dur = exportDuration(project);
   const est = estimateExport(eff, dur);
   const longest = Math.max(project.width, project.height);
   const capsList = [2160, 1440, 1080, 720, 480];

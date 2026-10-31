@@ -206,6 +206,11 @@ export function projectDuration(p) {
 }
 
 // Total duration of what gets exported (the video track drives the output length).
+// This is THE shared duration basis for everything export-facing: it mirrors, step for
+// step, the total electron/ffmpeg.cjs accumulates in buildExportArgs (each clip starts
+// at the previous end minus its clamped transition overlap). The text rasterizer
+// (src/exportText.js) and the Export dialog's Duration + size estimate both read this
+// function — never projectDuration(), which also counts text/audio/overlay ends.
 export function exportDuration(p) {
   const v = videoLayout(p.videoClips);
   return v.length ? v[v.length - 1].end : 0;
@@ -674,10 +679,20 @@ export function trimActions(p, { track, id, t, side, newId }) {
     end = c.start + freeLen(track, c);
   }
   if (t - start < MIN_CLIP || end - t < MIN_CLIP) return [];
-  return [
-    { type: 'split', track, id, t, newId },
-    { type: 'delete', track, id: side === 'left' ? id : newId },
-  ];
+  const actions = [{ type: 'split', track, id, t, newId }];
+  // Delete-left on the main track: the split builds the surviving right half with
+  // transition: null (correct for a plain split, whose right half starts mid-clip),
+  // and the left half — the one carrying the incoming transition — is the one being
+  // deleted. But after the ripple the remainder starts the clip, adjacent to the same
+  // previous clip, so the transition belongs to it: hand it over, stored verbatim like
+  // everywhere else. Its effective length is clamped at use time by transitionDur
+  // (half of either neighbour), the same clamp the split/trim paths already rely on.
+  // Delete-right keeps the original clip as the remainder, transition already in place.
+  if (track === 'video' && side === 'left' && c.transition) {
+    actions.push({ type: 'update', track: 'video', id: newId, patch: { transition: c.transition } });
+  }
+  actions.push({ type: 'delete', track, id: side === 'left' ? id : newId });
+  return actions;
 }
 
 // Removes time ranges from the main track and closes the space (ripple). ranges: [{ start, end }] in timeline
