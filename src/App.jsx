@@ -380,7 +380,7 @@ export default function App() {
   const selectedText = selection?.track === 'text' ? project.textClips.find((c) => c.id === selection.id) : null;
   const ttsAdd = (res, atText) => {
     let m = projectRef.current.media.find((x) => x.path === res.path);
-    if (!m) [m] = addItems([res]);
+    if (!m) [m] = addItems([{ ...res, origin: 'tts' }]); // Media tree: Generated ▸ Speech
     if (!m) return;
     const clipId = uid();
     dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, at: atText ? selectedText.start : time });
@@ -705,7 +705,7 @@ export default function App() {
     const audioId = uid();
     let media = projectRef.current.media.find((x) => x.path === res.path);
     dispatch({ type: 'beginGesture' });
-    if (!media) { media = { ...res, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
+    if (!media) { media = { ...res, id: uid(), origin: 'detach' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
     dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { muted: true, linkId } });
     dispatch({ type: 'insertAudioClip', clip: {
       id: audioId, mediaId: media.id, start, in: 0, out: Math.min(c.out - c.in, res.duration || (c.out - c.in)),
@@ -896,7 +896,7 @@ export default function App() {
     setRenderJob(null);
     let media = projectRef.current.media.find((x) => x.path === res.path);
     dispatch({ type: 'beginGesture' });
-    if (!media) { media = { ...res, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
+    if (!media) { media = { ...res, id: uid(), origin: 'reverse' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
     dispatch({ type: 'update', ...sel, patch: { mediaId: media.id, in: 0, out: res.duration, reversed: { mediaId: c.mediaId, in: c.in || 0, out: c.out ?? m.duration } } });
     dispatch({ type: 'endGesture' });
   };
@@ -1094,13 +1094,7 @@ export default function App() {
     setScreen('editor');
   };
 
-  // Home quick tools that genuinely work end-to-end: a template start opens a fresh project
-  // on the Templates tab; Record screen opens a fresh 16:9 project with the recorder up.
-  const startFromTemplate = (preset, fps) => {
-    startNewProject(preset, fps);
-    setTab('templates');
-  };
-
+  // Home quick tool: Record screen opens a fresh 16:9 project with the recorder up.
   const startRecording = (fps) => {
     startNewProject({ ratio: '16:9', short: 1080 }, fps);
     setPlaying(false);
@@ -1168,37 +1162,10 @@ export default function App() {
     return window.api.closeCancel();
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Templates: use one from the store, fill its replaceable clips, or write a package for the store. ----
-  const [tplAsk, setTplAsk] = useState(null); // { title, resolve }: replace an unsaved project?
-  const [tplLoading, setTplLoading] = useState(null); // { title, fraction }
+  // ---- Template projects: the Templates section is gone (the dock entry is Assets now),
+  // but projects made from templates still carry replaceable "slot" clips — the SlotStrip
+  // that fills them and the package export below are project functionality and stay. ----
   const [tplNote, setTplNote] = useState(null); // { title, text, dir? }
-  const applyTemplate = async (t) => {
-    const a = autosave.current;
-    if (!a.file && hasContent(a.project)) {
-      const ok = await new Promise((resolve) => setTplAsk({ title: t.title, resolve }));
-      setTplAsk(null);
-      if (!ok) return false;
-    } else {
-      await writeFile(); // the current project keeps its last changes
-    }
-    setTplLoading({ title: t.title, fraction: 0 });
-    const off = window.api.onTemplatesProgress(({ id, fraction }) => { if (id === t.id) setTplLoading((s) => s && { ...s, fraction }); });
-    // Bundled templates ship with the app: no download, they open straight from disk.
-    const res = t.bundled ? await window.api.templatesBundledUse(t.slug) : await window.api.templatesUse(t.id);
-    off();
-    setTplLoading(null);
-    if (res.error) {
-      setTplNote({ title: 'Could not open this template', text: res.error });
-      return false;
-    }
-    a.file = null; // a new project: Save asks where
-    setSaveState('new');
-    setUnsavedNote(null);
-    dispatch({ type: 'load', project: JSON.parse(res.json) });
-    setTime(0);
-    setSelection(null);
-    return true;
-  };
   const packTemplate = async () => {
     const p = projectRef.current;
     const meta = templateMeta(p);
@@ -1446,7 +1413,7 @@ export default function App() {
       <div className="app home-app">
         <HomeScreen recents={recents} onNew={startNewProject} onOpen={open} onOpenRecent={openRecent}
           onRemoveRecent={removeRecent} onImportMedia={importFromHome}
-          onStartTemplate={startFromTemplate} onRecordStart={startRecording}
+          onRecordStart={startRecording}
           unsavedNote={unsavedNote}
           onRestoreUnsaved={() => {
             dispatch({ type: 'load', project: unsavedNote.project });
@@ -1471,7 +1438,7 @@ export default function App() {
 
       <div className="workspace" style={{ gridTemplateColumns: `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch}
-          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onUseTemplate={applyTemplate} onTtsAdd={ttsAdd} selectedText={selectedText} onOpenSettings={() => setSettingsOpen(true)}
+          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText} onOpenSettings={() => setSettingsOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId}
           recorder={recorder} onStartRecord={() => recorder.start(time)} onAddText={addText} onAddOverlay={addOverlay} onAddSticker={stickerAdd}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
@@ -1539,21 +1506,6 @@ export default function App() {
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
-      {tplAsk && (
-        <ConfirmDialog icon={LayoutTemplate} title={`Use “${tplAsk.title}”?`} confirmLabel="Use template"
-          text="Your current project was never saved. The template replaces it, and its changes are lost."
-          onConfirm={() => tplAsk.resolve(true)} onCancel={() => tplAsk.resolve(false)} />
-      )}
-      {tplLoading && (
-        <div className="modal-backdrop close-backdrop" role="dialog" aria-modal="true" aria-label="Opening the template">
-          <div className="modal">
-            <div className="modal-icon"><Loader2 size={26} className="spin" /></div>
-            <h3>Opening “{tplLoading.title}”…</h3>
-            <div className="progress big" aria-live="polite"><div style={{ width: `${(tplLoading.fraction * 100).toFixed(1)}%` }} /></div>
-            <p className="pct">{Math.round(tplLoading.fraction * 100)}%</p>
-          </div>
-        </div>
-      )}
       {tplNote && (
         <ConfirmDialog icon={LayoutTemplate} title={tplNote.title} text={tplNote.text} onConfirm={() => setTplNote(null)}
           extra={tplNote.dir && <p className="muted path">{tplNote.dir}</p>}

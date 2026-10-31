@@ -123,7 +123,7 @@ function Stabilize({ clip, media, project, set, dispatch }) {
     if (res.error) return setError(res.error);
     let m = project.media.find((x) => x.path === res.path);
     if (!m) {
-      m = { ...res, id: uid() };
+      m = { ...res, id: uid(), origin: 'stabilize' }; // Media tree: Generated ▸ Processed
       dispatch({ type: 'addMedia', items: [m] });
     }
     set({ mediaId: m.id, in: 0, out: m.duration, stabilize: { level, mediaId: st ? st.mediaId : clip.mediaId, in: from, out: to } });

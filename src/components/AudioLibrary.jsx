@@ -3,6 +3,7 @@ import { Check, Copy, Loader2, Mic, Music, Pause, Play, Plus, Search, Sparkles, 
 import { formatTime, toFileUrl } from '../store.js';
 import { FavStar, favLibrary, useFavorites } from '../favorites.jsx';
 import TextToSpeech from './TextToSpeech.jsx';
+import PackMusic from './PackMusic.jsx';
 
 // Chip label -> search words. Openverse matches titles and tags, so some genres search better under another word.
 export const MUSIC_TAGS = [
@@ -135,7 +136,8 @@ function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, offline = 
 
 // Audio panel like CapCut's: Music, Sound effects and Yours (imported audio and voice-over).
 export default function AudioLibrary({ media, project, onImport, onAddMedia, onLibraryAdd, onAddFile, onTtsAdd, selectedText, onOpenSettings, recorder, onStartRecord, MediaCard, onRemoveMedia, onPeek, peekId, section = 'music:Vlog' }) {
-  const [group, sub] = section.includes(':') ? section.split(':') : [section, ''];
+  // Split on the FIRST colon only: pack sections carry a second one ('music:pack:Library').
+  const [group, sub] = section.includes(':') ? [section.slice(0, section.indexOf(':')), section.slice(section.indexOf(':') + 1)] : [section, ''];
   const view = group === 'yours' && sub === 'favorites' ? 'favorites' : group;
   const favs = useFavorites().list.filter((e) => e.type === 'audio');
   const [adding, setAdding] = useState(null);
@@ -170,12 +172,14 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
     <>
       {(preview.error || addError) && <p className="error-text">{preview.error || addError}</p>}
 
-      {view === 'music' && (
+      {view === 'music' && (sub.startsWith('pack:') ? (
+        <PackMusic collection={sub.slice(5)} onAddFile={onAddFile} />
+      ) : (
         <>
           <div className="tab-title">Music · {sub}</div>
           <OnlineSearch kind="music" tags={MUSIC_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} />
         </>
-      )}
+      ))}
 
       {view === 'sfx' && sub === 'offline' && (
         <>

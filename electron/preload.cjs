@@ -182,6 +182,7 @@ contextBridge.exposeInMainWorld('api', {
   forgeCancel: (id) => ipcRenderer.invoke('forge:cancel', id),
   forgeRemove: (id) => ipcRenderer.invoke('forge:remove', id),
   forgeReveal: (id) => ipcRenderer.invoke('forge:reveal', id),
+  assetsList: () => ipcRenderer.invoke('assets:list'),
   stockSearch: (opts) => ipcRenderer.invoke('stock:search', opts),
   stockThumb: (url) => ipcRenderer.invoke('stock:thumb', url),
   stockAdd: (item) => ipcRenderer.invoke('stock:add', item),

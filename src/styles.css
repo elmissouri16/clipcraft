@@ -2297,3 +2297,32 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .cmask-size { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .cmask-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .cmask-actions { display: flex; gap: 8px; }
+
+/* Media kind tree (Media tab): collapsible Media / Generated branches over the project
+   registry; the counts are live and picking a node filters the grid. */
+.media-tree { margin: 0 14px 10px; padding: 8px; border-radius: var(--r-md); background: var(--surface-2); display: flex; flex-direction: column; gap: 2px; }
+.mt-head { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; border-radius: 6px; text-align: left; }
+.mt-head:hover { background: var(--surface-3, rgba(255,255,255,.04)); }
+.mt-nodes { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 4px 18px; }
+.mt-node { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 1px solid transparent; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; text-align: left; }
+.mt-node:hover { border-color: var(--border-strong); color: var(--text); }
+.mt-node.on { background: var(--primary-soft); border-color: var(--primary); color: var(--text); }
+.mt-count { font-size: 11px; font-weight: 650; color: var(--text-2); background: var(--surface-4, rgba(255,255,255,.06)); border-radius: 999px; padding: 0 7px; line-height: 17px; }
+.mt-node.on .mt-count { color: var(--text); }
+
+/* Assets tab (folder-backed pack) + pack rows. Rows are cheap: closed groups render
+   nothing, posters lazy-load, and content-visibility keeps long lists scroll-smooth. */
+.asset-group { margin-top: 6px; }
+.asset-group-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 8px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; text-align: left; }
+.asset-group-head:hover { background: var(--surface-2); }
+.asset-count { margin-left: auto; font-size: 11px; font-weight: 650; color: var(--text-2); background: var(--surface-4, rgba(255,255,255,.06)); border-radius: 999px; padding: 0 8px; line-height: 18px; }
+.asset-group-body { padding-bottom: 4px; }
+.asset-row { content-visibility: auto; contain-intrinsic-size: auto 46px; }
+.asset-poster { flex: none; width: 52px; height: 34px; object-fit: cover; border-radius: 6px; background: var(--surface-3, rgba(255,255,255,.05)); display: block; }
+.asset-poster.gen { overflow: hidden; }
+.asset-poster.gen img, .asset-poster.gen video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.asset-kind { flex: none; width: 52px; height: 34px; display: grid; place-items: center; border-radius: 6px; background: var(--surface-3, rgba(255,255,255,.05)); color: var(--text-2); }
+.assets-empty { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 6px 2px; font-size: 12.5px; }
+.assets-empty p { margin: 0; line-height: 1.55; }
+.assets-empty .path { word-break: break-all; font-size: 11.5px; background: var(--surface-2); border-radius: 6px; padding: 6px 8px; align-self: stretch; }
+.pack-list .lib-row { content-visibility: auto; contain-intrinsic-size: auto 46px; }

@@ -2,9 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Anvil, ArrowLeftRight, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Mic, Music, Plus, SlidersHorizontal,
   Loader2, Smile, Sparkles, Square, Trash2, Type, Upload, WandSparkles, X,
-  Layers, ChevronDown, ChevronUp, Sparkles as SparklesIcon, Award, FolderPlus, MonitorUp, History, UserRound, Users, LayoutTemplate,
+  Layers, ChevronDown, ChevronRight, ChevronUp, Sparkles as SparklesIcon, Award, FolderPlus, MonitorUp, History, UserRound, Users, LayoutTemplate,
 } from 'lucide-react';
-import { TemplatesTab } from './Templates.jsx';
+import AssetsTab from './AssetsPanel.jsx';
+import PackMusic from './PackMusic.jsx';
+import { useAssets } from '../useAssets.js';
+import { mediaTreeCounts, mediaTreeFilter } from '../assetsLib.js';
 import ForgePanel from './ForgePanel.jsx';
 import GradePanel from './GradePanel.jsx';
 import { LookThumb } from './FilterThumbs.jsx';
@@ -31,7 +34,7 @@ import { TEMPLATE_CATEGORIES, TEXT_TEMPLATES } from '../text/catalog.js';
 export const TABS = [
   { id: 'media', icon: Film, name: 'Media' },
   { id: 'audio', icon: Music, name: 'Audio' },
-  { id: 'templates', icon: LayoutTemplate, name: 'Templates' },
+  { id: 'assets', icon: LayoutTemplate, name: 'Assets' },
   { id: 'text', icon: Type, name: 'Text' },
   { id: 'stickers', icon: Smile, name: 'Stickers' },
   { id: 'effects', icon: WandSparkles, name: 'Effects' },
@@ -43,7 +46,7 @@ export const TABS = [
 ];
 
 // Default category of each tab (the side column remembers the last one per tab).
-const SUB_DEFAULT = { media: 'yours', audio: 'music:Vlog', templates: 'all', text: 'All', stickers: 'animated' };
+const SUB_DEFAULT = { media: 'yours', audio: 'music:Vlog', text: 'All', stickers: 'animated' };
 
 export default function LeftPanel(props) {
   const { tab, setTab } = props;
@@ -85,7 +88,7 @@ export default function LeftPanel(props) {
       <div className="library">
         {activeTab === 'media' && <MediaTab {...p} />}
         {activeTab === 'audio' && <AudioTab {...p} />}
-        {activeTab === 'templates' && <TemplatesTab {...p} />}
+        {activeTab === 'assets' && <AssetsTab {...p} />}
         {activeTab === 'text' && <TextTab {...p} />}
         {activeTab === 'stickers' && <StickersTab {...p} />}
         {activeTab === 'effects' && <TabFrame><EffectsTab {...p} /></TabFrame>}
@@ -171,6 +174,19 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
   const view = sub === 'favorites' ? 'favorites' : (kind === 'video' || kind === 'photo') ? 'stock' : 'yours';
   const [lastStock, setLastStock] = useState('video:Trending');
   const goStock = (id) => { setLastStock(id); setSub(id); };
+  // The kind tree over this project's media (Hamza's reference): Media by kind, plus a
+  // Generated branch — Speech (text-to-speech output) and Processed (detach / reverse /
+  // stabilize renders). Counts are computed live from the registry (src/assetsLib.js);
+  // picking a node filters the grid below it.
+  const [treeSel, setTreeSel] = useState('all');
+  const [treeOpen, setTreeOpen] = useState({ media: true, gen: true });
+  const counts = mediaTreeCounts(visual);
+  const shownMedia = mediaTreeFilter(visual, treeSel);
+  const treeNode = (id, label, n) => (
+    <button key={id} className={`mt-node ${treeSel === id ? 'on' : ''}`} aria-pressed={treeSel === id} onClick={() => setTreeSel(id)}>
+      <span>{label}</span><span className="mt-count">{n}</span>
+    </button>
+  );
   return (
     <TabFrame>
       <Head title="Media" hint={view === 'yours' ? 'Videos, photos and audio in this project' : view === 'favorites' ? 'Your starred media, in every project' : 'Free stock from Pixabay'}>
@@ -205,9 +221,41 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
             <span>Drag videos, photos and audio here from Explorer, or click to browse</span>
           </button>
         ) : (
-          <div className="asset-grid">
-            {visual.map((m) => <MediaCard key={m.id} m={m} onAdd={onAdd} onRemove={onRemoveMedia} onOverlay={onAddAsOverlay} onPeek={onPeek} peeking={peekId === m.id} />)}
-          </div>
+          <>
+            <div className="media-tree">
+              <button className="mt-head" aria-expanded={treeOpen.media} onClick={() => setTreeOpen((o) => ({ ...o, media: !o.media }))}>
+                {treeOpen.media ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>Media</span>
+              </button>
+              {treeOpen.media && (
+                <div className="mt-nodes">
+                  {treeNode('all', 'All media', counts.all)}
+                  {treeNode('video', 'Video', counts.video)}
+                  {treeNode('audio', 'Audio', counts.audio)}
+                  {treeNode('image', 'Images', counts.image)}
+                </div>
+              )}
+              <button className="mt-head" aria-expanded={treeOpen.gen} onClick={() => setTreeOpen((o) => ({ ...o, gen: !o.gen }))}>
+                {treeOpen.gen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>Generated</span>
+              </button>
+              {treeOpen.gen && (
+                <div className="mt-nodes">
+                  {treeNode('speech', 'Speech', counts.speech)}
+                  {treeNode('processed', 'Processed', counts.processed)}
+                </div>
+              )}
+            </div>
+            {shownMedia.length ? (
+              <div className="asset-grid">
+                {shownMedia.map((m) => <MediaCard key={m.id} m={m} onAdd={onAdd} onRemove={onRemoveMedia} onOverlay={onAddAsOverlay} onPeek={onPeek} peeking={peekId === m.id} />)}
+              </div>
+            ) : (
+              <p className="empty-note">{treeSel === 'speech'
+                ? 'No generated speech yet — voice-overs you make with Text to speech land here.'
+                : treeSel === 'processed'
+                  ? 'No processed renders yet — detached, reversed and stabilized renders land here.'
+                  : 'Nothing of this kind in the project yet.'}</p>
+            )}
+          </>
         )
       ) : view === 'favorites' ? (
         <div className="pad-block">
@@ -233,7 +281,12 @@ function AudioTab(props) {
     ['favorites', 'Favorites'], ['tts', 'Text to speech'], ['credits', 'Credits'],
   ];
   const firstOf = { music: 'music:Vlog', sfx: 'sfx:offline', trolls: 'trolls:Trending', yours: 'yours', favorites: 'yours:favorites', tts: 'tts', credits: 'credits' };
-  const catChips = view === 'music' ? MUSIC_TAGS.map(([c]) => [`music:${c}`, c])
+  // The asset pack's music collections lead the Music chips when the pack is installed
+  // (sub ids 'music:pack:<collection>', routed by AudioLibrary to PackMusic).
+  const lib = useAssets();
+  const packSubs = lib ? [...new Set(lib.items.filter((i) => i.group === 'Music').map((i) => i.sub))]
+    .sort((a, b) => (a === 'Library' ? -1 : b === 'Library' ? 1 : a.localeCompare(b))) : [];
+  const catChips = view === 'music' ? [...packSubs.map((s) => [`music:pack:${s}`, `Pack · ${s}`]), ...MUSIC_TAGS.map(([c]) => [`music:${c}`, c])]
     : view === 'sfx' ? [['sfx:offline', 'Offline'], ...SFX_TAGS.map(([c]) => [`sfx:${c}`, c])]
     : view === 'trolls' ? TROLL_TAGS.map(([c]) => [`trolls:${c}`, c])
     : null;

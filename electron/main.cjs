@@ -872,6 +872,14 @@ ipcMain.handle('forge:reveal', (_e, id) => {
   if (entry) shell.showItemInFolder(path.join(forgeDir(), entry.file));
   return !!entry;
 });
+// ---- Asset pack library: folder-backed (electron/assets.cjs). The folder is created on
+// first read so the panels can name a real path in their empty state. ----
+const assets = require('./assets.cjs');
+ipcMain.handle('assets:list', () => {
+  const root = assets.assetsRoot(app.getPath('userData'), process.env);
+  assets.ensureRoot(root);
+  return assets.readLibrary(root);
+});
 // My avatars: photos of people reused in every project (<userData>/avatars).
 const avatarDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'avatars-test') : path.join(app.getPath('userData'), 'avatars'));
 ipcMain.handle('avatars:list', () => gen.avatarList(avatarDir()));
