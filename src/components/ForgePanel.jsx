@@ -146,7 +146,7 @@ export default function ForgePanel(props) {
               <span className="forge-job-prompt">{j.kind === 'video' ? '🎞' : '🖼'} {j.prompt.slice(0, 40)}</span>
               {j.status === 'done' && <span className="forge-job-state ok">Done</span>}
               {j.status === 'cancelled' && <span className="forge-job-state">Cancelled</span>}
-              {j.status === 'error' && <span className="forge-job-state err" title={j.error}>{j.error.slice(0, 90)}</span>}
+              {j.status === 'error' && <span className="forge-job-state err">{j.error}</span>}
             </div>
           ))}
         </div>

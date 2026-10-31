@@ -88,14 +88,58 @@ function buildVideoRequest({ model, prompt, ratio, duration, image }) {
 }
 const operationUrl = (name) => `${GEMINI_BASE}/v1beta/${name}`;
 
-// Google error bodies are { error: { message, status } } — surface the message verbatim.
+// Provider error bodies are JSON ({ error: { message, status } } at Google; the same
+// shape at Pollinations) or occasionally plain text — surface the provider's words verbatim.
 async function providerError(res) {
   let detail = '';
   try {
-    const j = await res.json();
-    detail = j?.error?.message || j?.message || '';
-  } catch { /* non-JSON error body */ }
+    let j = null;
+    if (typeof res.text === 'function') {
+      const body = await res.text();
+      try { j = JSON.parse(body); } catch { detail = body.trim().slice(0, 300); }
+    } else if (typeof res.json === 'function') {
+      j = await res.json();
+    }
+    if (j) detail = j?.error?.message || (typeof j?.error === 'string' ? j.error : '') || j?.message || detail;
+  } catch { /* unreadable error body */ }
   return new Error(detail ? `Provider answered ${res.status}: ${detail}` : `Provider answered ${res.status}.`);
+}
+
+// ---- Resilient fetch for the free provider ----
+// Pollinations' anonymous ("Classic") tier is capacity-limited: under load it answers
+// 503 "The Classic API is at its limit right now. Retry after 10s…" with a Retry-After
+// header. A single attempt turns that transient limit into a user-visible failure, so
+// the free path retries — honouring the provider's own delay (capped) — before giving up.
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const MAX_FREE_ATTEMPTS = 5;
+
+const abortError = () => Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
+function sleepAbortable(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(abortError()); return; }
+    const onAbort = () => { clearTimeout(t); reject(abortError()); };
+    const t = setTimeout(() => { signal?.removeEventListener?.('abort', onAbort); resolve(); }, ms);
+    signal?.addEventListener?.('abort', onAbort);
+  });
+}
+
+async function fetchWithRetry(fetchImpl, url, opts, signal) {
+  for (let attempt = 1; attempt <= MAX_FREE_ATTEMPTS; attempt++) {
+    let res;
+    try {
+      res = await fetchImpl(url, opts);
+    } catch (e) {
+      if (e?.name === 'AbortError' || signal?.aborted) throw e;
+      if (attempt === MAX_FREE_ATTEMPTS) throw e;
+      await sleepAbortable(Math.min(20000, 3000 * 2 ** (attempt - 1)), signal);
+      continue;
+    }
+    if (res.ok || !RETRYABLE_STATUS.has(res.status) || attempt === MAX_FREE_ATTEMPTS) return res;
+    const ra = Number.parseInt(res.headers?.get?.('retry-after'), 10);
+    const wait = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 25) * 1000 : Math.min(20000, 4000 * 2 ** (attempt - 1));
+    await sleepAbortable(wait, signal);
+  }
+  throw new Error('The provider did not answer.');
 }
 
 // ---- Jobs ----
@@ -124,7 +168,10 @@ async function runPhoto(job, deps) {
     if (!key) throw new Error(NO_KEY_MESSAGE);
     headers['x-goog-api-key'] = key;
   }
-  const res = await fetchImpl(req.url, { method: req.method, headers, body: req.body ? JSON.stringify(req.body) : undefined, signal: job.ctl.signal });
+  const fetchOpts = { method: req.method, headers, body: req.body ? JSON.stringify(req.body) : undefined, signal: job.ctl.signal };
+  const res = model.provider === 'pollinations'
+    ? await fetchWithRetry(fetchImpl, req.url, fetchOpts, job.ctl.signal)
+    : await fetchImpl(req.url, fetchOpts);
   if (!res.ok) throw await providerError(res);
   if (model.provider === 'pollinations') {
     const mime = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();

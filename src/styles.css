@@ -1646,13 +1646,13 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .forge-startframe img { width: 30px; height: 30px; object-fit: cover; border-radius: 5px; }
 .forge-startframe span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .forge-jobs { display: grid; gap: 6px; margin-top: 14px; }
-.forge-job { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; color: var(--text-2); }
+.forge-job { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; color: var(--text-2); }
 .forge-job-prompt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .forge-job-bar { width: 54px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; flex: none; }
 .forge-job-bar span { display: block; height: 100%; width: 40%; border-radius: 2px; background: var(--primary); animation: forge-slide 1.1s ease-in-out infinite alternate; }
 @keyframes forge-slide { from { transform: translateX(-30%); } to { transform: translateX(190%); } }
 .forge-job-state.ok { color: #4ade80; font-weight: 600; }
-.forge-job-state.err { color: #f87171; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.forge-job-state.err { color: #f87171; flex: 1 1 100%; white-space: normal; word-break: break-word; overflow: visible; }
 .forge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .forge-card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-2, transparent); }
 .forge-thumb { display: block; aspect-ratio: 4 / 3; background: #000; }
