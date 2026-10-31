@@ -9,7 +9,16 @@ const { spawn, execFile } = require('child_process');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
-const BIN_URL = 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip';
+const RELEASE_BASE = 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/';
+// Engine builds published with whisper.cpp b5130, per platform: a Windows zip (whisper-cli.exe)
+// and Ubuntu tarballs (whisper-cli, runs on Debian-likes too). Other platforms have no CLI
+// build in this release, so install() says so instead of downloading the wrong archive.
+const BINARIES = {
+  'win32-x64': { file: 'whisper-bin-x64.zip', exe: 'whisper-cli.exe' },
+  'linux-x64': { file: 'whisper-bin-ubuntu-x64.tar.gz', exe: 'whisper-cli' },
+  'linux-arm64': { file: 'whisper-bin-ubuntu-arm64.tar.gz', exe: 'whisper-cli' },
+};
+const binSpec = () => BINARIES[`${process.platform}-${process.arch}`] || null;
 const MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
 // Speech models, each downloaded on first use. base: small and fast, fine for clear English or French.
 // turbo: large-v3-turbo (5-bit), much better at Arabic and Darija, about 4x bigger and several times slower on
@@ -45,7 +54,7 @@ function paths(dir, modelId) {
   const binDir = path.join(dir, 'bin');
   return {
     binDir,
-    cli: fs.existsSync(binDir) ? findFile(binDir, 'whisper-cli.exe') : null,
+    cli: fs.existsSync(binDir) ? findFile(binDir, binSpec()?.exe || 'whisper-cli.exe') : null,
     model: path.join(dir, modelOf(modelId).file),
     log: path.join(dir, 'last-run.log'),
   };
@@ -110,14 +119,22 @@ async function install(dir, onProgress, modelId = 'base') {
   const p = paths(dir, modelId);
   const M = modelOf(modelId);
   if (!p.cli) {
-    const zip = path.join(dir, 'whisper-bin-x64.zip');
-    await download(dir, BIN_URL, zip, (f) => onProgress?.('engine', f));
+    const spec = binSpec();
+    if (!spec) throw new Error(`Auto captions are not available on ${process.platform} yet — the whisper.cpp release has no engine build for it.`);
+    const pack = path.join(dir, spec.file);
+    await download(dir, RELEASE_BASE + spec.file, pack, (f) => onProgress?.('engine', f));
     fs.mkdirSync(p.binDir, { recursive: true });
-    // Windows 10+ ships bsdtar, which extracts .zip files.
-    await new Promise((resolve, reject) =>
-      execFile(path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', p.binDir], { windowsHide: true }, (e) => (e ? reject(e) : resolve()))
-    );
-    fs.rmSync(zip, { force: true });
+    if (process.platform === 'win32') {
+      // Windows 10+ ships bsdtar, which extracts .zip files.
+      await new Promise((resolve, reject) =>
+        execFile(path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe'), ['-xf', pack, '-C', p.binDir], { windowsHide: true }, (e) => (e ? reject(e) : resolve()))
+      );
+    } else {
+      await new Promise((resolve, reject) =>
+        execFile('tar', ['-xzf', pack, '-C', p.binDir], (e) => (e ? reject(new Error(`Could not extract the caption engine (${e.message}).`)) : resolve()))
+      );
+    }
+    fs.rmSync(pack, { force: true });
   }
   const size = fs.existsSync(p.model) ? fs.statSync(p.model).size : -1;
   logLine(dir, `model: ${p.model} size=${size}`);
@@ -130,7 +147,7 @@ async function install(dir, onProgress, modelId = 'base') {
       throw new Error(`The speech model download was incomplete (${got} of ${M.size} bytes). Check your internet connection and try again.`);
     }
   }
-  if (!paths(dir).cli) throw new Error('whisper-cli.exe not found after extraction.');
+  if (!paths(dir).cli) throw new Error(`${binSpec()?.exe || 'whisper-cli'} not found after extraction.`);
   logLine(dir, `install ok: cli=${paths(dir).cli}`);
 }
 
@@ -237,7 +254,7 @@ function readSegments(json) {
       if (seg.words.length && seg.words[0].start - seg.start > 0.3) seg.start = Math.max(0, seg.words[0].start - 0.1);
       return seg;
     })
-    .filter((s) => !isNoise(s.text));
+    .filter((s) => !isNoise(s.text) && s.end > s.start);
 }
 
 // Segments of one piece (see cutAtPauses) for a model without reliable timestamps: its words are spread over the

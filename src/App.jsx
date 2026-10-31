@@ -7,7 +7,7 @@ import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2, Unlink,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2, Unlink,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -929,6 +929,11 @@ export default function App() {
     const canDetach = pic && m?.type === 'video' && m.hasAudio && !c.muted && !c.linkId;
     const detachHint = !(pic && m?.type === 'video') ? 'Only for video clips'
       : !m.hasAudio ? 'This video has no sound' : c.linkId ? 'The sound is already detached' : 'The clip is muted — its sound is off';
+    // Extract audio: an independent, unlinked copy of the sound (the extractAudio action) —
+    // same availability as Detach, minus the link condition.
+    const canExtract = pic && m?.type === 'video' && m.hasAudio && !c.muted;
+    const extractHint = !(pic && m?.type === 'video') ? 'Only for video clips'
+      : !m.hasAudio ? 'This video has no sound' : 'The clip is muted — its sound is off';
     const items = [
       { label: 'Copy', icon: Copy, shortcut: 'Ctrl C', onClick: copy },
       { label: 'Cut', icon: Scissors, shortcut: 'Ctrl X', onClick: cut },
@@ -1006,6 +1011,7 @@ export default function App() {
     }
     items.push('sep');
     if (pic) items.push({ label: 'Detach audio', icon: AudioLines, shortcut: 'Ctrl Shift S', onClick: () => detachAudio(sel), disabled: !canDetach, hint: detachHint });
+    if (pic) items.push({ label: 'Extract audio', icon: FileAudio, onClick: () => dispatch({ type: 'extractAudio', track: sel.track, id: sel.id, newId: uid() }), disabled: !canExtract, hint: extractHint });
     if (c.linkId) {
       items.push({ label: 'Unlink audio and video', icon: Unlink, onClick: () => unlinkClip(sel) });
     } else if (selection?.items?.length === 2

@@ -544,13 +544,17 @@ function reduceProject(p, a) {
       return { ...rest, videoClips: list };
     }
     case 'extractAudio': {
-      // Detach the sound of a video clip onto the audio track (same timing) and mute the clip.
+      // Extract the sound of a video clip onto the audio track as an INDEPENDENT clip
+      // (same timing, same media, no linkId — unlike Detach audio, nothing stays in
+      // sync afterwards) and mute the clip. The copy carries the clip's speed: audio
+      // clips play at a constant rate, so (out - in) / speed matches the picture's
+      // timeline length at any speed.
       const key = TRACKS[a.track];
       const c = key && p[key].find((x) => x.id === a.id);
       const m = c && p.media.find((x) => x.id === c.mediaId);
-      if (!c || c.gap || !m || m.type !== 'video' || !m.hasAudio || c.muted || (c.speed || 1) !== 1) return p;
+      if (!c || c.gap || !m || m.type !== 'video' || !m.hasAudio || c.muted) return p;
       const start = a.track === 'video' ? videoLayout(p.videoClips).find((l) => l.clip.id === c.id).start : c.start;
-      const audio = { id: a.newId, mediaId: m.id, start, in: c.in, out: c.out, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0 };
+      const audio = { id: a.newId, mediaId: m.id, start, in: c.in, out: c.out, speed: c.speed || 1, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0 };
       return { ...p, [key]: p[key].map((x) => (x.id === c.id ? { ...x, muted: true } : x)), audioClips: [...p.audioClips, audio] };
     }
     case 'paste': {
