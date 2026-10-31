@@ -13,7 +13,7 @@ import { followScrollTarget, interpolateTime, playheadX } from '../playbackClock
 import AudioMeter from './AudioMeter.jsx';
 import ContextMenu from './ContextMenu.jsx';
 
-const HEADER = 176; // lane-head width: title + per-layer rows carry lock/eye/mute/solo/menu and still fit a name
+const HEADER = 192; // lane-head width: title + layer rows share one control grid (lock/eye/speaker/solo/more) and names get 60px
 const HEAD_TITLE_H = 22; // height of a lane head's title strip; layer control rows stack below it
 const ROW = 34; // height of one stacked row on the Effects / Stickers / Text tracks
 const ROW_H = { overlay: 44, audio: 40 }; // taller layers for pictures and waveforms
@@ -151,9 +151,11 @@ export default function Timeline({
     return (
       <div key={layer} className={`tl-layer-row ${st.locked ? 'locked' : ''} ${st.hidden ? 'is-hidden' : ''} ${dragHere ? 'drop-hint' : ''}`}
         style={{ height: rowOf(lane) }}>
-        {LAYERED[lane] && layerCount(project, lane) > 1 && (
+        {LAYERED[lane] && layerCount(project, lane) > 1 ? (
           <span className="tl-grip" role="button" aria-label={`Reorder layer ${name}`} title="Drag to reorder this layer"
             onPointerDown={(e) => startLayerDrag(e, lane, layer)}><GripVertical size={11} /></span>
+        ) : (
+          <span className="tl-grip-slot" aria-hidden="true" />
         )}
         <span className="tl-layer-name" title={name}>{name}</span>
         <button className={`tl-ctl ${st.locked ? 'on lock' : ''}`} aria-pressed={st.locked}
@@ -162,15 +164,19 @@ export default function Timeline({
         <button className={`tl-ctl ${st.hidden ? 'on hide' : ''}`} aria-pressed={st.hidden}
           aria-label={`${st.hidden ? 'Show' : 'Hide'} layer ${name}`} title={st.hidden ? 'Show layer' : 'Hide layer: left out of the preview and the export'}
           onClick={() => setLayer(lane, layer, { hidden: !st.hidden })}>{st.hidden ? <EyeOff size={12} /> : <Eye size={12} />}</button>
-        {audioCap && (
+        {audioCap ? (
           <button className={`tl-ctl ${st.muted ? 'on mute' : ''}`} aria-pressed={st.muted}
             aria-label={`${st.muted ? 'Unmute' : 'Mute'} layer ${name}`} title={st.muted ? 'Unmute layer' : 'Mute layer'}
             onClick={() => setLayer(lane, layer, { muted: !st.muted })}>{st.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
+        ) : (
+          <span className="tl-ctl-slot" aria-hidden="true" />
         )}
-        {audioCap && (
+        {audioCap ? (
           <button className={`tl-ctl solo ${st.solo ? 'on' : ''}`} aria-pressed={st.solo}
             aria-label={`Solo layer ${name}`} title={st.solo ? 'Solo off: every layer sounds again' : 'Solo: only soloed layers sound'}
             onClick={() => setLayer(lane, layer, { solo: !st.solo })}>S</button>
+        ) : (
+          <span className="tl-ctl-slot" aria-hidden="true" />
         )}
         <button className="tl-ctl" aria-label={`Layer menu for ${name}`} title="Layer menu"
           onClick={(e) => setLayerMenu({ x: e.clientX, y: e.clientY, track: lane, layer })}><MoreHorizontal size={12} /></button>
@@ -920,22 +926,31 @@ export default function Timeline({
                 <div className="tl-head" data-lane={l.id}
                   onContextMenu={(LAYERED[l.id] || l.id === 'video' || l.id === 'effect') ? (e) => openLayerMenu(e, l.id) : undefined}>
                   <div className="tl-title-row">
-                    <Icon size={14} aria-hidden="true" className="tl-icon" /> <span className="tl-name">{renaming && renaming.track === l.id && l.id === 'video' ? layerRenameInput(l.id, 0) : l.name}</span>
-                    {LAYERED[l.id] && (l.id === 'text' && onAddText ? (
+                    <Icon size={14} aria-hidden="true" className="tl-icon" /> <span className="tl-name" title={l.name}>{renaming && renaming.track === l.id && l.id === 'video' ? layerRenameInput(l.id, 0) : l.name}</span>
+                    {/* The title row shares the layer rows' control grid: cell 1 = add,
+                        cell 2 (the eye column) = magnet, the rest stay empty slots. */}
+                    {LAYERED[l.id] ? (l.id === 'text' && onAddText ? (
                       <button className="layer-add" title="Add text at the playhead" aria-label="Add text at the playhead"
                         onClick={() => onAddText({ text: 'Add text' })}><Plus size={13} /></button>
                     ) : (
                       <button className="layer-add" title={`Add a ${l.name.toLowerCase()} layer`} aria-label={`Add a ${l.name} layer`}
                         onClick={() => dispatch({ type: 'addLayer', track: l.id })}><Plus size={13} /></button>
-                    ))}
-                    {!l.noMagnet && <button className={`magnet-btn ${magnet[l.id] ? 'on' : ''}`} aria-pressed={!!magnet[l.id]}
+                    )) : (
+                      <span className="tl-ctl-slot" aria-hidden="true" />
+                    )}
+                    {!l.noMagnet ? <button className={`magnet-btn ${magnet[l.id] ? 'on' : ''}`} aria-pressed={!!magnet[l.id]}
                       aria-label={`${l.name} magnet ${magnet[l.id] ? 'on' : 'off'}`}
                       title={`${l.name} magnet: ${magnet[l.id] ? 'ON' : 'OFF'}\n${l.id === 'video'
                         ? (magnet[l.id] ? 'Clips close up after a delete or trim' : 'Deleting or trimming leaves a gap')
                         : (magnet[l.id] ? 'Delete and trim close the gap' : 'Free placement, nothing moves')}`}
                       onClick={() => dispatch({ type: 'setMagnet', track: l.id, on: !magnet[l.id] })}>
                       <Magnet size={13} />
-                    </button>}
+                    </button> : (
+                      <span className="tl-ctl-slot" aria-hidden="true" />
+                    )}
+                    <span className="tl-ctl-slot" aria-hidden="true" />
+                    <span className="tl-ctl-slot" aria-hidden="true" />
+                    <span className="tl-ctl-slot" aria-hidden="true" />
                   </div>
                   <div className="tl-layer-stack">
                     {layerCtlRows(l.id)}

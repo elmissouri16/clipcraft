@@ -363,29 +363,39 @@ kbd {
 .tl-row.main { height: 80px; }
 .tl-row.ruler { height: 26px; cursor: ew-resize; position: sticky; top: 0; z-index: 6; background: var(--surface-1); border-bottom: 1px solid var(--border); }
 .tl-head {
-  position: sticky; left: 0; z-index: 5; width: 176px; flex: none; display: flex; flex-direction: column;
+  position: sticky; left: 0; z-index: 5; width: 192px; flex: none; display: flex; flex-direction: column;
   font-size: 11.5px; color: var(--text-3); background: var(--surface-1); border-right: 1px solid var(--border);
 }
 /* Lane head: a title strip (lane icon / name / add / magnet), then one control row per
-   layer — lock, visibility, mute, solo, menu — aligned with the layer bands. */
-.tl-title-row { height: 22px; flex: none; display: flex; align-items: center; gap: 7px; padding-left: 12px; }
+   layer — lock, visibility, mute, solo, menu — aligned with the layer bands.
+   ONE shared column grid for both row kinds (v19): the last five columns are the control
+   columns — lock · eye · speaker · solo · more, 20px cells on a 2px gap, 4px side padding —
+   so every control sits at the same x in every row (centres 90/112/134/156/178 of 192).
+   Missing controls render an empty .tl-ctl-slot so the columns never shift; the title
+   row's add button takes the lock cell and its magnet button the eye cell. */
+.tl-title-row { height: 22px; flex: none; display: grid; grid-template-columns: 22px minmax(0, 1fr) repeat(5, 20px); column-gap: 2px; align-items: center; padding: 0 4px; }
 .tl-layer-stack { position: relative; flex: 1; min-height: 0; }
-.tl-layer-row { display: flex; align-items: center; gap: 2px; padding: 0 4px 0 2px; }
+.tl-layer-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) repeat(5, 20px); column-gap: 2px; align-items: center; padding: 0 4px; }
 .tl-layer-row.drop-hint { background: var(--primary-soft); box-shadow: inset 0 2px 0 var(--primary); }
-.tl-grip { display: grid; place-items: center; width: 12px; flex: none; color: var(--text-3); cursor: grab; touch-action: none; }
+.tl-grip { display: grid; place-items: center; width: 12px; color: var(--text-3); cursor: grab; touch-action: none; }
 .tl-grip:active { cursor: grabbing; }
-.tl-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-3); }
+.tl-grip-slot { width: 12px; }
+.tl-ctl-slot { width: 20px; height: 20px; }
+.tl-layer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--text-3); }
 .tl-layer-row.locked .tl-layer-name { color: var(--text-2); }
 .tl-layer-row.is-hidden .tl-layer-name { opacity: 0.55; }
+/* Uniform header toggles: one 20px box, radius 6, quiet ghost when off; when on, the icon
+   carries the state colour on a soft tint of the same geometry for every toggle. */
 .tl-ctl {
-  display: grid; place-items: center; width: 21px; height: 21px; flex: none; padding: 0;
-  border: 0; border-radius: 5px; background: transparent; color: var(--text-3); cursor: pointer;
+  display: grid; place-items: center; width: 20px; height: 20px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer;
   font-size: 10px; font-weight: 700; font-family: inherit;
 }
 .tl-ctl:hover { background: var(--surface-3); color: var(--text); }
-.tl-ctl.on { color: #c4b5fd; background: var(--primary-soft); }
-.tl-ctl.on.mute { color: #fca5a5; background: rgba(239, 68, 68, 0.12); }
-.tl-ctl.solo.on { color: #fcd34d; background: rgba(245, 158, 11, 0.14); }
+.tl-ctl.on { color: #c4b5fd; background: rgba(130, 92, 251, 0.14); }
+.tl-ctl.on.hide { color: var(--text-2); background: rgba(255, 255, 255, 0.07); }
+.tl-ctl.on.mute { color: #f87171; background: rgba(239, 68, 68, 0.14); }
+.tl-ctl.solo.on { color: #fbbf24; background: rgba(245, 158, 11, 0.14); }
 .tl-row.main .tl-head { color: var(--text-2); }
 .tl-ruler { position: relative; flex: 1; }
 .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border-strong); }
@@ -398,11 +408,12 @@ kbd {
 .layer-band { position: absolute; left: 0; right: 0; border-radius: 6px; background: rgba(255, 255, 255, 0.025); pointer-events: none; }
 .layer-remove { position: sticky; left: 4px; top: 0; margin: 4px; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; border: 0; background: rgba(255, 255, 255, 0.08); color: var(--text-3); pointer-events: auto; cursor: pointer; }
 .layer-remove:hover { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
-.layer-add { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: auto; border-radius: 6px; border: 0; background: transparent; color: var(--text-3); cursor: pointer; }
-.layer-add + .magnet-btn { margin-left: 2px; }
-/* Name shrinks (ellipsis) so the + and magnet buttons stay lined up at the right edge of every lane. */
+.layer-add { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; border: 0; background: transparent; color: var(--text-3); cursor: pointer; }
+/* Title and layer names shrink (ellipsis, full name in the tooltip) — the grid's control
+   columns never move. */
 .tl-head .tl-icon { flex: none; }
-.tl-head .tl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-head .tl-name { position: relative; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text-2); }
+.tl-row.main .tl-head .tl-name { color: var(--text); }
 .layer-add:hover { background: var(--surface-3); color: var(--text); }
 .tl-lane.drop-target { background: var(--primary-soft); box-shadow: inset 0 0 0 1px rgba(130, 92, 251, 0.5); }
 .lane-empty {
@@ -602,7 +613,7 @@ kbd {
 /* Track magnet: per-track toggle, gap clips and the snap guide */
 .tl-head { justify-content: flex-start; }
 .magnet-btn {
-  margin-left: auto; margin-right: 8px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px;
   border: 1px solid var(--border); background: transparent; color: var(--text-3);
   transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
 }
@@ -1763,8 +1774,8 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .tab-btn.active { box-shadow: inset 0 -2px 0 var(--primary); }
 
 /* ---------- Timeline polish: lane heads as type chips, playhead + zoom emphasis ---------- */
-.tl-head { gap: 6px; }
-.tl-head .tl-icon { background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px; box-sizing: content-box; color: #c4b5fd; }
+.tl-head { gap: 0; } /* layer rows start exactly at HEAD_TITLE_H, aligned with the lane bands */
+.tl-head .tl-icon { background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px; box-sizing: border-box; width: 22px; height: 22px; color: #c4b5fd; }
 .tl-row.main .tl-head { color: var(--text); font-weight: 600; }
 .playhead { background: var(--primary); box-shadow: 0 0 10px rgba(130, 92, 251, 0.55); }
 .playhead::before { background: var(--primary); }
@@ -2250,5 +2261,5 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .layer-band-name { position: absolute; left: 8px; top: 3px; font-size: 10px; letter-spacing: .02em; color: var(--faint); pointer-events: none; white-space: nowrap; }
 .layer-rename { pointer-events: auto; width: 118px; background: var(--surface-3, #23233a); border: 1px solid var(--violet); border-radius: 6px; color: var(--text); font-size: 11px; padding: 2px 6px; outline: none; }
 .layer-band .layer-rename { position: absolute; left: 6px; top: 2px; z-index: 6; }
-.tl-head .layer-rename { width: 86px; }
+.tl-head .layer-rename { position: absolute; left: -3px; top: 50%; transform: translateY(-50%); width: 118px; z-index: 8; }
 .fitfill-row { display: flex; align-items: center; gap: 7px; margin: 2px 0 6px; flex-wrap: wrap; }
