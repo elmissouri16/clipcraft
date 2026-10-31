@@ -153,7 +153,7 @@ module.exports = async function readmeShots(win, dir, result) {
   // 8) CraftPilot and Settings.
   await q(`document.querySelector('.pilot-fab').click()`);
   await wait(700);
-  await snap('rocketpilot', '.pilot-panel');
+  await snap('craftpilot', '.pilot-panel');
   await q(`document.querySelector('.pilot-fab').click()`);
   await wait(300);
   await q(`document.querySelector('[aria-label="Settings"]').click()`);

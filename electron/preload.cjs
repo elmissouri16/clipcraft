@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld('api', {
   colorSample: (item, from, to) => ipcRenderer.invoke('color:sample', item, from, to),
   stickersList: () => ipcRenderer.invoke('stickers:list'),
   stabilizeRun: (item, from, to, level) => ipcRenderer.invoke('stabilize:run', item, from, to, level),
+  reverseRun: (item, from, to) => ipcRenderer.invoke('reverse:run', item, from, to),
+  reverseCancel: () => ipcRenderer.invoke('reverse:cancel'),
+  onReverseProgress: (cb) => {
+    const h = (_e, p) => cb(p);
+    ipcRenderer.on('reverse:progress', h);
+    return () => ipcRenderer.removeListener('reverse:progress', h);
+  },
+  frameImage: (mediaPath, at) => ipcRenderer.invoke('media:frameImage', mediaPath, at),
   stabilizeCancel: () => ipcRenderer.invoke('stabilize:cancel'),
   onStabilizeProgress: (cb) => {
     const handler = (_e, p) => cb(p);
@@ -77,7 +85,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   openProject: () => ipcRenderer.invoke('project:open'),
   openProjectPath: (filePath) => ipcRenderer.invoke('project:openPath', filePath),
-  exportBegin: () => ipcRenderer.invoke('export:begin'),
+  exportBegin: (suggested) => ipcRenderer.invoke('export:begin', suggested),
+  exportCover: (file, mediaPath, at) => ipcRenderer.invoke('export:cover', file, mediaPath, at),
   exportCaps: () => ipcRenderer.invoke('export:caps'),
   // Text layer: begin, then one call per frame (pixels, or { blank: n } / { same: n }), then end (frame count).
   exportTextBegin: (dir, width, height, fps) => ipcRenderer.invoke('export:textBegin', dir, width, height, fps),
@@ -93,6 +102,7 @@ contextBridge.exposeInMainWorld('api', {
   fxClear: () => ipcRenderer.invoke('fx:clear'),
   exportAudio: (project, format, name) => ipcRenderer.invoke('export:audio', project, format, name),
   showInFolder: (file) => ipcRenderer.invoke('shell:show', file),
+  openFile: (file) => ipcRenderer.invoke('shell:open', file),
   openHelp: (url) => ipcRenderer.invoke('app:openHelp', url),
   agentStep: (req) => ipcRenderer.invoke('agent:step', req),
   agentSilences: (project, opts) => ipcRenderer.invoke('agent:silences', project, opts),
@@ -149,6 +159,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('gen:progress', h);
     return () => ipcRenderer.removeListener('gen:progress', h);
   },
+  forgeStatus: () => ipcRenderer.invoke('forge:status'),
+  forgeCatalog: () => ipcRenderer.invoke('forge:catalog'),
+  forgeList: () => ipcRenderer.invoke('forge:list'),
+  forgeStart: (opts) => ipcRenderer.invoke('forge:start', opts),
+  forgeJobs: () => ipcRenderer.invoke('forge:jobs'),
+  forgeCancel: (id) => ipcRenderer.invoke('forge:cancel', id),
+  forgeRemove: (id) => ipcRenderer.invoke('forge:remove', id),
+  forgeReveal: (id) => ipcRenderer.invoke('forge:reveal', id),
   stockSearch: (opts) => ipcRenderer.invoke('stock:search', opts),
   stockThumb: (url) => ipcRenderer.invoke('stock:thumb', url),
   stockAdd: (item) => ipcRenderer.invoke('stock:add', item),

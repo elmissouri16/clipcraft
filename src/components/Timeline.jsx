@@ -1,15 +1,17 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Copy, Film, Flag, Layers, Magnet, Mic, MousePointer2, Music, Plus, Scissors, Slice, Smile,
+  ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Copy, CopyPlus, Film, Flag, Layers, Magnet, Mic, MousePointer2, Music, Pencil, Plus, Scissors, Slice, Smile,
   Sparkles, Square, StretchHorizontal, Target, Trash2, Type, Undo2, Redo2, X, ZoomIn, ZoomOut, Captions,
 } from 'lucide-react';
-import { LAYERED, MIN_CLIP, effectObjects, formatTime, freeLen, layerCount, layerFree, layerOf, toFileUrl, uid, videoLayout } from '../store.js';
+import { LAYERED, MIN_CLIP, effectObjects, formatTime, freeLen, layerCount, layerFree, layerName, layerOf, toFileUrl, uid, videoLayout } from '../store.js';
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from '../fx/filters.js';
 import { EFFECTS, TRANSITIONS } from '../effects.js';
 import { FILTERS, clipCss } from '../effects.js';
 import { activeDrag, isFiles, isInternal, laneFor, readPayload } from '../dnd.js';
 import { followScrollTarget, interpolateTime, playheadX } from '../playbackClock.js';
+import AudioMeter from './AudioMeter.jsx';
+import ContextMenu from './ContextMenu.jsx';
 
 const HEADER = 152;
 const ROW = 34; // height of one stacked row on the Effects / Stickers / Text tracks
@@ -46,7 +48,7 @@ const LANES = [
 
 export default function Timeline({
   project, time, duration, selection, onSelect, onSeek, dispatch, onSplit, onDelete, onDuplicate,
-  onDropItem, onDropFiles, canUndo, canRedo, tool, setTool, onTrimSide, onMarker, recorder, onToggleRecord, onClipMenu, overlay, onAddText, clockRef,
+  onDropItem, onDropFiles, canUndo, canRedo, tool, setTool, onTrimSide, onMarker, recorder, onToggleRecord, onClipMenu, overlay, onAddText, clockRef, playing,
 }) {
   const [pps, setPps] = useState(60); // pixels per second (zoom)
   const [drop, setDrop] = useState(null); // { lane, time, index, clipId }
@@ -60,6 +62,48 @@ export default function Timeline({
   const ppsRef = useRef(pps);
   ppsRef.current = pps;
   const [razorAt, setRazorAt] = useState(null); // where the razor would cut (hover guide)
+  const [layerMenu, setLayerMenu] = useState(null); // { x, y, track, layer } — layer (track) header menu, item 13
+  const [renaming, setRenaming] = useState(null); // { track, layer, draft } — inline layer rename
+  // Right-click on a lane header: the layer under the pointer (header rows share the lane's
+  // geometry), or the main track itself for the Main lane.
+  const openLayerMenu = (e, lane) => {
+    e.preventDefault();
+    let layer = 0;
+    if (lane !== 'video') {
+      const count = layerCount(project, lane);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const row = Math.floor((e.clientY - rect.top - 4) / rowOf(lane));
+      layer = rowToLayer(lane, Math.max(0, Math.min(count - 1, row)), count);
+    }
+    setLayerMenu({ x: e.clientX, y: e.clientY, track: lane, layer });
+  };
+  const layerMenuItems = (m) => {
+    const srcCount = m.track === 'video'
+      ? project.videoClips.filter((c) => !c.gap).length
+      : project[LAYERED[m.track]].filter((c) => layerOf(c) === m.layer).length;
+    return [
+      { label: `Duplicate layer — ${layerName(project, m.track, m.layer)}`, icon: CopyPlus,
+        onClick: () => dispatch({ type: 'duplicateLayer', track: m.track, layer: m.layer, newIds: Array.from({ length: srcCount }, () => uid()) }) },
+      { label: 'Rename layer…', icon: Pencil,
+        onClick: () => setRenaming({ track: m.track, layer: m.layer, draft: layerName(project, m.track, m.layer) }) },
+      'sep',
+      { label: 'Delete layer', icon: Trash2,
+        onClick: () => dispatch({ type: 'deleteLayer', track: m.track, layer: m.layer }) },
+    ];
+  };
+  // The inline rename field (a plain render helper, not a component, so the input keeps focus
+  // across keystrokes). Enter/blur commits, Esc cancels; an empty name restores the default.
+  const layerRenameInput = (track, layer) => (
+    <input className="layer-rename" autoFocus value={renaming.draft} aria-label="Layer name"
+      onPointerDown={(e) => e.stopPropagation()}
+      onChange={(e) => setRenaming({ ...renaming, draft: e.target.value })}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { dispatch({ type: 'renameLayer', track, layer, name: renaming.draft }); setRenaming(null); }
+        if (e.key === 'Escape') setRenaming(null);
+      }}
+      onBlur={() => { dispatch({ type: 'renameLayer', track, layer, name: renaming.draft }); setRenaming(null); }} />
+  );
   const markers = project.markers || [];
   const magnet = project.magnet || {};
   const scrollRef = useRef(null);
@@ -566,6 +610,11 @@ export default function Timeline({
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => { e.stopPropagation(); dispatch({ type: 'removeLayer', track: lane, layer }); }}><X size={11} /></button>
           )}
+          {renaming && renaming.track === lane && renaming.layer === layer
+            ? layerRenameInput(lane, layer)
+            : (count > 1 || (project.layerNames && project.layerNames[lane] && project.layerNames[lane][layer])) && (
+              <span className="layer-band-name">{layerName(project, lane, layer)}</span>
+            )}
         </div>
       );
     });
@@ -672,6 +721,7 @@ export default function Timeline({
 
   return (
     <section className="timeline" aria-label="Timeline">
+      <div className="tl-main">
       {overlay}
       <div className="tl-toolbar">
         <div className="tool-group">
@@ -746,8 +796,9 @@ export default function Timeline({
             const Icon = l.icon;
             return (
               <div key={l.id} className={`tl-row ${l.main ? 'main' : ''}`} style={{ height: rowHeight(l.id) }}>
-                <div className="tl-head" data-lane={l.id}>
-                  <Icon size={14} aria-hidden="true" className="tl-icon" /> <span className="tl-name">{l.name}</span>
+                <div className="tl-head" data-lane={l.id}
+                  onContextMenu={(LAYERED[l.id] || l.id === 'video') ? (e) => openLayerMenu(e, l.id) : undefined}>
+                  <Icon size={14} aria-hidden="true" className="tl-icon" /> <span className="tl-name">{renaming && renaming.track === l.id && l.id === 'video' ? layerRenameInput(l.id, 0) : l.name}</span>
                   {LAYERED[l.id] && (l.id === 'text' && onAddText ? (
                     <button className="layer-add" title="Add text at the playhead" aria-label="Add text at the playhead"
                       onClick={() => onAddText({ text: 'Add text' })}><Plus size={13} /></button>
@@ -777,6 +828,7 @@ export default function Timeline({
 
           {markers.map((m) => <div key={m.id} className="marker-line" style={{ left: HEADER + m.time * pps }} />)}
           {tool === 'razor' && razorAt != null && <div className="razor-line" style={{ left: HEADER + razorAt * pps }} />}
+          {tool === 'razor' && razorAt != null && <div className="razor-time" style={{ left: HEADER + razorAt * pps }}>{formatTime(razorAt)}</div>}
           {snapAt != null && <div className="snap-line" style={{ left: HEADER + snapAt * pps }} />}
           {trimHud && <div className="trim-hud" style={{ left: trimHud.x }}>{trimHud.text}</div>}
           <div className="playhead" ref={playheadRef} />
@@ -785,6 +837,10 @@ export default function Timeline({
           )}
         </div>
       </div>
+      </div>
+      <AudioMeter active={playing} />
+      {layerMenu && <ContextMenu x={layerMenu.x} y={layerMenu.y} items={layerMenuItems(layerMenu)}
+        onClose={() => setLayerMenu(null)} label="Layer menu" />}
     </section>
   );
 }

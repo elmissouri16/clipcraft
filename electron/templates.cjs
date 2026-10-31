@@ -1,14 +1,14 @@
 // Templates: ClipCraft projects whose marked clips ("replaceable", clip.slot) people swap for their own videos.
-// They are published on clipcraft.site (/admin/templates) and listed in the Templates tab.
+// They are published on Hamza's site (hamzaabika.com/clipcraft) and listed in the Templates tab.
 //   pack()     writes the folder the admin uploads: template.json, the media it uses and thumb.jpg.
-//   list() / detail() / download() / thumb() / preview() / use()  talk to the site's /api/v1/templates.
+//   list() / detail() / download() / thumb() / preview() / use()  talk to the store's /api/v1/templates.
 // Pure module: the caller passes `fetch` and the folders.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 
-const BASE = (process.env.FVE_TEMPLATES_URL || 'https://caprocket.site').replace(/\/+$/, '');
+const BASE = (process.env.FVE_TEMPLATES_URL || 'https://hamzaabika.com/clipcraft').replace(/\/+$/, '');
 const API = `${BASE}/api/v1/templates`;
 const SLUG = /^[0-9a-f]{12}$/;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -52,9 +52,10 @@ async function pack(project, meta, parentDir, { ffmpegPath } = {}) {
     GENERATED.forEach((k) => delete clean[k]);
     media.push(clean);
   });
-  // The format string is a data-format identifier, not branding: it stays 'caprocket-template'
-  // so packages made before the ClipCraft rename (and by the template store) stay readable.
-  const doc = { format: 'caprocket-template', version: 1, meta, project: { ...project, media } };
+  // The format string is a data-format identifier, not branding. Packages written before the rename
+  // carry the legacy v1 format id; the readers accept both ids (see the read checks), so every package
+  // already in the wild keeps working.
+  const doc = { format: 'clipcraft-template', version: 1, meta, project: { ...project, media } };
   fs.writeFileSync(path.join(dir, 'template.json'), JSON.stringify(doc, null, 1), 'utf8');
   // Cover picture: the first replaceable clip at its start.
   const first = [...(project.videoClips || []), ...(project.overlayClips || [])].find((c) => c.slot && !c.gap);
@@ -64,14 +65,17 @@ async function pack(project, meta, parentDir, { ffmpegPath } = {}) {
 }
 
 // ---- Site API ----
-async function getJson(fetchImpl, url) {
+async function getJson(fetchImpl, url, { allow404 = false } = {}) {
   let res;
   try {
     res = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'ClipCraft' } });
   } catch {
     throw new Error('No internet connection. Templates need the internet.');
   }
-  if (res.status === 404) throw new Error('This template is no longer available.');
+  if (res.status === 404) {
+    if (allow404) return null; // the store feed is not published yet: an empty store, not an error
+    throw new Error('This template is no longer available.');
+  }
   if (!res.ok) throw new Error(`The template store answered ${res.status}. Try again later.`);
   try {
     return await res.json();
@@ -86,7 +90,8 @@ const storeUrl = (u) => typeof u === 'string' && u.startsWith(`${API}/`);
 async function list(fetchImpl, params = {}) {
   const q = new URLSearchParams();
   for (const k of LIST_KEYS) if (params[k] !== undefined && params[k] !== '' && params[k] !== null) q.set(k, String(params[k]).slice(0, 80));
-  const d = await getJson(fetchImpl, `${API}${q.toString() ? `?${q}` : ''}`);
+  const d = await getJson(fetchImpl, `${API}${q.toString() ? `?${q}` : ''}`, { allow404: true });
+  if (!d) return { templates: [], categories: [], page: 1, pages: 1, total: 0 };
   const templates = (d.templates || []).filter((t) => t && SLUG.test(String(t.id)));
   return { templates, categories: d.categories || [], page: d.page || 1, pages: d.pages || 1, total: d.total || templates.length };
 }
@@ -169,6 +174,7 @@ async function download(fetchImpl, cacheDir, id, onProgress) {
   } catch {
     throw new Error('This template is damaged.');
   }
+  // Both format ids are accepted on read — current packages and the legacy v1 format id alike.
   if (!['caprocket-template', 'clipcraft-template'].includes(doc.format) || doc.version !== 1 || !doc.project) throw new Error('This template needs a newer ClipCraft.');
   const media = (doc.project.media || []).map((m) => {
     if (!NAME.test(String(m.path)) || !fs.existsSync(path.join(dir, m.path))) throw new Error('This template is incomplete.');

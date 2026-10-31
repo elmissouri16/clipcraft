@@ -4,6 +4,7 @@ import { clipLen, formatTime, parseEffectKey, videoLayout } from '../store.js';
 import { ANIMATIONS, EFFECTS, RATIOS, TRANSITIONS, sizeFor } from '../effects.js';
 import { EXPORT_PRESETS, ENCODER_PRESETS, RES_CAPS, FPS_CHOICES, AUDIO_RATES, storedExportSettings, settingsPatch, resolveExport } from '../exportQuality.js';
 import Slider from './Slider.jsx';
+import CurveEditor from './CurveEditor.jsx';
 import NumBox from './NumBox.jsx';
 import TextInspector from './TextInspector.jsx';
 import ClipInspector from './ClipInspector.jsx';
@@ -207,13 +208,21 @@ function TransitionPanel({ project, selection, dispatch }) {
         <span>Name</span>
         <select value={tr.type} onChange={(e) => {
           const t = TRANSITIONS.find((x) => x.id === e.target.value);
-          set({ type: t.id, duration: Math.min(max, t.fx ? t.duration : tr.duration) });
+          set({ type: t.id, duration: Math.min(max, t.fx ? t.duration : tr.duration), ...(t.fx && /zoom/i.test(t.id) ? { ease: 'smooth' } : {}) });
         }}>
           {TRANSITIONS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </label>
       <Slider dispatch={dispatch} label="Duration" value={Math.min(tr.duration, max)} min={0.1} max={Number(max.toFixed(2))} step={0.05}
         fmt={(v) => `${v.toFixed(2)}s`} onChange={(duration) => set({ ...tr, duration })} />
+      </div>
+      <div className="insp-card">
+        <div className="insp-card-title">Motion curve</div>
+        {def?.fx ? (
+          <CurveEditor value={tr.ease} onChange={(ease) => set(ease === undefined ? { type: tr.type, duration: tr.duration } : { ...tr, ease })} />
+        ) : (
+          <p className="dim small">This transition renders with the export engine's built-in curve, so easing does not apply. The FX transitions (Zoom, Whip, Spin, the reveal family…) take a motion curve.</p>
+        )}
       </div>
       <div className="row-btns">
         <button className="btn btn-sm" onClick={() => set({ ...tr, duration: Math.min(max, def?.duration || 0.5) })}><RotateCcw size={13} /> Reset</button>

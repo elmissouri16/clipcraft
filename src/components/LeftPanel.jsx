@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Mic, Music, Plus, SlidersHorizontal,
+  Anvil, ArrowLeftRight, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Mic, Music, Plus, SlidersHorizontal,
   Loader2, Smile, Sparkles, Square, Trash2, Type, Upload, WandSparkles, X,
   Layers, ChevronDown, ChevronUp, Sparkles as SparklesIcon, Award, FolderPlus, MonitorUp, History, UserRound, Users, LayoutTemplate,
 } from 'lucide-react';
 import { TemplatesTab } from './Templates.jsx';
+import ForgePanel from './ForgePanel.jsx';
 import GradePanel from './GradePanel.jsx';
 import { LookThumb } from './FilterThumbs.jsx';
 import { FILTER_CATS, filterName } from '../fx/filters.js';
@@ -38,6 +39,7 @@ export const TABS = [
   { id: 'captions', icon: CaptionsIcon, name: 'Captions' },
   { id: 'filters', icon: Contrast, name: 'Filters' },
   { id: 'adjust', icon: SlidersHorizontal, name: 'Adjust' },
+  { id: 'forge', icon: Anvil, name: 'Forge' },
 ];
 
 // Default category of each tab (the side column remembers the last one per tab).
@@ -91,6 +93,7 @@ export default function LeftPanel(props) {
         {activeTab === 'captions' && <TabFrame><CaptionsTab {...p} /></TabFrame>}
         {activeTab === 'filters' && <TabFrame><FiltersTab {...p} /></TabFrame>}
         {activeTab === 'adjust' && <TabFrame><AdjustTab {...p} /></TabFrame>}
+        {activeTab === 'forge' && <TabFrame><ForgePanel {...p} /></TabFrame>}
       </div>
     </aside>
   );
@@ -412,7 +415,9 @@ function TransitionsTab({ target, updateTarget }) {
   const engineById = Object.fromEntries(TRANSITIONS.map((t) => [t.id, t]));
   const applyEngine = (engineId, fxDuration) => {
     if (!ok) return;
-    updateTarget({ transition: { type: engineId, duration: fxDuration || dur } });
+    // Zoom/scale transitions feel best eased: new ones start on Smooth (the curve editor can change it).
+    const ease = /zoom/i.test(engineId) ? { ease: 'smooth' } : {};
+    updateTarget({ transition: { type: engineId, duration: fxDuration || dur, ...ease } });
   };
   const tile = (key, engineId, label, extra) => (
     <button key={key} className={`tile ${cur?.type === engineId ? 'on' : ''}`} {...dragProps({ kind: 'transition', id: engineId, duration: engineById[engineId]?.fx ? engineById[engineId].duration : dur })}

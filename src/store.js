@@ -82,6 +82,12 @@ export function layerCount(p, track) {
   return Math.max(used, p.layers?.[track] || 1);
 }
 
+// Display name of one layer: the user's rename (project.layerNames) or the lane's default.
+const LANE_NAMES = { video: 'Main', overlay: 'Overlay', text: 'Text', sticker: 'Stickers', audio: 'Audio', effect: 'Effects' };
+export function layerName(p, track, layer) {
+  return (p.layerNames && p.layerNames[track] && p.layerNames[track][layer]) || `${LANE_NAMES[track] || track} ${layer + 1}`;
+}
+
 // True when [start, start + len) is free on that layer (the clip `exceptId` aside).
 export function layerFree(p, track, layer, start, len, exceptId) {
   return !(p[LAYERED[track]] || []).some((x) => x.id !== exceptId && layerOf(x) === layer
@@ -250,6 +256,76 @@ function reduceProject(p, a) {
         ...p, layers: { ...p.layers, [a.track]: layerCount(p, a.track) - 1 },
         [key]: p[key].map((c) => (layerOf(c) > a.layer ? { ...c, layer: layerOf(c) - 1 } : c)),
       };
+    }
+    case 'duplicateLayer': {
+      // Layer context menu (item 13): deep-copy every clip of a layer onto a NEW layer placed
+      // directly above it — no limit on how many times. Overlay/text/sticker draw higher layer
+      // indexes above lower ones, so the copy takes layer+1 and higher layers shift up; audio
+      // rows run the other way (layer 0 on top), so the copy takes the original's row and the
+      // original (and everything below it) shifts down one. Layer names travel with their layer.
+      // For the main track ('video', not a layered lane) the copy becomes a new TOP overlay
+      // layer holding the same clips at the same times, as free-positioned overlay clips.
+      if (a.track === 'video') {
+        const target = layerCount(p, 'overlay');
+        let i = 0;
+        const copies = videoLayout(p.videoClips).filter((l) => !l.clip.gap).map((l) => {
+          const copy = structuredClone(l.clip);
+          copy.id = a.newIds[i++];
+          copy.start = l.start;
+          copy.layer = target;
+          copy.transition = null;
+          return copy;
+        });
+        if (!copies.length) return p;
+        return { ...p, overlayClips: [...p.overlayClips, ...copies], layers: { ...p.layers, overlay: target + 1 } };
+      }
+      const key = LAYERED[a.track];
+      if (!key) return p;
+      const insertAt = a.track === 'audio' ? a.layer : a.layer + 1;
+      let i = 0;
+      const copies = p[key].filter((c) => layerOf(c) === a.layer).map((c) => {
+        const copy = structuredClone(c);
+        copy.id = a.newIds[i++];
+        copy.layer = insertAt;
+        return copy;
+      });
+      const shifted = p[key].map((c) => (layerOf(c) >= insertAt && !copies.some((x) => x.id === c.id) && (a.track === 'audio' || layerOf(c) !== a.layer)
+        ? { ...c, layer: layerOf(c) + 1 } : c));
+      const names = { ...((p.layerNames || {})[a.track] || {}) };
+      for (const k of Object.keys(names).map(Number).sort((x, y) => y - x)) {
+        if (k >= insertAt && (a.track === 'audio' || k !== a.layer)) { names[k + 1] = names[k]; delete names[k]; }
+      }
+      return {
+        ...p, [key]: [...shifted, ...copies],
+        layers: { ...p.layers, [a.track]: layerCount(p, a.track) + 1 },
+        layerNames: { ...(p.layerNames || {}), [a.track]: names },
+      };
+    }
+    case 'deleteLayer': {
+      // Removes the layer AND its clips (unlike removeLayer, which only takes empty layers);
+      // layers above move down one and their names follow. The last remaining layer is cleared
+      // but kept, so a lane never drops below one layer. One dispatch = one undo step.
+      if (a.track === 'video') return { ...p, videoClips: [] };
+      const key = LAYERED[a.track];
+      if (!key) return p;
+      const rest = p[key].filter((c) => layerOf(c) !== a.layer)
+        .map((c) => (layerOf(c) > a.layer ? { ...c, layer: layerOf(c) - 1 } : c));
+      const names = { ...((p.layerNames || {})[a.track] || {}) };
+      delete names[a.layer];
+      for (const k of Object.keys(names).map(Number).sort((x, y) => x - y)) {
+        if (k > a.layer) { names[k - 1] = names[k]; delete names[k]; }
+      }
+      return {
+        ...p, [key]: rest,
+        layers: { ...p.layers, [a.track]: Math.max(1, layerCount(p, a.track) - 1) },
+        layerNames: { ...(p.layerNames || {}), [a.track]: names },
+      };
+    }
+    case 'renameLayer': {
+      const forTrack = { ...((p.layerNames || {})[a.track] || {}) };
+      if (a.name && a.name.trim()) forTrack[a.layer] = a.name.trim();
+      else delete forTrack[a.layer];
+      return { ...p, layerNames: { ...(p.layerNames || {}), [a.track]: forTrack } };
     }
     case 'updateMany':
       // Several clips changed together (one undo step): updates [{ track, id, patch }].

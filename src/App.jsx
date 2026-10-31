@@ -1,13 +1,13 @@
 import React, { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { recentEntryFor } from './recents.js';
-import { canvasFor, emptyProject, historyReducer, levelCopyState, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
+import { canvasFor, emptyProject, freeLen, historyReducer, levelCopyState, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
 import HomeScreen from './components/HomeScreen.jsx';
 import SequenceDialog from './components/SequenceDialog.jsx';
 import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, Layers, LayoutTemplate, Loader2, Paintbrush, PanelBottom, Repeat, RotateCcw, Scissors, ScissorsLineDashed, Split, Trash2,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, FlipHorizontal2, Layers, LayoutTemplate, Loader2, Paintbrush, PanelBottom, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -23,7 +23,7 @@ import Preview from './components/Preview.jsx';
 import Timeline from './components/Timeline.jsx';
 import Inspector from './components/Inspector.jsx';
 import ExportDialog from './components/ExportDialog.jsx';
-import { resolveExport } from './exportQuality.js';
+import { EXPORT_PRESETS, resolveExport, settingsPatch, storedExportSettings } from './exportQuality.js';
 import CloseDialog from './components/CloseDialog.jsx';
 import TopBar from './components/TopBar.jsx';
 import SettingsDialog from './components/SettingsDialog.jsx';
@@ -62,6 +62,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false);
   const [selection, setSelection] = useState(null); // { track, id }
   const [exporting, setExporting] = useState(null);
+  const [renderJob, setRenderJob] = useState(null); // derivative renders (Reverse): { label, fraction } | { error }
   const [tab, setTab] = useState('media');
   const { layout: panes, startDrag: startResize, reset: resetSize, nudge: nudgeSize } = useLayout();
   const [tool, setTool] = useState('select'); // timeline tool: 'select' | 'razor'
@@ -584,7 +585,10 @@ export default function App() {
       const newId = uid();
       const actions = trimActions(project, { track: tgt.track, id: tgt.id, t: time, side, newId });
       if (!actions.length) continue;
+      // Split + delete land as ONE undo step.
+      dispatch({ type: 'beginGesture' });
       actions.forEach((a) => dispatch(a));
+      dispatch({ type: 'endGesture' });
       setSelection(side === 'right' ? { track: tgt.track, id: tgt.id } : { track: tgt.track, id: newId });
       return;
     }
@@ -664,6 +668,87 @@ export default function App() {
     setExporting(res.ok ? { done: true, file: res.file, progress: 1 } : { error: res.error });
   };
 
+  // Freeze frame (item 12): hold the frame at the playhead (or the clip's start) as a 4-second
+  // still. The original clip splits around the still; on the main track everything after shifts
+  // by the still's length, on the overlay track the second part moves 4 s later. One undo step.
+  const freezeClip = async (sel) => {
+    const p = projectRef.current;
+    const key = sel.track === 'video' ? 'videoClips' : 'overlayClips';
+    const c = p[key].find((x) => x.id === sel.id);
+    const m = c && p.media.find((x) => x.id === c.mediaId);
+    if (!c || !m) return;
+    let start;
+    let len;
+    if (sel.track === 'video') {
+      const l = videoLayout(p.videoClips).find((x) => x.clip.id === c.id);
+      if (!l) return;
+      start = l.start; len = l.end - l.start;
+    } else { start = c.start || 0; len = freeLen('overlay', c); }
+    const t = time > start && time < start + len ? time : start;
+    const srcT = (c.in || 0) + (t - start) * (c.speed || 1);
+    let fm;
+    try { fm = await window.api.frameImage(m.path, srcT); } catch (e) { fm = { error: e.message }; }
+    if (!fm || fm.error) { setRenderJob({ error: (fm && fm.error) || 'Could not grab the frame.' }); return; }
+    let media = projectRef.current.media.find((x) => x.path === fm.path);
+    const stillId = uid();
+    dispatch({ type: 'beginGesture' });
+    if (!media) { media = { ...fm, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
+    if (sel.track === 'video') {
+      const idx = videoLayout(p.videoClips).findIndex((x) => x.clip.id === c.id);
+      let insertIndex = idx;
+      if (t > start + 0.01) {
+        if (t < start + len - 0.01) dispatch({ type: 'split', track: 'video', id: c.id, t, newId: uid() });
+        insertIndex = idx + 1;
+      }
+      dispatch({ type: 'addToTimeline', mediaId: media.id, clipId: stillId, index: insertIndex });
+    } else {
+      const secondId = uid();
+      const interior = t > start + 0.01 && t < start + len - 0.01;
+      if (interior) {
+        dispatch({ type: 'split', track: 'overlay', id: c.id, t, newId: secondId });
+        dispatch({ type: 'update', track: 'overlay', id: secondId, patch: { start: t + 4 } });
+      } else {
+        dispatch({ type: 'update', track: 'overlay', id: c.id, patch: { start: (c.start || 0) + 4 } });
+      }
+      dispatch({ type: 'addOverlayClip', mediaId: media.id, clipId: stillId, at: t, layer: c.layer });
+      dispatch({ type: 'update', track: 'overlay', id: stillId, patch: { transform: c.transform || undefined } });
+    }
+    dispatch({ type: 'endGesture' });
+    setSelection({ track: sel.track, id: stillId });
+  };
+
+  // Reverse (item 12): render the clip's range backwards (electron/reverse.cjs, cached) and swap
+  // the clip onto the derivative, remembering the original in clip.reversed — choosing Reverse
+  // again restores it. Progress rides the same pill as other derivative renders.
+  const reverseClip = async (sel) => {
+    const p = projectRef.current;
+    const key = sel.track === 'video' ? 'videoClips' : sel.track === 'overlay' ? 'overlayClips' : 'audioClips';
+    const c = p[key].find((x) => x.id === sel.id);
+    const m = c && p.media.find((x) => x.id === c.mediaId);
+    if (!c || !m) return;
+    if (c.reversed) {
+      dispatch({ type: 'update', ...sel, patch: { mediaId: c.reversed.mediaId, in: c.reversed.in, out: c.reversed.out, reversed: null } });
+      return;
+    }
+    setRenderJob({ label: 'Reversing clip…', fraction: 0 });
+    const off = window.api.onReverseProgress((pr) => {
+      if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
+    });
+    let res;
+    try {
+      res = await window.api.reverseRun({ path: m.path, duration: m.duration, hdr: m.hdr, hasAudio: m.hasAudio, type: m.type }, c.in || 0, c.out ?? m.duration);
+    } catch (e) { res = { error: e.message }; }
+    off();
+    if (res.canceled) { setRenderJob(null); return; }
+    if (res.error) { setRenderJob({ error: res.error }); return; }
+    setRenderJob(null);
+    let media = projectRef.current.media.find((x) => x.path === res.path);
+    dispatch({ type: 'beginGesture' });
+    if (!media) { media = { ...res, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
+    dispatch({ type: 'update', ...sel, patch: { mediaId: media.id, in: 0, out: res.duration, reversed: { mediaId: c.mediaId, in: c.in || 0, out: c.out ?? m.duration } } });
+    dispatch({ type: 'endGesture' });
+  };
+
   const openClipMenu = (e, track, clip) => {
     setSelection({ track, id: clip.id });
     setMenu({ x: e.clientX, y: e.clientY, track, id: clip.id });
@@ -726,8 +811,19 @@ export default function App() {
             setSelection({ track: 'video', id: c.id });
           } });
     }
+    if (pic) {
+      const fx = c.effects || [];
+      items.push('sep',
+        { label: 'Freeze frame', icon: Snowflake, onClick: () => freezeClip(sel) },
+        { label: c.reversed ? 'Reverse (restore original)' : 'Reverse', icon: Rewind, onClick: () => reverseClip(sel) },
+        { label: fx.includes('mirror') ? 'Mirror (on)' : 'Mirror', icon: FlipHorizontal2,
+          onClick: () => dispatch({ type: 'update', ...sel, patch: { effects: fx.includes('mirror') ? fx.filter((x) => x !== 'mirror') : [...fx, 'mirror'] } }) },
+        { label: 'Rotate 90°', icon: RotateCw,
+          onClick: () => { const t = c.transform || {}; dispatch({ type: 'update', ...sel, patch: { transform: { ...t, rot: ((t.rot || 0) + 90) % 360 } } }); } });
+    }
     items.push('sep');
     if (pic) items.push({ label: 'Extract audio', icon: AudioLines, shortcut: 'Ctrl Shift S', onClick: () => extractAudio(sel), disabled: !canExtract, hint: extractHint });
+    if (sel.track === 'audio') items.push({ label: c.reversed ? 'Reverse (restore original)' : 'Reverse', icon: Rewind, onClick: () => reverseClip(sel) });
     items.push({ label: 'Export clip audio (MP3)', icon: AudioLines, onClick: () => exportAudio('mp3', sel), disabled: !withSound, hint: 'This clip has no sound' });
     items.push(c.disabled
       ? { label: 'Activate clip', icon: Eye, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: false } }) }
@@ -935,15 +1031,60 @@ export default function App() {
     setPlaying(false);
     let caps = { libx265: true };
     try { caps = await window.api.exportCaps(); } catch { /* the bundled build has libx265 */ }
-    setExporting({ ready: true, eff: resolveExport(project, caps), project });
+    setExporting({ ready: true, eff: resolveExport(project, caps), project, caps, target: null, name: (project.name || 'export').replace(/[\\/:*?"<>|]+/g, '_') });
   };
   const confirmExport = () => {
-    const { project, eff } = exporting;
-    return runExportFlow(project, eff);
+    const { project, eff, target, name } = exporting;
+    return runExportFlow(project, eff, target, name);
   };
-  const runExportFlow = async (project, eff) => {
-    const target = await window.api.exportBegin();
-    if (target.canceled) return setExporting(null);
+  // The dialog's own Browse: pick the output file up front (the frame folder comes with it).
+  const pickExportTarget = async (name) => {
+    const prev = exporting?.target;
+    const target = await window.api.exportBegin(name || exporting?.name);
+    if (target.canceled) return;
+    if (prev && prev.frameDir !== target.frameDir) window.api.exportAbort(prev.frameDir);
+    const base = String(target.file).split(/[\\/]/).pop().replace(/\.mp4$/i, '');
+    setExporting((e) => e && { ...e, target, name: base || e.name });
+  };
+  const renameExport = (name) => {
+    setExporting((e) => {
+      if (!e) return e;
+      const clean = String(name).replace(/[\\/:*?"<>|]+/g, '_');
+      let target = e.target;
+      if (target) {
+        const file = String(target.file);
+        const dir = file.slice(0, file.length - file.split(/[\\/]/).pop().length);
+        target = { ...target, file: `${dir}${clean || 'export'}.mp4` };
+      }
+      return { ...e, name: clean, target };
+    });
+  };
+  // The dialog's quality controls write the same stored settings Project Settings writes;
+  // the effective object is re-resolved so the dialog and the pipeline never diverge.
+  const changeExportSettings = (patch) => {
+    dispatch({ type: 'setProject', patch });
+    setExporting((e) => {
+      if (!e) return e;
+      const project = { ...e.project, ...patch };
+      return { ...e, project, eff: resolveExport(project, e.caps) };
+    });
+  };
+  const changeExportResolution = (resCap) => {
+    const s = storedExportSettings(exporting.project);
+    if (s.preset !== 'custom') {
+      const base = EXPORT_PRESETS[s.preset];
+      changeExportSettings(settingsPatch(exporting.project, { preset: 'custom', custom: { ...base, resCap } }));
+    } else {
+      changeExportSettings(settingsPatch(exporting.project, { preset: 'custom', custom: { ...s.custom, resCap } }));
+    }
+  };
+  const changePosterAt = (t) => {
+    dispatch({ type: 'setProject', patch: { posterAt: t } });
+    setExporting((e) => e && { ...e, project: { ...e.project, posterAt: t } });
+  };
+  const runExportFlow = async (project, eff, presetTarget, name) => {
+    const target = presetTarget || await window.api.exportBegin(name);
+    if (target.canceled) return; // stay on the form
     exportCanceled.current = false;
     // Text frames take the first part of the progress bar when the project has text.
     const textShare = project.textClips.length ? 0.35 : 0;
@@ -985,7 +1126,25 @@ export default function App() {
     const res = await window.api.exportRun(toExport, target, textFrames, stickerPngs(project));
     off();
     if (res.canceled) return setExporting(null);
-    setExporting(res.ok ? { done: true, file: res.file, progress: 1 } : { error: res.error });
+    if (!res.ok) return setExporting({ error: res.error });
+    // Poster cover: when the user picked a cover frame, embed it as the MP4's attached picture.
+    // Best-effort by design — a failed embed never fails the export; the done card says so.
+    let size = res.size;
+    let coverNote = null;
+    if (typeof project.posterAt === 'number') {
+      try {
+        const layout = videoLayout(project.videoClips);
+        const slot = layout.find((l) => !l.clip.gap && project.posterAt >= l.start && project.posterAt <= l.end);
+        const media = slot && project.media.find((m) => m.id === slot.clip.mediaId);
+        if (media && (media.type === 'video' || media.type === 'image')) {
+          const at = media.type === 'video' ? (slot.clip.in || 0) + (project.posterAt - slot.start) * (slot.clip.speed || 1) : 0;
+          const cov = await window.api.exportCover(res.file, media.path, at);
+          if (cov.ok) { if (cov.size) size = cov.size; }
+          else coverNote = 'The cover picture could not be embedded — the video itself is complete.';
+        }
+      } catch { coverNote = 'The cover picture could not be embedded — the video itself is complete.'; }
+    }
+    setExporting({ done: true, file: res.file, size, coverNote, progress: 1 });
   };
   const exportCanceled = useRef(false);
   const cancelExport = () => {
@@ -1105,7 +1264,7 @@ export default function App() {
 
       <div className="workspace" style={{ gridTemplateColumns: `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch}
-          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onUseTemplate={applyTemplate} onTtsAdd={ttsAdd} selectedText={selectedText}
+          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onUseTemplate={applyTemplate} onTtsAdd={ttsAdd} selectedText={selectedText} onOpenSettings={() => setSettingsOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId}
           recorder={recorder} onStartRecord={() => recorder.start(time)} onAddText={addText} onAddOverlay={addOverlay} onAddSticker={stickerAdd}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
@@ -1129,7 +1288,7 @@ export default function App() {
       </div>
       <Splitter which="bottom" style={{ bottom: panes.bottom + 6 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the timeline" />
 
-      <Timeline project={project} time={time} duration={duration} selection={selection} clockRef={clockRef}
+      <Timeline project={project} time={time} duration={duration} selection={selection} clockRef={clockRef} playing={playing}
         onSelect={setSelection} onSeek={seek} dispatch={dispatch}
         onSplit={split} onDelete={remove} onDuplicate={duplicate}
         tool={tool} setTool={setTool} onTrimSide={trimSide} onMarker={toggleMarker} recorder={recorder} onToggleRecord={toggleRecording}
@@ -1193,8 +1352,23 @@ export default function App() {
         dispatch={dispatch} settle={settle} onOpenSettings={() => setSettingsOpen(true)} settingsVersion={settingsVersion}
         app={pilotApp} />
       {dragOver && <div className="drop-overlay"><div>Drop files to import them</div></div>}
+      {renderJob && (
+        <div className="render-job" role="status">
+          {renderJob.error ? (
+            <><CircleAlert size={15} /><span>{renderJob.error}</span>
+              <button className="btn btn-sm" onClick={() => setRenderJob(null)}>Dismiss</button></>
+          ) : (
+            <><Loader2 size={15} className="spin" /><span>{renderJob.label}</span>
+              <div className="progress render-job-bar"><div style={{ width: `${Math.round((renderJob.fraction || 0) * 100)}%` }} /></div>
+              <button className="btn btn-sm btn-ghost" onClick={() => window.api.reverseCancel()}>Cancel</button></>
+          )}
+        </div>
+      )}
       {exporting && <ExportDialog state={exporting} onCancel={cancelExport} onStart={confirmExport}
-        onClose={() => setExporting(null)} onShow={() => window.api.showInFolder(exporting.file)} />}
+        onClose={() => setExporting(null)} onShow={() => window.api.showInFolder(exporting.file)}
+        onOpen={() => window.api.openFile(exporting.file)} onPickTarget={pickExportTarget}
+        onRename={renameExport} onSettings={changeExportSettings} onResolution={changeExportResolution}
+        onPosterAt={changePosterAt} />}
     </div>
   );
 }

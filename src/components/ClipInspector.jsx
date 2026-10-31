@@ -14,7 +14,8 @@ import KeyNav from './KeyNav.jsx';
 import AnimationPanel from './AnimationPanel.jsx';
 import GradePanel from './GradePanel.jsx';
 import AudioFxControls from './AudioFx.jsx';
-import { baseAt, editAt } from '../anim.js';
+import { baseAt, editAt, hasAnyKeys, localTime, nextArrival, segmentEase, setSegmentEase } from '../anim.js';
+import CurveEditor from './CurveEditor.jsx';
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -225,6 +226,17 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
     }
   };
 
+  // Fit / Fill (item 13): the transform's scale 1 is the contain fit in both preview and
+  // export, so Fit = scale 1 centred, and Fill = the cover/contain ratio, centred. Both write
+  // through setT like every other transform control (keyframe-safe).
+  const fitFill = (mode) => {
+    if (!media?.width || !media?.height || !W || !H) return;
+    if (mode === 'fit') { setT({ uniform: true, scale: 1, x: 0, y: 0 }); return; }
+    const contain = Math.min(W / media.width, H / media.height);
+    const cover = Math.max(W / media.width, H / media.height);
+    setT({ uniform: true, scale: Math.min(4, cover / contain), x: 0, y: 0 });
+  };
+
   const tabs = [['video', 'Video'], ['animation', 'Animation'], ...(isVideo ? [['audio', 'Audio'], ['speed', 'Speed']] : []), ['adjust', 'Adjust']];
 
   return (
@@ -251,6 +263,13 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
               <Section title="Transform" keys={keys(['scale', 'x', 'y', 'rot'], 'transform')}
                 onReset={() => set({ transform: { ...DEFAULT_TRANSFORM }, keyframes: dropKeys(['scale', 'x', 'y', 'rot']) })}>
                 {S({ label: 'Scale', value: t.scale, min: 0.05, max: 4, step: 0.01, fmt: pct, onChange: (scale) => setT({ scale }), extra: keys(['scale'], 'scale') })}
+                <div className="fitfill-row">
+                  <button type="button" className="btn btn-sm" onClick={() => fitFill('fit')}
+                    title="Show the whole picture inside the frame">Fit</button>
+                  <button type="button" className="btn btn-sm" onClick={() => fitFill('fill')}
+                    title="Cover the whole frame with the picture (the overflow is cropped)">Fill</button>
+                  <span className="dim small">Fit: whole picture visible · Fill: frame covered, overflow cropped</span>
+                </div>
                 <label className="field row">
                   <span>Uniform scale</span>
                   <input type="checkbox" className="switch" checked={t.uniform} onChange={(e) => setT({ uniform: e.target.checked })} />
@@ -287,6 +306,13 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                 </div>
                 <span className="dim small">Scale {pct(sx)} · ◇ adds a keyframe at the playhead: the clip moves from one keyframe to the next</span>
               </Section>
+              {hasAnyKeys(clip) && lt !== null && nextArrival(clip, lt, fps) !== null && (
+                <Section title="Segment easing">
+                  <span className="dim small">How the motion travels into the keyframe at {localTime(clip, nextArrival(clip, lt, fps)).toFixed(2)}s. New segments start on Smooth.</span>
+                  <CurveEditor compact value={segmentEase(clip, lt, fps)} resetValue="smooth"
+                    onChange={(ease) => set(setSegmentEase(clip, lt, ease, fps))} />
+                </Section>
+              )}
               {media && <Stabilize clip={clip} media={media} project={project} set={set} dispatch={dispatch} />}
               <Section title="Blend" onReset={() => set({ blend: 'normal', opacity: 1, keyframes: dropKeys(['opacity']) })}>
                 <label className="field">
@@ -456,7 +482,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
           {track === 'video' && (
             <Section title="Transition in">
               <select value={clip.transition?.type || 'none'} aria-label="Transition in"
-                onChange={(e) => set({ transition: e.target.value === 'none' ? null : { type: e.target.value, duration: clip.transition?.duration || 0.5 } })}>
+                onChange={(e) => set({ transition: e.target.value === 'none' ? null : { type: e.target.value, duration: clip.transition?.duration || 0.5, ...(/zoom/i.test(e.target.value) ? { ease: 'smooth' } : {}) } })}>
                 {[{ id: 'none', name: 'None' }, ...TRANSITIONS].map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
               {clip.transition && S({

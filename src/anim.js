@@ -6,6 +6,7 @@
 // the same movement. No DOM here: tests import this file directly.
 
 import { DEFAULT_TRANSFORM } from './visual.js';
+import { easeValue } from './fx/easing.js';
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const outCubic = (p) => 1 - (1 - p) ** 3;
@@ -176,7 +177,9 @@ export const localTime = (clip, srcT) => (srcT - (clip.in || 0)) / (clip.speed |
 
 // How a value travels to a keyframe, stored on the keyframe it arrives at ({ t, v, e }), like Remotion's Easing.
 // No `e` is linear, so older projects play as before. spring: Remotion's spring without bounce (critically
-// damped); back: a small overshoot that settles.
+// damped); back: a small overshoot that settles. The ids below are the original set; segments can also carry
+// a cubic-bezier preset id or a custom { p1x, p1y, p2x, p2y } object from fx/easing.js — segEase resolves all
+// three vocabularies, and because the export samples stateAt (motionCurves), preview and export agree.
 const SPRING_END = 1 - Math.exp(-7) * 8;
 export const EASINGS = {
   linear: (p) => p,
@@ -185,6 +188,11 @@ export const EASINGS = {
   inout: (p) => (p < 0.5 ? 4 * p ** 3 : 1 - (-2 * p + 2) ** 3 / 2),
   spring: (p) => (1 - Math.exp(-7 * p) * (1 + 7 * p)) / SPRING_END,
   back: (p) => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2,
+};
+const segEase = (e, p) => {
+  if (e == null) return p;
+  if (typeof e === 'string' && EASINGS[e]) return EASINGS[e](p);
+  return easeValue(e, p);
 };
 
 function interp(list, t) {
@@ -195,7 +203,44 @@ function interp(list, t) {
   while (list[i].t < t) i++;
   const a = list[i - 1];
   const b = list[i];
-  return a.v + (b.v - a.v) * (EASINGS[b.e] || EASINGS.linear)((t - a.t) / (b.t - a.t));
+  return a.v + (b.v - a.v) * segEase(b.e, (t - a.t) / (b.t - a.t));
+}
+
+// ---- Segment easing (the curve editor's keyframe side) ----
+// The next arrival keyframe after local time lt: the first key (any property) that has a predecessor in
+// its own list and sits after the playhead. Its `e` eases the segment that leads into it.
+export function nextArrival(clip, lt, fps = 30) {
+  if (!clip.keyframes) return null;
+  const tol = (0.5 / fps) * (clip.speed || 1) + EPS;
+  let best = null;
+  for (const p of KEY_PROPS) {
+    const list = clip.keyframes[p] || [];
+    for (let i = 1; i < list.length; i++) {
+      if (localTime(clip, list[i].t) > lt + tol && (best === null || list[i].t < best)) best = list[i].t;
+    }
+  }
+  return best;
+}
+// The easing stored on that arrival (first property that has a key there), or undefined.
+export function segmentEase(clip, lt, fps = 30) {
+  const at = nextArrival(clip, lt, fps);
+  if (at === null) return undefined;
+  for (const p of KEY_PROPS) {
+    const k = (clip.keyframes[p] || []).find((x) => Math.abs(x.t - at) <= EPS);
+    if (k) return k.e;
+  }
+  return undefined;
+}
+// Patch writing `ease` onto every property's keyframe at that arrival (undefined/'linear' clears it).
+export function setSegmentEase(clip, lt, ease, fps = 30) {
+  const at = nextArrival(clip, lt, fps);
+  if (at === null) return {};
+  const keyframes = { ...(clip.keyframes || {}) };
+  for (const p of KEY_PROPS) {
+    const k = (keyframes[p] || []).find((x) => Math.abs(x.t - at) <= EPS);
+    if (k) keyframes[p] = upsert(keyframes[p], at, k.v, ease === undefined ? 'linear' : ease);
+  }
+  return { keyframes };
 }
 
 export const hasKeys = (clip, prop) => !!clip.keyframes?.[prop]?.length;
@@ -249,11 +294,16 @@ function upsert(list, t, v, e) {
 }
 
 // Adds (or replaces) keyframes of `props` at local time lt with the clip's current values there. Returns the patch.
+// A keyframe created where none existed starts a new segment, which defaults to Smooth; replacing an existing
+// keyframe keeps its easing (upsert with no `e`).
 export function addKeys(clip, props, lt) {
   const b = baseAt(clip, lt);
   const st = sourceTime(clip, lt);
   const keyframes = { ...(clip.keyframes || {}) };
-  props.forEach((p) => { keyframes[p] = upsert(keyframes[p], st, b[p]); });
+  props.forEach((p) => {
+    const isNew = !(keyframes[p] || []).some((k) => Math.abs(k.t - st) <= EPS);
+    keyframes[p] = upsert(keyframes[p], st, b[p], isNew ? 'smooth' : undefined);
+  });
   return { keyframes };
 }
 
@@ -300,7 +350,8 @@ export function editAt(clip, values, lt) {
   let keyed = false;
   for (const [p, v] of Object.entries(values)) {
     if (KEY_PROPS.includes(p) && hasKeys(clip, p)) {
-      keyframes[p] = upsert(keyframes[p], st, v);
+      const isNew = !(keyframes[p] || []).some((k) => Math.abs(k.t - st) <= EPS);
+      keyframes[p] = upsert(keyframes[p], st, v, isNew ? 'smooth' : undefined);
       keyed = true;
     } else if (p === 'opacity') patch.opacity = v;
     else t[p] = v;

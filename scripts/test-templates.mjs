@@ -62,7 +62,7 @@ assert.equal(path.basename(a.dir), 'Beach days');
 assert.equal(path.basename(b.dir), 'Beach days 2', 'an existing package is never overwritten');
 assert.deepEqual(a.files.sort(), ['m0.mp4', 'm1.mp3', 'template.json']);
 const doc = JSON.parse(fs.readFileSync(path.join(a.dir, 'template.json'), 'utf8'));
-assert.equal(doc.format, 'caprocket-template');
+assert.equal(doc.format, 'clipcraft-template');
 assert.deepEqual(doc.project.media.map((m) => [m.id, m.path]), [['a', 'm0.mp4'], ['b', 'm1.mp3']]);
 assert.ok(!('thumb' in doc.project.media[0]) && !('proxy' in doc.project.media[0]), 'cache fields are dropped');
 assert.ok(!JSON.stringify(doc).includes(src.replace(/\\/g, '\\\\')), 'no path of this PC in the package');
@@ -117,6 +117,29 @@ await tpl.use(fake, ID);
 assert.deepEqual(calls[calls.length - 1], [`${base}/use`, 'POST']);
 await assert.rejects(tpl.download(fake, cache, '../../etc'), /Unknown template/);
 console.log('store ok');
+
+// ---- legacy packages still open; an unpublished store feed is an empty store, not an error ----
+// The same package, but its template.json carries the legacy v1 format id (written before the rename).
+const ID2 = '0123456789cd';
+const base2 = `https://store.test/api/v1/templates/${ID2}`;
+const legacyDoc = JSON.parse(files['template.json'].toString('utf8'));
+legacyDoc.format = 'caprocket-template'; // the legacy v1 format id — kept here to prove the read shim
+const files2 = { ...files, 'template.json': Buffer.from(JSON.stringify(legacyDoc)) };
+const fake2 = async (url, opts = {}) => {
+  if (url === base2) {
+    return { ok: true, status: 200, json: async () => ({ template: { id: ID2, title: 'Beach', files: Object.entries(files2).map(([name, buf]) => ({ name, size: buf.length, sha256: sha(buf), url: `${base2}/files/${name}` })) } }) };
+  }
+  if (url === `${base2}/use`) return { ok: true, status: 204 };
+  const name = url.slice(`${base2}/files/`.length);
+  if (files2[name]) return { ok: true, status: 200, body: stream(files2[name]) };
+  return { ok: false, status: 404 };
+};
+const got2 = await tpl.download(fake2, path.join(tmp, 'cache2'), ID2);
+assert.equal(JSON.parse(got2.json).media[0].path.endsWith('m0.mp4'), true, 'a legacy-format package downloads and opens');
+// The store feed answering 404 (not published yet) lists as empty instead of throwing.
+const gone = async () => ({ ok: false, status: 404 });
+assert.deepEqual(await tpl.list(gone, {}), { templates: [], categories: [], page: 1, pages: 1, total: 0 }, 'a 404 store feed is an empty store');
+console.log('legacy + empty-store ok');
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('TEMPLATES OK');

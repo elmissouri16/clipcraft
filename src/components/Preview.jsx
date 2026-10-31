@@ -4,12 +4,14 @@ import { hasMotion, stateAt } from '../anim.js';
 import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
 import { clipCss, textAnim } from '../effects.js';
 import { drawTextLayer } from '../text/render.js';
+import { resumeAudioGraph, wireElement } from '../audioTap.js';
 import { fontsReady, onFontsChanged } from '../fonts.js';
 import { isInternal, readPayload } from '../dnd.js';
 import { applyChromaKey, blendOf, chromaOf, decoStyle, layerStyle } from '../visual.js';
 import TransformBox from './TransformBox.jsx';
 import MediaPeek from './MediaPeek.jsx';
 import { fxTransition } from '../fx/catalog.js';
+import { easeValue } from '../fx/easing.js';
 import { fxGL } from '../fx/gl.js';
 import { drawOverlayPasses, pixelPasses } from '../fx/apply.js';
 import { anchorCorrection, interpolateTime } from '../playbackClock.js';
@@ -149,6 +151,16 @@ export default function Preview({
   // Full screen player (button or F, Esc to leave), like CapCut's: only the video and the transport bar.
   const playerRef = useRef(null);
   const [full, setFull] = useState(false);
+  // Level meter tap (item 11): route every sounding element through the shared audio graph,
+  // once per element. Runs each commit; the graph guards repeats. Matte/keying videos are muted
+  // by design and are not part of the mix, so they are skipped.
+  useEffect(() => {
+    wireElement(vids[0].current);
+    wireElement(vids[1].current);
+    for (const o of Object.values(overlayEls.current)) wireElement(o && o.v);
+    for (const el of Object.values(audioEls.current)) wireElement(el);
+  });
+  useEffect(() => { if (playing) resumeAudioGraph(); }, [playing]);
   useEffect(() => {
     const on = () => setFull(document.fullscreenElement === playerRef.current);
     document.addEventListener('fullscreenchange', on);
@@ -314,7 +326,7 @@ export default function Preview({
       };
       const a = frameOf(outgoing, 'a');
       const b = frameOf(incoming, 'b');
-      const out = fxGL().transition(a, b, pw, ph, (t - incoming.start) / incoming.trans, fxTr.expr);
+      const out = fxGL().transition(a, b, pw, ph, easeValue(incoming.clip.transition?.ease, (t - incoming.start) / incoming.trans), fxTr.expr);
       tc.getContext('2d').drawImage(out, 0, 0);
       tc.style.display = 'block';
       slots.forEach((s) => { s.current.style.opacity = '0'; });

@@ -485,12 +485,13 @@ ipcMain.handle('app:closeCancel', () => clearTimeout(closeTimer));
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
 const frameDirs = new Set();
 
-ipcMain.handle('export:begin', async () => {
+ipcMain.handle('export:begin', async (_e, suggested) => {
   let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'ui-export.mp4') : null;
   if (!file) {
+    const base = String(suggested || 'export').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'export';
     const res = await dialog.showSaveDialog(win, {
       title: 'Export video',
-      defaultPath: 'export.mp4',
+      defaultPath: `${base}.mp4`,
       filters: [{ name: 'MP4 video', extensions: ['mp4'] }],
     });
     if (res.canceled) return { canceled: true };
@@ -567,7 +568,9 @@ ipcMain.handle('export:run', async (_e, projectIn, target, textFrames, stickerPn
       : project;
     currentExport = runExport(withText, target.file, (p) => win.webContents.send('export:progress', p), assets);
     await currentExport.promise;
-    return { ok: true, file: target.file };
+    let size = 0;
+    try { size = fs.statSync(target.file).size; } catch { /* the done card shows no size */ }
+    return { ok: true, file: target.file, size };
   } catch (e) {
     if (currentExport?.canceled) return { canceled: true };
     return { ok: false, error: e.message };
@@ -575,6 +578,31 @@ ipcMain.handle('export:run', async (_e, projectIn, target, textFrames, stickerPn
     currentExport = null;
     dropFrames(target.frameDir);
     fxJobs.clear();
+  }
+});
+
+// Embed the chosen poster frame as the MP4's attached cover picture: grab the frame from the source
+// media, then a stream-copy remux adds it as attached_pic (the original file is only replaced once
+// the remux succeeds, so a failure leaves the export untouched).
+ipcMain.handle('export:cover', async (_e, file, mediaPath, at) => {
+  const { execFile } = require('child_process');
+  const { ffmpegPath } = require('./ffmpeg.cjs');
+  const run = (args) => new Promise((resolve, reject) => execFile(ffmpegPath, args, (e) => (e ? reject(e) : resolve())));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-cover-'));
+  try {
+    if (!fs.existsSync(file) || !fs.existsSync(mediaPath)) throw new Error('missing file');
+    const cover = path.join(tmp, 'cover.jpg');
+    await run(['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-q:v', '3', cover]);
+    const out = path.join(tmp, 'with-cover.mp4');
+    await run(['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-i', cover, '-map', '0', '-map', '1', '-c', 'copy', '-disposition:v:1', 'attached_pic', out]);
+    fs.copyFileSync(out, file);
+    let size = 0;
+    try { size = fs.statSync(file).size; } catch { /* ignore */ }
+    return { ok: true, size };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
@@ -795,6 +823,25 @@ ipcMain.handle('gen:run', async (_e, jobId, kind, opts = {}) => {
   }
 });
 ipcMain.handle('gen:stop', (_e, jobId) => genJobs.get(jobId)?.abort());
+
+// ---- Forge: ClipCraft's own AI generation (photos + short videos). Pollinations (free, no key)
+// for photos; Gemini — the AI assistant's existing key, no second key field — for Gemini photos
+// and Veo videos. Jobs live in the forge module, so they survive panel switches. ----
+const forge = require('./forge.cjs');
+const forgeDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'forge-test') : path.join(app.getPath('userData'), 'forge'));
+const forgeDeps = () => ({ fetchImpl: net.fetch, dir: forgeDir(), getKey: () => settings.getActive('gemini').apiKey });
+ipcMain.handle('forge:status', () => ({ hasGeminiKey: !!settings.getActive('gemini').apiKey }));
+ipcMain.handle('forge:catalog', () => forge.catalog());
+ipcMain.handle('forge:list', () => forge.list(forgeDir()).map((e) => ({ ...e, path: path.join(forgeDir(), e.file) })));
+ipcMain.handle('forge:start', (_e, opts) => { try { return forge.start(forgeDeps(), opts || {}); } catch (e) { return { error: e.message }; } });
+ipcMain.handle('forge:jobs', () => forge.listJobs());
+ipcMain.handle('forge:cancel', (_e, id) => forge.cancel(id));
+ipcMain.handle('forge:remove', (_e, id) => forge.remove(forgeDir(), id));
+ipcMain.handle('forge:reveal', (_e, id) => {
+  const entry = forge.list(forgeDir()).find((e) => e.id === id);
+  if (entry) shell.showItemInFolder(path.join(forgeDir(), entry.file));
+  return !!entry;
+});
 // My avatars: photos of people reused in every project (<userData>/avatars).
 const avatarDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'avatars-test') : path.join(app.getPath('userData'), 'avatars'));
 ipcMain.handle('avatars:list', () => gen.avatarList(avatarDir()));
@@ -961,6 +1008,54 @@ ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
 });
 ipcMain.handle('stabilize:cancel', () => { if (stabJob) stabJob.canceled = true; });
 
+// Reverse (context menu, item 12): same one-job-at-a-time derivative-render pattern.
+const { reverse } = require('./reverse.cjs');
+let revJob = null;
+ipcMain.handle('reverse:run', async (_e, item, from, to) => {
+  if (revJob) return { error: 'Another clip is being reversed.' };
+  if (!item || !fs.existsSync(item.path)) return { error: 'The media file was not found.' };
+  const job = { canceled: false };
+  revJob = job;
+  try {
+    const out = await reverse(item, {
+      from, to, hasVideo: item.type !== 'audio', cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath, toSdr: require('./ffmpeg.cjs').toSdr,
+      isCanceled: () => job.canceled,
+      onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('reverse:progress', { path: item.path, fraction }); },
+    });
+    const [m] = await probeAll([out]);
+    if (!m || m.error) return { error: 'Could not read the reversed video.' };
+    return { ...m, name: `${path.basename(item.path).replace(/\.[^.]+$/, '')} (reversed).mp4` };
+  } catch (e) {
+    return e.canceled ? { canceled: true } : { error: e.message };
+  } finally {
+    revJob = null;
+  }
+});
+ipcMain.handle('reverse:cancel', () => { if (revJob) revJob.canceled = true; });
+
+// Freeze frame (context menu, item 12): grab one frame of a media file as a PNG still the
+// project can hold. Cached by file + time; the file lands in the media cache like other stills.
+ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
+  const { execFile } = require('child_process');
+  const { ffmpegPath } = require('./ffmpeg.cjs');
+  try {
+    if (!fs.existsSync(mediaPath)) return { error: 'The media file was not found.' };
+    const st = fs.statSync(mediaPath);
+    const key = require('crypto').createHash('sha1').update(`${mediaPath}|${st.size}|${st.mtimeMs}|frame|${Number(at).toFixed(2)}`).digest('hex').slice(0, 16);
+    const dir = mediaCacheDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const out = path.join(dir, `${key}-frame.png`);
+    if (!fs.existsSync(out)) {
+      await new Promise((resolve, reject) => execFile(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', out], (e) => (e ? reject(e) : resolve())));
+    }
+    const [m] = await probeAll([out]);
+    if (!m || m.error) return { error: 'Could not read the frozen frame.' };
+    return m;
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
 // Animated stickers (Noto Animated Emoji, CC BY 4.0): the list, and a sticker as a media item with its credit.
 const stickers = require('./stickers.cjs');
 const stickersDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'stickers-test') : path.join(app.getPath('userData'), 'stickers'));
@@ -1097,6 +1192,7 @@ ipcMain.handle('captions:run', async (_e, project, opts = {}) => {
 });
 
 ipcMain.handle('shell:show', (_e, file) => shell.showItemInFolder(file));
+ipcMain.handle('shell:open', (_e, file) => shell.openPath(file));
 
 // Cloud captions (item O): the same timeline audio, transcribed by the provider the user
 // picked with their own saved key. Segments come back in the local flow's exact shape.
