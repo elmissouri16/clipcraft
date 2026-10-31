@@ -1,0 +1,118 @@
+{
+ "format": "caprocket-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "duration": 6,
+  "slots": 2,
+  "texts": 2,
+  "media": 2
+ },
+ "project": {
+  "name": "Real Estate Tour | Address Title and Price Lower-Third",
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 3,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "m1",
+    "name": "Replace me 2.mp4",
+    "path": "m1.mp4",
+    "type": "video",
+    "duration": 3,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 3,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   },
+   {
+    "id": "v2",
+    "mediaId": "m1",
+    "in": 0,
+    "out": 3,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t3",
+    "text": "SUNSET APARTMENT",
+    "start": 0.3,
+    "duration": 2.5,
+    "y": 0.16,
+    "template": "mat-accent-bar",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t4",
+    "text": "3 rooms — 850,000 MAD",
+    "start": 3.3,
+    "duration": 2.3,
+    "y": 0.8,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.6,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Real Estate Tour | Address Title and Price Lower-Third",
+  "category": "Business",
+  "description": "Address Title and Price Lower-Third. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Promo",
+   "Social"
+  ]
+ }
+}
