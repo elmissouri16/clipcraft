@@ -96,6 +96,7 @@ button:disabled { cursor: not-allowed; opacity: 0.4; }
   background: transparent; border: 0; color: var(--text-2); transition: background var(--t-fast), color var(--t-fast);
 }
 .icon-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.icon-btn:disabled { opacity: .38; cursor: default; }
 
 /* ---------- Form controls ---------- */
 input, select, textarea { font: inherit; color: var(--text); }
@@ -616,7 +617,7 @@ kbd {
 .field > span .btn { margin: -4px 0; }
 .field small { line-height: 1.4; }
 
-/* ---------- CraftPilot (AI assistant) ---------- */
+/* ---------- CraftAI (AI assistant) ---------- */
 .pilot-fab {
   position: fixed; right: 18px; bottom: 18px; z-index: 35; display: flex; align-items: center; gap: 9px; height: 44px; padding: 0 18px 0 8px;
   border-radius: 22px; border: 1px solid var(--border-strong); background: rgba(28, 32, 43, 0.92); backdrop-filter: blur(8px);
@@ -1137,7 +1138,7 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .settings2 .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
 .settings2 .settings-section { background: #181826; border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 14px; padding: 16px; }
 
-/* CraftPilot redesign (pilot2): a ClipCraft command deck — gradient wordmark, model pill,
+/* CraftAI redesign (pilot2): a ClipCraft command deck — gradient wordmark, model pill,
    grouped quick-action cards, visual style tiles, card messages, floating pill composer.
    Scoped under .pilot2; panel position/size and all behaviour are unchanged. */
 .pilot-panel.pilot2 {
@@ -1383,6 +1384,19 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 @keyframes x-spin { to { transform: rotate(360deg); } }
 .x-bar { width: min(420px, 80%); }
 .x-pct { font-size: 40px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+/* Encoding state: cover + read-only spec list, full-width progress row underneath. */
+.x-enc-body { display: grid; grid-template-columns: 300px 1fr; gap: 22px; width: 100%; }
+.x-specs { display: flex; flex-direction: column; justify-content: center; }
+.x-specs .export-summary-row { font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.x-specs .export-summary-row:first-child { padding-top: 0; }
+.x-specs .export-summary-row:last-child { border-bottom: none; padding-bottom: 0; }
+.x-enc-foot { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); width: 100%; }
+.x-enc-status { display: flex; align-items: center; gap: 10px; }
+.x-ring.sm { width: 18px; height: 18px; border-width: 2.5px; flex: none; }
+.x-enc-stage { color: var(--text); font-size: 13.5px; font-weight: 600; }
+.x-enc-pct { margin-left: auto; font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+.x-enc-foot .x-bar { width: 100%; margin-top: 12px; }
+.x-enc-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 .proj-bg { margin-top: -2px; }
 .proj-stats {
   display: flex; flex-direction: column; gap: 2px; padding: 9px 11px; border-radius: 10px;
@@ -1530,25 +1544,49 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .tst-details { color: var(--text-2); font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; margin-top: 2px; }
 
 /* Curve editor (transitions + keyframe segments) */
-.curve-editor { display: flex; flex-direction: column; gap: 8px; }
-.curve-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.curve-chip { padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel2); color: var(--dim); font-size: 10.5px; font-weight: 600; cursor: pointer; }
-.curve-chip:hover { color: var(--text); border-color: var(--line2); }
-.curve-chip.on { background: rgba(130, 92, 251, .16); border-color: var(--violet); color: #cdbffb; }
-.curve-graph { width: 100%; height: auto; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; touch-action: none; }
-.curve-grid { stroke: var(--line); stroke-width: 0.4; }
-.curve-grid.strong { stroke: var(--line2); stroke-width: 0.6; }
-.curve-guide { stroke: var(--faint); stroke-width: 0.4; stroke-dasharray: 2 2; opacity: .5; }
-.curve-stem { stroke: var(--violet); stroke-width: 0.5; opacity: .65; }
-.curve-line { stroke: var(--violet); stroke-width: 1.6; }
-.curve-anchor { fill: var(--panel2); stroke: var(--dim); stroke-width: 0.7; }
-.curve-handle { fill: #fff; stroke: var(--violet); stroke-width: 1.1; cursor: grab; }
-.curve-handle:active { cursor: grabbing; }
-.curve-axis { fill: var(--faint); font-size: 4.6px; }
+.curve-editor { display: flex; flex-direction: column; gap: 10px; }
+.curve-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.curve-chip { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px 5px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text-2); font-size: 10.5px; font-weight: 600; line-height: 1.1; cursor: pointer; transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.curve-chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-4); }
+.curve-chip.on { background: linear-gradient(135deg, var(--primary), var(--primary-2)); border-color: transparent; color: #fff; box-shadow: 0 4px 12px rgba(130, 92, 251, .35); }
+.curve-glyph { width: 34px; height: 17px; display: block; }
+.curve-glyph-base { stroke: currentColor; stroke-width: 1px; vector-effect: non-scaling-stroke; opacity: .28; }
+.curve-glyph-line { stroke: currentColor; stroke-width: 1.6px; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.curve-glyph-line.dashed { stroke-dasharray: 3 2.4; }
+.curve-graph { width: 100%; height: auto; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; touch-action: none; }
+.curve-frame { fill: rgba(255, 255, 255, .015); stroke: var(--border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.curve-grid { stroke: rgba(255, 255, 255, .055); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.curve-grid.strong { stroke: rgba(255, 255, 255, .13); }
+.curve-grid.dash { stroke-dasharray: 4 3; stroke: rgba(255, 255, 255, .09); }
+.curve-guide { stroke: var(--text-3); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 3 3; opacity: .45; }
+.curve-fill { fill: var(--primary); opacity: .13; }
+.curve-glow-line { stroke: var(--primary); stroke-width: 5px; vector-effect: non-scaling-stroke; opacity: .30; stroke-linecap: round; }
+.curve-line { stroke: var(--primary); stroke-width: 2.5px; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.curve-stem { stroke: var(--primary); stroke-width: 1px; vector-effect: non-scaling-stroke; opacity: .55; }
+.curve-anchor { fill: var(--surface-3); stroke: var(--text-3); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.curve-halo { fill: var(--primary); opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.curve-grip { fill: #fff; stroke: var(--primary); stroke-width: 2px; vector-effect: non-scaling-stroke; cursor: grab; transition: transform var(--t-fast) var(--ease); transform-box: fill-box; transform-origin: center; }
+.curve-grip:active { cursor: grabbing; }
+.curve-grip-grp:hover .curve-grip, .curve-grip-grp.active .curve-grip { transform: scale(1.28); }
+.curve-grip-grp:hover .curve-halo, .curve-grip-grp.active .curve-halo { opacity: .16; }
+.curve-readout rect { fill: #262640; stroke: rgba(130, 92, 251, .55); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.curve-readout text { fill: var(--text); font-family: ui-monospace, Menlo, monospace; font-size: 4.5px; }
+.curve-axis { fill: var(--text-3); font-size: 4.4px; font-weight: 500; }
+.curve-preview { display: flex; align-items: center; gap: 8px; }
+.curve-play { flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 99px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text-2); cursor: pointer; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.curve-play:hover { background: var(--surface-4); color: var(--text); }
+.curve-play.on { background: var(--primary-soft); border-color: var(--primary); color: #c4b5fd; }
+.curve-track { position: relative; flex: 1; height: 14px; }
+.curve-track::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 3px; transform: translateY(-50%); border-radius: 99px; background: var(--surface-4); }
+.curve-dot { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 99px; background: var(--primary); box-shadow: 0 0 8px rgba(130, 92, 251, .65); transform: translate(-50%, -50%); }
+.curve-dot.ghost { width: 7px; height: 7px; background: transparent; border: 1.5px solid var(--text-3); box-shadow: none; }
 .curve-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.curve-bezier { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--dim); }
-.curve-reset { background: none; border: none; color: var(--violet2); font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 4px; }
-.curve-editor.compact .curve-chip { padding: 3px 7px; font-size: 10px; }
+.curve-bezier { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; }
+.curve-reset { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; border-radius: 6px; color: var(--text-2); font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 4px 7px; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.curve-reset:hover { background: var(--surface-3); color: var(--text); }
+.curve-editor.compact { gap: 8px; }
+.curve-editor.compact .curve-chip { font-size: 10px; padding: 5px 1px 4px; }
+.curve-editor.compact .curve-glyph { width: 28px; height: 14px; }
 
 /* Forge panel */
 .forge-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }

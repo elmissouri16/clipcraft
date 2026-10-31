@@ -1,4 +1,4 @@
-// AI provider layer for the CraftPilot assistant. Runs only in the main process so API keys never reach the UI.
+// AI provider layer for the CraftAI assistant. Runs only in the main process so API keys never reach the UI.
 // chat() takes plain messages and returns text; tool calling is added on top of this later.
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 const GROQ_BASE = 'https://api.groq.com/openai/v1';
@@ -243,7 +243,7 @@ async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, t
 }
 
 // ---- Tool calling through the OpenAI chat API (Groq, OpenAI-compatible services) ----
-// The agent keeps its conversation in Gemini's format; it is translated both ways here, so the rest of CraftPilot
+// The agent keeps its conversation in Gemini's format; it is translated both ways here, so the rest of CraftAI
 // does not depend on the provider.
 
 // Reasoning models (gpt-oss on Groq) think before answering and those tokens count in max_tokens: keep the
@@ -260,7 +260,7 @@ function toJsonSchema(s) {
 }
 
 // Gemini contents -> OpenAI messages. Tool calls get ids from their place in the conversation; the answers that
-// follow a model turn are matched to its calls in order (CraftPilot answers every call, in order).
+// follow a model turn are matched to its calls in order (CraftAI answers every call, in order).
 function toOpenAiMessages(system, contents) {
   const msgs = system ? [{ role: 'system', content: system }] : [];
   let lastIds = [];
@@ -376,7 +376,7 @@ async function testConnection(cfg) {
     let { message } = e;
     let suggest = e.suggestModel;
     // The key works but cannot use this model (not on the account, blocked in the project, retired): ask which
-    // models it can use and offer one, preferring models that handle CraftPilot's tools well.
+    // models it can use and offer one, preferring models that handle CraftAI's tools well.
     if (e.status === 404 && OPENAI_LIKE[cfg.provider]) {
       const list = await listModels(cfg);
       if (list.ok && !list.models.includes(cfg.model)) {

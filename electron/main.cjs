@@ -651,7 +651,7 @@ ipcMain.handle('app:openHelp', (_e, url) => {
 });
 
 ipcMain.handle('settings:get', () => settings.getPublic());
-// ---- MCP servers: external tool servers (stdio) whose tools CraftPilot may call. ----
+// ---- MCP servers: external tool servers (stdio) whose tools CraftAI may call. ----
 const mcp = require('./mcp.cjs');
 const mcpRegistry = mcp.createRegistry(() => settings.getMcpServers());
 ipcMain.handle('settings:setMcpServers', (_e, list) => settings.setMcpServers(list));
@@ -970,7 +970,7 @@ ipcMain.handle('matting:run', async (_e, item) => {
 });
 ipcMain.handle('matting:cancel', () => { if (mattingJob) mattingJob.canceled = true; });
 
-// Background pictures for scenes without footage (CraftPilot's add_scene), kept with the library downloads.
+// Background pictures for scenes without footage (CraftAI's add_scene), kept with the library downloads.
 ipcMain.handle('scene:make', async (_e, opts) => {
   try {
     const file = await require('./ffmpeg.cjs').makeScene(opts || {}, path.join(stockDir(), 'scenes'));
@@ -1127,7 +1127,7 @@ ipcMain.handle('lut:import', async () => {
   return { path: file, name: path.basename(file).replace(/\.cube$/i, '') };
 });
 
-// ---- CraftPilot agent: one model step per call; tools run in the interface, heavy ones call back here. ----
+// ---- CraftAI agent: one model step per call; tools run in the interface, heavy ones call back here. ----
 // If the provider fails, the step goes to the next one with a saved key (Gemini, Groq, OpenAI-compatible).
 // req.provider: the provider that answered the previous step of this request, so a run stays on it.
 ipcMain.handle('agent:step', async (_e, req) => {

@@ -1,4 +1,4 @@
-// CraftPilot tools: what the AI model can ask the editor to do.
+// CraftAI tools: what the AI model can ask the editor to do.
 // Every editing tool goes through the same reducer actions as the buttons, so Undo, the timeline and the
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.

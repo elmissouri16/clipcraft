@@ -3,7 +3,7 @@ import { CircleAlert, CircleCheck, ExternalLink, Eye, EyeOff, Film, Gauge, Loade
 
 const PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', needsKey: true, hint: 'The easiest key is a free one from Google AI Studio (starts with AIza). Vertex AI express keys (AQ.…) work too once the API is enabled for their project.', keyUrl: 'https://aistudio.google.com/app/apikey', keyUrlLabel: 'Get a free key (AI Studio)' },
-  { id: 'groq', name: 'Groq (fast, free tier)', needsKey: true, hint: 'Free key from the Groq console (starts with gsk_). Very fast. Recommended model: openai/gpt-oss-120b (works well with the CraftPilot editing tools). "Load models" shows the ones your key can use.', keyUrl: 'https://console.groq.com/keys', keyUrlLabel: 'Get a free key (Groq)' },
+  { id: 'groq', name: 'Groq (fast, free tier)', needsKey: true, hint: 'Free key from the Groq console (starts with gsk_). Very fast. Recommended model: openai/gpt-oss-120b (works well with the CraftAI editing tools). "Load models" shows the ones your key can use.', keyUrl: 'https://console.groq.com/keys', keyUrlLabel: 'Get a free key (Groq)' },
   { id: 'ollama', name: 'Ollama (local, free)', needsKey: false, hint: 'Runs on this PC, no key and no internet. Install Ollama and pull a model first.', baseUrl: 'http://localhost:11434', keyUrl: 'https://ollama.com/download', keyUrlLabel: 'Download Ollama' },
   { id: 'openai', name: 'OpenAI', needsKey: true, hint: 'Key from platform.openai.com. Recommended model: gpt-4o-mini or better.', baseUrl: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys', keyUrlLabel: 'Get a key (OpenAI)' },
   { id: 'openrouter', name: 'OpenRouter', needsKey: true, hint: 'One key for many models (OpenAI, Anthropic, Meta…). Model ids look like "openai/gpt-4o-mini".', keyUrl: 'https://openrouter.ai/keys', keyUrlLabel: 'Get a key (OpenRouter)' },
@@ -239,7 +239,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
         {section === 'ai' && (
         <section className="settings-section">
           <div className="settings-title"><Sparkles size={16} /> AI assistant</div>
-          <p className="muted">The assistant (CraftPilot) uses this service to understand your requests. Your key is stored encrypted on this PC and is never shown again.</p>
+          <p className="muted">The assistant (CraftAI) uses this service to understand your requests. Your key is stored encrypted on this PC and is never shown again.</p>
 
           <label className="field">
             <span>Provider</span>
@@ -336,7 +336,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
   );
 }
 
-// MCP servers: external tool servers (stdio) whose tools CraftPilot can call during an edit.
+// MCP servers: external tool servers (stdio) whose tools CraftAI can call during an edit.
 // Config is name + command + arguments; "Test" starts the server and lists its real tools.
 function McpSettings({ saved, onSaved }) {
   const servers = saved.mcpServers || [];
@@ -355,7 +355,7 @@ function McpSettings({ saved, onSaved }) {
     if (!name.trim() || !command.trim()) return;
     await persist([...servers, { name: name.trim(), command: command.trim(), args: splitArgs(args) }]);
     setName(''); setCommand(''); setArgs('');
-    setResult({ ok: true, text: 'Server saved. CraftPilot will offer its tools on the next request.' });
+    setResult({ ok: true, text: 'Server saved. CraftAI will offer its tools on the next request.' });
   };
   const remove = async (i) => { await persist(servers.filter((_, k) => k !== i)); setResult(null); };
   const test = async (server) => {
@@ -369,7 +369,7 @@ function McpSettings({ saved, onSaved }) {
   return (
     <section className="settings-section">
       <div className="settings-title"><Sparkles size={16} /> MCP tool servers</div>
-      <p className="muted">Connect Model Context Protocol servers (started as local processes). Their tools are given to CraftPilot as <i>mcp_&lt;server&gt;_&lt;tool&gt;</i> alongside the editing tools.</p>
+      <p className="muted">Connect Model Context Protocol servers (started as local processes). Their tools are given to CraftAI as <i>mcp_&lt;server&gt;_&lt;tool&gt;</i> alongside the editing tools.</p>
       {servers.map((s, i) => (
         <div key={`${s.name}-${i}`} className="key-row" style={{ marginBottom: 6 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

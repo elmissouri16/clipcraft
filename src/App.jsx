@@ -30,7 +30,7 @@ import SettingsDialog from './components/SettingsDialog.jsx';
 import { AboutDialog, UpdateNotice, useUpdateCheck } from './components/About.jsx';
 import ScreenRecordDialog from './components/ScreenRecordDialog.jsx';
 import { useScreenRecorder } from './useScreenRecorder.js';
-import CraftPilot from './components/CraftPilot.jsx';
+import CraftAI from './components/CraftPilot.jsx';
 import { isFiles, isInternal } from './dnd.js';
 import { renderTextFrames } from './exportText.js';
 import { fxWork, renderFxPass } from './fxExport.js';
@@ -1088,7 +1088,9 @@ export default function App() {
     exportCanceled.current = false;
     // Text frames take the first part of the progress bar when the project has text.
     const textShare = project.textClips.length ? 0.35 : 0;
-    setExporting({ progress: 0, stage: textShare ? 'Rendering text' : 'Encoding video' });
+    // Keep project/eff/name/target on the state: the encoding view renders its spec list
+    // from the same resolved object the pipeline consumes, so it must survive this transition.
+    setExporting((e) => ({ ...(e || {}), ready: false, project, eff, target, name, progress: 0, stage: textShare ? 'Rendering text' : 'Encoding video' }));
     let textFrames = 0;
     try {
       textFrames = await renderTextFrames(project, target.frameDir,
@@ -1183,7 +1185,7 @@ export default function App() {
   }, [seek]);
   const startExportRef = useRef(null);
   startExportRef.current = startExport;
-  // What CraftPilot can do beyond project actions: add a file it fetched (library sound, stock clip, voice-over)
+  // What CraftAI can do beyond project actions: add a file it fetched (library sound, stock clip, voice-over)
   // to the media library, start the export, check font names.
   const pilotApp = {
     addProbed: (res) => {
@@ -1348,7 +1350,7 @@ export default function App() {
             if (JSON.stringify(proxies) !== JSON.stringify(m.proxies)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { proxies } });
           }
         })} />}
-      <CraftPilot getProject={() => projectRef.current} getHistoryLength={() => historyRef.current.past.length}
+      <CraftAI getProject={() => projectRef.current} getHistoryLength={() => historyRef.current.past.length}
         dispatch={dispatch} settle={settle} onOpenSettings={() => setSettingsOpen(true)} settingsVersion={settingsVersion}
         app={pilotApp} />
       {dragOver && <div className="drop-overlay"><div>Drop files to import them</div></div>}

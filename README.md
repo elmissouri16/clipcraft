@@ -41,7 +41,7 @@
   <a href="#highlights">Highlights</a> ·
   <a href="#transitions">Transitions</a> ·
   <a href="#effects">Effects</a> ·
-  <a href="#craftpilot">CraftPilot</a> ·
+  <a href="#craftai">CraftAI</a> ·
   <a href="#export">Export</a> ·
   <a href="#download">Download</a> ·
   <a href="#run-from-source">Get started</a> ·
@@ -74,7 +74,7 @@ ClipCraft is a free desktop video editor and covers what people actually open an
 - 💬 **Auto-captions.** Free on-device Whisper — including a Darija model — or bring a cloud key for speed.
 - 🔤 **Animated text done properly.** Dozens of in/out animations, word-by-word styling, and real RTL/Arabic shaping.
 - 🧩 **Offline templates + built-in stock.** And a screen recorder that drops captures straight onto the timeline.
-- 🤖 **CraftPilot.** An AI editing assistant that runs on *your* provider and *your* key.
+- 🤖 **CraftAI.** An AI editing assistant that runs on *your* provider and *your* key.
 - 🚀 **Honest export.** Presets for every platform plus full custom control — the preview never silently changes the render.
 
 ## Edit
@@ -109,15 +109,15 @@ ClipCraft is a free desktop video editor and covers what people actually open an
 
 <p align="center"><sub><i>Glitch &amp; digital, film looks, light leaks and more</i> — stack effects on any clip, or stretch one across the effects track over any part of the video.</sub></p>
 
-## CraftPilot
+## CraftAI
 
 <p align="center">
-  <img src="docs/screenshots/craftpilot.png" alt="CraftPilot: one-click style presets and a prompt box, inside the editor" width="100%">
+  <img src="docs/screenshots/craftpilot.png" alt="CraftAI: one-click style presets and a prompt box, inside the editor" width="100%">
 </p>
 
 <p align="center"><sub><i>An AI assistant inside the editor.</i> One-click looks, or just say what to do — cut the filler, style the captions, apply a look — and watch it work on your timeline.</sub></p>
 
-CraftPilot works with **your provider and your key** — Gemini, OpenAI, Anthropic, Groq, OpenRouter, Ollama and more. It can run multi-step edits on request, and it shows its work: you stay in control of every change.
+CraftAI works with **your provider and your key** — Gemini, OpenAI, Anthropic, Groq, OpenRouter, Ollama and more. It can run multi-step edits on request, and it shows its work: you stay in control of every change.
 
 ## Export
 
@@ -152,7 +152,7 @@ npm run package:linux   # build the Linux .deb
 | UI | React + Vite |
 | Rendering | FFmpeg — one pipeline for preview and export |
 | Captions | Whisper, on-device |
-| AI | CraftPilot — your provider, your key |
+| AI | CraftAI — your provider, your key |
 
 ## Updates
 
@@ -160,7 +160,7 @@ ClipCraft checks for updates manually from **About → Check for updates** and d
 
 ## Status
 
-Version **1.0** has shipped for Linux. ClipCraft is in active development — the transitions and effects catalogs, the template library and CraftPilot all grow release by release.
+Version **1.0** has shipped for Linux. ClipCraft is in active development — the transitions and effects catalogs, the template library and CraftAI all grow release by release.
 
 ---
 

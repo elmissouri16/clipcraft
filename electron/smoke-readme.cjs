@@ -150,7 +150,7 @@ module.exports = async function readmeShots(win, dir, result) {
   await q(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
   await wait(300);
 
-  // 8) CraftPilot and Settings.
+  // 8) CraftAI and Settings.
   await q(`document.querySelector('.pilot-fab').click()`);
   await wait(700);
   await snap('craftpilot', '.pilot-panel');

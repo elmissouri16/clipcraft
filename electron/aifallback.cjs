@@ -1,4 +1,4 @@
-// CraftPilot fallback: when the chosen AI fails (overloaded, rate limited, key or model refused, unreachable),
+// CraftAI fallback: when the chosen AI fails (overloaded, rate limited, key or model refused, unreachable),
 // the same step goes to the next provider that has a saved key and can use the editing tools.
 const TOOL_PROVIDERS = ['gemini', 'groq', 'openai', 'openrouter', 'claude', 'custom', 'ollama'];
 const NAMES = { gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama' };

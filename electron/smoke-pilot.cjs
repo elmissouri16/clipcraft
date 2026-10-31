@@ -1,4 +1,4 @@
-// UI smoke test for CraftPilot with a scripted model (a local mock of the Gemini API).
+// UI smoke test for CraftAI with a scripted model (a local mock of the Gemini API).
 // The tools are the real ones: silence removal runs real FFmpeg on <dir>/gaps.mp4 (silences at 2-3.5s and 5.5-6.5s).
 // FVE_SMOKE=<dir> FVE_SMOKE_MODE=pilot electron .
 const fs = require('fs');

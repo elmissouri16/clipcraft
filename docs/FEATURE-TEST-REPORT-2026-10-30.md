@@ -123,7 +123,7 @@ Inspector (video clip): tabs Video/Animation/Audio/Speed/Adjust ✓ · Animation
 Text inspector: Animation tab ✓ · **Text Animations browser: 8 category folders** (Slide, Scale, Fade, Blur, Rotate & Flip, Bounce & Pop, Type & Words, Glitch & Flicker) ✓ · **Slide Up Smooth applies** (`animIn = slideUpSmooth @ 0.7 s`) ✓ · category folder collapses/expands ✓ · Out section: **Tracking Out applies** ✓ · **"No animation" clears** ✓.
 Player: play advances timecode (00:00.78 / 00:04.50) ✓ · seek lands at 00:02.00 ✓.
 Timeline: 9 clips rendered ✓ · clip move via store ✓ · undo reverts ✓ · redo reapplies ✓.
-Dialogs/panels: Settings opens with AI section ✓ · CraftPilot opens ✓ · **zero console errors across the whole walk** ✓.
+Dialogs/panels: Settings opens with AI section ✓ · CraftAI opens ✓ · **zero console errors across the whole walk** ✓.
 (One probe in the first checklist run used a case-sensitive match on the "VIDEO CLIP" header and double-encoded the project JSON — test-driver bugs, both corrected and re-verified; the app was not at fault. The Export *dialog* itself is not CDP-drivable headlessly because export begins with a native OS save dialog; export is instead proven end-to-end by the smoke-path test below, which is the same pipeline with the save path auto-answered.)
 
 ### Real export with a new text animation (Phase 3.3 proof)
@@ -159,7 +159,7 @@ Dialogs/panels: Settings opens with AI section ✓ · CraftPilot opens ✓ · **
 - **No VR / lens-distortion / grid text categories** — deliberately unclaimed; Warp In (skew), Spin In, Flip Side are the real equivalents shipped.
 - **Text tile previews animate on hover only** (by design — 68 simultaneously animating canvases would tax the panel); tiles show the true resting frame otherwise.
 - Carried over from earlier passes (unchanged, still open): transition intensity control, per-effect parameter keyframes, Beauty/BG-removal-style AI effects beyond matting, adjustment layers, audio ducking, beat detection, colour wheels, SRT export, catalog virtualization for the 135 list.
-- CraftPilot / AI providers: no live provider connection was tested (needs Hamza's API keys); the provider plumbing and MCP suite pass offline.
+- CraftAI / AI providers: no live provider connection was tested (needs Hamza's API keys); the provider plumbing and MCP suite pass offline.
 
 ---
 

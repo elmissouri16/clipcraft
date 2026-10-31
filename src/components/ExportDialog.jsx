@@ -15,7 +15,7 @@ import { posterFracAt, posterSourceFor, spriteFrameStyle } from '../recents.js';
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.floor((s % 1) * 10))}`;
 const fmtMB = (mb) => (mb >= 100 ? mb.toFixed(0) : mb.toFixed(1));
 
-function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt }) {
+function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt, readOnly = false }) {
   const src = posterSourceFor(project, toFileUrl);
   const dur = projectDuration(project);
   const frac = src && src.kind === 'sprite' ? posterFracAt(project, coverT) : null;
@@ -30,11 +30,12 @@ function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt }
         {!src && <Clapperboard size={30} className="x-cover-icon" />}
         {src && src.kind === 'sprite' && !style && <Clapperboard size={30} className="x-cover-icon" />}
       </div>
+      {!readOnly && (
       <button type="button" className="btn btn-sm x-cover-btn" onClick={() => setChoosing(!choosing)}>
         <ImagePlus size={14} /> {choosing ? 'Done' : 'Choose cover'}
-      </button>
-      {outside && <p className="x-note">Preview shows the first clip only — the picked frame is still the one embedded.</p>}
-      {choosing && (
+      </button>)}
+      {!readOnly && outside && <p className="x-note">Preview shows the first clip only — the picked frame is still the one embedded.</p>}
+      {!readOnly && choosing && (
         <div className="x-cover-pick">
           <input type="range" min="0" max={Math.max(0.1, dur)} step={1 / (project.fps || 30)} value={coverT}
             aria-label="Cover frame time"
@@ -90,6 +91,54 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
   }
   if (!state.ready) {
     const pct = Math.round((state.progress || 0) * 100);
+    const { project, eff } = state;
+    if (project && eff) {
+      // In-progress layout: the chosen cover on the left, a read-only spec list on the right —
+      // every value read from the SAME resolved settings object the encoder consumes — and a
+      // full-width progress row underneath. No decorative specs: each row is pipeline truth.
+      const dur = projectDuration(project);
+      const est = estimateExport(eff, dur);
+      const fileName = state.target?.file ? String(state.target.file).split(/[\\/]/).pop() : `${state.name || 'export'}.mp4`;
+      const specs = [
+        ['Name', fileName],
+        ['Duration', fmtDur(dur)],
+        ['Size', est.exact ? `${fmtMB(est.mb)} MB` : `≈ ${fmtMB(est.mb)} MB (estimate)`],
+        ['Resolution', `${eff.outW}×${eff.outH}`],
+        ['Bitrate', eff.mode === 'bitrate' ? `${eff.bitrateMbps} Mbps` : `CRF ${eff.crf} · ≈ ${est.videoMbps.toFixed(1)} Mbps`],
+        ['Codec', eff.codecLabel],
+        ['Format', 'MP4'],
+        ['Color space', 'Rec. 709 SDR'],
+        ['Frame rate', `${eff.outFps} fps`],
+      ];
+      return (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="export-title">
+          <div className="modal export-modal">
+            <div className="x-head">
+              <h3 id="export-title">Exporting video</h3>
+            </div>
+            <div className="x-enc-body">
+              <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={false} setChoosing={setChoosing} onPosterAt={onPosterAt} readOnly />
+              <div className="x-specs">
+                {specs.map(([k, v]) => (
+                  <div key={k} className="export-summary-row"><span>{k}</span><b>{v}</b></div>
+                ))}
+              </div>
+            </div>
+            <div className="x-enc-foot">
+              <div className="x-enc-status">
+                <div className="x-ring sm" aria-hidden="true" />
+                <span className="x-enc-stage" aria-live="polite">{state.stage || 'Encoding video'}…</span>
+                <span className="x-enc-pct">{pct}%</span>
+              </div>
+              <div className="progress big x-bar" aria-live="polite"><div style={{ width: `${pct}%` }} /></div>
+              <div className="x-enc-actions">
+                <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="export-title">
         <div className="modal export-modal">

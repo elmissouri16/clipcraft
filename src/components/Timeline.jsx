@@ -3,7 +3,7 @@ import {
   ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Copy, CopyPlus, Film, Flag, Layers, Magnet, Mic, MousePointer2, Music, Pencil, Plus, Scissors, Slice, Smile,
   Sparkles, Square, StretchHorizontal, Target, Trash2, Type, Undo2, Redo2, X, ZoomIn, ZoomOut, Captions,
 } from 'lucide-react';
-import { LAYERED, MIN_CLIP, effectObjects, formatTime, freeLen, layerCount, layerFree, layerName, layerOf, toFileUrl, uid, videoLayout } from '../store.js';
+import { LAYERED, MIN_CLIP, effectObjects, formatTime, freeLen, layerCount, layerFree, layerName, layerOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from '../store.js';
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from '../fx/filters.js';
 import { EFFECTS, TRANSITIONS } from '../effects.js';
@@ -719,6 +719,16 @@ export default function Timeline({
     });
   };
 
+  // Toolbar availability mirrors App's shortcut handlers exactly — same target resolution
+  // (selection first, then the main-track clip under the playhead) and the same trimActions
+  // builder — so a button is enabled only when its shortcut would actually do something.
+  const trimTargets = [];
+  if (selection) trimTargets.push(selection);
+  const underPlayhead = videoClipAt(project, time);
+  if (underPlayhead && !(selection && selection.id === underPlayhead.clip.id)) trimTargets.push({ track: 'video', id: underPlayhead.clip.id });
+  const canTrim = (side) => trimTargets.some((tgt) => trimActions(project, { track: tgt.track, id: tgt.id, t: time, side, newId: tgt.id }).length > 0);
+  const canSplit = !!(selection || underPlayhead);
+
   return (
     <section className="timeline" aria-label="Timeline">
       <div className="tl-main">
@@ -734,9 +744,9 @@ export default function Timeline({
             <IconBtn label="Redo (Ctrl+Y)" onClick={() => dispatch({ type: 'redo' })} disabled={!canRedo}><Redo2 size={16} /></IconBtn>
           </div>
           <div className="tool-cluster" role="group" aria-label="Edit">
-            <IconBtn label="Split at playhead (S / Ctrl+B)" onClick={onSplit}><Scissors size={16} /></IconBtn>
-            <IconBtn label="Delete left of playhead (Q)" onClick={() => onTrimSide('left')}><ArrowLeftToLine size={16} /></IconBtn>
-            <IconBtn label="Delete right of playhead (W)" onClick={() => onTrimSide('right')}><ArrowRightToLine size={16} /></IconBtn>
+            <IconBtn label="Split at playhead (S / Ctrl+B)" onClick={onSplit} disabled={!canSplit}><Scissors size={16} /></IconBtn>
+            <IconBtn label="Delete left of playhead (Q)" onClick={() => onTrimSide('left')} disabled={!canTrim('left')}><ArrowLeftToLine size={16} /></IconBtn>
+            <IconBtn label="Delete right of playhead (W)" onClick={() => onTrimSide('right')} disabled={!canTrim('right')}><ArrowRightToLine size={16} /></IconBtn>
             <IconBtn label="Duplicate (Ctrl+D)" onClick={onDuplicate} disabled={!selection}><Copy size={16} /></IconBtn>
             <IconBtn label="Delete (Del)" onClick={onDelete} disabled={!selection}><Trash2 size={16} /></IconBtn>
           </div>

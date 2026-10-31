@@ -481,6 +481,9 @@ function buildExportArgs(project, outFile, opts = {}) {
     '-filter_complex', filters.join(';'),
     '-map', `[${outLabel}]`, '-map', `[${ca}]`,
     ...videoCodec2(opts.encoder, eff), '-pix_fmt', 'yuv420p',
+    // The pipeline works in BT.709 SDR throughout (HDR inputs are tone-mapped to BT.709 above);
+    // tag it explicitly — untagged yuv420p otherwise probes as color_* "unknown".
+    '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
     '-c:a', 'aac', '-b:a', `${eff.audioKbps}k`,
     '-t', num(total),
     '-movflags', '+faststart',

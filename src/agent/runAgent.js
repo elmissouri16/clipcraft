@@ -1,9 +1,9 @@
-// CraftPilot loop: ask the model for a step, run the tools it requests, give the results back, repeat until
+// CraftAI loop: ask the model for a step, run the tools it requests, give the results back, repeat until
 // it answers in plain text. The model lives in the main process (the API key never reaches the interface);
 // the tools run here, next to the project.
 import { TOOL_DECLARATIONS, createToolRunner } from './tools.js';
 
-export const SYSTEM_PROMPT = `You are CraftPilot, the assistant inside ClipCraft, a desktop video editor. You help the user edit their project by calling tools.
+export const SYSTEM_PROMPT = `You are CraftAI, the assistant inside ClipCraft, a desktop video editor. You help the user edit their project by calling tools.
 
 How to work:
 - Never guess clip ids, times or names. Call get_project first when you need them, and again after cuts because times shift.

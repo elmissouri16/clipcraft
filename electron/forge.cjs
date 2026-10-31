@@ -2,7 +2,7 @@
 // interface, both running on the USER's accounts (nothing is generated locally and Forge never
 // implies otherwise):
 //   · Pollinations (photo only) — free, no key: the out-of-the-box path.
-//   · Gemini — the same encrypted key the AI assistant (CraftPilot) already uses, read through
+//   · Gemini — the same encrypted key the AI assistant (CraftAI) already uses, read through
 //     settings.getActive('gemini'); Forge adds NO second key field. Photo via the image models'
 //     generateContent, video via Veo long-running predict + polling.
 // Results land in <userData>/forge/ with a forge-library.json index (prompt, model, kind,
@@ -29,7 +29,7 @@ const VIDEO_RATIOS = ['9:16', '16:9'];
 const VIDEO_DURATIONS = [5, 8];
 const PHOTO_SIZES = { '9:16': [768, 1344], '16:9': [1344, 768], '1:1': [1024, 1024] };
 
-const NO_KEY_MESSAGE = 'No Gemini key saved. Add your Gemini key in Settings → AI assistant — Forge uses the same key as CraftPilot. (Photos still work without a key via the free Pollinations provider.)';
+const NO_KEY_MESSAGE = 'No Gemini key saved. Add your Gemini key in Settings → AI assistant — Forge uses the same key as CraftAI. (Photos still work without a key via the free Pollinations provider.)';
 
 const catalog = () => ({ photoModels: PHOTO_MODELS, videoModels: VIDEO_MODELS, photoRatios: PHOTO_RATIOS, videoRatios: VIDEO_RATIOS, videoDurations: VIDEO_DURATIONS });
 
