@@ -1,0 +1,158 @@
+{
+ "format": "caprocket-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "duration": 6,
+  "slots": 3,
+  "texts": 3,
+  "media": 3
+ },
+ "project": {
+  "name": "Tutorial Steps | Numbered Step Titles Over Each Shot",
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 2,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "m1",
+    "name": "Replace me 2.mp4",
+    "path": "m1.mp4",
+    "type": "video",
+    "duration": 2,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "m2",
+    "name": "Replace me 3.mp4",
+    "path": "m2.mp4",
+    "type": "video",
+    "duration": 2,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 2,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   },
+   {
+    "id": "v2",
+    "mediaId": "m1",
+    "in": 0,
+    "out": 2,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   },
+   {
+    "id": "v3",
+    "mediaId": "m2",
+    "in": 0,
+    "out": 2,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t4",
+    "text": "STEP 1 — PREPARE",
+    "start": 0.15,
+    "duration": 1.8,
+    "y": 0.82,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t5",
+    "text": "STEP 2 — BUILD",
+    "start": 2.15,
+    "duration": 1.8,
+    "y": 0.82,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t6",
+    "text": "STEP 3 — FINISH",
+    "start": 4.15,
+    "duration": 1.8,
+    "y": 0.82,
+    "template": "mat-lower-third",
+    "animIn": {
+     "id": "slideUpSmooth",
+     "dur": 0.55,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Tutorial Steps | Numbered Step Titles Over Each Shot",
+  "category": "Education",
+  "description": "Numbered Step Titles Over Each Shot. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Process",
+   "Social"
+  ]
+ }
+}

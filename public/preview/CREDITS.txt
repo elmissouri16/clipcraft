@@ -1,0 +1,12 @@
+Preview photos used on the transition/effect tiles (public/preview/).
+
+Source: Unsplash photographs, fetched via picsum.photos (Lorem Picsum) with fixed IDs:
+  p1015.jpg — picsum id 1015 (river between mountains)
+  p1016.jpg — picsum id 1016 (canyon)
+  p1018.jpg — picsum id 1018 (mountain lake)
+  p1025.jpg — picsum id 1025 (dog portrait)
+  p292.jpg  — picsum id 292  (food)
+  p1060.jpg — picsum id 1060 (coffee shop)
+
+Unsplash photos are free to use under the Unsplash License. They are only used as
+in-app preview material so tiles can show effects/transitions on real photography.

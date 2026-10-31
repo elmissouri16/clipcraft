@@ -1,0 +1,122 @@
+{
+ "format": "caprocket-template",
+ "version": 1,
+ "meta": {
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "duration": 5,
+  "slots": 2,
+  "texts": 2,
+  "media": 2
+ },
+ "project": {
+  "name": "Before / After | Side-by-Side Labels With a Wipe Between",
+  "ratio": "1920:1080",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "media": [
+   {
+    "id": "m0",
+    "name": "Replace me 1.mp4",
+    "path": "m0.mp4",
+    "type": "video",
+    "duration": 3.1,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   },
+   {
+    "id": "m1",
+    "name": "Replace me 2.mp4",
+    "path": "m1.mp4",
+    "type": "video",
+    "duration": 3.1,
+    "hasVideo": true,
+    "hasAudio": false,
+    "fps": 30,
+    "width": 720,
+    "height": 406,
+    "rotation": 0,
+    "hdr": false,
+    "vcodec": "h264",
+    "pixFmt": "yuv420p",
+    "profile": "High"
+   }
+  ],
+  "videoClips": [
+   {
+    "id": "v1",
+    "mediaId": "m0",
+    "in": 0,
+    "out": 2.5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true
+   },
+   {
+    "id": "v2",
+    "mediaId": "m1",
+    "in": 0,
+    "out": 2.5,
+    "speed": 1,
+    "volume": 1,
+    "muted": false,
+    "slot": true,
+    "transition": {
+     "type": "wipeleft",
+     "duration": 0.5
+    }
+   }
+  ],
+  "overlayClips": [],
+  "audioClips": [],
+  "textClips": [
+   {
+    "id": "t3",
+    "text": "BEFORE",
+    "start": 0.2,
+    "duration": 2.2,
+    "y": 0.12,
+    "template": "mat-pill-label",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.5,
+     "unit": "whole"
+    }
+   },
+   {
+    "id": "t4",
+    "text": "AFTER",
+    "start": 2.7,
+    "duration": 2.2,
+    "y": 0.12,
+    "template": "label-tag",
+    "animIn": {
+     "id": "fadeDown",
+     "dur": 0.5,
+     "unit": "whole"
+    }
+   }
+  ],
+  "stickerClips": []
+ },
+ "info": {
+  "title": "Before / After | Side-by-Side Labels With a Wipe Between",
+  "category": "Social",
+  "description": "Side-by-Side Labels With a Wipe Between. Placeholder scenes and music are generated samples — replace the marked clips with your own.",
+  "tags": [
+   "Engagement",
+   "Social"
+  ]
+ }
+}

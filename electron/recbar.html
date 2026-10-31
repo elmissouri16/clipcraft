@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'" />
+  <title>Recording</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #12141c; overflow: hidden; font: 600 13px "Segoe UI", system-ui, sans-serif; user-select: none; }
+    .bar {
+      display: flex; align-items: center; gap: 8px; height: 100%; box-sizing: border-box; padding: 0 5px 0 14px;
+      color: #fff; -webkit-app-region: drag;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; animation: blink 1s infinite; flex: none; }
+    .paused .dot { animation: none; background: #f59e0b; }
+    @keyframes blink { 50% { opacity: 0.25; } }
+    .time { font-variant-numeric: tabular-nums; min-width: 46px; }
+    button {
+      -webkit-app-region: no-drag; border: 0; border-radius: 14px; height: 28px; padding: 0 11px; cursor: pointer;
+      font: inherit; color: #fff; background: rgba(255, 255, 255, 0.12);
+    }
+    button:hover { background: rgba(255, 255, 255, 0.22); }
+    #stop { background: #ef4444; display: flex; align-items: center; gap: 6px; }
+    #stop:hover { background: #dc2626; }
+    #stop i { width: 9px; height: 9px; background: #fff; border-radius: 2px; }
+    #hide { width: 28px; padding: 0; font-size: 15px; line-height: 1; }
+    /* Collapsed: a small tab hanging from the top edge of the screen. */
+    .tab {
+      display: none; align-items: center; justify-content: center; gap: 6px; height: 22px; color: #fff; font-size: 11px; cursor: pointer;
+    }
+    .tab .dot { width: 7px; height: 7px; }
+    body.collapsed .bar { display: none; }
+    body.collapsed .tab { display: flex; }
+  </style>
+</head>
+<body>
+  <div class="bar" id="bar">
+    <span class="dot"></span>
+    <span class="time" id="time">00:00</span>
+    <button id="pause" title="Pause / resume">Pause</button>
+    <button id="stop" title="Stop recording"><i></i>Stop</button>
+    <button id="hide" title="Hide the bar (click the small tab at the top to bring it back)">⌃</button>
+  </div>
+  <div class="tab" id="tab" title="Show the recording bar"><span class="dot"></span>REC ⌄</div>
+  <script src="recbar.js"></script>
+</body>
+</html>
