@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
+import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
 import HomeScreen from './components/HomeScreen.jsx';
 import SequenceDialog from './components/SequenceDialog.jsx';
 import { mismatchFor, sequencePatchFor } from './sequence.js';
@@ -84,7 +84,7 @@ export default function App() {
     setSelection(kept.length ? makeSelection(kept) : null);
   }, []);
   const [exporting, setExporting] = useState(null);
-  const [renderJob, setRenderJob] = useState(null); // derivative renders (Reverse): { label, fraction } | { error }
+  const [renderJob, setRenderJob] = useState(null); // derivative renders: { kind: 'reverse' | 'detach', label, fraction } | { error }
   const [tab, setTab] = useState('media');
   const { layout: panes, startDrag: startResize, reset: resetSize, nudge: nudgeSize } = useLayout();
   const [tool, setTool] = useState('select'); // timeline tool: 'select' | 'razor'
@@ -504,6 +504,8 @@ export default function App() {
     const p = projectRef.current;
     const m = p.media.find((x) => x.id === id);
     if (!m) return;
+    const lockedUse = lockedMediaUse(p, id);
+    if (lockedUse) { alert(`"${m.name}" is used by a clip on the locked layer "${layerName(p, lockedUse.track, lockedUse.layer)}".\nUnlock that layer to remove it.`); return; }
     const used = [p.videoClips, p.overlayClips || [], p.audioClips, p.stickerClips].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
     if (used && !window.confirm(`"${m.name}" is used by ${used} clip${used > 1 ? 's' : ''} on the timeline.\nRemove it and ${used > 1 ? 'those clips' : 'that clip'}? (Ctrl+Z undoes it)`)) return;
     dispatch({ type: 'removeMedia', id });
@@ -577,7 +579,7 @@ export default function App() {
 
   // Contextual timeline tools (reference pattern): Detach audio and Link / Unlink appear
   // in the toolbar when the selection can use them, calling the same handlers as the menu.
-  const selSingle = selection && !selection.items ? findClipIn(project, selection) : null;
+  const selSingle = selection && !selection.items ? findClipIn(project, selection.track, selection.id) : null;
   const selMedia = selSingle?.mediaId && project.media.find((x) => x.id === selSingle.mediaId);
   const detachOk = !!(selSingle && (selection.track === 'video' || selection.track === 'overlay')
     && selMedia?.type === 'video' && selMedia.hasAudio && !selSingle.muted && !selSingle.linkId);
@@ -684,7 +686,7 @@ export default function App() {
     const c = sel && findClip(p, sel);
     const m = c && p.media.find((x) => x.id === c.mediaId);
     if (!c || !m || m.type !== 'video' || !m.hasAudio || c.muted || c.linkId) return;
-    setRenderJob({ label: 'Detaching audio…', fraction: 0 });
+    setRenderJob({ kind: 'detach', label: 'Detaching audio…', fraction: 0 });
     const off = window.api.onDetachProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -857,7 +859,7 @@ export default function App() {
       dispatch({ type: 'update', ...sel, patch: { mediaId: c.reversed.mediaId, in: c.reversed.in, out: c.reversed.out, reversed: null } });
       return;
     }
-    setRenderJob({ label: 'Reversing clip…', fraction: 0 });
+    setRenderJob({ kind: 'reverse', label: 'Reversing clip…', fraction: 0 });
     const off = window.api.onReverseProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -1547,7 +1549,7 @@ export default function App() {
           ) : (
             <><Loader2 size={15} className="spin" /><span>{renderJob.label}</span>
               <div className="progress render-job-bar"><div style={{ width: `${Math.round((renderJob.fraction || 0) * 100)}%` }} /></div>
-              <button className="btn btn-sm btn-ghost" onClick={() => window.api.reverseCancel()}>Cancel</button></>
+              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : window.api.reverseCancel())}>Cancel</button></>
           )}
         </div>
       )}

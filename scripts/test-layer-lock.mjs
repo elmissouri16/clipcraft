@@ -1,7 +1,7 @@
 // Lock enforcement (Stage B): a locked layer refuses edits at the DISPATCH layer — every
 // action that would touch its clips comes back with the state unchanged — while edits to
 // other layers, layer-state toggles themselves, and undo all keep working.
-import { emptyProject, historyReducer, layerStateOf, uid } from '../src/store.js';
+import { emptyProject, historyReducer, layerStateOf, lockedMediaUse, uid } from '../src/store.js';
 
 const fails = [];
 const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if (!cond) fails.push(msg); };
@@ -113,6 +113,42 @@ const state = (p) => ({ past: [], present: p, future: [] });
   s = run(s, [{ type: 'setLayerState', track: 'overlay', layer: 1, patch: { locked: false } },
     { type: 'addOverlayClip', mediaId: 'm1', clipId: 'oNew', at: 1, layer: 0 }]);
   ok(s.present.overlayClips.some((c) => c.id === 'oNew' && c.layer === 1), 'the same add lands on layer 1 once unlocked');
+}
+
+// removeMedia deletes every clip that uses the item, so it answers to the same lock as a
+// delete: ANY use on a locked layer refuses the whole removal at dispatch; unlocked-only
+// usage removes exactly as before.
+{
+  // Mixed usage: m2 is used by a1 (audio layer 0, unlocked) and a2 (audio layer 1, locked).
+  let s = run(state(base()), [lock('audio', 1)]);
+  const before = s.present;
+  s = run(s, [{ type: 'removeMedia', id: 'm2' }]);
+  ok(s.present === before, 'removeMedia refused: one of the item\'s clips is on a locked layer (mixed usage)');
+  ok(s.present.media.some((m) => m.id === 'm2') && s.present.audioClips.length === 2, 'media and both clips untouched after the refusal');
+  const use = lockedMediaUse(s.present, 'm2');
+  ok(use && use.track === 'audio' && use.layer === 1, 'lockedMediaUse names the blocking use (audio layer 1)');
+  // Unlock and the same removal goes through, taking both clips with it.
+  s = run(s, [{ type: 'setLayerState', track: 'audio', layer: 1, patch: { locked: false } },
+    { type: 'removeMedia', id: 'm2' }]);
+  ok(!s.present.media.some((m) => m.id === 'm2') && s.present.audioClips.length === 0, 'removeMedia proceeds once unlocked; the clips go with the item');
+}
+{
+  // Solely-locked usage: m1's overlay clip o1 sits on overlay layer 0.
+  let s = run(state(base()), [lock('overlay', 0)]);
+  const before = s.present;
+  s = run(s, [{ type: 'removeMedia', id: 'm1' }]);
+  ok(s.present === before, 'removeMedia refused: a use sits on the locked overlay layer');
+  const use = lockedMediaUse(s.present, 'm1');
+  ok(use && use.track === 'overlay' && use.layer === 0, 'lockedMediaUse names the overlay use');
+  ok(lockedMediaUse(s.present, 'unused-id') === null, 'lockedMediaUse is null for an unused item');
+}
+{
+  // Unlocked-only usage is unaffected by an unrelated layer's lock.
+  let s = run(state(base()), [lock('audio', 0)]);
+  s = run(s, [{ type: 'removeMedia', id: 'm1' }]);
+  ok(!s.present.media.some((m) => m.id === 'm1') && s.present.videoClips.length === 0 && s.present.overlayClips.length === 0,
+    'removeMedia of unlocked-only media proceeds while an unrelated layer is locked');
+  ok(s.present.audioClips.length === 2, 'other media\'s clips are untouched');
 }
 
 console.log(fails.length ? `\n${fails.length} FAILURE(S)` : '\nALL PASS');

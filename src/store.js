@@ -107,6 +107,18 @@ export const AUDIO_LANES = { video: true, overlay: true, audio: true };
 // The layer a clip sits on: layered lanes read clip.layer; every other track has layer 0.
 export const clipLayer = (track, c) => (LAYERED[track] ? layerOf(c) : 0);
 export const clipLocked = (p, track, c) => !!c && isLayerLocked(p, track, clipLayer(track, c));
+// removeMedia deletes every clip that uses the item, so it answers to the same lock as a
+// delete: the first use of the item that sits on a locked layer, or null. The library UI
+// names this layer when it refuses the removal.
+export function lockedMediaUse(p, mediaId) {
+  const lists = [['video', p.videoClips], ['overlay', p.overlayClips || []], ['audio', p.audioClips], ['sticker', p.stickerClips || []]];
+  for (const [track, list] of lists) {
+    for (const c of list) {
+      if (c.mediaId === mediaId && clipLocked(p, track, c)) return { track, layer: clipLayer(track, c) };
+    }
+  }
+  return null;
+}
 // True when any audio-capable layer is soloed (solo then decides what sounds at all).
 export function anySolo(p) {
   const ls = p.layerState || {};
@@ -886,8 +898,11 @@ function actionLocked(p, a) {
       return !!m && m.type !== 'audio' && isLayerLocked(p, 'video', 0);
     }
     case 'addMedia':
+      return false; // library-level operation with its own confirmation
     case 'removeMedia':
-      return false; // library-level operations with their own confirmations
+      // Deleting an item deletes every clip that uses it — refused while any of those
+      // clips sits on a locked layer (the library flow names the layer to the user).
+      return !!lockedMediaUse(p, a.id);
     default: return false;
   }
 }
