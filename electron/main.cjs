@@ -1033,6 +1033,32 @@ ipcMain.handle('reverse:run', async (_e, item, from, to) => {
 });
 ipcMain.handle('reverse:cancel', () => { if (revJob) revJob.canceled = true; });
 
+// Detach audio (clip menu): render a video clip's sound into its own audio file, cached
+// like the reverse renders. The project then holds it as a linked audio clip.
+const { detach } = require('./detach.cjs');
+let detachJob = null;
+ipcMain.handle('detach:run', async (_e, item, from, to) => {
+  if (detachJob) return { error: 'Another clip is being detached.' };
+  if (!item || !fs.existsSync(item.path)) return { error: 'The media file was not found.' };
+  const job = { canceled: false };
+  detachJob = job;
+  try {
+    const out = await detach(item, {
+      from, to, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath,
+      isCanceled: () => job.canceled,
+      onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('detach:progress', { path: item.path, fraction }); },
+    });
+    const [m] = await probeAll([out]);
+    if (!m || m.error) return { error: 'Could not read the detached audio.' };
+    return { ...m, name: `${path.basename(item.path).replace(/\.[^.]+$/, '')} (detached).wav` };
+  } catch (e) {
+    return e.canceled ? { canceled: true } : { error: e.message };
+  } finally {
+    detachJob = null;
+  }
+});
+ipcMain.handle('detach:cancel', () => { if (detachJob) detachJob.canceled = true; });
+
 // Freeze frame (context menu, item 12): grab one frame of a media file as a PNG still the
 // project can hold. Cached by file + time; the file lands in the media cache like other stills.
 ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {

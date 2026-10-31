@@ -25,6 +25,10 @@ export function emptyProject() {
     effectClips: [], // effects on the Effects track: { id, fx, start, duration }
     // Text and stickers are time-anchored overlays (e.g. captions), so they start with the magnet off.
     magnet: { video: true, overlay: false, audio: true, text: false, sticker: false },
+    // Per-layer state (lock / hide / mute / solo), keyed "track:layer" — see layerStateOf.
+    // Only layers that differ from the defaults get an entry. NOT part of undo history:
+    // toggling a lock must never be an undoable document edit (industry standard).
+    layerState: {},
     markers: [], // [{ id, time, label }] timeline flags
     snapping: true, // drags snap to clip edges, the playhead and markers
   };
@@ -66,8 +70,9 @@ function normalizeGaps(list) {
   return out;
 }
 
-// Length of a clip on a free track (overlay / audio / text / sticker).
-export const freeLen = (track, c) => (track === 'audio' ? c.out - c.in : track === 'overlay' ? (c.out - c.in) / (c.speed || 1) : c.duration);
+// Length of a clip on a free track (overlay / audio / text / sticker). Audio clips carry a
+// constant speed like picture clips do (a detached clip follows its video's speed).
+export const freeLen = (track, c) => (track === 'audio' ? (c.out - c.in) / (c.speed || 1) : track === 'overlay' ? (c.out - c.in) / (c.speed || 1) : c.duration);
 
 export const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
 
@@ -86,6 +91,48 @@ export function layerCount(p, track) {
 const LANE_NAMES = { video: 'Main', overlay: 'Overlay', text: 'Text', sticker: 'Stickers', audio: 'Audio', effect: 'Effects' };
 export function layerName(p, track, layer) {
   return (p.layerNames && p.layerNames[track] && p.layerNames[track][layer]) || `${LANE_NAMES[track] || track} ${layer + 1}`;
+}
+
+// ---- Layer state: lock / hide / mute / solo, one entry per layer ("track:layer") ----
+// The main track is the single layer video:0; the Effects lane (not a layered lane in the
+// model) is effect:0. Lanes whose clips can carry sound — and therefore answer to mute /
+// solo — are video (its clips' own sound), overlay (picture clips with sound) and audio.
+export const LAYER_STATE_DEFAULTS = { locked: false, hidden: false, muted: false, solo: false };
+export const layerKey = (track, layer) => `${track}:${layer}`;
+export function layerStateOf(p, track, layer) {
+  return { ...LAYER_STATE_DEFAULTS, ...((p.layerState || {})[layerKey(track, layer)] || {}) };
+}
+export const isLayerLocked = (p, track, layer) => layerStateOf(p, track, layer).locked;
+export const AUDIO_LANES = { video: true, overlay: true, audio: true };
+// The layer a clip sits on: layered lanes read clip.layer; every other track has layer 0.
+export const clipLayer = (track, c) => (LAYERED[track] ? layerOf(c) : 0);
+export const clipLocked = (p, track, c) => !!c && isLayerLocked(p, track, clipLayer(track, c));
+// True when any audio-capable layer is soloed (solo then decides what sounds at all).
+export function anySolo(p) {
+  const ls = p.layerState || {};
+  return Object.entries(ls).some(([k, s]) => s && s.solo && AUDIO_LANES[k.split(':')[0]]);
+}
+// Does this layer's sound reach the mix? Mute silences it; once anything is soloed,
+// only soloed layers sound.
+export function layerSounds(p, track, layer) {
+  const st = layerStateOf(p, track, layer);
+  if (st.muted) return false;
+  return !anySolo(p) || st.solo;
+}
+
+// Remaps the layerState keys of one track through fn(oldLayer) -> newLayer | null (drop),
+// the same permutation a layer operation applies to the clips and their names.
+function remapLayerState(p, track, fn) {
+  const ls = p.layerState || {};
+  const prefix = `${track}:`;
+  if (!Object.keys(ls).some((k) => k.startsWith(prefix))) return p.layerState;
+  const out = {};
+  for (const [k, v] of Object.entries(ls)) {
+    if (!k.startsWith(prefix)) { out[k] = v; continue; }
+    const n = fn(Number(k.slice(prefix.length)));
+    if (n !== null && n !== undefined) out[layerKey(track, n)] = v;
+  }
+  return out;
 }
 
 // True when [start, start + len) is free on that layer (the clip `exceptId` aside).
@@ -152,7 +199,7 @@ export function projectDuration(p) {
   const v = videoLayout(p.videoClips);
   const ends = [v.length ? v[v.length - 1].end : 0];
   p.textClips.forEach((c) => ends.push(c.start + c.duration));
-  p.audioClips.forEach((c) => ends.push(c.start + (c.out - c.in)));
+  p.audioClips.forEach((c) => ends.push(c.start + freeLen('audio', c)));
   (p.stickerClips || []).forEach((c) => ends.push(c.start + c.duration));
   (p.overlayClips || []).forEach((c) => ends.push(c.start + freeLen('overlay', c)));
   return Math.max(0, ...ends);
@@ -249,12 +296,20 @@ function reduceProject(p, a) {
     case 'addLayer':
       return { ...p, layers: { ...p.layers, [a.track]: layerCount(p, a.track) + 1 } };
     case 'removeLayer': {
-      // Only an empty layer; the layers above it move down one.
+      // Only an empty layer; the layers above it move down one — clips, names and layer
+      // states all follow the same permutation.
       const key = LAYERED[a.track];
       if (!key || p[key].some((c) => layerOf(c) === a.layer) || layerCount(p, a.track) < 2) return p;
+      const names = { ...((p.layerNames || {})[a.track] || {}) };
+      delete names[a.layer];
+      for (const k of Object.keys(names).map(Number).sort((x, y) => x - y)) {
+        if (k > a.layer) { names[k - 1] = names[k]; delete names[k]; }
+      }
       return {
         ...p, layers: { ...p.layers, [a.track]: layerCount(p, a.track) - 1 },
         [key]: p[key].map((c) => (layerOf(c) > a.layer ? { ...c, layer: layerOf(c) - 1 } : c)),
+        layerNames: { ...(p.layerNames || {}), [a.track]: names },
+        layerState: remapLayerState(p, a.track, (l) => (l === a.layer ? null : l > a.layer ? l - 1 : l)),
       };
     }
     case 'duplicateLayer': {
@@ -299,6 +354,9 @@ function reduceProject(p, a) {
         ...p, [key]: [...shifted, ...copies],
         layers: { ...p.layers, [a.track]: layerCount(p, a.track) + 1 },
         layerNames: { ...(p.layerNames || {}), [a.track]: names },
+        // Layer states travel with their layers exactly like the names do; the fresh
+        // copy layer starts from the defaults (no entry).
+        layerState: remapLayerState(p, a.track, (l) => (l >= insertAt && (a.track === 'audio' || l !== a.layer) ? l + 1 : l)),
       };
     }
     case 'deleteLayer': {
@@ -319,8 +377,38 @@ function reduceProject(p, a) {
         ...p, [key]: rest,
         layers: { ...p.layers, [a.track]: Math.max(1, layerCount(p, a.track) - 1) },
         layerNames: { ...(p.layerNames || {}), [a.track]: names },
+        layerState: remapLayerState(p, a.track, (l) => (l === a.layer ? null : l > a.layer ? l - 1 : l)),
       };
     }
+    case 'moveLayer': {
+      // Reorder (Stage C): layer `from` ends up at index `to`, the layers in between shift
+      // by one. Clips, names and layer states are remapped through the one permutation, so
+      // a single dispatch (one undo step) restores the exact prior order. The main track is
+      // not in LAYERED and can never be reordered; overlay/text/sticker/audio reorder among
+      // themselves (their layer 0 included — only 'video' is fixed).
+      const key = LAYERED[a.track];
+      if (!key) return p;
+      const count = layerCount(p, a.track);
+      const { from, to } = a;
+      if (from === to || from < 0 || to < 0 || from >= count || to >= count) return p;
+      const order = [...Array(count).keys()].filter((i) => i !== from);
+      order.splice(to, 0, from); // order[newIndex] = oldIndex
+      const perm = {};
+      order.forEach((oldIdx, newIdx) => { perm[oldIdx] = newIdx; });
+      const names = {};
+      for (const [k, v] of Object.entries((p.layerNames || {})[a.track] || {})) {
+        if (perm[Number(k)] !== undefined) names[perm[Number(k)]] = v;
+      }
+      return {
+        ...p,
+        [key]: p[key].map((c) => (perm[layerOf(c)] !== undefined && perm[layerOf(c)] !== layerOf(c) ? { ...c, layer: perm[layerOf(c)] } : c)),
+        layerNames: { ...(p.layerNames || {}), [a.track]: names },
+        layerState: remapLayerState(p, a.track, (l) => (perm[l] !== undefined ? perm[l] : l)),
+      };
+    }
+    case 'insertAudioClip':
+      // A fully-formed audio clip (Detach audio builds it in App: extracted file, timing, link).
+      return { ...p, audioClips: [...p.audioClips, a.clip] };
     case 'renameLayer': {
       const forTrack = { ...((p.layerNames || {})[a.track] || {}) };
       if (a.name && a.name.trim()) forTrack[a.layer] = a.name.trim();
@@ -420,7 +508,7 @@ function reduceProject(p, a) {
       return { ...p, [key]: p[key].map((c) => (c.id === clipId ? { ...c, effects: (c.effects || []).filter((e) => e !== fx) } : c)) };
     }
     case 'split':
-      return splitAt(p, a.track, a.id, a.t, a.newId);
+      return splitLinked(p, a.track, a.id, a.t, a.newId);
     case 'moveToOverlay': {
       // Main clip -> overlay track at time `at` (the main track closes up or keeps a gap, per its magnet).
       const c = p.videoClips.find((x) => x.id === a.id);
@@ -535,14 +623,17 @@ export function trimClip(p, { track, id, edge, delta }) {
       next = { ...c, out: newOut };
     }
   } else if (track === 'audio') {
+    // delta arrives in timeline seconds; the source window moves by delta * speed, and the
+    // ripple shift of later clips is the timeline difference again.
+    const sp = c.speed || 1;
     if (edge === 'left') {
-      const newIn = Math.max(0, Math.min(c.in + delta, c.out - MIN_CLIP));
-      d = newIn - c.in;
+      const newIn = Math.max(0, Math.min(c.in + delta * sp, c.out - MIN_CLIP * sp));
+      d = (newIn - c.in) / sp;
       next = { ...c, in: newIn };
     } else {
       const maxOut = m ? m.duration : Infinity;
-      const newOut = Math.max(c.in + MIN_CLIP, Math.min(c.out - delta, maxOut));
-      d = c.out - newOut;
+      const newOut = Math.max(c.in + MIN_CLIP * sp, Math.min(c.out - delta * sp, maxOut));
+      d = (c.out - newOut) / sp;
       next = { ...c, out: newOut };
     }
   } else {
@@ -640,9 +731,9 @@ function splitAt(p, track, id, t, newId) {
   }
   if (track === 'audio') {
     const c = p.audioClips.find((x) => x.id === id);
-    const len = c ? c.out - c.in : 0;
+    const len = c ? freeLen('audio', c) : 0;
     if (!c || t - c.start < MIN_CLIP || c.start + len - t < MIN_CLIP) return p;
-    const cut = c.in + (t - c.start);
+    const cut = c.in + (t - c.start) * (c.speed || 1);
     return {
       ...p,
       audioClips: p.audioClips.flatMap((x) => (x.id !== id ? [x] : [{ ...x, out: cut }, { ...x, id: newId, start: t, in: cut }])),
@@ -671,6 +762,60 @@ function splitAt(p, track, id, t, newId) {
   return p;
 }
 
+// Splits a clip and, when it is linked (Detach audio) to a partner on the other kind of
+// track, splits the partner at the same timeline moment. The left halves keep the link;
+// the right halves form a new pair whose offsets are recomputed from the halves themselves,
+// so the sync invariants (see syncLinked) hold for both pairs from the start.
+function splitLinked(p, track, id, t, newId) {
+  const out = splitAt(p, track, id, t, newId);
+  if (out === p) return out;
+  const src = findClipIn(p, track, id);
+  if (!src || !src.linkId) return out;
+  const partner = findLinkPartner(p, src);
+  if (!partner) return out;
+  const partnerNewId = `${newId}~l`;
+  const out2 = splitAt(out, partner.track, partner.clip.id, t, partnerNewId);
+  if (out2 === out) {
+    // The partner could not be split (its range differs): the right half of the first
+    // split must not stay linked to a whole partner — it becomes independent.
+    return mapClip(out, track, newId, (c) => ({ ...c, linkId: undefined, linkOff: undefined, linkInOff: undefined }));
+  }
+  const linkId = `${src.linkId}~${newId}`;
+  const picTrack = track === 'audio' ? partner.track : track;
+  const picRight = findClipIn(out2, picTrack, track === 'audio' ? partnerNewId : newId);
+  const audRight = findClipIn(out2, 'audio', track === 'audio' ? newId : partnerNewId);
+  if (!picRight || !audRight) return out2;
+  let res = mapClip(out2, picTrack, picRight.id, (c) => ({ ...c, linkId }));
+  res = mapClip(res, 'audio', audRight.id, (c) => ({
+    ...c, linkId,
+    linkOff: audRight.start - (picTrack === 'video'
+      ? (videoLayout(res.videoClips).find((l) => l.clip.id === picRight.id)?.start ?? audRight.start)
+      : picRight.start),
+    linkInOff: audRight.in - picRight.in,
+  }));
+  return res;
+}
+
+const CLIP_LISTS = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips', effect: 'effectClips' };
+export function findClipIn(p, track, id) {
+  const key = CLIP_LISTS[track];
+  return key ? (p[key] || []).find((c) => c.id === id) : undefined;
+}
+// The other member of a clip's link pair (a picture clip in video/overlay <-> an audio clip).
+export function findLinkPartner(p, clip) {
+  if (!clip || !clip.linkId) return null;
+  for (const track of ['video', 'overlay', 'audio']) {
+    const c = (p[CLIP_LISTS[track]] || []).find((x) => x.id !== clip.id && x.linkId === clip.linkId);
+    if (c) return { track, clip: c };
+  }
+  return null;
+}
+function mapClip(p, track, id, fn) {
+  const key = CLIP_LISTS[track];
+  if (!key) return p;
+  return { ...p, [key]: p[key].map((c) => (c.id === id ? fn(c) : c)) };
+}
+
 // Splits a text/sticker clip at timeline time t. Caption words go to the half they are spoken in.
 function splitTimed(x, t, newId) {
   const cut = t - x.start;
@@ -685,6 +830,185 @@ function splitTimed(x, t, newId) {
     b.text = second.map((w) => w.text).join(' ');
   }
   return [a, b];
+}
+
+// ---- Lock enforcement (Stage B) ----
+// A locked layer's clips cannot be edited at all. The guard lives HERE, at the dispatch
+// layer, so every path — pointer drags, menus, shortcuts, the assistant — is blocked the
+// same way, not just the visible buttons. It returns true when the action must not run.
+// Undo / redo are handled before this is consulted: restoring an earlier project always
+// works, locked or not.
+function actionLocked(p, a) {
+  const clipOf = (track, id) => findClipIn(p, track, id);
+  switch (a.type) {
+    case 'update': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'updateMany': return a.updates.some((u) => clipLocked(p, u.track, clipOf(u.track, u.id)));
+    case 'delete':
+    case 'duplicate':
+    case 'split': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'trimClip': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'paste': {
+      if (a.track === 'video') return isLayerLocked(p, 'video', 0);
+      return isLayerLocked(p, a.track, layerOf(a.clip || {}));
+    }
+    case 'moveVideo': return isLayerLocked(p, 'video', 0);
+    case 'moveToOverlay': return isLayerLocked(p, 'video', 0);
+    case 'moveToMain': return clipLocked(p, 'overlay', clipOf('overlay', a.id));
+    case 'extractAudio': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'cutRanges': return isLayerLocked(p, 'video', 0);
+    case 'removeEffect': {
+      const { track, clipId } = parseEffectKey(a.id);
+      return clipLocked(p, track, clipOf(track, clipId));
+    }
+    case 'removeLayer': return isLayerLocked(p, a.track, a.layer);
+    case 'deleteLayer': return a.track !== 'video' && isLayerLocked(p, a.track, a.layer);
+    case 'setCaptions':
+    case 'importSrtCaptions': return isLayerLocked(p, 'text', 0);
+    case 'addEffectClip': return isLayerLocked(p, 'effect', 0);
+    case 'insertAudioClip': return isLayerLocked(p, 'audio', layerOf(a.clip || {}));
+    case 'addToTimeline': {
+      const m = p.media.find((x) => x.id === a.mediaId);
+      return !!m && m.type !== 'audio' && isLayerLocked(p, 'video', 0);
+    }
+    case 'addMedia':
+    case 'removeMedia':
+      return false; // library-level operations with their own confirmations
+    default: return false;
+  }
+}
+
+// Adds whose landing layer is only known after placeLayers has run (a clip dropped on a
+// full layer is bumped to the next free one) are checked against the RESULT: if the new
+// clip ended up on a locked layer, the whole action is reverted.
+const PLACEMENT_CHECKED = { addToTimeline: 'clipId', addOverlayClip: 'clipId', addText: 'clipId', addOverlay: 'clipId', moveToOverlay: 'id', extractAudio: 'newId' };
+function placementBlocked(before, after, a) {
+  const idKey = PLACEMENT_CHECKED[a.type];
+  if (!idKey || after === before) return false;
+  const id = a[idKey];
+  for (const track of ['video', 'overlay', 'text', 'audio', 'sticker']) {
+    const c = findClipIn(after, track, id);
+    if (c) return clipLocked(after, track, c);
+  }
+  return false;
+}
+
+// ---- Link sync (Detach audio pairs) ----
+// A linked pair shares clip.linkId; the audio clip also carries linkOff (its start minus
+// the picture clip's timeline start) and linkInOff (its source in-point minus the picture
+// clip's). After ANY action, the side that did not change is rewritten from the side that
+// did — so the pair selects / moves / trims / speeds together no matter which handle the
+// user (or a split, or a reorder) touched. Runs inside historyReducer so every edit path
+// is covered; returns the input object untouched when every invariant already holds.
+function picStart(p, track, clip) {
+  if (track === 'video') {
+    const l = videoLayout(p.videoClips).find((x) => x.clip.id === clip.id);
+    return l ? l.start : null;
+  }
+  return clip.start;
+}
+function linkPairs(p) {
+  const byId = new Map();
+  for (const track of ['video', 'overlay', 'audio']) {
+    for (const c of p[CLIP_LISTS[track]] || []) {
+      if (!c.linkId) continue;
+      const pair = byId.get(c.linkId) || {};
+      if (track === 'audio') pair.aud = { track, clip: c };
+      else pair.pic = { track, clip: c };
+      byId.set(c.linkId, pair);
+    }
+  }
+  return byId;
+}
+function syncLinked(prev, next) {
+  const before = linkPairs(prev);
+  const after = linkPairs(next);
+  if (!before.size && !after.size) return next;
+  let out = next;
+  const put = (track, id, patch) => { out = mapClip(out, track, id, (c) => ({ ...c, ...patch })); };
+  for (const [linkId, pair] of after) {
+    const was = before.get(linkId);
+    if (!pair.pic || !pair.aud) {
+      // A member was deleted: the survivor becomes a normal, independent clip — but only
+      // when the pair was complete before (a pair being built by Detach must survive its
+      // own intermediate steps).
+      if (was && was.pic && was.aud) {
+        const s = pair.pic || pair.aud;
+        put(s.track, s.clip.id, { linkId: undefined, linkOff: undefined, linkInOff: undefined });
+      }
+      continue;
+    }
+    if (!was || !was.pic || !was.aud) continue; // a pair created by this action: already consistent
+    const v = pair.pic.clip;
+    const au = pair.aud.clip;
+    const pv = was.pic.clip;
+    const pa = was.aud.clip;
+    const num = (c, f) => (f === 'speed' ? c.speed || 1 : c[f] || 0);
+    const vChanged = ['in', 'out', 'speed'].some((f) => num(v, f) !== num(pv, f))
+      || picStart(prev, was.pic.track, pv) !== picStart(next, pair.pic.track, v);
+    const aChanged = ['in', 'out', 'speed', 'start'].some((f) => num(au, f) !== num(pa, f));
+    if (vChanged) {
+      const want = {
+        start: picStart(next, pair.pic.track, v) + (au.linkOff || 0),
+        in: v.in + (au.linkInOff || 0),
+        out: v.out + (au.linkInOff || 0),
+        speed: v.speed || 1,
+      };
+      const patch = {};
+      for (const f of ['start', 'in', 'out', 'speed']) if (num(au, f) !== want[f]) patch[f] = want[f];
+      if (Object.keys(patch).length && !isLayerLocked(next, 'audio', layerOf(au))) put('audio', au.id, patch);
+    } else if (aChanged) {
+      const patch = {};
+      const wantIn = au.in - (au.linkInOff || 0);
+      const wantOut = au.out - (au.linkInOff || 0);
+      if ((v.in || 0) !== wantIn) patch.in = wantIn;
+      if ((v.out || 0) !== wantOut) patch.out = wantOut;
+      if ((v.speed || 1) !== (au.speed || 1)) patch.speed = au.speed || 1;
+      // The main track's start is positional, so a start change can only flow picture-wards
+      // for overlay partners; for video partners it is the picture that leads.
+      if (pair.pic.track === 'overlay') {
+        const wantStart = au.start - (au.linkOff || 0);
+        if ((v.start || 0) !== wantStart) patch.start = wantStart;
+      }
+      if (Object.keys(patch).length && !clipLocked(next, pair.pic.track, v)) put(pair.pic.track, v.id, patch);
+    }
+  }
+  return out;
+}
+
+// Layer state across undo / redo: toggles are not undoable, so the CURRENT states are
+// carried over the restored project — but when the undone action was a layer permutation
+// (reorder / duplicate / delete layer), the states must follow their LAYERS, not stick to
+// the indices. The permutation is read off the clips themselves (each clip id's layer in
+// the current project vs in the restored one); when it is consistent for a track, the
+// carried keys of that track are remapped through it. (A state entry dropped by deleting
+// its layer is not resurrected — toggles made after the snapshot always win.)
+function followLayerState(cur, restored) {
+  const ls = cur.layerState || {};
+  if (!Object.keys(ls).length) return restored.layerState;
+  let out = { ...ls };
+  for (const track of Object.keys(LAYERED)) {
+    const key = LAYERED[track];
+    const curById = new Map((cur[key] || []).map((c) => [c.id, layerOf(c)]));
+    const map = new Map(); // current layer -> restored layer
+    let consistent = true;
+    for (const c of restored[key] || []) {
+      const lc = curById.get(c.id);
+      if (lc === undefined) continue;
+      const lr = layerOf(c);
+      if (map.has(lc) && map.get(lc) !== lr) { consistent = false; break; }
+      map.set(lc, lr);
+    }
+    if (!consistent || !map.size) continue;
+    const prefix = `${track}:`;
+    const next = {};
+    for (const [k, v] of Object.entries(out)) {
+      if (!k.startsWith(prefix)) { next[k] = v; continue; }
+      const l = Number(k.slice(prefix.length));
+      next[layerKey(track, map.has(l) ? map.get(l) : l)] = v;
+    }
+    out = next;
+  }
+  return out;
 }
 
 // History wrapper. Actions with `transient: true` (e.g. live drag updates) don't push undo steps;
@@ -706,13 +1030,27 @@ export function historyReducer(state, a) {
       gestureStart: state.gestureStart && patchVisuals(state.gestureStart, a),
     };
   }
+  if (a.type === 'setLayerState') {
+    // Lock / hide / mute / solo toggles are view-and-guard state, NOT document edits: they
+    // never push an undo step, and undo / redo never change them (they are carried over
+    // the restored project below, like mediaVisuals patches the visuals).
+    const key = layerKey(a.track, a.layer);
+    const cur = { ...layerStateOf(state.present, a.track, a.layer), ...a.patch };
+    const layerState = { ...(state.present.layerState || {}) };
+    if (!cur.locked && !cur.hidden && !cur.muted && !cur.solo) delete layerState[key];
+    else layerState[key] = cur;
+    if (JSON.stringify(layerState) === JSON.stringify(state.present.layerState || {})) return state;
+    return { ...state, present: { ...state.present, layerState } };
+  }
   if (a.type === 'undo') {
     if (!state.past.length) return state;
-    return { past: state.past.slice(0, -1), present: state.past[state.past.length - 1], future: [state.present, ...state.future] };
+    const restored = state.past[state.past.length - 1];
+    return { past: state.past.slice(0, -1), present: { ...restored, layerState: followLayerState(state.present, restored) }, future: [state.present, ...state.future] };
   }
   if (a.type === 'redo') {
     if (!state.future.length) return state;
-    return { past: [...state.past, state.present], present: state.future[0], future: state.future.slice(1) };
+    const restored = state.future[0];
+    return { past: [...state.past, state.present], present: { ...restored, layerState: followLayerState(state.present, restored) }, future: state.future.slice(1) };
   }
   // Folds every undo step created since `from` (a past.length noted earlier) into one, so a whole AI request
   // can be undone with a single Undo.
@@ -726,7 +1064,12 @@ export function historyReducer(state, a) {
     if (!start || start === state.present) return { ...state, gestureStart: null };
     return { past: [...state.past, start].slice(-100), present: state.present, future: [], gestureStart: null };
   }
-  const next = placeLayers(a.type === 'trimClip' ? trimClip(state.gestureStart || state.present, a) : reduceProject(state.present, a));
+  // Locked layers refuse edits before anything is computed (undo / redo returned above,
+  // so history navigation is never blocked by a lock).
+  if (actionLocked(state.present, a)) return state;
+  let next = placeLayers(a.type === 'trimClip' ? trimClip(state.gestureStart || state.present, a) : reduceProject(state.present, a));
+  if (next !== state.present && placementBlocked(state.present, next, a)) return state;
+  if (next !== state.present) next = syncLinked(state.present, next);
   if (next === state.present) return state;
   if (a.type === 'load') return { past: [], present: next, future: [] };
   if (a.transient || state.gestureStart) return { ...state, present: next };
@@ -834,18 +1177,28 @@ export function pickAttributes(c) {
 }
 
 // What plays and exports: deactivated main clips become gaps (black, silent), other deactivated clips are left out.
+// Layer state applies here too — this is the one project both the preview and the export
+// pipeline read, so a hidden layer vanishes from both and a muted / non-solo layer is
+// silent in both: hidden picture layers are dropped (the main track leaves gaps), a
+// silenced picture layer keeps its picture with clip.muted set, silenced audio clips go.
 export function renderable(p) {
   const hasOff = [p.videoClips, p.overlayClips || [], p.audioClips, p.textClips, p.stickerClips, p.effectClips || []].some((l) => l.some((c) => c.disabled));
-  if (!hasOff) return p;
-  const on = (l) => l.filter((c) => !c.disabled);
+  const ls = p.layerState || {};
+  const hasLayerFx = Object.values(ls).some((s) => s && (s.hidden || s.muted || s.solo));
+  if (!hasOff && !hasLayerFx) return p;
+  const hidden = (track, layer) => layerStateOf(p, track, layer).hidden;
+  const kept = (track) => (l) => l.filter((c) => !c.disabled && !hidden(track, layerOf(c)));
   return {
     ...p,
-    videoClips: p.videoClips.map((c) => (c.disabled ? { ...newGap(c.id, clipLen(c)), transition: c.transition } : c)),
-    overlayClips: on(p.overlayClips || []),
-    audioClips: on(p.audioClips),
-    textClips: on(p.textClips),
-    stickerClips: on(p.stickerClips),
-    effectClips: on(p.effectClips || []),
+    videoClips: p.videoClips.map((c) => (c.disabled || hidden('video', 0)
+      ? { ...newGap(c.id, clipLen(c)), transition: c.transition }
+      : (!layerSounds(p, 'video', 0) && !c.muted ? { ...c, muted: true } : c))),
+    overlayClips: kept('overlay')(p.overlayClips || [])
+      .map((c) => (!layerSounds(p, 'overlay', layerOf(c)) && !c.muted ? { ...c, muted: true } : c)),
+    audioClips: (p.audioClips || []).filter((c) => !c.disabled && !hidden('audio', layerOf(c)) && layerSounds(p, 'audio', layerOf(c))),
+    textClips: kept('text')(p.textClips),
+    stickerClips: kept('sticker')(p.stickerClips),
+    effectClips: (p.effectClips || []).filter((c) => !c.disabled && !hidden('effect', 0)),
   };
 }
 

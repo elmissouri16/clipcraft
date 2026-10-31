@@ -363,9 +363,29 @@ kbd {
 .tl-row.main { height: 80px; }
 .tl-row.ruler { height: 26px; cursor: ew-resize; position: sticky; top: 0; z-index: 6; background: var(--surface-1); border-bottom: 1px solid var(--border); }
 .tl-head {
-  position: sticky; left: 0; z-index: 5; width: 152px; flex: none; display: flex; align-items: center; gap: 7px;
-  padding-left: 12px; font-size: 11.5px; color: var(--text-3); background: var(--surface-1); border-right: 1px solid var(--border);
+  position: sticky; left: 0; z-index: 5; width: 176px; flex: none; display: flex; flex-direction: column;
+  font-size: 11.5px; color: var(--text-3); background: var(--surface-1); border-right: 1px solid var(--border);
 }
+/* Lane head: a title strip (lane icon / name / add / magnet), then one control row per
+   layer — lock, visibility, mute, solo, menu — aligned with the layer bands. */
+.tl-title-row { height: 22px; flex: none; display: flex; align-items: center; gap: 7px; padding-left: 12px; }
+.tl-layer-stack { position: relative; flex: 1; min-height: 0; }
+.tl-layer-row { display: flex; align-items: center; gap: 2px; padding: 0 4px 0 2px; }
+.tl-layer-row.drop-hint { background: var(--primary-soft); box-shadow: inset 0 2px 0 var(--primary); }
+.tl-grip { display: grid; place-items: center; width: 12px; flex: none; color: var(--text-3); cursor: grab; touch-action: none; }
+.tl-grip:active { cursor: grabbing; }
+.tl-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-3); }
+.tl-layer-row.locked .tl-layer-name { color: var(--text-2); }
+.tl-layer-row.is-hidden .tl-layer-name { opacity: 0.55; }
+.tl-ctl {
+  display: grid; place-items: center; width: 21px; height: 21px; flex: none; padding: 0;
+  border: 0; border-radius: 5px; background: transparent; color: var(--text-3); cursor: pointer;
+  font-size: 10px; font-weight: 700; font-family: inherit;
+}
+.tl-ctl:hover { background: var(--surface-3); color: var(--text); }
+.tl-ctl.on { color: #c4b5fd; background: var(--primary-soft); }
+.tl-ctl.on.mute { color: #fca5a5; background: rgba(239, 68, 68, 0.12); }
+.tl-ctl.solo.on { color: #fcd34d; background: rgba(245, 158, 11, 0.14); }
 .tl-row.main .tl-head { color: var(--text-2); }
 .tl-ruler { position: relative; flex: 1; }
 .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border-strong); }
@@ -781,6 +801,19 @@ input.switch:checked::after { transform: translateX(16px); }
 .export-split .caret { padding: 0 8px; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid rgba(255, 255, 255, 0.25); }
 .clip.off { opacity: 0.45; filter: grayscale(0.8); }
 .clip.off::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(0, 0, 0, 0.35) 6px 8px); }
+/* Layer states on clips and bands: a locked layer cannot be grabbed; a hidden layer's
+   clips stay on the timeline, dimmed (they are out of the preview and the export). */
+.clip.locked { cursor: not-allowed; filter: saturate(0.55); }
+.clip.layer-hidden { opacity: 0.38; }
+.layer-band.locked { background: repeating-linear-gradient(-45deg, rgba(130, 92, 251, 0.08) 0 8px, rgba(255, 255, 255, 0.02) 8px 16px); }
+.layer-band.is-hidden { opacity: 0.45; }
+/* Speed / Duration dialog preset row. */
+.speed-presets { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 10px; }
+/* Context-menu submenus (Move to Track): fixed-positioned by ContextMenu so the parent
+   menu's scroll overflow cannot clip them. */
+.ctx-subwrap { position: relative; }
+.ctx-menu .ctx-sub { position: fixed; overflow: visible; }
+.ctx-chev { color: var(--text-3); flex: none; }
 
 /* Player: move / scale / rotate box */
 .tbox-layer { position: absolute; inset: 0; z-index: 6; }

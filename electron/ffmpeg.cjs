@@ -162,7 +162,7 @@ function buildTimelineAudioArgs(project, outWav, source = 'all') {
     const idx = n++;
     const ms = Math.round(c.start * 1000);
     filters.push(
-      `[${idx}:a]atrim=start=${num(c.in)}:end=${num(c.out)},asetpts=PTS-STARTPTS,volume=${c.volume ?? 1},` +
+      `[${idx}:a]atrim=start=${num(c.in)}:end=${num(c.out)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`].join(',')},` +
         `aresample=16000,aformat=sample_fmts=fltp:channel_layouts=mono,adelay=${ms}:all=1[x${j}]`
     );
     mix.push(`[x${j}]`);
@@ -444,9 +444,9 @@ function buildExportArgs(project, outFile, opts = {}) {
   const mixLabels = [`[${ca}]`];
   music.forEach((c, j) => {
     const idx = addInput(['-i', mediaById[c.mediaId].path]);
-    const len = c.out - c.in;
+    const len = (c.out - c.in) / (c.speed || 1); // timeline length (audio clips carry a speed, e.g. detached ones)
     const delay = Math.round(c.start * 1000);
-    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));
@@ -531,9 +531,9 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   });
   project.audioClips.filter((c) => mediaById[c.mediaId]).forEach((c, j) => {
     sound = true;
-    const len = c.out - c.in;
+    const len = (c.out - c.in) / (c.speed || 1);
     const delay = Math.round(c.start * 1000);
-    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));

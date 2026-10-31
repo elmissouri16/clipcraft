@@ -1,13 +1,13 @@
 import React, { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { recentEntryFor } from './recents.js';
-import { canvasFor, emptyProject, freeLen, historyReducer, levelCopyState, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
+import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
 import HomeScreen from './components/HomeScreen.jsx';
 import SequenceDialog from './components/SequenceDialog.jsx';
 import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, FlipHorizontal2, Layers, LayoutTemplate, Loader2, Paintbrush, PanelBottom, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2, Unlink,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -20,7 +20,8 @@ import { isLookPatch, lookAction, selectedPictures } from './look.js';
 import { loadProjectLuts, onLutLoaded } from './fx/lut.js';
 import LeftPanel from './components/LeftPanel.jsx';
 import Preview from './components/Preview.jsx';
-import Timeline from './components/Timeline.jsx';
+import Timeline, { makeSelection } from './components/Timeline.jsx';
+import SpeedDialog from './components/SpeedDialog.jsx';
 import Inspector from './components/Inspector.jsx';
 import ExportDialog from './components/ExportDialog.jsx';
 import { EXPORT_PRESETS, resolveExport, settingsPatch, storedExportSettings } from './exportQuality.js';
@@ -61,6 +62,27 @@ export default function App() {
   const clockRef = useRef({ time: 0, stamp: 0, playing: false, rate: 1 });
   const [playing, setPlaying] = useState(false);
   const [selection, setSelection] = useState(null); // { track, id }
+  // Selection as the timeline and the preview see it: linked pairs (Detach audio) select
+  // together, and clips on locked layers cannot be selected at all.
+  const select = useCallback((sel) => {
+    if (!sel) return setSelection(null);
+    const p = projectRef.current;
+    const items = sel.items ? [...sel.items] : [{ track: sel.track, id: sel.id }];
+    const have = new Set(items.map((i) => `${i.track}:${i.id}`));
+    for (const it of [...items]) {
+      const c = findClipIn(p, it.track, it.id);
+      const partner = c && findLinkPartner(p, c);
+      if (partner && !have.has(`${partner.track}:${partner.clip.id}`)) {
+        items.push({ track: partner.track, id: partner.clip.id });
+        have.add(`${partner.track}:${partner.clip.id}`);
+      }
+    }
+    const kept = items.filter((it) => {
+      const c = findClipIn(p, it.track, it.id);
+      return !c || !isLayerLocked(p, it.track, clipLayer(it.track, c));
+    });
+    setSelection(kept.length ? makeSelection(kept) : null);
+  }, []);
   const [exporting, setExporting] = useState(null);
   const [renderJob, setRenderJob] = useState(null); // derivative renders (Reverse): { label, fraction } | { error }
   const [tab, setTab] = useState('media');
@@ -69,6 +91,7 @@ export default function App() {
   const [clipboard, setClipboard] = useState(null); // { track, clip } for copy / cut / paste
   const [attrClipboard, setAttrClipboard] = useState(null); // copied look and placement
   const [menu, setMenu] = useState(null); // right-click menu: { x, y, track, id }
+  const [speedAsk, setSpeedAsk] = useState(null); // clip whose Speed / Duration dialog is open: { track, id }
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quality, setQuality] = useState('full'); // Playback quality: which scaled copy the player uses
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -552,6 +575,16 @@ export default function App() {
     setSelection({ track: 'sticker', id: clipId });
   };
 
+  // Contextual timeline tools (reference pattern): Detach audio and Link / Unlink appear
+  // in the toolbar when the selection can use them, calling the same handlers as the menu.
+  const selSingle = selection && !selection.items ? findClipIn(project, selection) : null;
+  const selMedia = selSingle?.mediaId && project.media.find((x) => x.id === selSingle.mediaId);
+  const detachOk = !!(selSingle && (selection.track === 'video' || selection.track === 'overlay')
+    && selMedia?.type === 'video' && selMedia.hasAudio && !selSingle.muted && !selSingle.linkId);
+  const linkMode = selSingle?.linkId ? 'unlink'
+    : (selection?.items?.length === 2 && selection.items.some((i) => i.track === 'audio')
+      && selection.items.some((i) => i.track === 'video' || i.track === 'overlay')) ? 'link' : null;
+
   // Video clip targeted by the Effects / Filters / Transitions / Adjust tabs: selection first, else under the playhead.
   const layout = videoLayout(project.videoClips);
   const target = (selection?.track === 'video' && layout.find((l) => l.clip.id === selection.id && !l.clip.gap))
@@ -643,10 +676,104 @@ export default function App() {
     dispatch({ type: 'paste', track: clipboard.track, clip: clipboard.clip, at: time, newId });
     setSelection({ track: clipboard.track, id: newId });
   }, [clipboard, time]);
-  const extractAudio = useCallback((sel = selection) => {
-    if (!sel) return;
-    const newId = uid();
-    dispatch({ type: 'extractAudio', track: sel.track, id: sel.id, newId });
+  // Detach audio: render the clip's sound to its own file (electron/detach.cjs, cached),
+  // put it on the Audio track at the clip's position and LINK the pair — the store keeps
+  // linked clips in sync (select / move / trim / split / speed together). One undo step.
+  const detachAudio = useCallback(async (sel = selection) => {
+    const p = projectRef.current;
+    const c = sel && findClip(p, sel);
+    const m = c && p.media.find((x) => x.id === c.mediaId);
+    if (!c || !m || m.type !== 'video' || !m.hasAudio || c.muted || c.linkId) return;
+    setRenderJob({ label: 'Detaching audio…', fraction: 0 });
+    const off = window.api.onDetachProgress((pr) => {
+      if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
+    });
+    let res;
+    try {
+      res = await window.api.detachRun({ path: m.path, duration: m.duration, hasAudio: m.hasAudio, type: m.type }, c.in || 0, c.out ?? m.duration);
+    } catch (e) { res = { error: e.message }; }
+    off();
+    if (res.canceled) { setRenderJob(null); return; }
+    if (res.error) { setRenderJob({ error: res.error }); return; }
+    setRenderJob(null);
+    const start = sel.track === 'video'
+      ? (videoLayout(projectRef.current.videoClips).find((l) => l.clip.id === c.id)?.start ?? 0)
+      : c.start;
+    const linkId = uid();
+    const audioId = uid();
+    let media = projectRef.current.media.find((x) => x.path === res.path);
+    dispatch({ type: 'beginGesture' });
+    if (!media) { media = { ...res, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
+    dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { muted: true, linkId } });
+    dispatch({ type: 'insertAudioClip', clip: {
+      id: audioId, mediaId: media.id, start, in: 0, out: Math.min(c.out - c.in, res.duration || (c.out - c.in)),
+      speed: c.speed || 1, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0,
+      linkId, linkOff: 0, linkInOff: -(c.in || 0),
+    } });
+    dispatch({ type: 'endGesture' });
+    select({ track: 'audio', id: audioId });
+  }, [selection, select]);
+
+  // Unlink a linked pair: both clips become independent (one undo step).
+  const unlinkClip = useCallback((sel = selection) => {
+    const p = projectRef.current;
+    const c = sel && findClip(p, sel);
+    if (!c || !c.linkId) return;
+    const partner = findLinkPartner(p, c);
+    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { linkId: undefined, linkOff: undefined, linkInOff: undefined } });
+    if (partner) dispatch({ type: 'update', track: partner.track, id: partner.clip.id, patch: { linkId: undefined, linkOff: undefined, linkInOff: undefined } });
+    dispatch({ type: 'endGesture' });
+  }, [selection]);
+
+  // Link the two selected clips (one picture + one audio) into a synced pair. The audio
+  // clip's offsets are taken from the current positions, and its speed / window end are
+  // matched to the picture clip so the sync invariants hold from the start.
+  const linkPair = useCallback(() => {
+    const p = projectRef.current;
+    const items = selection?.items || [];
+    const pic = items.find((it) => it.track === 'video' || it.track === 'overlay');
+    const aud = items.find((it) => it.track === 'audio');
+    if (items.length !== 2 || !pic || !aud) return;
+    const pc = findClip(p, pic);
+    const ac = findClip(p, aud);
+    if (!pc || !ac || pc.linkId || ac.linkId) return;
+    const vStart = pic.track === 'video'
+      ? (videoLayout(p.videoClips).find((l) => l.clip.id === pc.id)?.start ?? 0)
+      : pc.start;
+    const linkId = uid();
+    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'update', track: pic.track, id: pic.id, patch: { linkId } });
+    dispatch({ type: 'update', track: 'audio', id: ac.id, patch: {
+      linkId, linkOff: ac.start - vStart, linkInOff: ac.in - pc.in,
+      speed: pc.speed || 1, out: ac.in + (pc.out - pc.in),
+    } });
+    dispatch({ type: 'endGesture' });
+  }, [selection]);
+
+  // Select every clip on the layer of the given clip (Select all in the clip menu).
+  const selectAllOnLayer = useCallback((sel) => {
+    const p = projectRef.current;
+    const c = sel && findClip(p, sel);
+    if (!c) return;
+    const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips' }[sel.track];
+    if (!key) return;
+    const layer = clipLayer(sel.track, c);
+    const items = p[key].filter((x) => !x.gap && clipLayer(sel.track, x) === layer).map((x) => ({ track: sel.track, id: x.id }));
+    if (items.length) select(makeSelection(items));
+  }, [select]);
+
+  // Move the selected clip(s) of one layered lane to another layer of that lane (one undo
+  // step). Targets that would overlap are disabled in the menu, so this always fits.
+  const moveSelectionToLayer = useCallback((sel, layer) => {
+    const p = projectRef.current;
+    const items = (selection?.items && selection.items.some((it) => it.track === sel.track && it.id === sel.id))
+      ? selection.items.filter((it) => it.track === sel.track)
+      : [sel];
+    dispatch({ type: 'beginGesture' });
+    items.forEach((it) => dispatch({ type: 'update', track: it.track, id: it.id, patch: { layer } }));
+    dispatch({ type: 'endGesture' });
+    return items;
   }, [selection]);
 
   // Sound of one clip, or of the whole timeline, as an audio file.
@@ -774,20 +901,51 @@ export default function App() {
     const m = c.mediaId && project.media.find((x) => x.id === c.mediaId);
     const pic = sel.track === 'video' || sel.track === 'overlay';
     const withSound = (pic && m?.type === 'video' && m.hasAudio) || sel.track === 'audio';
-    const canExtract = pic && m?.type === 'video' && m.hasAudio && !c.muted && (c.speed || 1) === 1;
-    const extractHint = !(pic && m?.type === 'video') ? 'Only for video clips'
-      : !m.hasAudio ? 'This video has no sound' : c.muted ? 'The clip is muted (sound already extracted?)' : 'Set the speed to 1x first';
+    const canDetach = pic && m?.type === 'video' && m.hasAudio && !c.muted && !c.linkId;
+    const detachHint = !(pic && m?.type === 'video') ? 'Only for video clips'
+      : !m.hasAudio ? 'This video has no sound' : c.linkId ? 'The sound is already detached' : 'The clip is muted — its sound is off';
     const items = [
       { label: 'Copy', icon: Copy, shortcut: 'Ctrl C', onClick: copy },
       { label: 'Cut', icon: Scissors, shortcut: 'Ctrl X', onClick: cut },
       { label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl V', onClick: paste, disabled: !clipboard, hint: 'Copy a clip first' },
       { label: 'Delete', icon: Trash2, shortcut: 'Del', onClick: remove },
+      { label: 'Select all on this layer', icon: ListChecks, onClick: () => selectAllOnLayer(sel) },
       'sep',
       { label: 'Split at playhead', icon: Split, shortcut: 'S', onClick: split },
       { label: 'Delete left of playhead', icon: ScissorsLineDashed, shortcut: 'Q', onClick: () => trimSide('left') },
       { label: 'Delete right of playhead', icon: ScissorsLineDashed, shortcut: 'W', onClick: () => trimSide('right') },
       { label: 'Duplicate', icon: CopyPlus, shortcut: 'Ctrl D', onClick: duplicate },
     ];
+    // Move to Track: the other layers of this clip's lane (multi-selection moves together).
+    if (LAYERED[sel.track]) {
+      const count = layerCount(project, sel.track);
+      const cur = layerOf(c);
+      const span = sel.track === 'audio' ? { start: c.start, len: freeLen('audio', c) }
+        : sel.track === 'overlay' ? { start: c.start, len: freeLen('overlay', c) }
+        : { start: c.start, len: c.duration };
+      if (count > 1) {
+        items.push({
+          label: 'Move to layer', icon: Layers,
+          submenu: Array.from({ length: count }, (_, layer) => layer).filter((layer) => layer !== cur).map((layer) => ({
+            label: layerName(project, sel.track, layer),
+            disabled: !layerFree(project, sel.track, layer, span.start, span.len, c.id) || isLayerLocked(project, sel.track, layer),
+            hint: isLayerLocked(project, sel.track, layer) ? 'That layer is locked' : 'The clip would overlap a clip there',
+            onClick: () => moveSelectionToLayer(sel, layer),
+          })),
+        });
+      }
+    }
+    // Speed / Duration (constant speed — also on the inspector's Speed tab) and Properties.
+    if (pic || sel.track === 'audio') {
+      items.push({ label: 'Speed / Duration…', icon: Gauge, onClick: () => setSpeedAsk({ track: sel.track, id: sel.id }) });
+    }
+    items.push({ label: 'Properties', icon: Info, onClick: () => {
+      select(sel);
+      requestAnimationFrame(() => {
+        const el = document.querySelector('aside.inspector');
+        if (el) { el.setAttribute('tabindex', '-1'); el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); }
+      });
+    } });
     if (pic) {
       items.push('sep',
         c.slot
@@ -822,7 +980,14 @@ export default function App() {
           onClick: () => { const t = c.transform || {}; dispatch({ type: 'update', ...sel, patch: { transform: { ...t, rot: ((t.rot || 0) + 90) % 360 } } }); } });
     }
     items.push('sep');
-    if (pic) items.push({ label: 'Extract audio', icon: AudioLines, shortcut: 'Ctrl Shift S', onClick: () => extractAudio(sel), disabled: !canExtract, hint: extractHint });
+    if (pic) items.push({ label: 'Detach audio', icon: AudioLines, shortcut: 'Ctrl Shift S', onClick: () => detachAudio(sel), disabled: !canDetach, hint: detachHint });
+    if (c.linkId) {
+      items.push({ label: 'Unlink audio and video', icon: Unlink, onClick: () => unlinkClip(sel) });
+    } else if (selection?.items?.length === 2
+      && selection.items.some((it) => it.track === 'audio')
+      && selection.items.some((it) => it.track === 'video' || it.track === 'overlay')) {
+      items.push({ label: 'Link clips', icon: Link2, onClick: linkPair });
+    }
     if (sel.track === 'audio') items.push({ label: c.reversed ? 'Reverse (restore original)' : 'Reverse', icon: Rewind, onClick: () => reverseClip(sel) });
     items.push({ label: 'Export clip audio (MP3)', icon: AudioLines, onClick: () => exportAudio('mp3', sel), disabled: !withSound, hint: 'This clip has no sound' });
     items.push(c.disabled
@@ -832,7 +997,16 @@ export default function App() {
   };
 
   const duplicate = useCallback(() => {
-    if (selection && selection.track !== 'transition' && !(selection.track === 'effect' && selection.id.includes('|'))) dispatch({ type: 'duplicate', ...selection, newId: uid() });
+    if (!selection) return;
+    const okItem = (it) => it.track !== 'transition' && !(it.track === 'effect' && it.id.includes('|'));
+    if (selection.items) {
+      // Bulk duplicate: every selected clip, one undo step (locked layers refuse their own).
+      const items = selection.items.filter(okItem);
+      if (!items.length) return;
+      dispatch({ type: 'beginGesture' });
+      items.forEach((it) => dispatch({ type: 'duplicate', ...it, newId: uid() }));
+      dispatch({ type: 'endGesture' });
+    } else if (okItem(selection)) dispatch({ type: 'duplicate', ...selection, newId: uid() });
   }, [selection]);
 
   // Saves to the project's file (asks where the first time, or always with saveAs). Returns true once saved.
@@ -1205,7 +1379,7 @@ export default function App() {
 
   // Keyboard shortcuts (CapCut-like).
   const keys = useRef({});
-  keys.current = { togglePlay, split, remove, duplicate, seek, time, trimSide, toggleMarker, setTool, copy, cut, paste, extractAudio, save };
+  keys.current = { togglePlay, split, remove, duplicate, seek, time, trimSide, toggleMarker, setTool, copy, cut, paste, extractAudio: detachAudio, save };
   useEffect(() => {
     const onKey = (e) => {
       const k = keys.current;
@@ -1278,7 +1452,7 @@ export default function App() {
           clipSelected={selection?.track === 'video' || selection?.track === 'overlay'}
           onAddFreeEffect={(fx) => { const clipId = uid(); dispatch({ type: 'addEffectClip', clipId, fx, at: time }); setSelection({ track: 'effect', id: clipId }); }}
           project={project} captions={{ ...captions, run: runCaptions }} />
-        <Preview project={playProject} editProject={project} selection={selection} onSelect={setSelection} dispatch={dispatch} time={time} seekVer={seekVer} playing={playing} duration={duration}
+        <Preview project={playProject} editProject={project} selection={selection} onSelect={select} dispatch={dispatch} time={time} seekVer={seekVer} playing={playing} duration={duration}
           onTime={setTime} onEnd={() => setPlaying(false)} onTogglePlay={togglePlay} onSeek={seek} onDropItem={dropOnPreview}
           peek={project.media.find((m) => m.id === peekId)} onClosePeek={() => setPeekId(null)}
           onAddPeek={(id) => { setPeekId(null); addToTimeline(id); }}
@@ -1291,12 +1465,23 @@ export default function App() {
       <Splitter which="bottom" style={{ bottom: panes.bottom + 6 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the timeline" />
 
       <Timeline project={project} time={time} duration={duration} selection={selection} clockRef={clockRef} playing={playing}
-        onSelect={setSelection} onSeek={seek} dispatch={dispatch}
+        onSelect={select} onSeek={seek} dispatch={dispatch}
+        onDetach={() => detachAudio()} detachOk={detachOk} linkMode={linkMode}
+        onLinkToggle={() => (linkMode === 'unlink' ? unlinkClip() : linkPair())}
         onSplit={split} onDelete={remove} onDuplicate={duplicate}
         tool={tool} setTool={setTool} onTrimSide={trimSide} onMarker={toggleMarker} recorder={recorder} onToggleRecord={toggleRecording}
         onDropItem={dropItem} onDropFiles={dropFiles} canUndo={!!state.past.length} canRedo={!!state.future.length} onClipMenu={openClipMenu} onAddText={addText}
         overlay={slots.length > 0 && <SlotStrip slots={slots} media={project.media} selection={selection} onPick={pickSlot} onReplace={replaceSlot} title={project.template?.title} />} />
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
+      {speedAsk && (() => {
+        const c = findClip(project, speedAsk);
+        if (!c) return null;
+        const m = c.mediaId && project.media.find((x) => x.id === c.mediaId);
+        return (
+          <SpeedDialog clip={c} name={m?.name || 'Clip'} onClose={() => setSpeedAsk(null)}
+            onApply={(speed) => dispatch({ type: 'update', track: speedAsk.track, id: speedAsk.id, patch: { speed } })} />
+        );
+      })()}
 
       {(screenOpen || screenRec.active) && <ScreenRecordDialog rec={screenRec} at={time} onClose={() => setScreenOpen(false)} />}
       {recoveredNote && (

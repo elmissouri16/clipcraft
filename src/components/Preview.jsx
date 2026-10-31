@@ -384,13 +384,13 @@ export default function Preview({
       const el = audioEls.current[c.id];
       const m = mediaById[c.mediaId];
       if (!el || !m) return;
-      const len = c.out - c.in;
+      const len = freeLen('audio', c);
       const lt = t - c.start;
       if (lt >= 0 && lt < len) {
         let g = c.volume ?? 1;
         if (c.fadeIn > 0) g *= Math.min(1, lt / c.fadeIn);
         if (c.fadeOut > 0) g *= Math.min(1, (len - lt) / c.fadeOut);
-        syncMedia(el, toFileUrl(m.path), c.in + lt, isPlaying, g);
+        syncMedia(el, toFileUrl(m.path), c.in + lt * (c.speed || 1), isPlaying, g, c.speed || 1);
       } else if (!el.paused) el.pause();
     });
   };

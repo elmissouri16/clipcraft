@@ -52,6 +52,13 @@ contextBridge.exposeInMainWorld('api', {
   stabilizeRun: (item, from, to, level) => ipcRenderer.invoke('stabilize:run', item, from, to, level),
   reverseRun: (item, from, to) => ipcRenderer.invoke('reverse:run', item, from, to),
   reverseCancel: () => ipcRenderer.invoke('reverse:cancel'),
+  detachRun: (item, from, to) => ipcRenderer.invoke('detach:run', item, from, to),
+  detachCancel: () => ipcRenderer.invoke('detach:cancel'),
+  onDetachProgress: (cb) => {
+    const h = (_e, p) => cb(p);
+    ipcRenderer.on('detach:progress', h);
+    return () => ipcRenderer.removeListener('detach:progress', h);
+  },
   onReverseProgress: (cb) => {
     const h = (_e, p) => cb(p);
     ipcRenderer.on('reverse:progress', h);
