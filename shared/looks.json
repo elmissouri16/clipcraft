@@ -1,0 +1,1100 @@
+{
+ "filters": [
+  {
+   "id": "none",
+   "name": "None",
+   "ff": null,
+   "css": "",
+   "cat": "Basic"
+  },
+  {
+   "id": "bw",
+   "name": "Black & White",
+   "ff": "hue=s=0",
+   "css": "grayscale(1)",
+   "cat": "Mono"
+  },
+  {
+   "id": "sepia",
+   "name": "Sepia",
+   "ff": "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
+   "css": "sepia(1)",
+   "cat": "Vintage"
+  },
+  {
+   "id": "vintage",
+   "name": "Vintage",
+   "ff": "curves=preset=vintage",
+   "css": "sepia(0.45) contrast(0.9) saturate(0.85) brightness(1.05)",
+   "cat": "Vintage"
+  },
+  {
+   "id": "warm",
+   "name": "Warm",
+   "ff": "colorbalance=rs=0.12:gs=0.02:bs=-0.12:rm=0.08:bm=-0.08",
+   "css": "sepia(0.2) saturate(1.25) hue-rotate(-8deg)",
+   "cat": "Basic"
+  },
+  {
+   "id": "cool",
+   "name": "Cool",
+   "ff": "colorbalance=rs=-0.1:bs=0.12:rm=-0.06:bm=0.08",
+   "css": "saturate(1.1) hue-rotate(12deg) brightness(1.02)",
+   "cat": "Basic"
+  },
+  {
+   "id": "vivid",
+   "name": "Vivid",
+   "ff": "eq=saturation=1.6:contrast=1.12",
+   "css": "saturate(1.6) contrast(1.12)",
+   "cat": "Basic"
+  },
+  {
+   "id": "fade",
+   "name": "Faded",
+   "ff": "eq=contrast=0.8:saturation=0.7:brightness=0.06",
+   "css": "contrast(0.8) saturate(0.7) brightness(1.1)",
+   "cat": "Basic"
+  },
+  {
+   "id": "drama",
+   "name": "Drama",
+   "ff": "eq=contrast=1.4:saturation=0.8:brightness=-0.05",
+   "css": "contrast(1.4) saturate(0.8) brightness(0.92)",
+   "cat": "Cinematic"
+  },
+  {
+   "id": "invert",
+   "name": "Negative",
+   "ff": "negate",
+   "css": "invert(1)",
+   "cat": "Creative"
+  },
+  {
+   "id": "cinematic",
+   "name": "Cinematic",
+   "ff": "curves=preset=strong_contrast,colorbalance=rs=-0.05:bs=0.08:rh=0.06:bh=-0.05",
+   "css": "contrast(1.25) saturate(0.9) hue-rotate(-4deg)",
+   "cat": "Cinematic"
+  },
+  {
+   "id": "tealorange",
+   "name": "Teal & Orange",
+   "ff": "colorbalance=rs=-0.12:gs=-0.02:bs=0.16:rh=0.16:gh=0.04:bh=-0.14,eq=contrast=1.1:saturation=1.15",
+   "css": "contrast(1.1) saturate(1.25) hue-rotate(-10deg)",
+   "cat": "Cinematic"
+  },
+  {
+   "id": "bleach",
+   "name": "Bleach Bypass",
+   "ff": "eq=saturation=0.45:contrast=1.35",
+   "css": "grayscale(0.55) contrast(1.35)",
+   "cat": "Cinematic"
+  },
+  {
+   "id": "noir",
+   "name": "Noir",
+   "ff": "hue=s=0,eq=contrast=1.5:brightness=-0.05",
+   "css": "grayscale(1) contrast(1.5) brightness(0.95)",
+   "cat": "Mono"
+  },
+  {
+   "id": "silver",
+   "name": "Silver",
+   "ff": "hue=s=0,eq=contrast=1.15:brightness=0.04",
+   "css": "grayscale(1) contrast(1.15) brightness(1.04)",
+   "cat": "Mono"
+  },
+  {
+   "id": "golden",
+   "name": "Golden Hour",
+   "ff": "colorbalance=rs=0.1:gs=0.04:bs=-0.15:rm=0.1:gm=0.04:bm=-0.1,eq=saturation=1.2",
+   "css": "sepia(0.35) saturate(1.3) hue-rotate(-10deg)",
+   "cat": "Warm"
+  },
+  {
+   "id": "sunset",
+   "name": "Sunset",
+   "ff": "colorbalance=rs=0.18:gs=-0.02:bs=-0.1:rh=0.12:bh=-0.06,eq=saturation=1.25:contrast=1.05",
+   "css": "sepia(0.3) saturate(1.4) hue-rotate(-18deg)",
+   "cat": "Warm"
+  },
+  {
+   "id": "autumn",
+   "name": "Autumn",
+   "ff": "colorbalance=rs=0.14:gs=0.04:bs=-0.12:rm=0.08:bm=-0.06,eq=saturation=1.15",
+   "css": "sepia(0.3) saturate(1.2) hue-rotate(-12deg)",
+   "cat": "Warm"
+  },
+  {
+   "id": "tungsten",
+   "name": "Tungsten",
+   "ff": "colortemperature=temperature=4000",
+   "css": "sepia(0.35) saturate(1.1) hue-rotate(-12deg)",
+   "cat": "Warm"
+  },
+  {
+   "id": "moonlight",
+   "name": "Moonlight",
+   "ff": "colorbalance=rs=-0.12:bs=0.2:rm=-0.08:bm=0.12,eq=brightness=-0.06:saturation=0.8",
+   "css": "hue-rotate(18deg) brightness(0.9) saturate(0.8)",
+   "cat": "Cool"
+  },
+  {
+   "id": "ice",
+   "name": "Ice",
+   "ff": "colortemperature=temperature=9500",
+   "css": "hue-rotate(12deg) brightness(1.04) saturate(0.95)",
+   "cat": "Cool"
+  },
+  {
+   "id": "forest",
+   "name": "Forest",
+   "ff": "colorbalance=rs=-0.1:gs=0.12:bs=-0.05,eq=saturation=1.25",
+   "css": "hue-rotate(20deg) saturate(1.25)",
+   "cat": "Cool"
+  },
+  {
+   "id": "pastel",
+   "name": "Pastel",
+   "ff": "eq=saturation=0.75:brightness=0.08:contrast=0.85",
+   "css": "saturate(0.75) brightness(1.08) contrast(0.85)",
+   "cat": "Soft"
+  },
+  {
+   "id": "matte",
+   "name": "Matte",
+   "ff": "curves=all='0/0.08 1/0.92'",
+   "css": "contrast(0.85) brightness(1.05)",
+   "cat": "Soft"
+  },
+  {
+   "id": "highkey",
+   "name": "High Key",
+   "ff": "eq=brightness=0.12:contrast=0.9:saturation=0.9",
+   "css": "brightness(1.12) contrast(0.9) saturate(0.9)",
+   "cat": "Soft"
+  },
+  {
+   "id": "lowkey",
+   "name": "Low Key",
+   "ff": "eq=brightness=-0.1:contrast=1.3",
+   "css": "brightness(0.9) contrast(1.3)",
+   "cat": "Cinematic"
+  },
+  {
+   "id": "dreamy",
+   "name": "Dreamy",
+   "ff": "eq=brightness=0.06:saturation=1.1,gblur=sigma=1.2",
+   "css": "blur(0.6px) brightness(1.06) saturate(1.1)",
+   "cat": "Soft"
+  },
+  {
+   "id": "crisp",
+   "name": "Crisp",
+   "ff": "unsharp=5:5:1.2,eq=contrast=1.12:saturation=1.15",
+   "css": "contrast(1.12) saturate(1.15)",
+   "cat": "Sharp"
+  },
+  {
+   "id": "hdr",
+   "name": "HDR",
+   "ff": "eq=contrast=1.25:saturation=1.35,unsharp=7:7:0.9",
+   "css": "contrast(1.25) saturate(1.35)",
+   "cat": "Sharp"
+  },
+  {
+   "id": "film",
+   "name": "Film",
+   "ff": "curves=preset=vintage,noise=alls=10:allf=t,eq=saturation=1.1",
+   "css": "sepia(0.3) contrast(1.05) saturate(1.1)",
+   "cat": "Vintage"
+  },
+  {
+   "id": "polaroid",
+   "name": "Polaroid",
+   "ff": "colorbalance=rs=0.08:bs=-0.06,eq=contrast=0.9:saturation=0.85:brightness=0.05",
+   "css": "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.05)",
+   "cat": "Vintage"
+  },
+  {
+   "id": "xpro",
+   "name": "Cross Process",
+   "ff": "curves=preset=cross_process",
+   "css": "contrast(1.2) saturate(1.3) hue-rotate(-12deg)",
+   "cat": "Creative"
+  },
+  {
+   "id": "cyber",
+   "name": "Cyber",
+   "ff": "colorbalance=rs=0.1:gs=-0.08:bs=0.18,eq=saturation=1.5:contrast=1.15",
+   "css": "saturate(1.5) contrast(1.15) hue-rotate(-30deg)",
+   "cat": "Creative"
+  },
+  {
+   "id": "neonpink",
+   "name": "Neon Pink",
+   "ff": "colorbalance=rs=0.2:gs=-0.1:bs=0.15,eq=saturation=1.4",
+   "css": "saturate(1.4) hue-rotate(-40deg)",
+   "cat": "Creative"
+  },
+  {
+   "id": "duoblue",
+   "name": "Duotone Blue",
+   "ff": "hue=s=0,colorize=hue=220:saturation=0.8:lightness=0.5:mix=0.8",
+   "css": "grayscale(1) sepia(1) hue-rotate(170deg) saturate(2)",
+   "cat": "Creative"
+  },
+  {
+   "id": "duopink",
+   "name": "Duotone Pink",
+   "ff": "hue=s=0,colorize=hue=330:saturation=0.8:lightness=0.5:mix=0.8",
+   "css": "grayscale(1) sepia(1) hue-rotate(290deg) saturate(2)",
+   "cat": "Creative"
+  },
+  {
+   "id": "posterize",
+   "name": "Posterize",
+   "ff": "lutrgb=r='floor(val/51)*51':g='floor(val/51)*51':b='floor(val/51)*51'",
+   "css": "contrast(1.5) saturate(1.4)",
+   "cat": "Creative"
+  },
+  {
+   "id": "sketch",
+   "name": "Sketch",
+   "ff": "edgedetect=low=0.08:high=0.25,negate",
+   "css": "grayscale(1) contrast(3) brightness(1.3)",
+   "cat": "Creative"
+  },
+  {
+   "id": "vibrance",
+   "name": "Vibrance",
+   "ff": "vibrance=intensity=0.8",
+   "css": "saturate(1.35)",
+   "cat": "Basic"
+  },
+  {
+   "id": "lighten",
+   "name": "Lighten",
+   "ff": "curves=preset=lighter",
+   "css": "brightness(1.15)",
+   "cat": "Basic"
+  },
+  {
+   "id": "darken",
+   "name": "Darken",
+   "ff": "curves=preset=darker",
+   "css": "brightness(0.85)",
+   "cat": "Basic"
+  }
+ ],
+ "effects": [
+  {
+   "id": "mirror",
+   "name": "Mirror",
+   "icon": "mirror",
+   "ff": "hflip",
+   "flipx": true,
+   "cat": "Basic"
+  },
+  {
+   "id": "flipv",
+   "name": "Flip",
+   "icon": "flip",
+   "ff": "vflip",
+   "flipy": true,
+   "cat": "Basic"
+  },
+  {
+   "id": "vignette",
+   "name": "Vignette",
+   "icon": "vignette",
+   "ff": "vignette=PI/4",
+   "cls": "vignette",
+   "cat": "Basic"
+  },
+  {
+   "id": "grain",
+   "name": "Grain",
+   "icon": "grain",
+   "ff": "noise=alls=18:allf=t",
+   "cat": "Texture"
+  },
+  {
+   "id": "blur",
+   "name": "Blur",
+   "icon": "blur",
+   "css": "blur(6px)",
+   "cat": "Basic"
+  },
+  {
+   "id": "pixel",
+   "name": "Pixel",
+   "icon": "pixel",
+   "ff": "scale=iw/24:ih/24,scale={W}:{H}:flags=neighbor",
+   "cat": "Texture"
+  },
+  {
+   "id": "sharpen",
+   "name": "Sharpen",
+   "icon": "sharpen",
+   "ff": "unsharp=5:5:1.5",
+   "css": "contrast(1.1)",
+   "cat": "Basic"
+  },
+  {
+   "id": "rgbsplit",
+   "name": "RGB Split",
+   "icon": "rgb",
+   "ff": "rgbashift=rh=-{4u}:bh={4u}",
+   "css": "url(#fx-rgbsplit)",
+   "cat": "Glitch"
+  },
+  {
+   "id": "glitch",
+   "name": "Glitch",
+   "icon": "glitch",
+   "ff": "rgbashift=rh=-{12u}:bh={12u}:enable='gt(sin(t*13),0.8)'",
+   "cssIf": {
+    "when": "gt(sin(t*13),0.8)",
+    "css": "url(#fx-rgbsplit-strong)"
+   },
+   "cat": "Glitch"
+  },
+  {
+   "id": "vhs",
+   "name": "VHS",
+   "icon": "vhs",
+   "ff": "noise=alls=22:allf=t,rgbashift=rh={3u}:bh=-{3u},eq=saturation=1.35:contrast=1.1,gblur=sigma=0.8:sigmaV=0.01",
+   "css": "url(#fx-rgbsplit) saturate(1.3) contrast(1.1)",
+   "cat": "Glitch"
+  },
+  {
+   "id": "oldfilm",
+   "name": "Old Film",
+   "icon": "film",
+   "ff": "curves=preset=vintage,noise=alls=25:allf=t,vignette=PI/4,eq=brightness='0.04*sin(t*37)':eval=frame",
+   "css": "sepia(0.6) contrast(1.1)",
+   "cls": "vignette",
+   "cat": "Texture"
+  },
+  {
+   "id": "letterbox",
+   "name": "Cinema Bars",
+   "icon": "bars",
+   "ff": "drawbox=x=0:y=0:w=iw:h=ih*0.12:color=black:t=fill,drawbox=x=0:y=ih*0.88:w=iw:h=ih*0.12:color=black:t=fill",
+   "cls": "letterbox",
+   "cat": "Basic"
+  },
+  {
+   "id": "shake",
+   "name": "Shake",
+   "icon": "shake",
+   "motion": {
+    "sx": "1.08",
+    "sy": "1.08",
+    "dx": "0.012*sin(t*47)",
+    "dy": "0.012*cos(t*53)"
+   },
+   "cat": "Motion"
+  },
+  {
+   "id": "wobble",
+   "name": "Wobble",
+   "icon": "wobble",
+   "motion": {
+    "sx": "1.1",
+    "sy": "1.1",
+    "rot": "0.04*sin(t*4)"
+   },
+   "cat": "Motion"
+  },
+  {
+   "id": "zoompulse",
+   "name": "Zoom Pulse",
+   "icon": "pulse",
+   "motion": {
+    "sx": "1+0.07*pow(abs(sin(t*3)),2)",
+    "sy": "1+0.07*pow(abs(sin(t*3)),2)"
+   },
+   "cat": "Motion"
+  },
+  {
+   "id": "strobe",
+   "name": "Strobe",
+   "icon": "strobe",
+   "motion": {
+    "bright": "0.45*pow(max(0,sin(t*9)),10)"
+   },
+   "cat": "Motion"
+  },
+  {
+   "id": "bounce",
+   "name": "Bounce",
+   "icon": "bounce",
+   "motion": {
+    "sx": "1.06",
+    "sy": "1.06",
+    "dy": "0.03*abs(sin(t*6))"
+   },
+   "cat": "Motion"
+  },
+  {
+   "id": "spin",
+   "name": "Slow Spin",
+   "icon": "spin",
+   "motion": {
+    "sx": "1.5",
+    "sy": "1.5",
+    "rot": "t*0.6"
+   },
+   "cat": "Motion"
+  },
+  {
+   "id": "driftzoom",
+   "name": "Slow Zoom",
+   "icon": "zoom",
+   "motion": {
+    "sx": "1+0.25*clip(t/dur,0,1)",
+    "sy": "1+0.25*clip(t/dur,0,1)"
+   },
+   "cat": "Motion"
+  }
+ ],
+ "anims": [
+  {
+   "id": "none",
+   "name": "None",
+   "kind": "in"
+  },
+  {
+   "id": "none",
+   "name": "None",
+   "kind": "out"
+  },
+  {
+   "id": "none",
+   "name": "None",
+   "kind": "combo"
+  },
+  {
+   "id": "fadeIn",
+   "name": "Fade In",
+   "kind": "in",
+   "fade": "black"
+  },
+  {
+   "id": "flashIn",
+   "name": "Flash In",
+   "kind": "in",
+   "fade": "white"
+  },
+  {
+   "id": "zoomIn",
+   "name": "Zoom In",
+   "kind": "in",
+   "sx": "1.5-0.5*(1-pow(1-p,3))",
+   "sy": "1.5-0.5*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "growIn",
+   "name": "Grow",
+   "kind": "in",
+   "sx": "0.4+0.6*(1-pow(1-p,3))",
+   "sy": "0.4+0.6*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "popIn",
+   "name": "Pop",
+   "kind": "in",
+   "sx": "0.3+0.7*(1+2.70158*pow(p-1,3)+1.70158*pow(p-1,2))",
+   "sy": "0.3+0.7*(1+2.70158*pow(p-1,3)+1.70158*pow(p-1,2))"
+  },
+  {
+   "id": "slideLeftIn",
+   "name": "Slide Left",
+   "kind": "in",
+   "dx": "0.6*pow(1-p,3)"
+  },
+  {
+   "id": "slideRightIn",
+   "name": "Slide Right",
+   "kind": "in",
+   "dx": "-0.6*pow(1-p,3)"
+  },
+  {
+   "id": "slideUpIn",
+   "name": "Slide Up",
+   "kind": "in",
+   "dy": "0.6*pow(1-p,3)"
+  },
+  {
+   "id": "slideDownIn",
+   "name": "Slide Down",
+   "kind": "in",
+   "dy": "-0.6*pow(1-p,3)"
+  },
+  {
+   "id": "spinIn",
+   "name": "Spin In",
+   "kind": "in",
+   "rot": "-1.2*pow(1-p,3)",
+   "sx": "0.5+0.5*(1-pow(1-p,3))",
+   "sy": "0.5+0.5*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "rotateZoomIn",
+   "name": "Rotate Zoom",
+   "kind": "in",
+   "rot": "0.8*pow(1-p,2)",
+   "sx": "1.4-0.4*(1-pow(1-p,3))",
+   "sy": "1.4-0.4*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "flipIn",
+   "name": "Flip In",
+   "kind": "in",
+   "sx": "0.02+0.98*(1-pow(1-p,3))"
+  },
+  {
+   "id": "dropIn",
+   "name": "Drop",
+   "kind": "in",
+   "dy": "-0.45*pow(1-p,2)*abs(cos(p*10))"
+  },
+  {
+   "id": "swingIn",
+   "name": "Swing",
+   "kind": "in",
+   "rot": "0.5*pow(1-p,2)*cos(p*14)",
+   "fade": "black"
+  },
+  {
+   "id": "blurIn",
+   "name": "Blur In",
+   "kind": "in",
+   "blur": 14,
+   "fade": "black"
+  },
+  {
+   "id": "glitchIn",
+   "name": "Glitch In",
+   "kind": "in",
+   "dx": "0.04*(1-p)*sin(p*90)",
+   "bright": "0.3*(1-p)*max(0,sin(p*70))"
+  },
+  {
+   "id": "riseIn",
+   "name": "Rise",
+   "kind": "in",
+   "dy": "0.08*(1-p)",
+   "fade": "black"
+  },
+  {
+   "id": "stretchIn",
+   "name": "Stretch",
+   "kind": "in",
+   "sx": "0.2+0.8*(1-pow(1-p,3))",
+   "sy": "1.3-0.3*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "fadeOut",
+   "name": "Fade Out",
+   "kind": "out",
+   "fade": "black"
+  },
+  {
+   "id": "flashOut",
+   "name": "Flash Out",
+   "kind": "out",
+   "fade": "white"
+  },
+  {
+   "id": "zoomOut",
+   "name": "Zoom Out",
+   "kind": "out",
+   "sx": "1.5-0.5*(1-pow(1-p,3))",
+   "sy": "1.5-0.5*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "shrinkOut",
+   "name": "Shrink",
+   "kind": "out",
+   "sx": "0.4+0.6*(1-pow(1-p,3))",
+   "sy": "0.4+0.6*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "popOut",
+   "name": "Pop Out",
+   "kind": "out",
+   "sx": "0.3+0.7*(1+2.70158*pow(p-1,3)+1.70158*pow(p-1,2))",
+   "sy": "0.3+0.7*(1+2.70158*pow(p-1,3)+1.70158*pow(p-1,2))"
+  },
+  {
+   "id": "slideLeftOut",
+   "name": "Slide Left",
+   "kind": "out",
+   "dx": "-0.6*pow(1-p,3)"
+  },
+  {
+   "id": "slideRightOut",
+   "name": "Slide Right",
+   "kind": "out",
+   "dx": "0.6*pow(1-p,3)"
+  },
+  {
+   "id": "slideUpOut",
+   "name": "Slide Up",
+   "kind": "out",
+   "dy": "-0.6*pow(1-p,3)"
+  },
+  {
+   "id": "slideDownOut",
+   "name": "Slide Down",
+   "kind": "out",
+   "dy": "0.6*pow(1-p,3)"
+  },
+  {
+   "id": "spinOut",
+   "name": "Spin Out",
+   "kind": "out",
+   "rot": "1.2*pow(1-p,3)",
+   "sx": "0.5+0.5*(1-pow(1-p,3))",
+   "sy": "0.5+0.5*(1-pow(1-p,3))",
+   "fade": "black"
+  },
+  {
+   "id": "flipOut",
+   "name": "Flip Out",
+   "kind": "out",
+   "sx": "0.02+0.98*(1-pow(1-p,3))"
+  },
+  {
+   "id": "dropOut",
+   "name": "Fall",
+   "kind": "out",
+   "dy": "0.7*pow(1-p,2)",
+   "fade": "black"
+  },
+  {
+   "id": "blurOut",
+   "name": "Blur Out",
+   "kind": "out",
+   "blur": 14,
+   "fade": "black"
+  },
+  {
+   "id": "glitchOut",
+   "name": "Glitch Out",
+   "kind": "out",
+   "dx": "0.04*(1-p)*sin(p*90)",
+   "bright": "0.3*(1-p)*max(0,sin(p*70))"
+  },
+  {
+   "id": "kenIn",
+   "name": "Ken Burns In",
+   "kind": "combo",
+   "sx": "1+0.2*p",
+   "sy": "1+0.2*p"
+  },
+  {
+   "id": "kenOut",
+   "name": "Ken Burns Out",
+   "kind": "combo",
+   "sx": "1.2-0.2*p",
+   "sy": "1.2-0.2*p"
+  },
+  {
+   "id": "panLeft",
+   "name": "Pan Left",
+   "kind": "combo",
+   "sx": "1.15",
+   "sy": "1.15",
+   "dx": "0.06-0.12*p"
+  },
+  {
+   "id": "panRight",
+   "name": "Pan Right",
+   "kind": "combo",
+   "sx": "1.15",
+   "sy": "1.15",
+   "dx": "-0.06+0.12*p"
+  },
+  {
+   "id": "panUp",
+   "name": "Pan Up",
+   "kind": "combo",
+   "sx": "1.15",
+   "sy": "1.15",
+   "dy": "0.06-0.12*p"
+  },
+  {
+   "id": "panDown",
+   "name": "Pan Down",
+   "kind": "combo",
+   "sx": "1.15",
+   "sy": "1.15",
+   "dy": "-0.06+0.12*p"
+  },
+  {
+   "id": "pulse",
+   "name": "Pulse",
+   "kind": "combo",
+   "sx": "1+0.05*sin(t*5)",
+   "sy": "1+0.05*sin(t*5)"
+  },
+  {
+   "id": "heartbeat",
+   "name": "Heartbeat",
+   "kind": "combo",
+   "sx": "1+0.07*pow(max(0,sin(t*6)),6)",
+   "sy": "1+0.07*pow(max(0,sin(t*6)),6)"
+  },
+  {
+   "id": "sway",
+   "name": "Sway",
+   "kind": "combo",
+   "sx": "1.1",
+   "sy": "1.1",
+   "rot": "0.05*sin(t*2)"
+  },
+  {
+   "id": "rock",
+   "name": "Rock",
+   "kind": "combo",
+   "sx": "1.12",
+   "sy": "1.12",
+   "rot": "0.03*sin(t*6)"
+  },
+  {
+   "id": "breathe",
+   "name": "Breathe",
+   "kind": "combo",
+   "sx": "1+0.04*sin(t*2)",
+   "sy": "1+0.04*sin(t*2)"
+  },
+  {
+   "id": "floatC",
+   "name": "Float",
+   "kind": "combo",
+   "sx": "1.06",
+   "sy": "1.06",
+   "dy": "0.025*sin(t*2)"
+  },
+  {
+   "id": "flicker",
+   "name": "Flicker",
+   "kind": "combo",
+   "bright": "0.18*sin(t*40)"
+  }
+ ],
+ "transitions": [
+  {
+   "id": "fade",
+   "name": "Crossfade",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "fadeblack",
+   "name": "Fade to Black",
+   "pv": "fadeblack",
+   "cat": "Basic"
+  },
+  {
+   "id": "fadewhite",
+   "name": "Fade to White",
+   "pv": "fadewhite",
+   "cat": "Basic"
+  },
+  {
+   "id": "fadegrays",
+   "name": "Fade Grays",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "fadefast",
+   "name": "Fast Fade",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "fadeslow",
+   "name": "Slow Fade",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "dissolve",
+   "name": "Dissolve",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "pixelize",
+   "name": "Pixelize",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "distance",
+   "name": "Distance",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "hblur",
+   "name": "Horizontal Blur",
+   "pv": "fade",
+   "cat": "Basic"
+  },
+  {
+   "id": "wipeleft",
+   "name": "Wipe Left",
+   "pv": "wipeleft",
+   "cat": "Wipe"
+  },
+  {
+   "id": "wiperight",
+   "name": "Wipe Right",
+   "pv": "wiperight",
+   "cat": "Wipe"
+  },
+  {
+   "id": "wipeup",
+   "name": "Wipe Up",
+   "pv": "wipeup",
+   "cat": "Wipe"
+  },
+  {
+   "id": "wipedown",
+   "name": "Wipe Down",
+   "pv": "wipedown",
+   "cat": "Wipe"
+  },
+  {
+   "id": "wipetl",
+   "name": "Wipe Corner TL",
+   "pv": "diag",
+   "cat": "Wipe"
+  },
+  {
+   "id": "wipebr",
+   "name": "Wipe Corner BR",
+   "pv": "diag",
+   "cat": "Wipe"
+  },
+  {
+   "id": "smoothleft",
+   "name": "Smooth Left",
+   "pv": "wipeleft",
+   "cat": "Wipe"
+  },
+  {
+   "id": "smoothright",
+   "name": "Smooth Right",
+   "pv": "wiperight",
+   "cat": "Wipe"
+  },
+  {
+   "id": "smoothup",
+   "name": "Smooth Up",
+   "pv": "wipeup",
+   "cat": "Wipe"
+  },
+  {
+   "id": "smoothdown",
+   "name": "Smooth Down",
+   "pv": "wipedown",
+   "cat": "Wipe"
+  },
+  {
+   "id": "slideleft",
+   "name": "Slide Left",
+   "pv": "slideleft",
+   "cat": "Slide"
+  },
+  {
+   "id": "slideright",
+   "name": "Slide Right",
+   "pv": "slideright",
+   "cat": "Slide"
+  },
+  {
+   "id": "slideup",
+   "name": "Slide Up",
+   "pv": "slideup",
+   "cat": "Slide"
+  },
+  {
+   "id": "slidedown",
+   "name": "Slide Down",
+   "pv": "slidedown",
+   "cat": "Slide"
+  },
+  {
+   "id": "coverleft",
+   "name": "Cover Left",
+   "pv": "coverleft",
+   "cat": "Slide"
+  },
+  {
+   "id": "coverright",
+   "name": "Cover Right",
+   "pv": "coverright",
+   "cat": "Slide"
+  },
+  {
+   "id": "coverup",
+   "name": "Cover Up",
+   "pv": "coverup",
+   "cat": "Slide"
+  },
+  {
+   "id": "coverdown",
+   "name": "Cover Down",
+   "pv": "coverdown",
+   "cat": "Slide"
+  },
+  {
+   "id": "revealleft",
+   "name": "Reveal Left",
+   "pv": "revealleft",
+   "cat": "Slide"
+  },
+  {
+   "id": "revealright",
+   "name": "Reveal Right",
+   "pv": "revealright",
+   "cat": "Slide"
+  },
+  {
+   "id": "circleopen",
+   "name": "Circle Open",
+   "pv": "circleopen",
+   "cat": "Shape"
+  },
+  {
+   "id": "circleclose",
+   "name": "Circle Close",
+   "pv": "circleclose",
+   "cat": "Shape"
+  },
+  {
+   "id": "circlecrop",
+   "name": "Circle Crop",
+   "pv": "circleopen",
+   "cat": "Shape"
+  },
+  {
+   "id": "rectcrop",
+   "name": "Rect Crop",
+   "pv": "rectcrop",
+   "cat": "Shape"
+  },
+  {
+   "id": "vertopen",
+   "name": "Vertical Open",
+   "pv": "vertopen",
+   "cat": "Shape"
+  },
+  {
+   "id": "vertclose",
+   "name": "Vertical Close",
+   "pv": "vertclose",
+   "cat": "Shape"
+  },
+  {
+   "id": "horzopen",
+   "name": "Horizontal Open",
+   "pv": "horzopen",
+   "cat": "Shape"
+  },
+  {
+   "id": "horzclose",
+   "name": "Horizontal Close",
+   "pv": "horzclose",
+   "cat": "Shape"
+  },
+  {
+   "id": "radial",
+   "name": "Radial",
+   "pv": "radial",
+   "cat": "Shape"
+  },
+  {
+   "id": "zoomin",
+   "name": "Zoom In",
+   "pv": "zoomin",
+   "cat": "Motion"
+  },
+  {
+   "id": "squeezeh",
+   "name": "Squeeze H",
+   "pv": "squeezeh",
+   "cat": "Motion"
+  },
+  {
+   "id": "squeezev",
+   "name": "Squeeze V",
+   "pv": "squeezev",
+   "cat": "Motion"
+  },
+  {
+   "id": "diagtl",
+   "name": "Diagonal TL",
+   "pv": "diag",
+   "cat": "Motion"
+  },
+  {
+   "id": "diagbr",
+   "name": "Diagonal BR",
+   "pv": "diag",
+   "cat": "Motion"
+  },
+  {
+   "id": "hlslice",
+   "name": "Slice Left",
+   "pv": "wipeleft",
+   "cat": "Motion"
+  },
+  {
+   "id": "hrslice",
+   "name": "Slice Right",
+   "pv": "wiperight",
+   "cat": "Motion"
+  },
+  {
+   "id": "vuslice",
+   "name": "Slice Up",
+   "pv": "wipeup",
+   "cat": "Motion"
+  },
+  {
+   "id": "vdslice",
+   "name": "Slice Down",
+   "pv": "wipedown",
+   "cat": "Motion"
+  },
+  {
+   "id": "hlwind",
+   "name": "Wind Left",
+   "pv": "wipeleft",
+   "cat": "Motion"
+  },
+  {
+   "id": "hrwind",
+   "name": "Wind Right",
+   "pv": "wiperight",
+   "cat": "Motion"
+  }
+ ]
+}
