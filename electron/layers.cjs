@@ -6,6 +6,18 @@
 
 const DEFAULT_TRANSFORM = { scale: 1, scaleX: 1, scaleY: 1, uniform: true, x: 0, y: 0, rot: 0 };
 const DEFAULT_CHROMA = { on: false, color: '#00ff00', intensity: 20, feather: 20, spill: 0 };
+const DEFAULT_CROP = { l: 0, t: 0, r: 0, b: 0 };
+
+// Crop fractions of the source picture (mirrors cropOf in src/visual.js, clamped the same way).
+function cropOf(clip) {
+  const c = { ...DEFAULT_CROP, ...(clip.crop || {}) };
+  for (const k of ['l', 't', 'r', 'b']) c[k] = Math.min(0.9, Math.max(0, Number(c[k]) || 0));
+  if (c.l + c.r > 0.95) { const s = 0.95 / (c.l + c.r); c.l *= s; c.r *= s; }
+  if (c.t + c.b > 0.95) { const s = 0.95 / (c.t + c.b); c.t *= s; c.b *= s; }
+  return c;
+}
+const hasCrop = (clip) => { const c = cropOf(clip); return c.l > 0 || c.t > 0 || c.r > 0 || c.b > 0; };
+const hasCustomMask = (clip) => !!(clip.customMask && Array.isArray(clip.customMask.strokes) && clip.customMask.strokes.length > 0);
 const BLEND_FF = {
   multiply: 'multiply', screen: 'screen', overlay: 'overlay', softlight: 'softlight', hardlight: 'hardlight',
   darken: 'darken', lighten: 'lighten', dodge: 'dodge', burn: 'burn', difference: 'difference', exclusion: 'exclusion', add: 'addition',
@@ -71,15 +83,20 @@ function isLayered(clip, motion) {
   return sx !== 1 || sy !== 1 || t.x !== 0 || t.y !== 0 || t.rot !== 0
     || (clip.mask && clip.mask.type && clip.mask.type !== 'none')
     || chroma.on || (clip.opacity !== undefined && clip.opacity < 1) || (clip.blend && clip.blend !== 'normal')
+    || hasCrop(clip) || hasCustomMask(clip)
     || !!clip.bgRemove;
 }
 
-// o: { clip, media: { width, height }, W, H, fps, len, tag, srcLabel, maskIdx, decoIdx, matteLabel }
+// o: { clip, media: { width, height }, W, H, fps, len, tag, srcLabel, maskIdx, decoIdx, matteLabel, customMaskIdx }
 //   srcLabel: label (without brackets) of the trimmed, speed-adjusted picture stream at its native size.
 //   maskIdx: index of a looped mask PNG input (the same frame size as the project), or null.
 //   matteLabel: label of the AI background matte (grayscale, timed like srcLabel), or null: it becomes the alpha.
+//   customMaskIdx: index of a looped custom-removal PNG input (grayscale keep-map in SOURCE geometry), or null.
 // h: { lookFilters(clip, w, h) -> [filter], num, hex } from ffmpeg.cjs.
 // Returns { filters: [string], out: label } where `out` is a W x H RGBA stream, transparent outside the picture.
+// Order inside the layer: crop (source geometry) -> fit + look + chroma -> matte / custom mask (alpha
+// multiplies, so removals union) -> pad to the frame -> shape mask -> deco -> opacity -> transform.
+// The preview applies the same order (src/components/Preview.jsx drawKeyed + layerStyle).
 function buildLayer(o, h) {
   const { clip, media, W, H, fps, len, tag, srcLabel, maskIdx } = o;
   const t = { ...DEFAULT_TRANSFORM, ...(clip.transform || {}) };
@@ -87,12 +104,20 @@ function buildLayer(o, h) {
   const filters = [];
 
   // Fit the picture inside the frame (the frame itself is padded later so the mask and the transform see the whole frame).
+  // Crop first: the surviving region of the source TAKES THE PICTURE'S PLACE — it is scaled to the
+  // size the whole picture would have occupied (fw x fh from the uncropped fit), then the transform
+  // applies. The preview draws the same sub-rectangle stretched over the same box (Preview.jsx).
   const mw = media.width || W;
   const mh = media.height || H;
+  const crop = cropOf(clip);
+  const cropped = hasCrop(clip);
   const k = Math.min(W / mw, H / mh);
   const fw = even(mw * k);
   const fh = even(mh * k);
-  const chain = [`scale=${fw}:${fh}`, 'setsar=1', ...h.lookFilters(clip, fw, fh)];
+  const cropFilter = cropped
+    ? `crop=w='iw*${h.num(1 - crop.l - crop.r)}':h='ih*${h.num(1 - crop.t - crop.b)}':x='iw*${h.num(crop.l)}':y='ih*${h.num(crop.t)}'`
+    : null;
+  const chain = [...(cropFilter ? [cropFilter] : []), `scale=${fw}:${fh}`, 'setsar=1', ...h.lookFilters(clip, fw, fh)];
   if (chroma.on) {
     const p = chromaParams(chroma);
     chain.push('format=yuva420p', `chromakey=color=${h.hex(chroma.color)}:similarity=${h.num(p.similarity)}:blend=${h.num(p.blend)}`);
@@ -106,13 +131,26 @@ function buildLayer(o, h) {
   const pad = `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0`;
   let cur = `fr${tag}`;
   if (o.matteLabel) {
-    // Auto removal: the matte (white = keep) is the picture's transparency.
+    // Auto removal: the matte (white = keep) is the picture's transparency. The matte lives in
+    // source geometry, so it takes the same crop before the fit scale.
     filters.push(
       `[${srcLabel}]${chain.join(',')},format=rgba[pm${tag}]`,
-      `[${o.matteLabel}]scale=${fw}:${fh},format=gray[mt2${tag}]`,
-      `[pm${tag}][mt2${tag}]alphamerge,format=rgba,${pad}[${cur}]`,
+      `[${o.matteLabel}]${cropFilter ? `${cropFilter},` : ''}scale=${fw}:${fh},format=gray[mt2${tag}]`,
+      `[pm${tag}][mt2${tag}]alphamerge,format=rgba[fit${tag}]`,
     );
-  } else filters.push(`[${srcLabel}]${chain.join(',')},format=rgba,${pad}[${cur}]`);
+  } else filters.push(`[${srcLabel}]${chain.join(',')},format=rgba[fit${tag}]`);
+  if (o.customMaskIdx !== null && o.customMaskIdx !== undefined) {
+    // Custom removal: the painted keep-map (source geometry, so the same crop + fit) MULTIPLIES
+    // the alpha the picture already has — painted removals union with chroma and the AI matte.
+    filters.push(
+      `[fit${tag}]split[a${tag}][b${tag}]`,
+      `[b${tag}]alphaextract[pa${tag}]`,
+      `[${o.customMaskIdx}:v]${cropFilter ? `${cropFilter},` : ''}scale=${fw}:${fh},format=gray[cmg${tag}]`,
+      `[pa${tag}][cmg${tag}]blend=all_mode=multiply:shortest=1[ma${tag}]`,
+      `[a${tag}][ma${tag}]alphamerge[cmk${tag}]`,
+    );
+    filters.push(`[cmk${tag}]${pad}[${cur}]`);
+  } else filters.push(`[fit${tag}]${pad}[${cur}]`);
 
   // Mask: the alpha of the mask picture multiplies the alpha the picture already has (from the chroma key).
   if (maskIdx !== null && maskIdx !== undefined) {
@@ -201,17 +239,21 @@ function animatedPlace(o, h, t, cur) {
 
 // Composites a layer over a base picture and ends with yuv420p. Normal blending is a plain overlay; the other modes
 // blend the layer with the base and fade that result in through the layer's alpha.
+// The RGB -> YUV step uses the BT.709 matrix explicitly: the export tags its files BT.709 (see ffmpeg.cjs), but
+// swscale's default RGB -> YUV matrix is BT.601, which shifted every blended colour on decode (worst in
+// difference mode, which amplifies small shifts). scripts/test-compositing.cjs proves the parity.
+const TO_YUV709 = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p';
 function composite({ base, layer, blend, tag, out }) {
   const mode = BLEND_FF[blend];
-  if (!mode) return [`[${base}][${layer}]overlay=format=auto:shortest=1,format=yuv420p[${out}]`];
+  if (!mode) return [`[${base}][${layer}]overlay=format=auto:shortest=1,${TO_YUV709}[${out}]`];
   return [
     `[${layer}]split[l1${tag}][l2${tag}]`,
     `[l2${tag}]alphaextract[la${tag}]`,
     `[l1${tag}]format=gbrp[lc${tag}]`,
     `[${base}]format=gbrp,split[b1${tag}][b2${tag}]`,
     `[b1${tag}][lc${tag}]blend=all_mode=${mode}:shortest=1[bl${tag}]`,
-    `[b2${tag}][bl${tag}][la${tag}]maskedmerge,format=yuv420p[${out}]`,
+    `[b2${tag}][bl${tag}][la${tag}]maskedmerge,${TO_YUV709}[${out}]`,
   ];
 }
 
-module.exports = { buildLayer, composite, isLayered, curveExpr, shiftCurves, chromaParams, DEFAULT_TRANSFORM, DEFAULT_CHROMA, BLEND_FF };
+module.exports = { buildLayer, composite, isLayered, curveExpr, shiftCurves, chromaParams, cropOf, hasCrop, DEFAULT_TRANSFORM, DEFAULT_CHROMA, DEFAULT_CROP, BLEND_FF };

@@ -109,6 +109,15 @@ class FxJobs {
       });
       project = { ...project, maskFiles };
     }
+    if (project.customMaskImages && !project.customMaskFiles) {
+      const customMaskFiles = {};
+      Object.entries(project.customMaskImages).forEach(([clipId, dataUrl], n) => {
+        const f = path.join(this.tmp(), `cmask_${this.n}_${n}.png`);
+        fs.writeFileSync(f, Buffer.from(String(dataUrl).split(',')[1], 'base64'));
+        customMaskFiles[clipId] = f;
+      });
+      project = { ...project, customMaskFiles };
+    }
     const { width: W, height: H, fps } = project;
     const mediaById = Object.fromEntries(project.media.map((m) => [m.id, m]));
     const id = `fx${++this.n}`;

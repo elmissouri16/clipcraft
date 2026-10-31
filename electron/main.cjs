@@ -1059,6 +1059,30 @@ ipcMain.handle('detach:run', async (_e, item, from, to) => {
 });
 ipcMain.handle('detach:cancel', () => { if (detachJob) detachJob.canceled = true; });
 
+// Voice Enhancer (clip Audio tab): render the clip's sound cleaned (electron/enhance.cjs,
+// cached like the detach renders). The clip then plays / exports the enhanced file.
+const { enhance } = require('./enhance.cjs');
+let enhanceJob = null;
+ipcMain.handle('enhance:run', async (_e, item, from, to, strength) => {
+  if (enhanceJob) return { error: 'Another clip is being enhanced.' };
+  if (!item || !fs.existsSync(item.path)) return { error: 'The media file was not found.' };
+  const job = { canceled: false };
+  enhanceJob = job;
+  try {
+    const res = await enhance(item, {
+      from, to, strength, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath,
+      isCanceled: () => job.canceled,
+      onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('enhance:progress', { path: item.path, fraction }); },
+    });
+    return { path: res.path };
+  } catch (e) {
+    return e.canceled ? { canceled: true } : { error: e.message };
+  } finally {
+    enhanceJob = null;
+  }
+});
+ipcMain.handle('enhance:cancel', () => { if (enhanceJob) enhanceJob.canceled = true; });
+
 // Freeze frame (context menu, item 12): grab one frame of a media file as a PNG still the
 // project can hold. Cached by file + time; the file lands in the media cache like other stills.
 ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {

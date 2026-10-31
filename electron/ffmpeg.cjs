@@ -113,13 +113,27 @@ function clipVideoFilters(clip, W, H, fps, background) {
 }
 
 
+// The Voice Enhancer's cached file for a clip, when it is on AND was rendered for the clip's
+// current range (a re-trim makes the stored render stale: it is ignored until re-run, exactly
+// like the preview). The file covers [clip.in, clip.out], so chains read it from 0.
+function enhancePathOf(clip) {
+  const e = clip && clip.enhance;
+  if (!e || !e.on || !e.path) return null;
+  if (Math.abs((e.from ?? -1) - (clip.in || 0)) > 0.02 || Math.abs((e.to ?? -1) - (clip.out ?? -1)) > 0.02) return null;
+  return fs.existsSync(e.path) ? e.path : null;
+}
+
 // Audio stream [a<i>] for main-track clip i (silence for photos, muted or silent clips).
-function clipAudioFilter(clip, m, idx, i) {
+// enhIdx: input index of the clip's enhanced file, when the Voice Enhancer replaces its sound.
+function clipAudioFilter(clip, m, idx, i, enhIdx = -1) {
   const len = clipLen(clip);
   if (clip.gap || !m || m.type === 'image' || !m.hasAudio || clip.muted) {
     return `anullsrc=r=48000:cl=stereo,atrim=duration=${num(len)},aformat=sample_fmts=fltp[a${i}]`;
   }
-  return [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(clip.speed || 1),
+  const src = enhIdx >= 0
+    ? [`[${enhIdx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
+    : [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS'];
+  return [...src, ...atempo(clip.speed || 1),
     `volume=${clip.volume ?? 1}`, 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
     ...audioFxFilters(clip.audioFx),
     `apad=whole_dur=${num(len)}`, `atrim=duration=${num(len)}`].join(',') + `[a${i}]`;
@@ -321,8 +335,10 @@ function buildExportArgs(project, outFile, opts = {}) {
       const maskIdx = maskFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', maskFile]) : null;
       const decoFile = maskFile && project.decoFiles && project.decoFiles[clip.id];
       const decoIdx = decoFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', decoFile]) : null;
+      const cmFile = project.customMaskFiles && project.customMaskFiles[clip.id];
+      const customMaskIdx = cmFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', cmFile]) : null;
       const matteLabel = matteSource(clip, m, fps, addInput, tag, filters);
-      const layer = layers.buildLayer({ clip, media: m, W, H, fps, len, tag, srcLabel, maskIdx, decoIdx, motion, matteLabel }, { lookFilters, num, hex });
+      const layer = layers.buildLayer({ clip, media: m, W, H, fps, len, tag, srcLabel, maskIdx, decoIdx, motion, matteLabel, customMaskIdx }, { lookFilters, num, hex });
       filters.push(...layer.filters);
       filters.push(`color=c=${hex(bg, '#000000')}:s=${W}x${H}:r=${fps}:d=${num(len)},format=yuv420p[bg${tag}]`);
       filters.push(...layers.composite({ base: `bg${tag}`, layer: layer.out, blend: clip.blend, tag, out: `v${i}` }));
@@ -336,7 +352,9 @@ function buildExportArgs(project, outFile, opts = {}) {
     }
     // Sound comes from the media even when the picture was pre-rendered.
     const audioIdx = src.own || m.type === 'image' || !m.hasAudio || clip.muted ? src.idx : addInput(['-i', m.path]);
-    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i));
+    const enhP = !opts.raw && enhancePathOf(clip);
+    const enhIdx = enhP ? addInput(['-i', enhP]) : -1;
+    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx));
   });
 
   // 2) Join clips: xfade/acrossfade where a transition is set, plain concat otherwise.
@@ -397,16 +415,21 @@ function buildExportArgs(project, outFile, opts = {}) {
     const maskIdx = maskFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', maskFile]) : null;
     const decoFile = maskFile && project.decoFiles && project.decoFiles[c.id];
     const decoIdx = decoFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', decoFile]) : null;
+    const cmFile = project.customMaskFiles && project.customMaskFiles[c.id];
+    const customMaskIdx = cmFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', cmFile]) : null;
     const motion = project.motion && project.motion[c.id];
     const matteLabel = matteSource(c, m, fps, addInput, tag, filters);
-    const layer = layers.buildLayer({ clip: c, media: m, W, H, fps, len, tag, srcLabel: `os${j}`, maskIdx, decoIdx, motion, matteLabel }, { lookFilters, num, hex });
+    const layer = layers.buildLayer({ clip: c, media: m, W, H, fps, len, tag, srcLabel: `os${j}`, maskIdx, decoIdx, motion, matteLabel, customMaskIdx }, { lookFilters, num, hex });
     filters.push(...layer.filters);
     // Transparent frames before and after, so the layer lines up with the video frame for frame.
     const after = Math.max(0, total - start - len);
     filters.push(`[${layer.out}]tpad=start_duration=${num(start)}:stop_duration=${num(after)}:start_mode=add:stop_mode=add:color=black@0,trim=duration=${num(total)}[op${j}]`);
     filters.push(...layers.composite({ base: cv, layer: `op${j}`, blend: c.blend, tag, out: `ov${j}` }));
     cv = `ov${j}`;
-    if (m.hasAudio && !c.muted && m.type === 'video') overlayAudio.push({ idx, c, len, start, sp });
+    if (m.hasAudio && !c.muted && m.type === 'video') {
+      const enhP = enhancePathOf(c);
+      overlayAudio.push({ idx: enhP ? addInput(['-i', enhP]) : idx, c, len, start, sp, enh: !!enhP });
+    }
   });
 
   // 4) Stickers / image overlays.
@@ -443,10 +466,11 @@ function buildExportArgs(project, outFile, opts = {}) {
   const music = project.audioClips.filter((c) => mediaById[c.mediaId]);
   const mixLabels = [`[${ca}]`];
   music.forEach((c, j) => {
-    const idx = addInput(['-i', mediaById[c.mediaId].path]);
+    const enhP = enhancePathOf(c);
+    const idx = addInput(['-i', enhP || mediaById[c.mediaId].path]);
     const len = (c.out - c.in) / (c.speed || 1); // timeline length (audio clips carry a speed, e.g. detached ones)
     const delay = Math.round(c.start * 1000);
-    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));
@@ -454,9 +478,9 @@ function buildExportArgs(project, outFile, opts = {}) {
     filters.push(`[${idx}:a]${chain.join(',')}[m${j}]`);
     mixLabels.push(`[m${j}]`);
   });
-  overlayAudio.forEach(({ idx, c, len, start, sp }, j) => {
+  overlayAudio.forEach(({ idx, c, len, start, sp, enh }, j) => {
     const delay = Math.round(start * 1000);
-    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(sp), `volume=${c.volume ?? 1}`,
+    const chain = [`atrim=start=${enh ? 0 : num(c.in)}:end=${num(enh ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(sp), `volume=${c.volume ?? 1}`,
       'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', ...audioFxFilters(c.audioFx), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[oa${j}]`);
     mixLabels.push(`[oa${j}]`);
@@ -511,7 +535,8 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
       const m = mediaById[clip.mediaId];
       const has = m && m.type === 'video' && m.hasAudio && !clip.muted && !clip.gap;
       if (has) sound = true;
-      filters.push(clipAudioFilter(clip, m, has ? addInput(m.path) : -1, i));
+      const enhP = has && enhancePathOf(clip);
+      filters.push(clipAudioFilter(clip, m, has ? addInput(m.path) : -1, i, enhP ? addInput(enhP) : -1));
     });
     let ca = 'a0';
     for (let i = 1; i < clips.length; i++) {
@@ -526,18 +551,20 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     if (!m || m.type !== 'video' || !m.hasAudio || c.muted) return;
     sound = true;
     const delay = Math.round(Math.max(0, c.start) * 1000);
-    filters.push(`[${addInput(m.path)}:a]atrim=start=${num(c.in)}:end=${num(c.out)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFxFilters(c.audioFx)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
+    const enhP = enhancePathOf(c);
+    filters.push(`[${addInput(enhP || m.path)}:a]atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFxFilters(c.audioFx)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
   project.audioClips.filter((c) => mediaById[c.mediaId]).forEach((c, j) => {
     sound = true;
     const len = (c.out - c.in) / (c.speed || 1);
     const delay = Math.round(c.start * 1000);
-    const chain = [`atrim=start=${num(c.in)}:end=${num(c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const enhP = enhancePathOf(c);
+    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));
-    filters.push(`[${addInput(mediaById[c.mediaId].path)}:a]${chain.join(',')},${fmt},adelay=${delay}|${delay}[m${j}]`);
+    filters.push(`[${addInput(enhP || mediaById[c.mediaId].path)}:a]${chain.join(',')},${fmt},adelay=${delay}|${delay}[m${j}]`);
     mix.push(`[m${j}]`);
   });
   if (!sound) throw new Error('Nothing to export: no clip on the timeline has sound.');
@@ -696,10 +723,17 @@ function runExport(project, outFile, onProgress, assets = {}) {
     fs.writeFileSync(file, Buffer.from(String(dataUrl).split(',')[1], 'base64'));
     decoFiles[clipId] = file;
   }
+  const customMaskFiles = {}; // painted removal keep-maps (grayscale, source geometry)
+  for (const [n, [clipId, dataUrl]] of Object.entries(project.customMaskImages || {}).entries()) {
+    const file = path.join(tmpDir, `cmask_${n}.png`);
+    fs.writeFileSync(file, Buffer.from(String(dataUrl).split(',')[1], 'base64'));
+    customMaskFiles[clipId] = file;
+  }
   const withAssets = {
     ...project,
     maskFiles,
     decoFiles,
+    customMaskFiles,
     stickerClips: (project.stickerClips || []).map((s) => {
       if (!assets[s.id]) return s;
       const png = path.join(tmpDir, `sticker_${s.id}.png`);
