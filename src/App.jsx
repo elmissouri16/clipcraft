@@ -1503,6 +1503,10 @@ export default function App() {
   // ---- Template projects: the Templates section is gone (the dock entry is Assets now),
   // but projects made from templates still carry replaceable "slot" clips — the SlotStrip
   // that fills them and the package export below are project functionality and stay. ----
+  // W1 (2026-11-01, Hamza's order): the "Template package…" entry is REMOVED from the
+  // Export menu. The package writer itself (packTemplate + the templates:pack IPC) is
+  // retained — it is the same engine the bundled-template system verifies end-to-end in
+  // the smoke harness — but it is no longer offered in the menu.
   const [tplNote, setTplNote] = useState(null); // { title, text, dir? }
   const packTemplate = async () => {
     const p = projectRef.current;
@@ -1767,7 +1771,7 @@ export default function App() {
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
-      <TopBar project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onExportTemplate={packTemplate} onSettings={() => setSettingsOpen(true)}
+      <TopBar project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
         onHome={async () => { await flushAutosave(); refreshSlots(); setScreen('home'); }}
         onAbout={() => setAboutOpen(true)} updateReady={!!update?.newer} />
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AudioLines, Check, ChevronDown, CircleAlert, Coffee, Download, Film, FolderOpen, Home, Info, Instagram, LayoutTemplate, Save, Settings } from 'lucide-react';
+import { AudioLines, Check, ChevronDown, CircleAlert, Coffee, Download, Film, FolderOpen, Home, Info, Instagram, Save, Settings } from 'lucide-react';
 import ContextMenu from './ContextMenu.jsx';
 import { RATIOS, sizeFor } from '../effects.js';
 
@@ -12,7 +12,7 @@ const SAVE_STATES = {
   error: ['Not saved', 'The project file could not be written. Click Save to choose another place'],
 };
 
-export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onExportTemplate, onSettings, onAbout, onHome, updateReady = false }) {
+export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onAbout, onHome, updateReady = false }) {
   const [menu, setMenu] = useState(null);
   const set = (patch) => dispatch({ type: 'setProject', patch, transient: true });
   return (
@@ -62,8 +62,6 @@ export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 
           { label: 'Audio only (MP3)', icon: AudioLines, onClick: () => onExportAudio('mp3') },
           { label: 'Audio only (WAV)', icon: AudioLines, onClick: () => onExportAudio('wav') },
           { label: 'Audio only (M4A)', icon: AudioLines, onClick: () => onExportAudio('m4a') },
-          'sep',
-          { label: 'Template package…', icon: LayoutTemplate, onClick: onExportTemplate },
         ]} />
       )}
     </header>

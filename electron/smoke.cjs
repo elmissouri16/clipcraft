@@ -55,8 +55,13 @@ module.exports = async function smoke(win, app, dir) {
         await shot('tpl-1-marked.png');
         await q(`document.querySelector('.export-split .caret').click()`);
         await wait(200);
-        await q(`[...document.querySelectorAll('.ctx-menu button, [role=menu] button, .context-menu button')].find((b) => /Template package/.test(b.textContent)).click()`);
-        result.ready = await until(`/Template package ready/.test(document.body.innerText)`);
+        // W1 (2026-11-01): the Export menu no longer offers "Template package…" (Hamza's
+        // order) — assert its absence, then exercise the retained package writer through
+        // its IPC directly, exactly as the removed menu entry did.
+        result.menuHasTemplate = await q(`[...document.querySelectorAll('.ctx-menu button, [role=menu] button, .context-menu button')].some((b) => /Template package/.test(b.textContent))`);
+        await q(`document.body.click()`);
+        const packRes = await q(`(async () => { const p = window.__fve.exportData().project; const meta = { ratio: p.ratio, width: p.width, height: p.height, duration: 3.5, slots: 2 }; return window.api.templatesPack(JSON.stringify(p), meta); })()`);
+        result.ready = !!(packRes && !packRes.error && packRes.dir);
         const parent = path.join(dir, 'packages');
         const pkg = path.join(parent, fs.readdirSync(parent)[0]);
         fs.copyFileSync(clipA, path.join(pkg, 'preview.mp4'));
