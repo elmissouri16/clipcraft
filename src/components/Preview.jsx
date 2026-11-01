@@ -563,7 +563,7 @@ export default function Preview({
       onDrop={(e) => { if (!isInternal(e)) return; e.preventDefault(); e.stopPropagation(); setDropOver(false); onDropItem(readPayload(e)); }}>
       <div className="panel-head">
         <span className="panel-title">Player</span>
-        {peek ? <span className="pill peek-pill" title={peek.name}>Media · {peek.name}</span>
+        {peek ? <span className="pill peek-pill" title={peek.name}>{peek.assetPath ? 'Asset' : 'Media'} · {peek.name}</span>
           : <span className="pill">{project.ratio} · {project.width}×{project.height} · {project.fps} fps</span>}
       </div>
       {peek && <MediaPeek m={peek} fps={project.fps} onClose={onClosePeek} onAdd={onAddPeek} />}

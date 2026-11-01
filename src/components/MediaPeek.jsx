@@ -105,7 +105,7 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
           )}
         </div>
         <span className="tc-spacer peek-actions">
-          <button className="btn btn-primary btn-sm" onClick={() => onAdd(m.id)} title="Add to the timeline at the playhead"><Plus size={14} /> Add</button>
+          <button className="btn btn-primary btn-sm" onClick={() => onAdd(m)} title="Add to the timeline at the playhead"><Plus size={14} /> Add</button>
           <button className="icon-btn" onClick={onClose} aria-label="Back to the project (Esc)" title="Back to the project (Esc)"><X size={16} /></button>
         </span>
       </div>

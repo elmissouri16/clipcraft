@@ -110,16 +110,19 @@ const assets = require('../electron/assets.cjs');
   const fromNone = assets.readLibraryFor(fs.mkdtempSync(path.join(os.tmpdir(), 'cc-ud-')), {}, null);
   assert.deepEqual([fromNone.hasLibrary, fromNone.bundled, fromNone.total], [false, false, 0]);
 
-  // ---- the merged 570-item pack (~/workspace/clipcraft-pack-merged) reads clean ----
+  // ---- the merged pack (~/workspace/clipcraft-pack-merged) reads clean ----
+  // Counts updated 2026-11-01 (QA audit): Hamza's license cleanup removed 51 licensed
+  // Library music tracks (111 → 60) and the 4 KB AppleDouble junk SFX entry (151 → 150),
+  // taking the pack from 570 to 518 items; names were clarified in the same pass.
   const mergedRoot = path.join(__dirname, '..', '..', 'clipcraft-pack-merged');
   if (fs.existsSync(path.join(mergedRoot, 'library.json'))) {
     const mlib = assets.readLibrary(mergedRoot);
-    assert.equal(mlib.total, 570);
-    assert.deepEqual(mlib.counts, { Music: 111, 'Sound FX': 151, Transitions: 44, Overlays: 95, Characters: 109, Icons: 55, '3D': 5 });
+    assert.equal(mlib.total, 518);
+    assert.deepEqual(mlib.counts, { Music: 60, 'Sound FX': 150, Transitions: 44, Overlays: 95, Characters: 109, Icons: 55, '3D': 5 });
     assert.equal(mlib.items.filter((i) => i.missing).length, 0); // zero dangling entries
     const kinds = {};
     for (const i of mlib.items) kinds[i.kind] = (kinds[i.kind] || 0) + 1;
-    assert.deepEqual(kinds, { audio: 262, video: 183, image: 125 });
+    assert.deepEqual(kinds, { audio: 211, video: 182, image: 125 });
     // Every image item must resolve a poster thumbnail: the stills run to 11777×8328 and
     // a panel decoding them at full size OOM-crashes the renderer (proven in E2E).
     assert.equal(mlib.items.filter((i) => i.kind === 'image' && !i.poster).length, 0);

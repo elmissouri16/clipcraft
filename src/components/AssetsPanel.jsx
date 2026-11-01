@@ -12,9 +12,11 @@ import { refreshAssets, useAssets } from '../useAssets.js';
 // here (Hamza, 2026-11-01): Music lives in the Audio tab's Music place and Sound FX in
 // its Sound FX place (PackMusic.jsx), with the music.
 //
-// Adding: one click on a row (or its + button) puts the file on the timeline at the
-// playhead through App's addFile — audio files land on the audio lane, video and image
-// files become overlay clips (images with the default image duration). Posters come from
+// Previewing + adding: one click on a row watches the item in the player first (the
+// MediaPeek surface, QA K2); the peek's Add button, a double-click, or the row's +
+// button puts the file on the timeline at the playhead through App's addFile — audio
+// files land on the audio lane, video and image files become overlay clips (images
+// with the default image duration). Posters come from
 // the pack itself (Mister Horse previews matched by the analysis) and lazy-load; image
 // items thumbnail from the file itself, and a sub made only of images renders as a
 // thumbnail grid. A closed group renders nothing, so the full 570-item library opens
@@ -25,11 +27,11 @@ const KIND_LABEL = { video: 'Video', image: 'Image', audio: 'Sound' };
 // items — the file itself (it IS the picture).
 const thumbOf = (item) => item.poster || (item.kind === 'image' && !item.missing ? item.path : null);
 
-function AssetRow({ item, onAdd, adding }) {
+function AssetRow({ item, onAdd, onPeek, adding }) {
   const thumb = thumbOf(item);
   return (
-    <div className={`lib-row asset-row ${item.missing ? 'missing' : ''}`} onDoubleClick={() => onAdd(item)}
-      title={item.missing ? 'This file is not in the assets folder' : `Add ${item.name} at the playhead`}>
+    <div className={`lib-row asset-row ${item.missing ? 'missing' : ''}`} onClick={() => onPeek(item)} onDoubleClick={() => onAdd(item)}
+      title={item.missing ? 'This file is not in the assets folder' : `Preview ${item.name} — double-click to add at the playhead`}>
       {thumb
         ? <img className="asset-poster" src={toFileUrl(thumb)} loading="lazy" decoding="async" alt="" draggable={false} />
         : <span className="asset-kind">{item.kind === 'video' ? <Film size={16} /> : item.kind === 'image' ? <ImageIcon size={16} /> : <Music2 size={16} />}</span>}
@@ -40,7 +42,7 @@ function AssetRow({ item, onAdd, adding }) {
           {item.missing && <i className="lic by">Missing file</i>}
         </span>
       </div>
-      <button className="lib-add" onClick={() => onAdd(item)} disabled={item.missing || adding === item.path}
+      <button className="lib-add" onClick={(e) => { e.stopPropagation(); onAdd(item); }} disabled={item.missing || adding === item.path}
         aria-label={`Add ${item.name} at the playhead`} title={item.kind === 'audio' ? 'Add at the playhead' : 'Add as overlay at the playhead'}>
         {adding === item.path ? <Loader2 size={15} className="spin" /> : <Plus size={16} />}
       </button>
@@ -50,16 +52,16 @@ function AssetRow({ item, onAdd, adding }) {
 
 // One tile of an image sub's thumbnail grid (Characters, Frames…): the picture large,
 // the name under it, the + on hover. Double-click adds, like rows.
-function AssetTile({ item, onAdd, adding }) {
+function AssetTile({ item, onAdd, onPeek, adding }) {
   const thumb = thumbOf(item);
   return (
-    <div className={`asset-tile ${item.missing ? 'missing' : ''}`} onDoubleClick={() => onAdd(item)}
-      title={item.missing ? 'This file is not in the assets folder' : `Add ${item.name} at the playhead`}>
+    <div className={`asset-tile ${item.missing ? 'missing' : ''}`} onClick={() => onPeek(item)} onDoubleClick={() => onAdd(item)}
+      title={item.missing ? 'This file is not in the assets folder' : `Preview ${item.name} — double-click to add at the playhead`}>
       <span className="asset-tile-img">
         {thumb
           ? <img src={toFileUrl(thumb)} loading="lazy" decoding="async" alt="" draggable={false} />
           : <ImageIcon size={22} />}
-        <button className="lib-add asset-tile-add" onClick={() => onAdd(item)} disabled={item.missing || adding === item.path}
+        <button className="lib-add asset-tile-add" onClick={(e) => { e.stopPropagation(); onAdd(item); }} disabled={item.missing || adding === item.path}
           aria-label={`Add ${item.name} at the playhead`} title="Add as overlay at the playhead">
           {adding === item.path ? <Loader2 size={15} className="spin" /> : <Plus size={16} />}
         </button>
@@ -99,7 +101,7 @@ function SubLists({ pairs, renderItem, renderTile }) {
   });
 }
 
-export default function AssetsTab({ onAddFile }) {
+export default function AssetsTab({ onAddFile, onPeekAsset }) {
   const lib = useAssets();
   const [q, setQ] = useState('');
   const [shelf, setShelf] = useState([]);
@@ -123,12 +125,31 @@ export default function AssetsTab({ onAddFile }) {
     const r = await onAddFile?.(e.path, where);
     if (r?.error) setErr(r.error);
   };
+  // Preview before adding (QA K2): one click watches the item in the player (video
+  // plays, audio plays, image shows) through App's MediaPeek surface; its Add button —
+  // or a double-click here — puts it on the timeline.
+  const peek = (item) => {
+    if (item.missing || !onPeekAsset) return;
+    const [w, h] = (item.dims || '').split('x').map(Number);
+    onPeekAsset({
+      id: `asset:${item.path}`, type: item.kind, name: item.name, path: item.path,
+      duration: item.duration || 0, width: w || undefined, height: h || undefined,
+      assetPath: item.path, assetWhere: assetAddWhere(item),
+    });
+  };
+  const peekShelf = (e) => {
+    if (!onPeekAsset) return;
+    onPeekAsset({
+      id: `shelf:${e.id}`, type: e.kind, name: e.prompt || 'Generated', path: e.path,
+      duration: e.duration || 0, assetPath: e.path, assetWhere: 'main',
+    });
+  };
 
   const groups = useMemo(() => {
     if (!lib) return null;
     const by = (g) => lib.items.filter((i) => i.group === g && match(i.name));
-    const row = (i) => <AssetRow key={i.path} item={i} onAdd={add} adding={adding} />;
-    const tile = (i) => <AssetTile key={i.path} item={i} onAdd={add} adding={adding} />;
+    const row = (i) => <AssetRow key={i.path} item={i} onAdd={add} onPeek={peek} adding={adding} />;
+    const tile = (i) => <AssetTile key={i.path} item={i} onAdd={add} onPeek={peek} adding={adding} />;
     // The plain shape most groups take: one sub-list per manifest sub.
     const bySub = (g) => () => {
       const items = by(g);
@@ -167,7 +188,7 @@ export default function AssetsTab({ onAddFile }) {
       <div className="lib-head">
         <div>
           <h2>Assets</h2>
-          <p>Your pack, from its own folder — click to add at the playhead</p>
+          <p>Your pack, from its own folder — click an item to preview it, double-click to add it at the playhead</p>
         </div>
         <button className="btn btn-sm" onClick={() => refreshAssets()} title="Re-read the assets folder"><RefreshCw size={13} /> Refresh</button>
       </div>
@@ -197,7 +218,7 @@ export default function AssetsTab({ onAddFile }) {
             ) : (
               <div className="lib-list">
                 {shelfShown.map((e) => (
-                  <div key={e.id} className="lib-row asset-row">
+                  <div key={e.id} className="lib-row asset-row" onClick={() => peekShelf(e)} title={`Preview ${e.prompt || 'generated media'} — use its buttons to add it`}>
                     <span className="asset-poster gen">
                       {e.kind === 'video'
                         ? <video src={toFileUrl(e.path)} muted preload="metadata" />
@@ -207,8 +228,8 @@ export default function AssetsTab({ onAddFile }) {
                       <b title={e.prompt}>{e.prompt}</b>
                       <span className="lib-sub"><span>{e.kind === 'video' ? 'Video' : 'Photo'} · {e.model}</span></span>
                     </div>
-                    <button className="lib-add" onClick={() => addShelf(e, 'main')} aria-label="Add to the main track" title="Add to the main track"><Plus size={16} /></button>
-                    <button className="lib-add" onClick={() => addShelf(e, 'overlay')} aria-label="Add as overlay" title="Add as overlay"><Layers size={14} /></button>
+                    <button className="lib-add" onClick={(ev) => { ev.stopPropagation(); addShelf(e, 'main'); }} aria-label="Add to the main track" title="Add to the main track"><Plus size={16} /></button>
+                    <button className="lib-add" onClick={(ev) => { ev.stopPropagation(); addShelf(e, 'overlay'); }} aria-label="Add as overlay" title="Add as overlay"><Layers size={14} /></button>
                   </div>
                 ))}
               </div>

@@ -390,6 +390,11 @@ export default function App() {
   // playing the project goes back to it.
   const [peekId, setPeekId] = useState(null);
   const peek = useCallback((id) => { setPlaying(false); setPeekId(id); }, []);
+  // Library (pack / Generated) item watched in the player before adding it — the same
+  // MediaPeek surface, fed a media-shaped object that carries its own add target
+  // (assetPath + assetWhere) instead of a media id (QA K2, Hamza 2026-11-01).
+  const [assetPeek, setAssetPeek] = useState(null);
+  const peekAsset = useCallback((item) => { setPlaying(false); setPeekId(null); setAssetPeek(item); }, []);
 
   const [seekVer, setSeekVer] = useState(0);
   const seek = useCallback((t) => {
@@ -1717,7 +1722,7 @@ export default function App() {
       <div className="workspace" style={{ gridTemplateColumns: `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch}
           onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText} onOpenSettings={() => setSettingsOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId}
+          onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
           recorder={recorder} onStartRecord={() => recorder.start(time)} onAddText={addText} onAddOverlay={addOverlay} onAddSticker={stickerAdd}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
           target={target} updateTarget={updateTarget} selectedCount={selectedPictures(project, selection).length}
@@ -1730,8 +1735,8 @@ export default function App() {
           project={project} captions={{ ...captions, run: runCaptions }} />
         <Preview project={playProject} editProject={project} selection={selection} onSelect={select} dispatch={dispatch} time={time} seekVer={seekVer} playing={playing} duration={duration}
           onTime={setTime} onEnd={() => setPlaying(false)} onTogglePlay={togglePlay} onSeek={seek} onDropItem={dropOnPreview}
-          peek={project.media.find((m) => m.id === peekId)} onClosePeek={() => setPeekId(null)}
-          onAddPeek={(id) => { setPeekId(null); addToTimeline(id); }}
+          peek={project.media.find((m) => m.id === peekId) || assetPeek} onClosePeek={() => { setPeekId(null); setAssetPeek(null); }}
+          onAddPeek={(m) => { setPeekId(null); setAssetPeek(null); if (m && m.assetPath) addFile(m.assetPath, m.assetWhere || 'main'); else if (m) addToTimeline(m.id); }}
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
           clockRef={clockRef}
           trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))} />
