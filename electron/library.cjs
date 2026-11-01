@@ -1,12 +1,12 @@
-// Audio library: built-in sound effects (made here with FFmpeg, no license needed) and free music / sound effects
-// found through the Openverse API (Jamendo music, Freesound effects). Only licenses that allow use in any video
-// are requested: CC0, Public Domain Mark and CC BY (BY needs a credit line, which the app collects).
+// Audio library: free music / sound effects found through the Openverse API (Jamendo music,
+// Freesound effects). Only licenses that allow use in any video are requested: CC0, Public
+// Domain Mark and CC BY (BY needs a credit line, which the app collects).
 // SFXMint (https://sfxmint.com/api/docs) adds CC0 sound effects with no key; files may be downloaded and kept.
+// (The old built-in effects, synthesized here with FFmpeg, were removed on Hamza's call —
+// they sounded poor and synthetic next to real recordings.)
 // Pure module: the caller passes `fetch` (Electron's net.fetch in the app, the global fetch in tests).
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
-const { ffmpegPath } = require('./ffmpeg.cjs');
 
 const API = 'https://api.openverse.org/v1/audio/';
 const LICENSES = 'cc0,pdm,by';
@@ -23,78 +23,6 @@ const hostOk = (url) => {
     return false;
   }
 };
-
-// ---- Built-in sound effects: FFmpeg lavfi recipes (sample rate 44.1 kHz). ----
-const fadeOut = (st, d) => `afade=t=out:st=${st}:d=${d}:curve=exp`;
-const BUILTIN = [
-  { id: 'whoosh', name: 'Whoosh', cat: 'Transition', src: "anoisesrc=d=0.9:c=pink:a=0.8:r=44100,highpass=f=250,lowpass=f=2800,afade=t=in:d=0.5:curve=qsin,afade=t=out:st=0.5:d=0.4:curve=qsin" },
-  { id: 'swoosh', name: 'Fast swoosh', cat: 'Transition', src: "anoisesrc=d=0.4:c=white:a=0.6:r=44100,bandpass=f=2500:w=1800,afade=t=in:d=0.18,afade=t=out:st=0.18:d=0.22" },
-  { id: 'riser', name: 'Riser', cat: 'Transition', src: "aevalsrc='0.35*sin(2*PI*(150*t+220*t*t))+0.15*(random(0)*2-1)*t/2.5':d=2.5:s=44100,afade=t=in:d=2:curve=exp,afade=t=out:st=2.4:d=0.1" },
-  { id: 'drop', name: 'Bass drop', cat: 'Transition', src: `aevalsrc='0.9*sin(2*PI*(120*t-40*t*t))':d=1.4:s=44100,${fadeOut(0.1, 1.3)}` },
-  { id: 'impact', name: 'Impact boom', cat: 'Hit', src: `aevalsrc='0.9*sin(2*PI*55*t)*exp(-3*t)+0.5*(random(0)*2-1)*exp(-14*t)':d=1.5:s=44100,lowpass=f=900` },
-  { id: 'pop', name: 'Pop', cat: 'UI', src: "aevalsrc='0.8*sin(2*PI*(500*t+4000*t*t))*exp(-30*t)':d=0.15:s=44100" },
-  { id: 'click', name: 'Click', cat: 'UI', src: "aevalsrc='(random(0)*2-1)*exp(-250*t)':d=0.05:s=44100,highpass=f=1500" },
-  { id: 'ding', name: 'Ding', cat: 'UI', src: "aevalsrc='0.5*sin(2*PI*1318*t)*exp(-3*t)+0.25*sin(2*PI*2637*t)*exp(-5*t)':d=1.5:s=44100" },
-  { id: 'notify', name: 'Notification', cat: 'UI', src: "aevalsrc='0.45*sin(2*PI*if(lt(t,0.14),880,1320)*t)*exp(-8*mod(t,0.14))':d=0.5:s=44100" },
-  { id: 'success', name: 'Success chime', cat: 'UI', src: "aevalsrc='0.4*sin(2*PI*if(lt(t,0.12),523,if(lt(t,0.24),659,784))*t)*exp(-4*mod(t,0.12+0.88*gte(t,0.24)))':d=1.1:s=44100" },
-  { id: 'error', name: 'Error buzz', cat: 'UI', src: "aevalsrc='0.25*sgn(sin(2*PI*150*t))*lt(mod(t,0.2),0.15)':d=0.4:s=44100,lowpass=f=2500" },
-  { id: 'beep', name: 'Censor beep', cat: 'Funny', src: "sine=f=1000:d=0.8:r=44100,volume=0.4,afade=t=in:d=0.01,afade=t=out:st=0.78:d=0.02" },
-  { id: 'boing', name: 'Cartoon boing', cat: 'Funny', src: "aevalsrc='0.6*sin(2*PI*(220*t+30*sin(2*PI*14*t)/(2*PI*14)*exp(-2*t)*40))*exp(-2.5*t)':d=1.2:s=44100" },
-  { id: 'fall', name: 'Falling', cat: 'Funny', src: `aevalsrc='0.45*sin(2*PI*(1400*t-500*t*t))':d=1.2:s=44100,${fadeOut(0.9, 0.3)}` },
-  { id: 'tick', name: 'Clock ticking', cat: 'Ambience', src: "aevalsrc='0.8*sin(2*PI*if(lt(mod(t,1),0.5),3000,2400)*t)*exp(-180*mod(t,0.5))':d=4:s=44100" },
-  { id: 'heartbeat', name: 'Heartbeat', cat: 'Ambience', src: "aevalsrc='0.9*sin(2*PI*50*t)*(exp(-25*mod(t,0.9))+0.7*exp(-25*abs(mod(t,0.9)-0.25))*gte(mod(t,0.9),0.25))':d=3.6:s=44100" },
-  { id: 'typing', name: 'Keyboard typing', cat: 'Ambience', src: "aevalsrc='(random(0)*2-1)*exp(-400*mod(t+0.03*sin(7*t),0.13))':d=3:s=44100,highpass=f=1200" },
-  { id: 'shutter', name: 'Camera shutter', cat: 'Hit', src: "aevalsrc='(random(0)*2-1)*(exp(-120*t)+0.8*exp(-120*abs(t-0.09))*gte(t,0.09))':d=0.35:s=44100,highpass=f=900" },
-  { id: 'glitch', name: 'Glitch', cat: 'Transition', src: "aevalsrc='0.5*sgn(sin(2*PI*(80+800*random(1))*t))*lt(mod(t,0.07),0.04)':d=0.6:s=44100,lowpass=f=5000" },
-  { id: 'rain', name: 'Rain', cat: 'Ambience', src: "anoisesrc=d=6:c=pink:a=0.35:r=44100,lowpass=f=6000,highpass=f=400,afade=t=in:d=0.8,afade=t=out:st=5.2:d=0.8" },
-];
-
-function builtinList() {
-  return BUILTIN.map(({ id, name, cat }) => ({ id: `builtin-${id}`, title: name, category: cat, creator: 'ClipCraft', license: 'builtin', provider: 'builtin' }));
-}
-
-function run(args) {
-  return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath, args, { windowsHide: true });
-    let err = '';
-    p.stderr.on('data', (d) => (err += d));
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(-1500)))));
-  });
-}
-
-// Peak level of a file in dB (FFmpeg volumedetect).
-function maxVolume(file) {
-  return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath, ['-hide_banner', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], { windowsHide: true });
-    let err = '';
-    p.stderr.on('data', (d) => (err += d));
-    p.on('error', reject);
-    p.on('close', () => {
-      const m = err.match(/max_volume: (-?[\d.]+|-inf) dB/);
-      resolve(m && m[1] !== '-inf' ? Number(m[1]) : -3);
-    });
-  });
-}
-
-// Path of a built-in effect, made on first use.
-async function builtinFile(dir, id) {
-  const fx = BUILTIN.find((b) => `builtin-${b.id}` === id);
-  if (!fx) throw new Error('Unknown sound');
-  const out = path.join(dir, 'builtin', `${fx.id}.mp3`);
-  if (fs.existsSync(out)) return out;
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  // Render, measure the peak, then encode with every effect peaking at -3 dB.
-  const wav = `${out}.part.wav`;
-  const tmp = `${out}.part.mp3`;
-  await run(['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', fx.src, '-af', 'aformat=channel_layouts=stereo', wav]);
-  const peak = await maxVolume(wav);
-  const gain = Math.max(-20, Math.min(40, -3 - peak));
-  await run(['-y', '-hide_banner', '-loglevel', 'error', '-i', wav, '-af', `volume=${gain.toFixed(1)}dB,alimiter=limit=0.95`, '-c:a', 'libmp3lame', '-b:a', '192k', tmp]);
-  fs.rmSync(wav, { force: true });
-  fs.renameSync(tmp, out);
-  return out;
-}
 
 // ---- Openverse search ----
 const LICENSE_NAMES = { cc0: 'CC0', pdm: 'Public domain', by: 'CC BY' };
@@ -126,7 +54,7 @@ async function searchSfxmint(fetchImpl, { q, category }) {
   try {
     res = await fetchImpl(`${SFXMINT}?${params}`, { headers: { Accept: 'application/json', 'User-Agent': 'ClipCraft' } });
   } catch {
-    throw new Error('No internet connection. Offline sound effects still work.');
+    throw new Error('No internet connection.');
   }
   if (res.status === 429) throw new Error('The sound library is busy right now. Try again in a minute.');
   if (!res.ok) throw new Error(`The sound library answered ${res.status}.`);
@@ -199,7 +127,7 @@ async function searchMyinstants(fetchImpl, { q, category, page = 1 }) {
   try {
     res = await fetchImpl(url, { headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0 ClipCraft' } });
   } catch {
-    throw new Error('No internet connection. Offline sound effects still work.');
+    throw new Error('No internet connection.');
   }
   if (res.status === 404) return { results: [], total: 0, page: n, pages: n };
   if (res.status === 429) throw new Error('MyInstants is busy right now. Try again in a minute.');
@@ -277,4 +205,4 @@ function creditLine(c) {
   return `"${c.title}" by ${c.creator}, ${c.licenseName}${c.licenseUrl ? ` ${c.licenseUrl}` : ''}${c.landing ? ` - ${c.landing}` : ''}`;
 }
 
-module.exports = { BUILTIN, builtinList, builtinFile, search, download, creditLine, hostOk, parseMyinstants };
+module.exports = { search, download, creditLine, hostOk, parseMyinstants };

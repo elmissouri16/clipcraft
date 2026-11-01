@@ -364,19 +364,25 @@ ipcMain.handle('favorites:toggle', (_e, entry) => {
   }
 });
 
-// ---- Audio library (built-in effects + Openverse). Files live in <userData>/library. ----
+// ---- Audio library (Openverse / SFXMint / MyInstants + Soundza). Files live in <userData>/library. ----
 const library = require('./library.cjs');
+const soundza = require('./soundza.cjs');
 const libraryDir = () => path.join(app.getPath('userData'), 'library');
-const libraryPath = (item) => (String(item?.id || '').startsWith('builtin-')
-  ? library.builtinFile(libraryDir(), item.id)
+// The Soundza key only ever comes from the encrypted settings. Local-fixture override for
+// tests/development (cf. CLIPCRAFT_PACK_URL): while CLIPCRAFT_SOUNDZA_URL points the client
+// at a fixture server, a key may come from the environment, because the test sandbox has no
+// OS keyring to save one into. In normal runs the environment is never consulted.
+const soundzaKey = () => settings.getServiceKey('soundza')
+  || (process.env.CLIPCRAFT_SOUNDZA_URL ? process.env.CLIPCRAFT_SOUNDZA_KEY || '' : '');
+const libraryPath = (item) => (String(item?.id || '').startsWith('soundza-')
+  ? soundza.download(net.fetch, libraryDir(), item, soundzaKey())
   : library.download(net.fetch, libraryDir(), item));
 
-ipcMain.handle('library:builtin', () => library.builtinList());
 ipcMain.handle('library:search', async (_e, opts) => {
   try {
     return await library.search(net.fetch, opts || {});
   } catch (e) {
-    return { error: /fetch|ENOTFOUND|ERR_INTERNET|network/i.test(e.message) ? 'No internet connection. Offline sound effects still work.' : e.message };
+    return { error: /fetch|ENOTFOUND|ERR_INTERNET|network/i.test(e.message) ? 'No internet connection.' : e.message };
   }
 });
 ipcMain.handle('library:file', async (_e, item) => {
@@ -392,12 +398,40 @@ ipcMain.handle('library:add', async (_e, item) => {
     const file = await libraryPath(item);
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
-    const online = !String(item.id).startsWith('builtin-');
-    const credit = online ? {
+    const credit = {
       title: item.title, creator: item.creator, license: item.license, licenseName: item.licenseName,
-      licenseUrl: item.licenseUrl, landing: item.landing, providerName: item.providerName, line: library.creditLine(item),
-    } : null;
-    return { ...m, name: `${item.title}.mp3`, credit };
+      licenseUrl: item.licenseUrl, landing: item.landing, providerName: item.providerName,
+      line: item.provider === 'soundza' ? soundza.creditLine(item) : library.creditLine(item),
+    };
+    return { ...m, name: `${item.title}${path.extname(file) || '.mp3'}`, credit };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
+// ---- Sound effects (Soundza). The key stays in this process. ----
+ipcMain.handle('soundza:status', () => ({ hasKey: !!soundzaKey() }));
+// Tests a typed key (or the saved one) with a tiny search.
+ipcMain.handle('soundza:test', async (_e, key) => {
+  try {
+    const k = String(key || '').trim() || soundzaKey();
+    const r = await soundza.search(net.fetch, k, { q: 'whoosh' });
+    return { ok: true, text: `Soundza works (a test search found ${r.results.length} sounds).` };
+  } catch (e) {
+    return { ok: false, text: e.message };
+  }
+});
+ipcMain.handle('soundza:search', async (_e, opts) => {
+  try {
+    return await soundza.search(net.fetch, soundzaKey(), opts || {});
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+// Preview MP3s are fetched once into the library folder (the page may only play local media).
+ipcMain.handle('soundza:preview', async (_e, item) => {
+  try {
+    return { path: await soundza.preview(net.fetch, libraryDir(), item) };
   } catch (e) {
     return { error: e.message };
   }
@@ -895,7 +929,7 @@ const assets = require('./assets.cjs');
 ipcMain.handle('assets:list', () => {
   const root = assets.assetsRoot(app.getPath('userData'), process.env);
   assets.ensureRoot(root);
-  return assets.readLibrary(root);
+  return assets.readLibraryFor(app.getPath('userData'), process.env, process.resourcesPath);
 });
 
 // ---- First run: the onboarding tour and the Creator Pack prompt, each shown once
@@ -1082,6 +1116,31 @@ ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
   }
 });
 ipcMain.handle('stabilize:cancel', () => { if (stabJob) stabJob.canceled = true; });
+
+// Motion tracking (electron/track.cjs): one job at a time; the path comes back to the renderer, which
+// stores it on the clip. The render is cached by file, range, pick and box, like the other derivatives.
+const { trackMotion } = require('./track.cjs');
+let trackJob = null;
+ipcMain.handle('track:run', async (_e, item, from, to, pick, box) => {
+  if (trackJob) return { error: 'Another clip is being tracked.' };
+  if (!item || !fs.existsSync(item.path)) return { error: 'The video file was not found.' };
+  if (!pick || !Number.isFinite(pick.x) || !Number.isFinite(pick.y)) return { error: 'No point to track.' };
+  const job = { canceled: false };
+  trackJob = job;
+  try {
+    const res = await trackMotion(item, {
+      from, to, pick, box: box || { w: 0.055, h: 0.095 }, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath,
+      isCanceled: () => job.canceled,
+      onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('track:progress', { path: item.path, fraction }); },
+    });
+    return { points: res.points, fps: res.fps, frames: res.raw, cached: !!res.cached };
+  } catch (e) {
+    return e.canceled ? { canceled: true } : { error: e.message };
+  } finally {
+    trackJob = null;
+  }
+});
+ipcMain.handle('track:cancel', () => { if (trackJob) trackJob.canceled = true; });
 
 // Reverse (context menu, item 12): same one-job-at-a-time derivative-render pattern.
 const { reverse } = require('./reverse.cjs');

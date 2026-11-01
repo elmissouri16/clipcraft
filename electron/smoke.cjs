@@ -909,6 +909,15 @@ module.exports = async function smoke(win, app, dir) {
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }
+  if (process.env.FVE_SMOKE_MODE === 'tracking') {
+    try {
+      await require('./smoke-tracking.cjs')(win, dir, result);
+    } catch (e) {
+      result.error = e.message;
+    }
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
+    return app.quit();
+  }
   if (process.env.FVE_SMOKE_MODE === 'textanimword') {
     try {
       await require('./smoke-textanimword.cjs')(win, dir, result);
@@ -1663,7 +1672,7 @@ module.exports = async function smoke(win, app, dir) {
     return app.quit();
   }
   if (process.env.FVE_SMOKE_MODE === 'library') {
-    // Audio library: built-in effects (offline), online music search, add with credit.
+    // Audio library: online music search, add with credit, sound effects (built-ins removed).
     try {
       await wait(800);
       await run(`window.__fve.load(${fs.readFileSync(path.join(dir, 'project.json'), 'utf8')})`);
@@ -1686,20 +1695,17 @@ module.exports = async function smoke(win, app, dir) {
       result.musicClip = { start: added.start, media: p.media.find((m) => m.id === added.mediaId)?.name, credit: p.media.find((m) => m.id === added.mediaId)?.credit?.line };
       await wait(300);
       result.creditsCard = await q(`document.querySelector('.lib-credits pre')?.textContent || null`);
-      // Sound effects: built-in list, preview, add.
-      result.nav = await q(`[...document.querySelectorAll('.side-nav .side-btn')].map((b) => b.textContent.trim())`);
-      await q(`[...document.querySelectorAll('.side-btn')].find((b) => b.textContent.trim() === 'Sound FX').click()`);
+      // Sound effects: the synthesized built-ins were removed from the app (Hamza: poor
+      // quality, sounded AI-generated). Assert they are gone, then preview + add online ones.
+      result.nav = await q(`[...document.querySelectorAll('.chips.src-chips .chip')].map((b) => b.textContent.trim())`);
+      await q(`[...document.querySelectorAll('.chips.src-chips .chip')].find((b) => b.textContent.trim() === 'Sound FX').click()`);
       await wait(200);
-      await q(`[...document.querySelectorAll('.side-btn.child')].find((b) => b.textContent.trim() === 'Offline').click()`);
-      await until(`document.querySelectorAll('.lib-group .lib-row').length > 0`);
       result.builtin = await q(`document.querySelectorAll('.lib-group .lib-row').length`);
-      await q(`document.querySelector('.lib-group .lib-row .lib-play').click()`);
-      result.previewPlaying = await until(`!!document.querySelector('.lib-group .lib-row.on') && !document.querySelector('.lib-group .lib-row.on .spin')`, 20000);
-      const b2 = await clips();
-      await q(`document.querySelector('.lib-group .lib-row .lib-add').click()`);
-      result.sfxAdded = await until(`window.__fve.exportData().project.audioClips.length > ${b2}`, 20000);
-      await q(`[...document.querySelectorAll('.side-btn.child')].find((b) => b.textContent.trim() === 'Whoosh').click()`);
-      result.onlineSfx = await until(`!document.querySelector('.lib-group') && document.querySelectorAll('.lib-list .lib-row').length > 0`, 30000);
+      result.offlineChip = await q(`[...document.querySelectorAll('.chip')].some((b) => b.textContent.trim() === 'Offline')`);
+      await q(`[...document.querySelectorAll('.chip.cat')].find((b) => b.textContent.trim() === 'Whoosh').click()`);
+      result.onlineSfx = await until(`document.querySelectorAll('.lib-list .lib-row').length > 0`, 30000);
+      await q(`document.querySelector('.lib-list .lib-row .lib-play').click()`);
+      result.previewPlaying = await until(`!!document.querySelector('.lib-list .lib-row.on') && !document.querySelector('.lib-list .lib-row.on .spin')`, 20000);
       result.sfxSource = await q(`document.querySelector('.tab-title')?.textContent`);
       result.sfxmintFirst = await q(`document.querySelector('.lib-list .lib-row .lib-meta')?.textContent`);
       const b3 = await clips();
@@ -1709,8 +1715,8 @@ module.exports = async function smoke(win, app, dir) {
       result.sfxmintMedia = pm.media.find((m) => m.id === pm.audioClips[pm.audioClips.length - 1].mediaId)?.credit;
       await wait(300);
       await shot('lib-2-sfx.png');
-      // A category with offline effects lists them first, then the online ones; no source names anywhere.
-      await q(`[...document.querySelectorAll('.side-btn.child')].find((b) => b.textContent.trim() === 'Transition').click()`);
+      // A category lists the online effects; no source names anywhere.
+      await q(`[...document.querySelectorAll('.chip.cat')].find((b) => b.textContent.trim() === 'Transition').click()`);
       result.transition = await until(`/Transition/.test(document.querySelector('.tab-title')?.textContent) && document.querySelectorAll('.lib-list .lib-row').length > 4`, 30000);
       result.transitionFirst = await q(`document.querySelector('.lib-list .lib-row .lib-meta')?.textContent`);
       result.sourceNames = await q(`/SFXMint|Freesound|Jamendo|Openverse/.test(document.querySelector('.left-panel, .panel, body').innerText)`);

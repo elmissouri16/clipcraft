@@ -327,6 +327,11 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--primary)
 .slot video.matte-src { display: none !important; } /* the AI background matte is only read, never shown */
 .slot.vignette::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 18cqw 4cqw rgba(0, 0, 0, 0.75); pointer-events: none; }
 .flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: 3; }
+/* Motion-tracking pick mode: a click-catcher over the stage with the picked point + template box. */
+.track-pick { position: absolute; inset: 0; z-index: 7; cursor: crosshair; }
+.track-box { position: absolute; border: 1.5px dashed var(--violet, #825cfb); border-radius: 4px; pointer-events: none; }
+.track-dot { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--violet, #825cfb); border: 2px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.5); pointer-events: none; }
+.track-pick-hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); background: rgba(12,10,24,.85); color: #eee; font-size: 12px; padding: 5px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; }
 .overlay-sticker { position: absolute; z-index: 4; display: flex; align-items: center; justify-content: center; pointer-events: none; }
 .overlay-sticker img { height: 100%; }
 .overlay-sticker span { line-height: 1; }
@@ -909,12 +914,11 @@ input.switch:checked::after { transform: translateX(16px); }
 .lib-meta span { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lic { font-style: normal; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 600; }
 .lic.by { background: rgba(251, 191, 36, 0.15); color: #fcd34d; }
-.lic.cc0, .lic.pdm { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }
+.lic.cc0, .lic.pdm, .lic.soundza { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }
 .lib-loading { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 12px; color: var(--text-2); font-size: 12px; }
 .lib-more { align-self: center; margin-top: 4px; }
 .lib-error { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-top: 8px; border-radius: var(--r-md); background: rgba(239, 68, 68, 0.1); color: #fca5a5; font-size: 12px; }
 .lib-error span { flex: 1; }
-.lib-builtin summary { cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
 .lib-group { margin-top: 8px; }
 .lib-group-name { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
 .lib-online-head { margin: 16px 0 8px; font-size: 12px; font-weight: 600; color: var(--text-2); }
@@ -2326,6 +2330,16 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .assets-empty p { margin: 0; line-height: 1.55; }
 .assets-empty .path { word-break: break-all; font-size: 11.5px; background: var(--surface-2); border-radius: 6px; padding: 6px 8px; align-self: stretch; }
 .pack-list .lib-row { content-visibility: auto; contain-intrinsic-size: auto 46px; }
+/* Image subs (Characters, Frames…) render as a thumbnail grid instead of rows. */
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; padding: 2px; }
+.asset-tile { content-visibility: auto; contain-intrinsic-size: auto 118px; display: flex; flex-direction: column; gap: 2px; min-width: 0; cursor: pointer; }
+.asset-tile-img { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden; background: var(--surface-3, rgba(255,255,255,.05)); color: var(--text-2); }
+.asset-tile-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.asset-tile-add { position: absolute; top: 4px; right: 4px; opacity: 0; transition: opacity .12s; }
+.asset-tile:hover .asset-tile-add, .asset-tile-add:disabled { opacity: 1; }
+.asset-tile-name { font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asset-tile-sub { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asset-tile.missing { opacity: .55; }
 
 /* ---- First run: onboarding tour ---- */
 .tour-root { position: fixed; inset: 0; z-index: 90; pointer-events: none; }

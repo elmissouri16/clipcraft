@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Loader2, Mic, Music, Pause, Play, Plus, Search, Sparkles, Square, Upload, WifiOff, X } from 'lucide-react';
+import { Check, Copy, Loader2, Mic, Music, Pause, Play, Plus, Search, Square, Upload, WifiOff, X } from 'lucide-react';
 import { formatTime, toFileUrl } from '../store.js';
 import { FavStar, favLibrary, useFavorites } from '../favorites.jsx';
 import TextToSpeech from './TextToSpeech.jsx';
@@ -11,8 +11,8 @@ export const MUSIC_TAGS = [
   ['Hip hop', 'beat'], ['Rap', 'rap'], ['Dance', 'dance'], ['Electronic', 'electro'], ['Funny', 'funny'], ['Romantic', 'romantic'],
   ['Sad', 'sad'], ['Travel', 'travel'], ['Fitness', 'energy'], ['Corporate', 'motivational'], ['Acoustic', 'guitar'],
 ];
-// Sound effects: [label, search words, online category, offline categories]. Both online sources are searched
-// together (the category browses one of them, the words the other); matching offline effects come first.
+// Sound effects: [label, search words, online category]. Both online sources are searched
+// together (the category browses one of them, the words the other).
 export const SFX_TAGS = [
   ['Transition', 'transition', 'transition', ['Transition']], ['Whoosh', 'whoosh'], ['UI', 'interface', 'ui', ['UI']],
   ['Impact', 'impact', 'impact', ['Hit']], ['Cartoon', 'cartoon', 'cartoon', ['Funny']], ['Pop', 'pop'], ['Click', 'click'],
@@ -22,6 +22,15 @@ export const SFX_TAGS = [
   ['Doors', 'door', 'door'], ['Water', 'water', 'water'], ['Wind', 'wind'], ['Foley', 'foley', 'foley'],
 ];
 
+// Soundza (sound effects from soundza.com, searched through its API): [label, search params].
+// Chips lean on the API's own ranking filters (good_for) or a style; the words go in the box.
+export const SOUNDZA_TAGS = [
+  ['Whoosh', { q: 'whoosh' }], ['Transition', { goodFor: 'transition' }], ['UI clicks', { goodFor: 'ui_click' }],
+  ['Notification', { goodFor: 'notification' }], ['Impact', { goodFor: 'impact_on_beat' }], ['Reveal', { goodFor: 'reveal' }],
+  ['Footsteps', { goodFor: 'footsteps' }], ['Magic', { q: 'magic' }], ['Explosion', { q: 'explosion' }],
+  ['Cartoon', { style: 'cartoon' }], ['Retro', { style: 'retro' }], ['Ambience', { type: 'ambience', goodFor: 'background_bed' }],
+];
+
 // Trolls (meme sounds from MyInstants): [label, search words, list]. Trending and Best browse the site's lists.
 export const TROLL_TAGS = [
   ['Trending', '', 'trending'], ['Best of all time', '', 'best'], ['Bruh', 'bruh'], ['Vine boom', 'vine boom'], ['Laugh', 'laugh'],
@@ -29,8 +38,10 @@ export const TROLL_TAGS = [
   ['Fart', 'fart'], ['Anime', 'anime'], ['Gaming', 'game over'],
 ];
 
-// One shared player for previews: play() resolves the file (built-in effects are made on first use,
-// online sounds are downloaded once into the library folder) and plays it.
+// One shared player for previews: play() resolves the file (online sounds are downloaded once
+// into the library folder) and plays it. Soundza results carry a preview link: the main
+// process fetches that small preview file once (the page itself may only play local media),
+// and it never counts as a download of the sound.
 function usePreview() {
   const audio = useRef(null);
   const [state, setState] = useState({ id: null, loading: false, error: '' });
@@ -48,8 +59,9 @@ function usePreview() {
     }
     a.pause();
     setState({ id: item.id, loading: true, error: '' });
-    // Imported files (favorites) play straight from disk; library sounds are resolved (and downloaded once).
-    const res = item.path ? { path: item.path } : await window.api.libraryFile(item);
+    // Imported files (favorites) play straight from disk; Soundza previews are fetched by the
+    // main process; other library sounds are resolved (and downloaded once).
+    const res = item.path ? { path: item.path } : item.previewUrl ? await window.api.soundzaPreview(item) : await window.api.libraryFile(item);
     if (res.error) return setState({ id: null, loading: false, error: res.error });
     a.src = toFileUrl(res.path);
     a.play().catch(() => {});
@@ -72,8 +84,8 @@ function Row({ item, preview, onAdd, adding, fav = item.path ? null : favLibrary
       <div className="lib-meta">
         <b title={item.title}>{item.title}</b>
         <span className="lib-sub">
-          <span>{item.provider === 'builtin' ? item.category : item.provider === 'sfxmint' ? (item.category || '').replace(/^./, (c) => c.toUpperCase()) : item.creator}{item.duration ? ` · ${formatTime(item.duration).slice(0, 5)}` : ''}</span>
-          {item.license && !['builtin', 'unknown'].includes(item.license) && (
+          <span>{item.provider === 'sfxmint' || item.provider === 'soundza' ? (item.category || '').replace(/^./, (c) => c.toUpperCase()) || item.creator : item.creator}{item.duration ? ` · ${formatTime(item.duration).slice(0, 5)}` : ''}</span>
+          {item.license && item.license !== 'unknown' && (
             <i className={`lic ${item.license}`} title={item.license === 'by' ? 'Free to use with a credit to the artist' : 'Free to use, no credit needed'}>
               {item.license === 'by' ? 'Credit' : 'Free'}
             </i>
@@ -88,7 +100,7 @@ function Row({ item, preview, onAdd, adding, fav = item.path ? null : favLibrary
   );
 }
 
-function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, offline = [] }) {
+function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag }) {
   const [q, setQ] = useState('');
   const [ownTag, setTag] = useState(tags[0][0]);
   const tag = fixedTag || ownTag;
@@ -122,7 +134,6 @@ function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, offline = 
         <div className="lib-error"><WifiOff size={15} /> <span>{res.error}</span> <button className="btn btn-sm" onClick={() => load(1)}>Retry</button></div>
       )}
       <div className="lib-list">
-        {!q.trim() && offline.map((it) => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}
         {res.results.map((it) => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}
         {res.loading && <div className="lib-loading"><Loader2 size={16} className="spin" /> Loading…</div>}
         {!res.loading && !res.error && !res.results.length && <p className="empty-note">Nothing found for “{query || tag}”.</p>}
@@ -134,18 +145,80 @@ function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, offline = 
   );
 }
 
+// Soundza search: needs the user's free Soundza key (Settings); without one it shows the same
+// "get a free key" card the stock library uses. Results preview from Soundza's preview links;
+// adding downloads the full file once, through the shared library-add flow.
+function SoundzaSearch({ fixedTag, preview, onAdd, adding, onOpenSettings }) {
+  const [hasKey, setHasKey] = useState(null);
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState({ results: [], page: 0, pages: 0, loading: false, error: '' });
+  const chip = SOUNDZA_TAGS.find(([label]) => label === fixedTag) || SOUNDZA_TAGS[0];
+  useEffect(() => { window.api.soundzaStatus().then((s) => setHasKey(!!s.hasKey)).catch(() => setHasKey(false)); }, []);
+  const load = async (page) => {
+    setRes((r) => ({ ...r, loading: true, error: '', ...(page === 1 ? { results: [] } : {}) }));
+    const out = await window.api.soundzaSearch({ ...chip[1], q: q.trim(), page });
+    if (out.error) return setRes((r) => ({ ...r, loading: false, error: out.error }));
+    setRes((r) => ({ results: page === 1 ? out.results : [...r.results, ...out.results], page: out.page, pages: out.pages, loading: false, error: '' }));
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setQ(''); }, [fixedTag]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (hasKey) load(1); }, [fixedTag, hasKey]);
+
+  if (hasKey === null) return <div className="lib-loading"><Loader2 size={16} className="spin" /> Loading…</div>;
+  if (!hasKey) {
+    return (
+      <div className="card stock-key">
+        <div className="card-row">
+          <span className="card-icon"><KeyRound size={18} /></span>
+          <div>
+            <b>Free sound effects from Soundza</b>
+            <p>Search a big free library of whooshes, impacts, UI sounds and foley, and drop them straight onto your timeline. Soundza needs a free API key: create an account, copy a key from the developer keys page, then paste it in Settings.</p>
+          </div>
+        </div>
+        <div className="stock-key-actions">
+          <button className="btn btn-sm" onClick={() => window.api.openHelp('https://soundza.com/developers/keys')}><ExternalLink size={13} /> Get a free key</button>
+          <button className="btn btn-primary btn-sm" onClick={onOpenSettings}>Open Settings</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <form className="lib-search" onSubmit={(e) => { e.preventDefault(); load(1); }}>
+        <Search size={14} aria-hidden="true" />
+        <input type="search" value={q} placeholder="Search sound effects" aria-label="Search Soundza"
+          onChange={(e) => setQ(e.target.value)} />
+        {q && <button type="button" className="lib-search-clear" aria-label="Clear search" onClick={() => setQ('')}><X size={13} /></button>}
+      </form>
+      {res.error && (
+        <div className="lib-error"><WifiOff size={15} /> <span>{res.error}</span> <button className="btn btn-sm" onClick={() => load(1)}>Retry</button></div>
+      )}
+      <div className="lib-list">
+        {res.results.map((it) => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}
+        {res.loading && <div className="lib-loading"><Loader2 size={16} className="spin" /> Loading…</div>}
+        {!res.loading && !res.error && !res.results.length && <p className="empty-note">Nothing found for “{q.trim() || fixedTag}”.</p>}
+        {!res.loading && res.page < res.pages && res.results.length > 0 && (
+          <button className="btn btn-ghost btn-sm lib-more" onClick={() => load(res.page + 1)}>Load more</button>
+        )}
+      </div>
+      <p className="lib-note">Powered by <a href="#" onClick={(e) => { e.preventDefault(); window.api.openHelp('https://soundza.com'); }}>soundza</a> — free sounds under the Soundza Standard License.</p>
+    </>
+  );
+}
+
 // Audio panel like CapCut's: Music, Sound effects and Yours (imported audio and voice-over).
 export default function AudioLibrary({ media, project, onImport, onAddMedia, onLibraryAdd, onAddFile, onTtsAdd, selectedText, onOpenSettings, recorder, onStartRecord, MediaCard, onRemoveMedia, onPeek, peekId, section = 'music:Vlog' }) {
   // Split on the FIRST colon only: pack sections carry a second one ('music:pack:Library').
   const [group, sub] = section.includes(':') ? [section.slice(0, section.indexOf(':')), section.slice(section.indexOf(':') + 1)] : [section, ''];
   const view = group === 'yours' && sub === 'favorites' ? 'favorites' : group;
-  const favs = useFavorites().list.filter((e) => e.type === 'audio');
+  // The synthesized built-in sounds were removed from the app; favorites saved while they
+  // existed are dropped here so they never offer a sound that is gone.
+  const favs = useFavorites().list.filter((e) => e.type === 'audio' && e.item?.provider !== 'builtin');
   const [adding, setAdding] = useState(null);
   const [addError, setAddError] = useState('');
-  const [builtin, setBuiltin] = useState([]);
   const [copied, setCopied] = useState(false);
   const preview = usePreview();
-  useEffect(() => { window.api.libraryBuiltin().then(setBuiltin); }, []);
   useEffect(() => preview.stop, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => preview.stop(), [section]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -167,7 +240,6 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
   };
 
   const audio = media.filter((m) => m.type === 'audio');
-  const groups = [...new Set(builtin.map((b) => b.category))];
   return (
     <>
       {(preview.error || addError) && <p className="error-text">{preview.error || addError}</p>}
@@ -181,25 +253,20 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
         </>
       ))}
 
-      {view === 'sfx' && sub === 'offline' && (
-        <>
-          <div className="tab-title"><Sparkles size={13} /> Sound effects · work offline</div>
-          {groups.map((g) => (
-            <div key={g} className="lib-group">
-              <span className="lib-group-name">{g}</span>
-              <div className="lib-list">
-                {builtin.filter((b) => b.category === g).map((it) => <Row key={it.id} item={it} preview={preview} onAdd={add} adding={adding} />)}
-              </div>
-            </div>
-          ))}
-        </>
-      )}
-      {view === 'sfx' && sub !== 'offline' && (
+      {view === 'sfx' && (sub.startsWith('pack:') ? (
+        <PackMusic group="Sound FX" collection={sub.slice(5)} onAddFile={onAddFile} />
+      ) : (
         <>
           <div className="tab-title">Sound effects · {sub}</div>
           <p className="lib-src-note">Free for any video. Sounds marked “Credit” need a credit line (listed under Credits).</p>
-          <OnlineSearch kind="sfxall" tags={SFX_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding}
-            offline={builtin.filter((b) => (SFX_TAGS.find(([t]) => t === sub)?.[3] || []).includes(b.category))} />
+          <OnlineSearch kind="sfxall" tags={SFX_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} />
+        </>
+      ))}
+
+      {view === 'soundza' && (
+        <>
+          <div className="tab-title">Soundza · {sub}</div>
+          <SoundzaSearch fixedTag={sub} preview={preview} onAdd={add} adding={adding} onOpenSettings={onOpenSettings} />
         </>
       )}
 
@@ -242,7 +309,7 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
         <>
           <div className="tab-title">Credits</div>
           {!credits.length && (
-            <p className="empty-note">No sound on the timeline needs a credit. Offline and CC0 sounds never do;
+            <p className="empty-note">No sound on the timeline needs a credit. CC0 sounds never do;
               music and sound effects marked “Credit” list their credit line here once you use them.</p>
           )}
         </>

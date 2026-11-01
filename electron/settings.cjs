@@ -73,7 +73,7 @@ function setMcpServers(list) {
 }
 
 // ---- Keys of other services (stock media). Same encryption, same rules as the AI keys. ----
-const SERVICES = ['pixabay', 'elevenlabs', 'cap-groq', 'cap-openai', 'cap-deepgram', 'cap-elevenlabs'];
+const SERVICES = ['pixabay', 'soundza', 'elevenlabs', 'cap-groq', 'cap-openai', 'cap-deepgram', 'cap-elevenlabs'];
 
 function getServiceKey(name) {
   const entry = read().services?.[name];

@@ -8,7 +8,9 @@ const fav = require('../electron/favorites.cjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-fav-'));
 const real = path.join(dir, 'clip.mp4');
 fs.writeFileSync(real, 'x');
-const a = { key: 'lib:builtin-whoosh', type: 'audio', source: 'library', item: { id: 'builtin-whoosh', title: 'Whoosh' } };
+// Fixture note: the library item used to be a built-in effect; the built-ins were removed from
+// the app, so the fixture is a neutral library sound (the favorites store is provider-agnostic).
+const a = { key: 'lib:sfxmint-42', type: 'audio', source: 'library', item: { id: 'sfxmint-42', title: 'Whoosh' } };
 const b = { key: `file:${real}`, type: 'video', source: 'file', item: { path: real, name: 'clip.mp4' } };
 
 assert.deepEqual(fav.list(dir), []);

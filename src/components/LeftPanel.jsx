@@ -23,7 +23,7 @@ import { DEFAULT_ADJUST, EFFECTS, EFFECT_GROUPS, FILTERS, STICKERS, TRANSITIONS 
 import { dragProps } from '../dnd.js';
 import Slider from './Slider.jsx';
 import SearchBox from './SearchBox.jsx';
-import AudioLibrary, { MUSIC_TAGS, SFX_TAGS, TROLL_TAGS } from './AudioLibrary.jsx';
+import AudioLibrary, { MUSIC_TAGS, SFX_TAGS, SOUNDZA_TAGS, TROLL_TAGS } from './AudioLibrary.jsx';
 import StockLibrary, { CHIPS as STOCK_CHIPS } from './StockLibrary.jsx';
 import { TabFrame } from './SideNav.jsx';
 import { FxThumb, samplePictureUrl } from '../fx/previews.jsx';
@@ -278,22 +278,27 @@ function AudioTab(props) {
   const [group, subTag] = sub.includes(':') ? sub.split(':') : [sub, ''];
   const view = group === 'yours' && subTag === 'favorites' ? 'favorites' : group;
   const sources = [
-    ['music', 'Music'], ['sfx', 'Sound FX'], ['trolls', 'Trolls'], ['yours', 'Your audio'],
+    ['music', 'Music'], ['sfx', 'Sound FX'], ['soundza', 'Soundza'], ['trolls', 'Trolls'], ['yours', 'Your audio'],
     ['favorites', 'Favorites'], ['tts', 'Text to speech'], ['credits', 'Credits'],
   ];
-  const firstOf = { music: 'music:Vlog', sfx: 'sfx:offline', trolls: 'trolls:Trending', yours: 'yours', favorites: 'yours:favorites', tts: 'tts', credits: 'credits' };
+  const firstOf = { music: 'music:Vlog', sfx: 'sfx:Transition', soundza: 'soundza:Whoosh', trolls: 'trolls:Trending', yours: 'yours', favorites: 'yours:favorites', tts: 'tts', credits: 'credits' };
   // The asset pack's music collections lead the Music chips when the pack is installed
   // (sub ids 'music:pack:<collection>', routed by AudioLibrary to PackMusic).
   const lib = useAssets();
   const packSubs = lib ? [...new Set(lib.items.filter((i) => i.group === 'Music').map((i) => i.sub))]
     .sort((a, b) => (a === 'Library' ? -1 : b === 'Library' ? 1 : a.localeCompare(b))) : [];
+  // The pack's sound effects lead the Sound FX chips (sub ids 'sfx:pack:<collection>',
+  // routed by AudioLibrary to the pack list) — pack audio lives in Audio, with the
+  // music, not in Assets (Hamza, 2026-11-01).
+  const packSfxSubs = lib ? [...new Set(lib.items.filter((i) => i.group === 'Sound FX' && i.sub).map((i) => i.sub))] : [];
   const catChips = view === 'music' ? [...packSubs.map((s) => [`music:pack:${s}`, `Pack · ${s}`]), ...MUSIC_TAGS.map(([c]) => [`music:${c}`, c])]
-    : view === 'sfx' ? [['sfx:offline', 'Offline'], ...SFX_TAGS.map(([c]) => [`sfx:${c}`, c])]
+    : view === 'sfx' ? [...packSfxSubs.map((s) => [`sfx:pack:${s}`, `Pack · ${s}`]), ...SFX_TAGS.map(([c]) => [`sfx:${c}`, c])]
+    : view === 'soundza' ? SOUNDZA_TAGS.map(([c]) => [`soundza:${c}`, c])
     : view === 'trolls' ? TROLL_TAGS.map(([c]) => [`trolls:${c}`, c])
     : null;
   return (
     <TabFrame>
-      <Head title="Audio" hint={view === 'music' ? 'Free music for your videos' : view === 'sfx' ? 'Sound effects, online and offline' : view === 'trolls' ? 'Meme sounds from MyInstants' : view === 'tts' ? 'Turn text into a voice-over' : view === 'credits' ? 'Credit lines for sounds on the timeline' : view === 'favorites' ? 'Your starred sounds, in every project' : 'Imported audio and voice-overs'} />
+      <Head title="Audio" hint={view === 'music' ? 'Free music for your videos' : view === 'sfx' ? 'Sound effects, ready to search' : view === 'soundza' ? 'Sound effects from Soundza' : view === 'trolls' ? 'Meme sounds from MyInstants' : view === 'tts' ? 'Turn text into a voice-over' : view === 'credits' ? 'Credit lines for sounds on the timeline' : view === 'favorites' ? 'Your starred sounds, in every project' : 'Imported audio and voice-overs'} />
       <div className="chips scroll-x src-chips" role="tablist" aria-label="Audio source">
         {sources.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={view === id} className={`chip src-chip ${view === id ? 'on' : ''}`}
@@ -311,6 +316,12 @@ function AudioTab(props) {
         <div className="pad-block pack-music-offer">
           <p className="empty-note">The free Creator Pack's music is not installed yet:</p>
           <PackOffer categories={['music']} />
+        </div>
+      )}
+      {view === 'sfx' && lib && !packSfxSubs.length && (
+        <div className="pad-block pack-music-offer">
+          <p className="empty-note">The free Creator Pack's sound effects are not installed yet:</p>
+          <PackOffer categories={['sfx']} />
         </div>
       )}
       <div className="pad-block">

@@ -42,8 +42,11 @@ contextBridge.exposeInMainWorld('api', {
   fontsImport: (files) => ipcRenderer.invoke('fonts:import', files ? files.map((f) => webUtils.getPathForFile(f)) : null),
   fontData: (id) => ipcRenderer.invoke('fonts:data', id),
   fontsRemove: (id) => ipcRenderer.invoke('fonts:remove', id),
-  libraryBuiltin: () => ipcRenderer.invoke('library:builtin'),
   librarySearch: (opts) => ipcRenderer.invoke('library:search', opts),
+  soundzaStatus: () => ipcRenderer.invoke('soundza:status'),
+  soundzaSearch: (opts) => ipcRenderer.invoke('soundza:search', opts),
+  soundzaTest: (key) => ipcRenderer.invoke('soundza:test', key),
+  soundzaPreview: (item) => ipcRenderer.invoke('soundza:preview', item),
   libraryFile: (item) => ipcRenderer.invoke('library:file', item),
   libraryAdd: (item) => ipcRenderer.invoke('library:add', item),
   ensureVisuals: (items) => ipcRenderer.invoke('media:ensureVisuals', items),
@@ -77,6 +80,13 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_e, p) => cb(p);
     ipcRenderer.on('stabilize:progress', handler);
     return () => ipcRenderer.removeListener('stabilize:progress', handler);
+  },
+  trackRun: (item, from, to, pick, box) => ipcRenderer.invoke('track:run', item, from, to, pick, box),
+  trackCancel: () => ipcRenderer.invoke('track:cancel'),
+  onTrackProgress: (cb) => {
+    const handler = (_e, p) => cb(p);
+    ipcRenderer.on('track:progress', handler);
+    return () => ipcRenderer.removeListener('track:progress', handler);
   },
   stickersGet: (id, name) => ipcRenderer.invoke('stickers:get', id, name),
   proxyStatus: () => ipcRenderer.invoke('proxy:status'),

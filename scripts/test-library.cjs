@@ -1,5 +1,7 @@
-// Audio library: renders every built-in sound effect, then (unless --offline) searches Openverse and downloads one
-// sound. Usage: node scripts/test-library.cjs [--offline]
+// Audio library: host allowlist and download guard, then (unless --offline) searches Openverse /
+// SFXMint / MyInstants and downloads one sound. Usage: node scripts/test-library.cjs [--offline]
+// (The old first block rendered every built-in synthesized effect; the built-ins were removed
+// from the app on Hamza's call — poor quality, sounded AI-generated — so there is nothing to render.)
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -8,13 +10,6 @@ const lib = require('../electron/library.cjs');
 
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-lib-'));
-  for (const item of lib.builtinList()) {
-    const file = await lib.builtinFile(dir, item.id);
-    const info = await probe(file);
-    if (info.type !== 'audio' || info.duration < 0.03) throw new Error(`${item.id}: bad file ${JSON.stringify(info)}`);
-    process.stdout.write(`${item.title} ${info.duration.toFixed(2)}s · `);
-  }
-  console.log(`\n${lib.builtinList().length} built-in sounds OK`);
 
   if (!lib.hostOk('https://prod-1.storage.jamendo.com/?trackid=1') || lib.hostOk('https://evil.example/jamendo.com') || lib.hostOk('http://cdn.freesound.org/x')) {
     throw new Error('host allowlist');

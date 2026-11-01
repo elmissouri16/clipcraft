@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck, ExternalLink, Eye, EyeOff, Film, Gauge, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
+import { AudioLines, CircleAlert, CircleCheck, ExternalLink, Eye, EyeOff, Film, Gauge, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 
 const PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', needsKey: true, hint: 'The easiest key is a free one from Google AI Studio (starts with AIza). Vertex AI express keys (AQ.…) work too once the API is enabled for their project.', keyUrl: 'https://aistudio.google.com/app/apikey', keyUrlLabel: 'Get a free key (AI Studio)' },
@@ -86,6 +86,15 @@ function StockSettings(props) {
     <ServiceKey {...props} service="pixabay" title="Stock videos and photos" icon={Film} keyLabel="Pixabay API key"
       text="Media > Library searches Pixabay. Pixabay keys are free: sign in on pixabay.com and copy the key from the API page."
       url="https://pixabay.com/api/docs/" urlLabel="Get a free Pixabay key" test={(k) => window.api.stockTest(k)} />
+  );
+}
+
+// Soundza key for the sound-effects section (Audio > Soundza).
+function SoundzaSettings(props) {
+  return (
+    <ServiceKey {...props} service="soundza" title="Sound effects (Soundza)" icon={AudioLines} keyLabel="Soundza API key"
+      text="Audio > Soundza searches Soundza's free library of sound effects. Soundza keys are free: create an account, then copy a key from the developer keys page."
+      url="https://soundza.com/developers/keys" urlLabel="Get a free Soundza key" test={(k) => window.api.soundzaTest(k)} />
   );
 }
 
@@ -328,7 +337,12 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
         )}
         {section === 'mcp' && <McpSettings saved={saved} onSaved={(st) => setSaved(st)} />}
         {section === 'quality' && <ProxySettings onCleared={onProxiesCleared} />}
-        {section === 'stock' && <StockSettings saved={saved} onSaved={(st) => setSaved(st)} />}
+        {section === 'stock' && (
+          <>
+            <StockSettings saved={saved} onSaved={(st) => setSaved(st)} />
+            <SoundzaSettings saved={saved} onSaved={(st) => setSaved(st)} />
+          </>
+        )}
           </div>
         </div>
       </div>
