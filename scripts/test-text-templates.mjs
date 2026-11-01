@@ -41,4 +41,15 @@ for (const t of TEXT_TEMPLATES) {
   if (p.animLoop) assert.ok(loopIds.has(p.animLoop.id), `${t.id} animLoop exists`);
   if (p.highlight) assert.ok(hlIds.has(p.highlight.mode), `${t.id} highlight mode exists`);
 }
+// W2 amendment: the standard preview line is "Made with ClipCraft" everywhere; a
+// template's own content text (patch.text) wins where it is part of the design, and
+// Arabic-nature templates preview an Arabic line. Mirrors TextPreview's precedence:
+// caller text || template.previewText || patch.text || 'Made with ClipCraft'.
+const ARABIC = /[\u0600-\u06FF]/;
+for (const t of TEXT_TEMPLATES) {
+  const sample = t.previewText || t.patch.text || 'Made with ClipCraft';
+  const isArabic = (t.tags || []).includes('Arabic');
+  if (isArabic) assert.ok(ARABIC.test(sample), `${t.id} previews an Arabic line (got "${sample}")`);
+  else if (!t.patch.text) assert.equal(sample, 'Made with ClipCraft', `${t.id} previews the standard line (got "${sample}")`);
+}
 console.log(`text-templates ok (${TEXT_TEMPLATES.length} templates, ${mat.length} Craft, ${mot.length} Motion, all references valid)`);

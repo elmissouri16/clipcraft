@@ -71,7 +71,7 @@ export function TemplateGrid({ onPick, activeId, captionOnly, sampleText, dragga
             onMouseEnter={() => setHover(t.id)} onMouseLeave={() => setHover(null)}>
             <button className="tpl-btn" onClick={() => onPick(t)} title={t.name}
               {...(draggable ? dragProps({ kind: 'text', patch: { ...t.patch, template: t.id } }) : {})}>
-              <TextPreview style={t.caption ? { ...t.patch, caption: true } : t.patch} text={sampleText} hover={hover === t.id} width={128} height={72} />
+              <TextPreview style={t.caption ? { ...t.patch, caption: true } : t.patch} text={sampleText || t.previewText} hover={hover === t.id} width={128} height={72} />
             </button>
             <span className="tpl-name">{t.name}</span>
             <button className={`tpl-fav ${favs.has(t.id) ? 'on' : ''}`} onClick={() => toggleFav(t.id)}
