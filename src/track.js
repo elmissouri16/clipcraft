@@ -75,14 +75,10 @@ export function trackAt(track, srcT) {
 }
 
 // How much of the frame the source media's fitted picture occupies (width / height fractions): path
-// deltas scale by this on their way from media fractions to frame fractions.
-export function fitFactors(project, media) {
-  const mw = media?.width;
-  const mh = media?.height;
-  if (!mw || !mh || !project.width || !project.height) return { fx: 1, fy: 1 };
-  const k = Math.min(project.width / mw, project.height / mh);
-  return { fx: (mw * k) / project.width, fy: (mh * k) / project.height };
-}
+// deltas scale by this on their way from media fractions to frame fractions. The implementation
+// lives in src/pictureGeometry.js — the single source of truth for displayed-picture geometry,
+// shared with the crop overlay, the transform box and the colour sampler.
+export { fitFactors } from './pictureGeometry.js';
 
 const srcTimeAt = (clip, startTl, tlT) => (clip.in || 0) + (tlT - startTl) * (clip.speed || 1);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));

@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { RotateCw } from 'lucide-react';
 import { clipLen, freeLen, videoLayout } from '../store.js';
-import { scaleXY, transformOf } from '../visual.js';
+import { transformOf } from '../visual.js';
+import { pictureGeometry } from '../pictureGeometry.js';
 import { baseAt, editAt, hasMotion, stateAt } from '../anim.js';
 import { pinOffsetAt, stateAtPinned } from '../track.js';
 import { resolveStyle, textBox, textVisible } from '../text/render.js';
@@ -13,13 +14,9 @@ import { resolveStyle, textBox, textVisible } from '../text/render.js';
 // picked first): the corners change its size, the round handle its rotation.
 const SNAP_PX = 6;
 
-// Size of a clip's picture fitted in the frame, as fractions of the frame. (A cropped clip's
-// surviving region takes this same box, so the box does not change with the crop.)
-function fitOf(m, W, H) {
-  if (!m?.width || !m?.height) return { fw: 1, fh: 1 };
-  const k = Math.min(W / m.width, H / m.height);
-  return { fw: (m.width * k) / W, fh: (m.height * k) / H };
-}
+// The clip's displayed picture box comes from src/pictureGeometry.js — the same geometry
+// the crop overlay and the colour sampler use. (A cropped clip's surviving region takes
+// this same box, so the box does not change with the crop.)
 
 export default function TransformBox({ project, time, selection, onSelect, dispatch, sw, sh }) {
   const [guides, setGuides] = useState({ x: false, y: false });
@@ -57,9 +54,8 @@ export default function TransformBox({ project, time, selection, onSelect, dispa
       return { cx: (b.cx + off.dx * project.width) * kx, cy: (b.cy + off.dy * project.height) * ky, w: b.w * kx, h: b.h * ky, rot: b.rot };
     }
     const t = (hasMotion(clip) || clip.pin) ? stateAtPinned(project, { track: item.track, clip }, item.lt, clipLen(clip)).transform : transformOf(clip);
-    const { sx, sy } = scaleXY(t);
-    const { fw, fh } = fitOf(mediaById[clip.mediaId], project.width, project.height);
-    return { t, cx: (0.5 + t.x) * sw, cy: (0.5 + t.y) * sh, w: fw * sw * Math.abs(sx), h: fh * sh * Math.abs(sy), rot: t.rot };
+    const g2 = pictureGeometry(project, mediaById[clip.mediaId], clip, t);
+    return { t, cx: g2.cx * sw, cy: g2.cy * sh, w: g2.w * sw, h: g2.h * sh, rot: g2.rot };
   };
   const hits = (g, px, py) => {
     const a = (-g.rot * Math.PI) / 180;

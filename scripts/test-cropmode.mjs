@@ -1,7 +1,7 @@
 // Visual crop math: aspect presets + aspect-locked drags (src/cropMath.js). Pure, no app.
 // Usage: node scripts/test-cropmode.mjs
 import assert from 'assert/strict';
-import { CROP_ASPECTS, aspectRatioOf, keptAspect, clampCrop, cropForAspect, dragCrop } from '../src/cropMath.js';
+import { CROP_ASPECTS, aspectRatioOf, keptAspect, clampCrop, cropForAspect, dragCrop, moveCrop } from '../src/cropMath.js';
 
 const near = (a, b, tol = 0.002) => assert.ok(Math.abs(a - b) <= tol, `${a} ≈ ${b}`);
 
@@ -73,5 +73,17 @@ near(aspectRatioOf('9:16', 1920, 1080), 9 / 16);
   const c = cropForAspect({ l: 0.4, t: 0.4, r: 0.4, b: 0.4 }, 1000, 900, 21 / 9);
   assert.ok(c.l + c.r <= 0.9 + 1e-9 && c.t + c.b <= 0.9 + 1e-9);
   assert.ok(1 - c.l - c.r >= 0.1 - 1e-9 && 1 - c.t - c.b >= 0.1 - 1e-9);
+}
+// Centre move (CROP-3): all four edges shift together, the kept size never changes, and
+// the frame stops at the source edges.
+{
+  const start = { l: 0, t: 0, r: 0.25, b: 0.2 }; // kept 0.75 x 0.80
+  const c = moveCrop(start, 0.1, 0.05);
+  near(c.l, 0.1); near(c.t, 0.05); near(c.r, 0.15); near(c.b, 0.15);
+  near(1 - c.l - c.r, 0.75); near(1 - c.t - c.b, 0.8);
+  const clamped = moveCrop(start, 0.9, -0.9);
+  near(clamped.l, 0.25); near(clamped.r, 0); near(clamped.t, 0); near(clamped.b, 0.2);
+  const full = moveCrop({ l: 0, t: 0, r: 0, b: 0 }, 0.1, 0.1); // nothing to move into
+  assert.deepEqual(full, { l: 0, t: 0, r: 0, b: 0 });
 }
 console.log('CROPMODE OK');

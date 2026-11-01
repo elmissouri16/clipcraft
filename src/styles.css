@@ -322,8 +322,16 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--primary)
 .crop-grid-v { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.35); }
 .crop-grid-h { position: absolute; left: 0; right: 0; height: 1px; background: rgba(255, 255, 255, 0.35); }
 .crop-handle { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--violet, #825cfb); box-shadow: 0 0 0 1.5px #fff, 0 1px 5px rgba(0, 0, 0, 0.55); transform: translate(-50%, -50%); pointer-events: auto; touch-action: none; }
-.crop-bar { flex-wrap: wrap; max-width: min(780px, 94vw); row-gap: 8px; }
+.crop-bar { flex-wrap: wrap; max-width: min(880px, 94vw); row-gap: 8px; }
 .crop-bar .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.crop-grid-v.crop-center, .crop-grid-h.crop-center { background: rgba(130, 92, 251, 0.55); }
+.crop-grid-v.crop-center { width: 1px; border-left: 1px dashed rgba(255, 255, 255, 0.5); background: transparent; }
+.crop-grid-h.crop-center { height: 1px; border-top: 1px dashed rgba(255, 255, 255, 0.5); background: transparent; }
+.crop-keep { touch-action: none; }
+.crop-rot { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
+.crop-rot input[type='range'] { width: 110px; accent-color: var(--violet, #825cfb); }
+.crop-rot-num { width: 58px; background: var(--surface-3, #23233a); border: 1px solid var(--border-strong, rgba(255,255,255,0.14)); border-radius: 6px; color: var(--text); font-size: 12px; padding: 3px 6px; }
+.crop-rot-val { font-size: 12px; font-weight: 650; color: var(--text); min-width: 38px; font-variant-numeric: tabular-nums; }
 .color-pick { position: absolute; inset: 0; z-index: 9; cursor: crosshair; }
 .track-pick { position: absolute; inset: 0; z-index: 7; cursor: crosshair; }
 .track-box { position: absolute; border: 1.5px dashed var(--violet, #825cfb); border-radius: 4px; pointer-events: none; }

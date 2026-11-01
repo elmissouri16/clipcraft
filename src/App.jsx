@@ -18,7 +18,7 @@ import { customMaskImages, decoImages, maskImages } from './visual.js';
 import { motionData } from './anim.js';
 import { clipStartTl, motionDataPinned, trackedClips } from './track.js';
 import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from './cropMath.js';
-import { chromaOf, cropOf } from './visual.js';
+import { chromaOf, cropOf, transformOf } from './visual.js';
 import { isLookPatch, lookAction, selectedPictures } from './look.js';
 import { loadProjectLuts, onLutLoaded } from './fx/lut.js';
 import LeftPanel from './components/LeftPanel.jsx';
@@ -1049,6 +1049,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [colorPick]);
 
+  // CROP-3: the crop mode is a BUFFERED edit. Entering snapshots the clip's crop, aspect
+  // and rotation into a draft held here; every control in the mode (frame drags, centre
+  // move, aspect chips, the rotation control) edits only the draft, and Preview renders
+  // the draft (its project override below carries the draft rotation). The store — and
+  // with it autosave, the inspector and any export — sees nothing until Done commits the
+  // draft as exactly ONE undo step; Cancel (or Esc) just drops the draft.
   const startCropEdit = (sel) => {
     const c = findClip(project, sel);
     if (!c || c.gap) return;
@@ -1056,37 +1062,42 @@ export default function App() {
     const start = clipStartTl(project, sel.track, c);
     const len = ((c.out ?? 0) - (c.in ?? 0)) / (c.speed || 1);
     if (time < start - 1e-6 || time > start + len + 1e-6) seek(start + 0.01);
-    dispatch({ type: 'beginGesture' });
-    setCropEdit({ track: sel.track, id: sel.id, snapshot: { crop: cropOf(c), cropAspect: c.cropAspect || 'free' } });
+    const snap = { crop: cropOf(c), cropAspect: c.cropAspect || 'free', rot: transformOf(c).rot || 0 };
+    setCropEdit({ track: sel.track, id: sel.id, snapshot: snap, draftCrop: snap.crop, draftAspect: snap.cropAspect, draftRot: snap.rot });
   };
   const doneCropEdit = () => {
-    dispatch({ type: 'endGesture' });
-    setCropEdit(null);
-  };
-  const cancelCropEdit = () => {
-    if (cropEdit) {
-      const c = findClip(projectRef.current, cropEdit);
-      if (c) {
-        const now = cropOf(c);
-        const snap = cropEdit.snapshot;
-        if (JSON.stringify(now) !== JSON.stringify(snap.crop) || (c.cropAspect || 'free') !== snap.cropAspect) {
-          dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { crop: snap.crop, cropAspect: snap.cropAspect } });
-        }
-      }
+    if (!cropEdit) return;
+    const { snapshot: snap, draftCrop, draftAspect, draftRot } = cropEdit;
+    const c = findClip(projectRef.current, cropEdit);
+    const changed = c && (JSON.stringify(draftCrop) !== JSON.stringify(snap.crop)
+      || draftAspect !== snap.cropAspect || draftRot !== snap.rot);
+    if (changed) {
+      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { crop: draftCrop, cropAspect: draftAspect, transform: { ...transformOf(c), rot: draftRot } } });
+      dispatch({ type: 'endGesture' });
     }
-    dispatch({ type: 'endGesture' });
     setCropEdit(null);
   };
+  const cancelCropEdit = () => { setCropEdit(null); };
   const applyCropAspect = (id) => {
     if (!cropEdit) return;
     const c = findClip(projectRef.current, cropEdit);
     const m = c && projectRef.current.media.find((x) => x.id === c.mediaId);
     if (!c || !m) return;
-    if (id === 'free') { dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { cropAspect: 'free' } }); return; }
+    if (id === 'free') { setCropEdit((e) => e && { ...e, draftAspect: 'free' }); return; }
     const R = aspectRatioOf(id, m.width, m.height);
     if (!R) return;
-    dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { crop: cropForAspect(cropOf(c), m.width, m.height, R), cropAspect: id } });
+    setCropEdit((e) => e && { ...e, draftCrop: cropForAspect(e.draftCrop, m.width, m.height, R), draftAspect: id });
   };
+  const setCropDraft = useCallback((crop) => { setCropEdit((e) => (e ? { ...e, draftCrop: crop } : e)); }, []);
+  const setCropRot = (rot) => { const r = Math.round(Math.min(180, Math.max(-180, Number(rot) || 0)) * 10) / 10; setCropEdit((e) => (e ? { ...e, draftRot: r } : e)); };
+  // While cropping, Preview shows the DRAFT rotation on the target clip (the crop itself
+  // is suppressed there as before). Everything else about the project is untouched.
+  const cropPreviewProject = useMemo(() => {
+    if (!cropEdit) return playProject;
+    const patchList = (list) => (list || []).map((c) => (c.id === cropEdit.id ? { ...c, transform: { ...transformOf(c), rot: cropEdit.draftRot } } : c));
+    return { ...playProject, videoClips: patchList(playProject.videoClips), overlayClips: patchList(playProject.overlayClips) };
+  }, [playProject, cropEdit]);
   useEffect(() => {
     if (!cropEdit) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); cancelCropEdit(); } };
@@ -1774,14 +1785,14 @@ export default function App() {
           clipSelected={selection?.track === 'video' || selection?.track === 'overlay'}
           onAddFreeEffect={(fx) => { const clipId = uid(); dispatch({ type: 'addEffectClip', clipId, fx, at: time }); setSelection({ track: 'effect', id: clipId }); }}
           project={project} captions={{ ...captions, run: runCaptions }} />
-        <Preview project={playProject} editProject={project} selection={selection} onSelect={select} dispatch={dispatch} time={time} seekVer={seekVer} playing={playing} duration={duration}
+        <Preview project={cropPreviewProject} editProject={project} selection={selection} onSelect={select} dispatch={dispatch} time={time} seekVer={seekVer} playing={playing} duration={duration}
           onTime={setTime} onEnd={() => setPlaying(false)} onTogglePlay={togglePlay} onSeek={seek} onDropItem={dropOnPreview}
           peek={project.media.find((m) => m.id === peekId) || assetPeek} onClosePeek={() => { setPeekId(null); setAssetPeek(null); }}
           onAddPeek={(m) => { setPeekId(null); setAssetPeek(null); if (m && m.assetPath) addFile(m.assetPath, m.assetWhere || 'main'); else if (m) addToTimeline(m.id); }}
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
           clockRef={clockRef}
           trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))}
-          cropEdit={cropEdit}
+          cropEdit={cropEdit} onCropDraft={setCropDraft}
           colorPick={colorPick} onColorPicked={finishColorPick} />
         <Inspector project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} onSeek={seek}
           onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
@@ -1872,16 +1883,25 @@ export default function App() {
       )}
       {cropEdit && (() => {
         const c = findClip(project, cropEdit);
-        const cur = c?.cropAspect || 'free';
+        const cur = cropEdit.draftAspect || 'free';
+        const rot = cropEdit.draftRot || 0;
         return (
           <div className="render-job crop-bar" role="status">
             <Crop size={15} />
-            <span>Cropping{c ? ` “${project.media.find((m) => m.id === c.mediaId)?.name || 'clip'}”` : ''} — drag the frame on the player; what is dimmed gets cut. Playback still runs, so scrub to check other frames.</span>
+            <span>Cropping{c ? ` “${project.media.find((m) => m.id === c.mediaId)?.name || 'clip'}”` : ''} — drag the frame's edges, or drag inside it to move it; what is dimmed gets cut. Nothing is applied until you confirm.</span>
             <span className="chips" role="group" aria-label="Crop aspect">
               {CROP_ASPECTS.map((a) => (
                 <button key={a.id} type="button" className={`chip ${cur === a.id ? 'on' : ''}`} aria-pressed={cur === a.id}
                   onClick={() => applyCropAspect(a.id)}>{a.label}</button>
               ))}
+            </span>
+            <span className="crop-rot" role="group" aria-label="Rotate or straighten">
+              <RotateCw size={13} />
+              <input type="range" min="-45" max="45" step="0.5" value={Math.min(45, Math.max(-45, rot))} aria-label="Rotate (degrees)"
+                onChange={(e) => setCropRot(Number(e.target.value))} />
+              <input type="number" className="crop-rot-num" min="-180" max="180" step="0.5" value={rot} aria-label="Rotation in degrees"
+                onChange={(e) => setCropRot(Number(e.target.value))} />
+              <span className="crop-rot-val">{rot > 0 ? `+${rot}` : rot}°</span>
             </span>
             <button className="btn btn-sm" onClick={doneCropEdit}>Done</button>
             <button className="btn btn-sm btn-ghost" onClick={cancelCropEdit}>Cancel</button>

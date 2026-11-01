@@ -76,6 +76,17 @@ export function cropForAspect(crop, mw, mh, R) {
   return clampCrop(c);
 }
 
+// Move the whole crop frame by (dx, dy) source fractions (the centre drag): the kept
+// region's size never changes; the frame stops at the source edges.
+export function moveCrop(start, dx, dy) {
+  const s = clampCrop(start || {});
+  const kw = 1 - s.l - s.r;
+  const kh = 1 - s.t - s.b;
+  const nl = Math.min(Math.max(s.l + (dx || 0), 0), Math.max(0, 1 - kw));
+  const nt = Math.min(Math.max(s.t + (dy || 0), 0), Math.max(0, 1 - kh));
+  return { l: nl, t: nt, r: 1 - kw - nl, b: 1 - kh - nt };
+}
+
 // One drag step of the on-player crop frame. `start` is the crop when the drag began,
 // `handle` one of 'tl','t','tr','r','br','b','bl','l', and `pt` the pointer position in
 // source fractions (0..1 across the fitted picture). When `aspect` (w/h) is set the kept
