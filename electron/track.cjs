@@ -196,52 +196,79 @@ async function trackMotion(item, { from = 0, to, pick, box = { w: 0.055, h: 0.09
     const done = (fn, v) => { if (!settled) { settled = true; clearInterval(timer); fn(v); } };
     p.stderr.on('data', (d) => { err = (err + d).slice(-2000); });
     p.on('error', (e) => done(reject, e));
-    p.on('close', (code) => {
-      if (isCanceled()) {
-        const e = new Error('Canceled.');
-        e.canceled = true;
-        return done(reject, e);
+
+    // Frame pump: matching a frame is ~10 ms of synchronous JS, and this runs in the app's
+    // MAIN process. Draining a whole pipe chunk synchronously starved the event loop for
+    // seconds at a time on a slow laptop (window unresponsive during tracking — the K4
+    // crash/hang report on a 45 s clip). Frames are queued instead and matched a few at a
+    // time, yielding to the event loop between slices so progress, Cancel and the window
+    // stay alive; stdout is paused when the queue grows, bounding memory.
+    const queue = [];
+    let ended = false;
+    let endCode = 0;
+    let pumping = false;
+    const processFrame = (frame) => {
+      const t = a + idx / TRACK_FPS;
+      if (!tpl) {
+        const cx = pick.x * WORK_W;
+        const cy = pick.y * workH;
+        tpl = makeTemplate(frame, WORK_W, workH, cx, cy, tw, th);
+        last = { x: tpl.x0 + tpl.tw / 2, y: tpl.y0 + tpl.th / 2 };
+        pts.push({ t: r4(t), x: r4(last.x / WORK_W), y: r4(last.y / workH), c: 1 });
+      } else {
+        const px = last.x + vel.x;
+        const py = last.y + vel.y;
+        const radius = Math.max(24, Math.round(tw * 0.9));
+        let m = matchTemplate(frame, WORK_W, workH, tpl, px, py, radius);
+        let widened = false;
+        if (m.score < WEAK) { m = matchTemplate(frame, WORK_W, workH, tpl, px, py, radius * 2.5); widened = true; } // widen once
+        // Velocity gate: a match that would teleport the point — many times its recent speed in a
+        // single frame — is a lookalike, not the target, however decent its score (measured: a false
+        // friend at 0.82, 141 px away in one frame, while the target moved ~6 px/frame). Only an
+        // overwhelming match (0.88+) may jump like that. A gated point holds, marked low-confidence.
+        const jump = Math.hypot(m.x - last.x, m.y - last.y);
+        const plausible = Math.max(3 * Math.hypot(vel.x, vel.y) + 6, 10);
+        const gated = jump > plausible && m.score < 0.88;
+        if (m.score < WEAK || (widened && m.score < REACQUIRE) || gated) {
+          pts.push({ t: r4(t), x: r4(last.x / WORK_W), y: r4(last.y / workH), c: Math.max(0.05, Math.min(0.34, r4(m.score))) });
+        } else {
+          vel = { x: (m.x - last.x) * 0.6 + vel.x * 0.4, y: (m.y - last.y) * 0.6 + vel.y * 0.4 };
+          last = { x: m.x, y: m.y };
+          pts.push({ t: r4(t), x: r4(m.x / WORK_W), y: r4(m.y / workH), c: r4(Math.max(0, Math.min(1, m.score))) });
+        }
       }
-      if (code !== 0 && idx === 0) return done(reject, new Error(`Tracking failed: ${err.trim().split('\n').pop() || `FFmpeg exited with ${code}`}`));
-      done(resolve, pts);
-    });
+      idx++;
+      if (idx % 6 === 0) onProgress(Math.min(0.99, idx / totalFrames));
+    };
+    const pump = async () => {
+      if (pumping) return;
+      pumping = true;
+      while (queue.length) {
+        const slice = queue.splice(0, 3);
+        for (const frame of slice) processFrame(frame);
+        if (queue.length < 4 && !ended) { try { p.stdout.resume(); } catch { /* already flowing */ } }
+        if (queue.length) await new Promise((r) => setImmediate(r));
+      }
+      pumping = false;
+      if (ended) {
+        if (isCanceled()) {
+          const e = new Error('Canceled.');
+          e.canceled = true;
+          return done(reject, e);
+        }
+        if (endCode !== 0 && idx === 0) return done(reject, new Error(`Tracking failed: ${err.trim().split('\n').pop() || `FFmpeg exited with ${endCode}`}`));
+        return done(resolve, pts);
+      }
+    };
+    p.on('close', (code) => { ended = true; endCode = code ?? 0; pump(); });
     p.stdout.on('data', (d) => {
       buf = Buffer.concat([buf, d]);
       while (buf.length >= frameBytes) {
-        const frame = buf.subarray(0, frameBytes);
+        queue.push(buf.subarray(0, frameBytes));
         buf = buf.subarray(frameBytes);
-        const t = a + idx / TRACK_FPS;
-        if (!tpl) {
-          const cx = pick.x * WORK_W;
-          const cy = pick.y * workH;
-          tpl = makeTemplate(frame, WORK_W, workH, cx, cy, tw, th);
-          last = { x: tpl.x0 + tpl.tw / 2, y: tpl.y0 + tpl.th / 2 };
-          pts.push({ t: r4(t), x: r4(last.x / WORK_W), y: r4(last.y / workH), c: 1 });
-        } else {
-          const px = last.x + vel.x;
-          const py = last.y + vel.y;
-          const radius = Math.max(24, Math.round(tw * 0.9));
-          let m = matchTemplate(frame, WORK_W, workH, tpl, px, py, radius);
-          let widened = false;
-          if (m.score < WEAK) { m = matchTemplate(frame, WORK_W, workH, tpl, px, py, radius * 2.5); widened = true; } // widen once
-          // Velocity gate: a match that would teleport the point — many times its recent speed in a
-          // single frame — is a lookalike, not the target, however decent its score (measured: a false
-          // friend at 0.82, 141 px away in one frame, while the target moved ~6 px/frame). Only an
-          // overwhelming match (0.88+) may jump like that. A gated point holds, marked low-confidence.
-          const jump = Math.hypot(m.x - last.x, m.y - last.y);
-          const plausible = Math.max(3 * Math.hypot(vel.x, vel.y) + 6, 10);
-          const gated = jump > plausible && m.score < 0.88;
-          if (m.score < WEAK || (widened && m.score < REACQUIRE) || gated) {
-            pts.push({ t: r4(t), x: r4(last.x / WORK_W), y: r4(last.y / workH), c: Math.max(0.05, Math.min(0.34, r4(m.score))) });
-          } else {
-            vel = { x: (m.x - last.x) * 0.6 + vel.x * 0.4, y: (m.y - last.y) * 0.6 + vel.y * 0.4 };
-            last = { x: m.x, y: m.y };
-            pts.push({ t: r4(t), x: r4(m.x / WORK_W), y: r4(m.y / workH), c: r4(Math.max(0, Math.min(1, m.score))) });
-          }
-        }
-        idx++;
-        if (idx % 6 === 0) onProgress(Math.min(0.99, idx / totalFrames));
       }
+      if (queue.length > 8) { try { p.stdout.pause(); } catch { /* noop */ } }
+      pump();
     });
   });
   if (!points.length) throw new Error('Tracking produced no frames (is the clip range empty?).');
