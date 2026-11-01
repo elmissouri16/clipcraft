@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Anvil, ArrowLeftRight, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Mic, Music, Plus, SlidersHorizontal,
-  Loader2, Smile, Sparkles, Square, Trash2, Type, Upload, WandSparkles, X,
+  Loader2, Sparkles, Square, Trash2, Type, Upload, WandSparkles, X,
   Layers, ChevronDown, ChevronRight, ChevronUp, Sparkles as SparklesIcon, Award, FolderPlus, MonitorUp, History, UserRound, Users, LayoutTemplate,
 } from 'lucide-react';
 import AssetsTab from './AssetsPanel.jsx';
@@ -19,7 +19,7 @@ import { loadLutLibrary, saveLutLibrary, addLutEntry, removeLutEntry } from '../
 import { formatTime, previewPath, proxyPrefOn, toFileUrl, uid } from '../store.js';
 import { COLLECTIONS, PACKS, COLLECTION_ITEMS, loadFavorites, saveFavorites, toggleFavorite } from '../fx/collections.js';
 import { parseSRT } from '../subtitles.js';
-import { DEFAULT_ADJUST, EFFECTS, EFFECT_GROUPS, FILTERS, STICKERS, TRANSITIONS } from '../effects.js';
+import { DEFAULT_ADJUST, EFFECTS, EFFECT_GROUPS, FILTERS, TRANSITIONS } from '../effects.js';
 import { dragProps } from '../dnd.js';
 import Slider from './Slider.jsx';
 import SearchBox from './SearchBox.jsx';
@@ -37,7 +37,6 @@ export const TABS = [
   { id: 'audio', icon: Music, name: 'Audio' },
   { id: 'assets', icon: LayoutTemplate, name: 'Assets' },
   { id: 'text', icon: Type, name: 'Text' },
-  { id: 'stickers', icon: Smile, name: 'Stickers' },
   { id: 'effects', icon: WandSparkles, name: 'Effects' },
   { id: 'transitions', icon: Blend, name: 'Transitions' },
   { id: 'captions', icon: CaptionsIcon, name: 'Captions' },
@@ -47,7 +46,7 @@ export const TABS = [
 ];
 
 // Default category of each tab (the side column remembers the last one per tab).
-const SUB_DEFAULT = { media: 'yours', audio: 'music:Vlog', text: 'All', stickers: 'animated' };
+const SUB_DEFAULT = { media: 'yours', audio: 'music:Vlog', text: 'All' };
 
 export default function LeftPanel(props) {
   const { tab, setTab } = props;
@@ -91,7 +90,6 @@ export default function LeftPanel(props) {
         {activeTab === 'audio' && <AudioTab {...p} />}
         {activeTab === 'assets' && <TabFrame><AssetsTab {...p} /></TabFrame>}
         {activeTab === 'text' && <TextTab {...p} />}
-        {activeTab === 'stickers' && <StickersTab {...p} />}
         {activeTab === 'effects' && <TabFrame><EffectsTab {...p} /></TabFrame>}
         {activeTab === 'transitions' && <TabFrame><TransitionsTab {...p} /></TabFrame>}
         {activeTab === 'captions' && <TabFrame><CaptionsTab {...p} /></TabFrame>}
@@ -345,91 +343,6 @@ function TextTab({ onAddText, sub, setSub }) {
       <div className="pad-block">
         <TemplateGrid draggable category={sub} onPick={(t) => onAddText({ ...t.patch, template: t.id })} />
       </div>
-    </TabFrame>
-  );
-}
-
-// Animated stickers (Noto Animated Emoji by Google, CC BY 4.0): searchable, by category. A sticker is downloaded
-// the first time it is added; downloaded ones play in the grid.
-const STICKER_CATS = ['All', 'Smileys and emotions', 'People', 'Animals and nature', 'Food and drink', 'Travel and places', 'Activities and events', 'Objects', 'Symbols', 'Flags'];
-function AnimatedStickers({ onAddSticker }) {
-  const [data, setData] = useState(null); // { items, downloaded: Set, dir } | { error }
-  const [q, setQ] = useState('');
-  const [cat, setCat] = useState('All');
-  const [busy, setBusy] = useState({}); // id -> true | error text
-  const load = () => window.api.stickersList().then((r) => setData(r.error ? r : { ...r, downloaded: new Set(r.downloaded) }));
-  useEffect(() => { load(); }, []);
-  if (!data) return <p className="empty-note"><Loader2 size={14} className="spin" /> Loading stickers…</p>;
-  if (data.error) {
-    return (
-      <div className="empty-note">
-        <p className="error-text">{data.error}</p>
-        <button className="btn btn-sm" onClick={() => { setData(null); load(); }}>Try again</button>
-      </div>
-    );
-  }
-  const words = q.trim().toLowerCase();
-  const shown = data.items.filter((s) => (cat === 'All' || s.category === cat)
-    && (!words || s.name.toLowerCase().includes(words) || s.tags.some((t) => t.toLowerCase().includes(words))));
-  const add = async (s) => {
-    setBusy((b) => ({ ...b, [s.id]: true }));
-    const res = await onAddSticker(s);
-    setBusy((b) => ({ ...b, [s.id]: res?.error || false }));
-    if (!res?.error) setData((d) => ({ ...d, downloaded: new Set([...d.downloaded, s.id]) }));
-  };
-  const file = (id) => toFileUrl(`${data.dir}/noto-${id}.gif`);
-  return (
-    <>
-      <div className="anim-sticker-bar">
-        <SearchBox placeholder="Search stickers (smile, heart, fire…)" value={q} onChange={setQ} ariaLabel="Search stickers" />
-      </div>
-      <div className="chips scroll-x src-chips" role="group" aria-label="Sticker category">
-        {STICKER_CATS.map((c) => (
-          <button key={c} className={`chip ${cat === c ? 'on' : ''}`} aria-pressed={cat === c} onClick={() => setCat(c)}>{c}</button>
-        ))}
-      </div>
-      <div className="sticker-grid anim">
-        {shown.map((s) => (
-          <button key={s.id} className="sticker-btn" onClick={() => add(s)} disabled={busy[s.id] === true}
-            title={typeof busy[s.id] === 'string' ? busy[s.id] : s.name} aria-label={`Animated sticker ${s.name}`}>
-            {busy[s.id] === true ? <Loader2 size={18} className="spin" />
-              : data.downloaded.has(s.id) ? <img src={file(s.id)} alt="" draggable={false} loading="lazy" /> : s.char}
-          </button>
-        ))}
-      </div>
-      {!shown.length && <p className="empty-note">No sticker matches.</p>}
-      <p className="muted small pad-x">Animated emoji: Noto Emoji by Google, CC BY 4.0. Downloaded once, then they work offline.</p>
-    </>
-  );
-}
-
-function StickersTab({ media, onAddOverlay, onAddSticker, sub, setSub }) {
-  const images = media.filter((m) => m.type === 'image');
-  return (
-    <TabFrame>
-      <Head title={sub === 'animated' ? 'Animated stickers' : sub === 'images' ? 'Your images' : 'Emoji'}
-        hint={sub === 'animated' ? 'Click to add at the playhead, on the Stickers track' : sub === 'images' ? 'Photos from Media, as overlays on the Stickers track' : 'Click or drag to the Stickers track'} />
-      <div className="chips scroll-x src-chips" role="tablist" aria-label="Sticker source">
-        {[['animated', 'Animated'], ['emoji', 'Emoji'], ['images', 'Your images']].map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={sub === id} className={`chip src-chip ${sub === id ? 'on' : ''}`} onClick={() => setSub(id)}>{label}</button>
-        ))}
-      </div>
-      {sub === 'animated' ? (
-        <AnimatedStickers onAddSticker={onAddSticker} />
-      ) : sub === 'images' ? (
-        images.length ? (
-          <div className="asset-grid">
-            {images.map((m) => <MediaCard key={m.id} m={m} onAdd={(id) => onAddOverlay({ mediaId: id, size: 300 })} />)}
-          </div>
-        ) : <p className="empty-note">Import a PNG (ideally with a transparent background) in Media to use it here.</p>
-      ) : (
-        <div className="sticker-grid">
-          {STICKERS.map((e) => (
-            <button key={e} className="sticker-btn" onClick={() => onAddOverlay({ emoji: e })} {...dragProps({ kind: 'sticker', emoji: e })}
-              aria-label={`Sticker ${e}`}>{e}</button>
-          ))}
-        </div>
-      )}
     </TabFrame>
   );
 }

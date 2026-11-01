@@ -160,7 +160,7 @@ function MotionTracking({ clip, media, set, onTrackPick, track }) {
   const low = tr ? tr.points.filter((p) => (p.c ?? 1) < 0.35).length : 0;
   return (
     <Section title="Motion tracking">
-      <p className="dim small">Follow a moving point in this clip — a face, a product, a car. Overlay, text and sticker clips can then be pinned to it and travel with it.</p>
+      <p className="dim small">Follow a moving point in this clip — a face, a product, a car. Overlay and text clips can then be pinned to it and travel with it.</p>
       {tr ? (
         <>
           <p className="dim small">Tracked {tr.points.length} points across the clip{low ? `; ${low} were uncertain and held their place (for example behind something)` : ''}.</p>
@@ -178,7 +178,7 @@ function MotionTracking({ clip, media, set, onTrackPick, track }) {
 
 // Pin to track: this clip keeps its position relative to a tracked point in another clip and follows
 // it (src/track.js evaluates the offset live, in the preview and the export alike). Rendered as a
-// Section inside ClipInspector and as a card in the text / sticker inspectors (card prop).
+// Section inside ClipInspector and as a card in the text inspector (card prop).
 export function PinToTrack({ clip, project, set, card = false }) {
   const sources = trackedClips(project).filter((s) => s.clip.id !== clip.id);
   const pinnedTo = clip.pin && clip.pin.to ? findClipAnywhere(project, clip.pin.to) : null;

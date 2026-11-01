@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Blend, Film, Info, Layers, Music, RotateCcw, Settings2, Smile, Sparkles, Type } from 'lucide-react';
+import { Blend, Film, Info, Layers, Music, RotateCcw, Settings2, Sparkles, Type } from 'lucide-react';
 import { clipLen, formatTime, parseEffectKey, videoLayout } from '../store.js';
 import { ANIMATIONS, EFFECTS, RATIOS, TRANSITIONS, sizeFor } from '../effects.js';
 import { EXPORT_PRESETS, ENCODER_PRESETS, RES_CAPS, FPS_CHOICES, AUDIO_RATES, storedExportSettings, settingsPatch, resolveExport } from '../exportQuality.js';
@@ -176,7 +176,7 @@ function ProjectDetails({ project, dispatch, duration }) {
       </label>
       <div className="proj-stats">
         <span>{project.width}×{project.height} · {formatTime(duration)}</span>
-        <span>{project.videoClips.length} clips · {project.textClips.length} texts · {project.stickerClips.length} stickers · {project.audioClips.length} audio</span>
+        <span>{project.videoClips.length} clips · {project.textClips.length} texts · {project.audioClips.length} audio</span>
       </div>
     </div>
   );
@@ -296,7 +296,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
     );
   }
   const track = selection?.track;
-  const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips' }[track];
+  const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' }[track];
   const clip = key && project[key].find((c) => c.id === selection.id);
   // With several clips selected, a filter or color change made here goes to all of them (one undo step).
   const set = (patch) => {
@@ -307,8 +307,8 @@ export default function Inspector({ project, selection, dispatch, duration, time
   const media = clip?.mediaId && project.media.find((m) => m.id === clip.mediaId);
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
 
-  const title = !clip ? 'Project settings' : clip.gap ? 'Gap' : { video: 'Video clip', overlay: 'Overlay', text: clip?.caption ? 'Caption' : 'Text', audio: 'Audio', sticker: 'Sticker' }[track];
-  const Icon = !clip ? Settings2 : { video: Film, overlay: Layers, text: Type, audio: Music, sticker: Smile }[track];
+  const title = !clip ? 'Project settings' : clip.gap ? 'Gap' : { video: 'Video clip', overlay: 'Overlay', text: clip?.caption ? 'Caption' : 'Text', audio: 'Audio' }[track];
+  const Icon = !clip ? Settings2 : { video: Film, overlay: Layers, text: Type, audio: Music }[track];
 
   return (
     <aside className="inspector" aria-label="Properties">
@@ -318,26 +318,6 @@ export default function Inspector({ project, selection, dispatch, duration, time
       {!clip && <ProjectDetails project={project} dispatch={dispatch} duration={duration} />}
 
       {clip && track === 'text' && <TextInspector key={clip.id} clip={clip} dispatch={dispatch} project={project} />}
-
-      {clip && track === 'sticker' && (
-        <div className="fields">
-          <div className="info">{clip.emoji ? <span style={{ fontSize: 32 }}>{clip.emoji}</span> : media?.name}</div>
-          <div className="insp-card">
-            <div className="insp-card-title">Transform</div>
-          {S({ label: 'Size', value: clip.size, min: 20, max: Math.max(project.width, project.height), step: 1, onChange: (size) => set({ size }) })}
-          {S({ label: 'Rotation', value: clip.rotation || 0, min: -180, max: 180, step: 1, fmt: (v) => `${v}°`, onChange: (rotation) => set({ rotation }) })}
-          {S({ label: 'Position X', value: clip.x, fmt: pct, onChange: (x) => set({ x }) })}
-          {S({ label: 'Position Y', value: clip.y, fmt: pct, onChange: (y) => set({ y }) })}
-          </div>
-          <div className="insp-card">
-            <div className="insp-card-title">Animation & timing</div>
-          <Select label="Animation" value={clip.anim || 'none'} options={ANIMATIONS.filter((a) => a.id !== 'slideup')} onChange={(anim) => set({ anim })} />
-          <Num label="Start (s)" value={clip.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
-          <Num label="Duration (s)" value={clip.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
-          </div>
-          <PinToTrack clip={clip} project={project} set={set} card />
-        </div>
-      )}
 
       {clip && track === 'video' && clip.gap && (
         <div className="fields">

@@ -24,7 +24,7 @@ export default function OnboardingTour({ onClose, goHome, openDemo, setTab, step
     {
       id: 'dock', target: '.dock.tabbar', enter: () => openDemo(),
       title: 'The library dock',
-      text: 'Every library is one click away: Media, Audio with the Music place, Text, Stickers, Effects, Transitions, Captions, your Assets — and Forge, where CraftAI generates media for you.',
+      text: 'Every library is one click away: Media, Audio with the Music place, Text, Effects, Transitions, Captions, your Assets — and Forge, where CraftAI generates media for you.',
     },
     {
       id: 'media', target: '.library', enter: () => setTab('media'),

@@ -59,8 +59,6 @@ export const TRANSITIONS = [
   ...FX_TRANSITIONS.map(({ id, name, duration }) => ({ id, name, duration, fx: true })),
 ];
 
-export const STICKERS = ['😀', '😂', '😍', '😎', '🥳', '😮', '😢', '😡', '👍', '👏', '🙏', '💪', '🔥', '❤️', '💯', '⭐', '✨', '🎉', '🎵', '📌', '✅', '❌', '⚡', '👀', '💥', '🚀', '🌙', '☀️', '🌈', '🍕', '⚽', '🏆'];
-
 export const ANIMATIONS = [
   { id: 'none', name: 'None' },
   { id: 'fade', name: 'Fade' },
@@ -91,7 +89,7 @@ export function clipCss(clip) {
   return parts.join(' ');
 }
 
-// Sticker opacity / transform for in/out animations at local time lt (seconds into the clip).
+// Opacity / transform for a text clip's in/out animation at local time lt (seconds into the clip).
 export function textAnim(clip, lt) {
   const d = Math.min(0.4, clip.duration / 2);
   const kin = Math.min(1, lt / d);

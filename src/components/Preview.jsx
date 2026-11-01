@@ -559,7 +559,6 @@ export default function Preview({
     drawFxOverlays(ctx, project, time, project.width, project.height);
     drawTextLayer(ctx, project, time, project.width, project.height);
   }, [time, project, scale, fontTick]);
-  const stickers = project.stickerClips.filter((c) => time >= c.start && time < c.start + c.duration);
 
   return (
     <section ref={playerRef} className={`player ${dropOver ? 'drop-target' : ''} ${full ? 'is-full' : ''} ${peek ? 'peeking' : ''}`} aria-label="Player"
@@ -617,19 +616,6 @@ export default function Preview({
           {[...project.videoClips, ...(project.overlayClips || [])].filter((c) => enhPath(c)).map((c) => (
             <audio key={`enh-${c.id}`} ref={(el) => { if (el) enhEls.current[c.id] = el; else delete enhEls.current[c.id]; }} preload="auto" />
           ))}
-          {stickers.map((s) => {
-            const a = textAnim(s, time - s.start);
-            const m = s.mediaId && project.media.find((x) => x.id === s.mediaId);
-            const off = s.pin ? pinOffsetAt(project, { track: 'sticker', clip: s }, time) : { dx: 0, dy: 0 };
-            return (
-              <div key={s.id} className="overlay-sticker" style={{
-                left: `${(s.x + off.dx) * 100}%`, top: `${(s.y + off.dy) * 100}%`, height: s.size * scale, opacity: a.opacity,
-                transform: `translate(-50%, -50%) rotate(${s.rotation || 0}deg) ${a.transform}`,
-              }}>
-                {m ? <img src={toFileUrl(m.path)} alt="" /> : <span style={{ fontSize: s.size * scale * 0.8 }}>{s.emoji}</span>}
-              </div>
-            );
-          })}
           <canvas ref={textCanvas} className="text-layer" />
           {!cropEdit && !colorPick && (
             <TransformBox project={editProject || project} time={time} selection={selection} onSelect={onSelect} dispatch={dispatch}

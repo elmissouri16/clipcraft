@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, AudioLines, Copy, CopyPlus, Eye, EyeOff, Film, Flag, GripVertical, Layers, Link2, Lock, LockOpen, Magnet, Mic, MoreHorizontal, MousePointer2, Music, Pencil, Plus, Scissors, Slice, Smile,
+  ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, AudioLines, Copy, CopyPlus, Eye, EyeOff, Film, Flag, GripVertical, Layers, Link2, Lock, LockOpen, Magnet, Mic, MoreHorizontal, MousePointer2, Music, Pencil, Plus, Scissors, Slice,
   Sparkles, Square, StretchHorizontal, Target, Trash2, Type, Undo2, Unlink, Volume2, VolumeX, Redo2, X, ZoomIn, ZoomOut, Captions,
 } from 'lucide-react';
 import { LAYERED, MIN_CLIP, clipLayer, effectObjects, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from '../store.js';
@@ -15,12 +15,12 @@ import ContextMenu from './ContextMenu.jsx';
 
 const HEADER = 192; // lane-head width: title + layer rows share one control grid (lock/eye/speaker/solo/more) and names get 60px
 const HEAD_TITLE_H = 22; // height of a lane head's title strip; layer control rows stack below it
-const ROW = 34; // height of one stacked row on the Effects / Stickers / Text tracks
+const ROW = 34; // height of one stacked row on the Effects / Text tracks
 const ROW_H = { overlay: 44, audio: 40 }; // taller layers for pictures and waveforms
 const rowOf = (lane) => ROW_H[lane] || ROW;
-// Overlay, text and sticker layers are shown above the main track, so their layer 0 is the bottom row; audio
+// Overlay and text layers are shown above the main track, so their layer 0 is the bottom row; audio
 // layers are below it, layer 0 on top.
-const ABOVE = { overlay: true, text: true, sticker: true };
+const ABOVE = { overlay: true, text: true };
 const rowToLayer = (lane, row, count) => (ABOVE[lane] ? count - 1 - row : row);
 
 // Overlapping clips on a free track get their own row (first row that is free at the clip's start).
@@ -40,7 +40,6 @@ function stackRows(clips) {
 }
 const LANES = [
   { id: 'effect', name: 'Effects', icon: Sparkles, noMagnet: true },
-  { id: 'sticker', name: 'Stickers', icon: Smile },
   { id: 'text', name: 'Text', icon: Type },
   { id: 'overlay', name: 'Overlay', icon: Layers },
   { id: 'video', name: 'Main', icon: Film, main: true },
@@ -210,7 +209,7 @@ export default function Timeline({
   // Room after the last clip is a fixed width in pixels, so zooming out to fit does not leave a huge empty tail.
   const width = Math.max(duration * pps + 600, 900);
   const overlays = project.overlayClips || [];
-  const empty = !project.videoClips.length && !overlays.length && !project.audioClips.length && !project.textClips.length && !project.stickerClips.length;
+  const empty = !project.videoClips.length && !overlays.length && !project.audioClips.length && !project.textClips.length;
 
   const timeFromEvent = (e) => {
     const rect = scrollRef.current.getBoundingClientRect();
@@ -314,8 +313,7 @@ export default function Timeline({
     layout.forEach((l) => edges.push(l.start, l.end));
     project.audioClips.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + freeLen('audio', c)));
     project.textClips.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + c.duration));
-    project.stickerClips.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + c.duration));
-    (project.effectClips || []).forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + c.duration));
+      (project.effectClips || []).forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + c.duration));
     overlays.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + freeLen('overlay', c)));
     return edges;
   };
@@ -338,7 +336,7 @@ export default function Timeline({
   };
 
   // Where a clip starts and how long it is, per track — the same expressions the lanes render with.
-  const TRACK_ARRAY = { text: 'textClips', sticker: 'stickerClips', effect: 'effectClips', audio: 'audioClips', overlay: 'overlayClips' };
+  const TRACK_ARRAY = { text: 'textClips', effect: 'effectClips', audio: 'audioClips', overlay: 'overlayClips' };
   const clipSpan = (p, track, id) => {
     if (track === 'video') {
       const l = videoLayout(p.videoClips).find((x) => x.clip.id === id);
@@ -539,14 +537,14 @@ export default function Timeline({
         dispatch({ type: 'trimClip', track, id: clip.id, edge: mode, delta: mode === 'left' ? d : -d });
         return;
       }
-      if (project.snapping && (track === 'text' || track === 'sticker' || track === 'effect')) {
+      if (project.snapping && (track === 'text' || track === 'effect')) {
         // Duration-based clips: pull the dragged edge onto a snap target, like moves do.
         const edge0 = mode === 'left' ? o.start + d : o.start + o.duration + d;
         const snapped = snapPoint(edge0);
         if (snapped !== edge0) { d += snapped - edge0; setSnapAt(snapped); }
       }
       let patch;
-      if (track === 'text' || track === 'sticker' || track === 'effect') {
+      if (track === 'text' || track === 'effect') {
         if (mode === 'left') {
           const start = clamp(o.start + d, 0, o.start + o.duration - MIN_CLIP);
           patch = { start, duration: o.start + o.duration - start };
@@ -668,7 +666,7 @@ export default function Timeline({
 
   // A selected clip that lives on a free track (everything but the main track), with its current values.
   const findFree = (it) => {
-    const key = { overlay: 'overlayClips', text: 'textClips', sticker: 'stickerClips', audio: 'audioClips', effect: 'effectClips' }[it.track];
+    const key = { overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', effect: 'effectClips' }[it.track];
     return key ? (project[key] || []).find((c) => c.id === it.id) : null;
   };
   const laneClass = (id) => `tl-lane ${drop && (drop.lane === id || (drop.lane === 'files' && id === 'video')) ? 'drop-target' : ''}`;
@@ -697,7 +695,6 @@ export default function Timeline({
   };
   const stacks = {
     effect: stackRows(fxObjects.map((o) => ({ id: o.key, start: o.start, duration: o.duration }))),
-    sticker: layerRows('sticker', project.stickerClips),
     text: layerRows('text', project.textClips),
     overlay: layerRows('overlay', overlays),
     audio: layerRows('audio', project.audioClips),
@@ -741,16 +738,6 @@ export default function Timeline({
             icon={<span className="clip-emoji">{e?.icon || '✨'}</span>} label={o.free ? e?.name || o.fx : `${e?.name || o.fx} · on clip`}
             onDown={o.free ? (ev, mode) => startFreeDrag(ev, 'effect', o.clip, mode)
               : (ev, mode) => { ev.stopPropagation(); if (mode === 'move') onSelect({ track: 'effect', id: o.key }); }} />
-        );
-      });
-    }
-    if (id === 'sticker') {
-      return project.stickerClips.map((c) => {
-        const m = c.mediaId && mediaById[c.mediaId];
-        return (
-          <Clip {...common} key={c.id} track="sticker" clip={c} start={c.start} length={c.duration} row={stacks.sticker.rows[c.id]} rowH={rowOf('sticker')}
-            icon={c.emoji ? <span className="clip-emoji">{c.emoji}</span> : null}
-            label={c.emoji ? 'Sticker' : m?.name ?? '?'} onDown={(e, mode) => startFreeDrag(e, 'sticker', c, mode)} />
         );
       });
     }

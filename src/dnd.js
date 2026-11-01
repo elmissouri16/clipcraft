@@ -4,7 +4,7 @@ export const DND_TYPE = 'application/x-clipcraft';
 
 let current = null;
 
-// payload: { kind: 'media', id, mediaType } | { kind: 'sticker', emoji } | { kind: 'text', patch }
+// payload: { kind: 'media', id, mediaType } | { kind: 'text', patch }
 //        | { kind: 'filter' | 'effect' | 'transition', id }
 export function dragProps(payload) {
   return {
@@ -36,7 +36,6 @@ export function readPayload(e) {
 export function laneFor(p) {
   if (!p) return null;
   if (p.kind === 'media') return p.mediaType === 'audio' ? 'audio' : 'video';
-  if (p.kind === 'sticker') return 'sticker';
   if (p.kind === 'text') return 'text';
   return 'clip'; // filter / effect / transition: dropped onto a video clip
 }

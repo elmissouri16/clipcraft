@@ -22,7 +22,6 @@ export const CLIP_LISTS = [
   ['video', 'videoClips'],
   ['overlay', 'overlayClips'],
   ['text', 'textClips'],
-  ['sticker', 'stickerClips'],
   ['audio', 'audioClips'],
 ];
 
@@ -197,31 +196,6 @@ export function motionDataPinned(project) {
   for (const c of project.overlayClips || []) {
     if (!hasMotion(c) && !hasPin(c)) continue;
     out[c.id] = motionCurvesPinned(project, { track: 'overlay', clip: c }, (c.out - c.in) / (c.speed || 1), fps);
-  }
-  return out;
-}
-
-// Stickers are placed by a static FFmpeg overlay in the export, so a pinned sticker gets its position as
-// curves in TIMELINE seconds (the overlay filter's t is the finished video's time): the sticker's own
-// x/y plus the pin offset, sampled on the frame grid. Keyed by sticker id; unpinned stickers are absent.
-export function stickerPinCurves(project) {
-  const out = {};
-  const fps = project.fps || 30;
-  for (const s of project.stickerClips || []) {
-    if (!hasPin(s)) continue;
-    const ref = { track: 'sticker', clip: s };
-    const start = s.start || 0;
-    const len = s.duration || 0;
-    const n = Math.max(1, Math.ceil(len * fps));
-    const xs = [];
-    const ys = [];
-    for (let i = 0; i <= n; i++) {
-      const t = start + Math.min(len, i / fps);
-      const off = pinOffsetAt(project, ref, t);
-      xs.push([round5(t), round5((s.x || 0) + off.dx)]);
-      ys.push([round5(t), round5((s.y || 0) + off.dy)]);
-    }
-    out[s.id] = { x: simplify(xs, TOL.x), y: simplify(ys, TOL.y) };
   }
   return out;
 }

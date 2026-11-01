@@ -2,7 +2,7 @@
 //
 // The main (video) track plays clips back to back, so a clip's timeline position is derived from order.
 // With the track magnet OFF, deleting or trimming leaves a "gap" clip ({ gap: true }) so later clips stay put;
-// with it ON the track closes up like CapCut's main track. Audio / text / sticker clips have a free `start`;
+// with it ON the track closes up like CapCut's main track. Audio / text clips have a free `start`;
 // their magnet snaps drags to neighbours and closes the gap after a delete or trim (ripple).
 // Overlay clips (picture-in-picture) are videos / photos with a free `start` drawn above the main track.
 
@@ -28,8 +28,8 @@ export function emptyProject() {
     name: 'Untitled', ratio: '16:9', resolution: 720, width: 1280, height: 720, fps: 30, background: '#000000',
     media: [], videoClips: [], overlayClips: [], textClips: [], audioClips: [], stickerClips: [],
     effectClips: [], // effects on the Effects track: { id, fx, start, duration }
-    // Text and stickers are time-anchored overlays (e.g. captions), so they start with the magnet off.
-    magnet: { video: true, overlay: false, audio: true, text: false, sticker: false },
+    // Text clips are time-anchored overlays (e.g. captions), so they start with the magnet off.
+    magnet: { video: true, overlay: false, audio: true, text: false },
     // Per-layer state (lock / hide / mute / solo), keyed "track:layer" — see layerStateOf.
     // Only layers that differ from the defaults get an entry. NOT part of undo history:
     // toggling a lock must never be an undoable document edit (industry standard).
@@ -44,7 +44,10 @@ export function normalizeProject(p) {
   const base = emptyProject();
   return {
     ...base, ...p,
-    stickerClips: p.stickerClips || [],
+    // R1 (2026-11-01): the Stickers feature was removed. Projects saved before the removal
+    // may still carry stickerClips — they are DROPPED here, so an old file loads cleanly
+    // with everything else intact and no sticker lane anywhere.
+    stickerClips: [],
     overlayClips: p.overlayClips || [],
     effectClips: p.effectClips || [],
     magnet: { ...base.magnet, ...(p.magnet || {}) },
@@ -75,7 +78,7 @@ function normalizeGaps(list) {
   return out;
 }
 
-// Length of a clip on a free track (overlay / audio / text / sticker). Audio clips carry a
+// Length of a clip on a free track (overlay / audio / text). Audio clips carry a
 // constant speed like picture clips do (a detached clip follows its video's speed).
 export const freeLen = (track, c) => (track === 'audio' ? (c.out - c.in) / (c.speed || 1) : track === 'overlay' ? (c.out - c.in) / (c.speed || 1) : c.duration);
 
@@ -83,8 +86,8 @@ export const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
 
 // Layers (like CapCut's tracks): every clip of a free track sits on a layer, 0 being the one next to the main track.
 // Clips of one layer never overlap; a clip that would is moved to the first free layer. A higher overlay, text or
-// sticker layer is drawn above a lower one. Layers stay when they become empty (project.layers counts them).
-export const LAYERED = { overlay: 'overlayClips', text: 'textClips', sticker: 'stickerClips', audio: 'audioClips' };
+// layer is drawn above a lower one. Layers stay when they become empty (project.layers counts them).
+export const LAYERED = { overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' };
 export const layerOf = (c) => c.layer ?? 0;
 
 export function layerCount(p, track) {
@@ -93,7 +96,7 @@ export function layerCount(p, track) {
 }
 
 // Display name of one layer: the user's rename (project.layerNames) or the lane's default.
-const LANE_NAMES = { video: 'Main', overlay: 'Overlay', text: 'Text', sticker: 'Stickers', audio: 'Audio', effect: 'Effects' };
+const LANE_NAMES = { video: 'Main', overlay: 'Overlay', text: 'Text', audio: 'Audio', effect: 'Effects' };
 export function layerName(p, track, layer) {
   return (p.layerNames && p.layerNames[track] && p.layerNames[track][layer]) || `${LANE_NAMES[track] || track} ${layer + 1}`;
 }
@@ -116,7 +119,7 @@ export const clipLocked = (p, track, c) => !!c && isLayerLocked(p, track, clipLa
 // delete: the first use of the item that sits on a locked layer, or null. The library UI
 // names this layer when it refuses the removal.
 export function lockedMediaUse(p, mediaId) {
-  const lists = [['video', p.videoClips], ['overlay', p.overlayClips || []], ['audio', p.audioClips], ['sticker', p.stickerClips || []]];
+  const lists = [['video', p.videoClips], ['overlay', p.overlayClips || []], ['audio', p.audioClips]];
   for (const [track, list] of lists) {
     for (const c of list) {
       if (c.mediaId === mediaId && clipLocked(p, track, c)) return { track, layer: clipLayer(track, c) };
@@ -217,7 +220,6 @@ export function projectDuration(p) {
   const ends = [v.length ? v[v.length - 1].end : 0];
   p.textClips.forEach((c) => ends.push(c.start + c.duration));
   p.audioClips.forEach((c) => ends.push(c.start + freeLen('audio', c)));
-  (p.stickerClips || []).forEach((c) => ends.push(c.start + c.duration));
   (p.overlayClips || []).forEach((c) => ends.push(c.start + freeLen('overlay', c)));
   return Math.max(0, ...ends);
 }
@@ -238,7 +240,7 @@ export function videoClipAt(p, t) {
   return hits[hits.length - 1] || null;
 }
 
-const TRACKS = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips', effect: 'effectClips' };
+const TRACKS = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', effect: 'effectClips' };
 
 export const IMAGE_DEFAULT = 4;
 
@@ -271,7 +273,6 @@ function reduceProjectInner(p, a) {
         media: p.media.filter((m) => m.id !== a.id),
         videoClips: p.videoClips.filter((c) => c.mediaId !== a.id),
         audioClips: p.audioClips.filter((c) => c.mediaId !== a.id),
-        stickerClips: p.stickerClips.filter((c) => c.mediaId !== a.id),
         overlayClips: p.overlayClips.filter((c) => c.mediaId !== a.id),
       };
     case 'addToTimeline': {
@@ -297,11 +298,6 @@ function reduceProjectInner(p, a) {
     case 'addEffectClip':
       // A free effect on the Effects track (3 s by default, like CapCut).
       return { ...p, effectClips: [...p.effectClips, { id: a.clipId, fx: a.fx, start: Math.max(0, a.at), duration: a.duration || 3 }] };
-    case 'addOverlay': {
-      // Sticker (emoji) or image overlay on the sticker track.
-      const base = { id: a.clipId, start: a.at, duration: 3, x: 0.5, y: 0.4, size: 180, rotation: 0, anim: 'pop' };
-      return { ...p, stickerClips: [...p.stickerClips, { ...base, ...a.clip, ...(a.layer != null && { layer: a.layer }) }] };
-    }
     case 'addText':
       return {
         ...p,
@@ -336,7 +332,7 @@ function reduceProjectInner(p, a) {
     }
     case 'duplicateLayer': {
       // Layer context menu (item 13): deep-copy every clip of a layer onto a NEW layer placed
-      // directly above it — no limit on how many times. Overlay/text/sticker draw higher layer
+      // directly above it — no limit on how many times. Overlay/text draw higher layer
       // indexes above lower ones, so the copy takes layer+1 and higher layers shift up; audio
       // rows run the other way (layer 0 on top), so the copy takes the original's row and the
       // original (and everything below it) shifts down one. Layer names travel with their layer.
@@ -406,7 +402,7 @@ function reduceProjectInner(p, a) {
       // Reorder (Stage C): layer `from` ends up at index `to`, the layers in between shift
       // by one. Clips, names and layer states are remapped through the one permutation, so
       // a single dispatch (one undo step) restores the exact prior order. The main track is
-      // not in LAYERED and can never be reordered; overlay/text/sticker/audio reorder among
+      // not in LAYERED and can never be reordered; overlay/text/audio reorder among
       // themselves (their layer 0 included — only 'video' is fixed).
       const key = LAYERED[a.track];
       if (!key) return p;
@@ -729,7 +725,7 @@ export function trimActions(p, { track, id, t, side, newId }) {
 }
 
 // Removes time ranges from the main track and closes the space (ripple). ranges: [{ start, end }] in timeline
-// seconds. Only the main track is cut; music, text and stickers keep their own time. Cut pieces get ids
+// seconds. Only the main track is cut; music and text keep their own time. Cut pieces get ids
 // derived from the clip id so repeated cuts never collide.
 export function cutRanges(p, ranges) {
   const cuts = [...ranges].filter((r) => r.end - r.start > 0.01).sort((a, b) => a.start - b.start);
@@ -798,7 +794,7 @@ function splitAt(p, track, id, t, newId) {
         : [{ ...x, out: cut, anim: splitAnim(x.anim, 'left') }, { ...x, id: newId, start: t, in: cut, anim: splitAnim(x.anim, 'right') }])),
     };
   }
-  if (track === 'text' || track === 'sticker' || track === 'effect') {
+  if (track === 'text' || track === 'effect') {
     const key = TRACKS[track];
     const c = p[key].find((x) => x.id === id);
     if (!c || t - c.start < MIN_CLIP || c.start + c.duration - t < MIN_CLIP) return p;
@@ -844,7 +840,7 @@ function splitLinked(p, track, id, t, newId) {
   return res;
 }
 
-const CLIP_LISTS = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips', effect: 'effectClips' };
+const CLIP_LISTS = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', effect: 'effectClips' };
 export function findClipIn(p, track, id) {
   const key = CLIP_LISTS[track];
   return key ? (p[key] || []).find((c) => c.id === id) : undefined;
@@ -864,7 +860,7 @@ function mapClip(p, track, id, fn) {
   return { ...p, [key]: p[key].map((c) => (c.id === id ? fn(c) : c)) };
 }
 
-// Splits a text/sticker clip at timeline time t. Caption words go to the half they are spoken in.
+// Splits a text clip at timeline time t. Caption words go to the half they are spoken in.
 function splitTimed(x, t, newId) {
   const cut = t - x.start;
   const a = { ...x, duration: cut };
@@ -931,12 +927,12 @@ function actionLocked(p, a) {
 // Adds whose landing layer is only known after placeLayers has run (a clip dropped on a
 // full layer is bumped to the next free one) are checked against the RESULT: if the new
 // clip ended up on a locked layer, the whole action is reverted.
-const PLACEMENT_CHECKED = { addToTimeline: 'clipId', addOverlayClip: 'clipId', addText: 'clipId', addOverlay: 'clipId', moveToOverlay: 'id', extractAudio: 'newId' };
+const PLACEMENT_CHECKED = { addToTimeline: 'clipId', addOverlayClip: 'clipId', addText: 'clipId', moveToOverlay: 'id', extractAudio: 'newId' };
 function placementBlocked(before, after, a) {
   const idKey = PLACEMENT_CHECKED[a.type];
   if (!idKey || after === before) return false;
   const id = a[idKey];
-  for (const track of ['video', 'overlay', 'text', 'audio', 'sticker']) {
+  for (const track of ['video', 'overlay', 'text', 'audio']) {
     const c = findClipIn(after, track, id);
     if (c) return clipLocked(after, track, c);
   }
@@ -1233,7 +1229,7 @@ export function pickAttributes(c) {
 // silent in both: hidden picture layers are dropped (the main track leaves gaps), a
 // silenced picture layer keeps its picture with clip.muted set, silenced audio clips go.
 export function renderable(p) {
-  const hasOff = [p.videoClips, p.overlayClips || [], p.audioClips, p.textClips, p.stickerClips, p.effectClips || []].some((l) => l.some((c) => c.disabled));
+  const hasOff = [p.videoClips, p.overlayClips || [], p.audioClips, p.textClips, p.effectClips || []].some((l) => l.some((c) => c.disabled));
   const ls = p.layerState || {};
   const hasLayerFx = Object.values(ls).some((s) => s && (s.hidden || s.muted || s.solo));
   if (!hasOff && !hasLayerFx) return p;
@@ -1248,7 +1244,6 @@ export function renderable(p) {
       .map((c) => (!layerSounds(p, 'overlay', layerOf(c)) && !c.muted ? { ...c, muted: true } : c)),
     audioClips: (p.audioClips || []).filter((c) => !c.disabled && !hidden('audio', layerOf(c)) && layerSounds(p, 'audio', layerOf(c))),
     textClips: kept('text')(p.textClips),
-    stickerClips: kept('sticker')(p.stickerClips),
     effectClips: (p.effectClips || []).filter((c) => !c.disabled && !hidden('effect', 0)),
   };
 }

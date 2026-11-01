@@ -16,7 +16,7 @@ import { useRecorder } from './useRecorder.js';
 import { useLayout } from './useLayout.js';
 import { customMaskImages, decoImages, maskImages } from './visual.js';
 import { motionData } from './anim.js';
-import { clipStartTl, motionDataPinned, stickerPinCurves, trackedClips } from './track.js';
+import { clipStartTl, motionDataPinned, trackedClips } from './track.js';
 import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from './cropMath.js';
 import { chromaOf, cropOf } from './visual.js';
 import { isLookPatch, lookAction, selectedPictures } from './look.js';
@@ -43,28 +43,8 @@ import { fxWork, renderFxPass } from './fxExport.js';
 import { TEXT_TEMPLATES } from './text/catalog.js';
 import { allFonts } from './fonts.js';
 
-// Renders an emoji to a transparent PNG (color emoji come from Chromium's font stack).
-function emojiPng(emoji, size = 256) {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d');
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = `${size * 0.8}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-  g.fillText(emoji, size / 2, size / 2 + size * 0.04);
-  return c.toDataURL('image/png');
-}
-
-const stickerPngs = (project) =>
-  Object.fromEntries(project.stickerClips.filter((s) => s.emoji).map((s) => [s.id, emojiPng(s.emoji)]));
-
-// Stickers are placed by a static FFmpeg overlay, so a pinned sticker's travel is attached to the
-// export copy of the project as position curves (the saved project keeps only the pin reference).
-const withPinCurves = (p) => {
-  const curves = stickerPinCurves(p);
-  if (!Object.keys(curves).length) return p;
-  return { ...p, stickerClips: (p.stickerClips || []).map((s) => (curves[s.id] ? { ...s, pinCurves: curves[s.id] } : s)) };
-};
+// (The emoji-to-PNG rasterizer that lived here served only the Stickers feature, removed
+// in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
 
 export default function App() {
   const [state, dispatch] = useReducer(historyReducer, { past: [], present: emptyProject(), future: [] });
@@ -209,7 +189,7 @@ export default function App() {
   const recentOf = (p, path) => recentEntryFor(p, path, toFileUrl);
   const removeRecent = (path) => storeRecents(recents.filter((r) => r.path !== path));
   const hasContent = (p) => !!(p.media.length || p.videoClips.length || p.textClips.length || p.audioClips.length
-    || (p.overlayClips || []).length || (p.stickerClips || []).length);
+    || (p.overlayClips || []).length);
   const keepRecovery = (unsaved) => {
     try {
       localStorage.setItem('clipcraft.recovery', JSON.stringify({
@@ -461,9 +441,6 @@ export default function App() {
         dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, at: info.time, index: info.index, layer: layer('audio') });
         setSelection({ track: m.type === 'audio' ? 'audio' : 'video', id: clipId });
       });
-    } else if (payload.kind === 'sticker') {
-      dispatch({ type: 'addOverlay', clipId, at: info.time, clip: { emoji: payload.emoji }, layer: layer('sticker') });
-      setSelection({ track: 'sticker', id: clipId });
     } else if (payload.kind === 'text') {
       dispatch({ type: 'addText', clipId, at: info.time, patch: payload.patch, layer: layer('text') });
       setSelection({ track: 'text', id: clipId });
@@ -497,7 +474,7 @@ export default function App() {
   const dropOnPreview = (payload) => {
     if (!payload) return;
     if (payload.kind === 'media') return dropItem(payload, { time, index: undefined });
-    if (payload.kind === 'sticker' || payload.kind === 'text') return dropItem(payload, { time });
+    if (payload.kind === 'text') return dropItem(payload, { time });
     const v = videoClipAt(project, time);
     if (v) applyToClip(v.clip.id, payload);
   };
@@ -553,17 +530,6 @@ export default function App() {
   };
 
   // A favorite from disk: reuse the media item when the project has it, then add it at the playhead.
-  // An animated sticker (downloaded by the main process) on the Stickers track at the playhead.
-  const stickerAdd = async (s) => {
-    const res = await window.api.stickersGet(s.id, s.name);
-    if (res.error) return res;
-    let m = projectRef.current.media.find((x) => x.path === res.path);
-    if (!m) [m] = addItems([res]);
-    if (!m) return { error: 'Could not add the sticker.' };
-    addOverlay({ mediaId: m.id, size: 260 });
-    return { ok: true };
-  };
-
   const addFile = async (filePath, where = 'main') => {
     let m = projectRef.current.media.find((x) => x.path === filePath);
     if (!m) {
@@ -645,7 +611,7 @@ export default function App() {
     if (!m) return;
     const lockedUse = lockedMediaUse(p, id);
     if (lockedUse) { alert(`"${m.name}" is used by a clip on the locked layer "${layerName(p, lockedUse.track, lockedUse.layer)}".\nUnlock that layer to remove it.`); return; }
-    const used = [p.videoClips, p.overlayClips || [], p.audioClips, p.stickerClips].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
+    const used = [p.videoClips, p.overlayClips || [], p.audioClips].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
     if (used && !window.confirm(`"${m.name}" is used by ${used} clip${used > 1 ? 's' : ''} on the timeline.\nRemove it and ${used > 1 ? 'those clips' : 'that clip'}? (Ctrl+Z undoes it)`)) return;
     dispatch({ type: 'removeMedia', id });
   };
@@ -708,12 +674,6 @@ export default function App() {
     const clipId = uid();
     dispatch({ type: 'addText', clipId, at: time, patch });
     setSelection({ track: 'text', id: clipId });
-  };
-
-  const addOverlay = (clip) => {
-    const clipId = uid();
-    dispatch({ type: 'addOverlay', clipId, at: time, clip });
-    setSelection({ track: 'sticker', id: clipId });
   };
 
   // Contextual timeline tools (reference pattern): Detach audio and Link / Unlink appear
@@ -797,7 +757,7 @@ export default function App() {
   // ---- Copy / cut / paste and the right-click clip menu ----
   const findClip = (p, sel) => {
     if (!sel) return null;
-    const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips' }[sel.track];
+    const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' }[sel.track];
     return key ? p[key].find((c) => c.id === sel.id) : null;
   };
   const copy = useCallback(() => {
@@ -920,7 +880,7 @@ export default function App() {
     const p = projectRef.current;
     const c = sel && findClip(p, sel);
     if (!c) return;
-    const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', sticker: 'stickerClips' }[sel.track];
+    const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' }[sel.track];
     if (!key) return;
     const layer = clipLayer(sel.track, c);
     const items = p[key].filter((x) => !x.gap && clipLayer(sel.track, x) === layer).map((x) => ({ track: sel.track, id: x.id }));
@@ -949,7 +909,7 @@ export default function App() {
       const m = c && project.media.find((x) => x.id === c.mediaId);
       if (!c || !m) return;
       name = m.name.replace(/\.[^.]+$/, '');
-      const only = { ...p, videoClips: [], overlayClips: [], audioClips: [], textClips: [], stickerClips: [] };
+      const only = { ...p, videoClips: [], overlayClips: [], audioClips: [], textClips: [] };
       p = clipSel.track === 'audio' ? { ...only, audioClips: [{ ...c, start: 0 }] } : { ...only, overlayClips: [{ ...c, start: 0, muted: false }] };
     }
     setPlaying(false);
@@ -1047,7 +1007,7 @@ export default function App() {
 
   // ---- Motion tracking: the user picks a point on the player (Preview reports it in media fractions),
   // the engine follows it through the clip (electron/track.cjs) and the path lands on the clip; overlay,
-  // text and sticker clips can then be pinned to it (clip.pin — see src/track.js). ----
+  // text clips can then be pinned to it (clip.pin — see src/track.js). ----
   const startTrackPick = (sel) => {
     const c = findClip(project, sel);
     if (!c || c.gap) return;
@@ -1293,11 +1253,11 @@ export default function App() {
     items.push(c.disabled
       ? { label: 'Activate clip', icon: Eye, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: false } }) }
       : { label: 'Deactivate clip', icon: EyeOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: true } }) });
-    // Motion tracking: track a video clip's moving point; pin overlay / text / sticker clips to a track.
+    // Motion tracking: track a video clip's moving point; pin overlay / text clips to a track.
     if (pic && m?.type === 'video') {
       items.push('sep', { label: c.track ? 'Track motion again…' : 'Track motion…', icon: Crosshair, onClick: () => startTrackPick(sel) });
     }
-    if (sel.track === 'overlay' || sel.track === 'text' || sel.track === 'sticker') {
+    if (sel.track === 'overlay' || sel.track === 'text') {
       const sources = trackedClips(project).filter((s) => s.clip.id !== c.id);
       const submenu = [];
       if (c.pin) submenu.push({ label: 'Unpin', icon: PinOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { pin: null } }) });
@@ -1644,7 +1604,7 @@ export default function App() {
     }
     await loadProjectLuts(project);
     // Animated effects and transitions are drawn with the preview's WebGL shaders, frame by frame.
-    let toExport = { ...withPinCurves(project), export: eff, maskImages: maskImages(project), decoImages: decoImages(project), customMaskImages: customMaskImages(project), motion: motionDataPinned(project) };
+    let toExport = { ...project, export: eff, maskImages: maskImages(project), decoImages: decoImages(project), customMaskImages: customMaskImages(project), motion: motionDataPinned(project) };
     const fxShare = fxWork(project) ? 0.4 * (1 - textShare) : 0;
     if (fxShare) {
       setExporting((e) => e && { ...e, stage: 'Rendering effects' });
@@ -1664,7 +1624,7 @@ export default function App() {
     setExporting((e) => e && { ...e, stage: 'Encoding video' });
     const base = textShare + fxShare;
     const off = window.api.onExportProgress((p) => setExporting((e) => e && { ...e, progress: base + p * (1 - base) }));
-    const res = await window.api.exportRun(toExport, target, textFrames, stickerPngs(project));
+    const res = await window.api.exportRun(toExport, target, textFrames);
     off();
     if (res.canceled) return setExporting(null);
     if (!res.ok) return setExporting({ error: res.error });
@@ -1705,7 +1665,7 @@ export default function App() {
       dispatch,
       exportData: () => {
         const p = renderable(projectRef.current);
-        return { project: { ...withPinCurves(p), maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionDataPinned(p) }, pngs: stickerPngs(p) };
+        return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionDataPinned(p) } };
       },
       // Test hook: exports immediately (no summary gate), resolving settings the same way.
       exportNow: () => { const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p)); },
@@ -1804,7 +1764,7 @@ export default function App() {
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch}
           onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText} onOpenSettings={() => setSettingsOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
-          recorder={recorder} onStartRecord={() => recorder.start(time)} onAddText={addText} onAddOverlay={addOverlay} onAddSticker={stickerAdd}
+          recorder={recorder} onStartRecord={() => recorder.start(time)} onAddText={addText}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
           target={target} updateTarget={updateTarget} selectedCount={selectedPictures(project, selection).length}
           onApplyLookToAll={(clip) => dispatch({ type: 'updateMany', updates: [
