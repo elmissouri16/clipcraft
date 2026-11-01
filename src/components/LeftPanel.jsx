@@ -89,7 +89,7 @@ export default function LeftPanel(props) {
       <div className="library">
         {activeTab === 'media' && <MediaTab {...p} />}
         {activeTab === 'audio' && <AudioTab {...p} />}
-        {activeTab === 'assets' && <AssetsTab {...p} />}
+        {activeTab === 'assets' && <TabFrame><AssetsTab {...p} /></TabFrame>}
         {activeTab === 'text' && <TextTab {...p} />}
         {activeTab === 'stickers' && <StickersTab {...p} />}
         {activeTab === 'effects' && <TabFrame><EffectsTab {...p} /></TabFrame>}
