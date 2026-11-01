@@ -130,6 +130,9 @@
       "description": "ClipCraft - free desktop video editor by Hamza Abika",
       "icon": "build/icon.png",
       "syncDesktopName": true
+    },
+    "deb": {
+      "afterInstall": "build/after-install.sh"
     }
   },
   "desktopName": "ClipCraft"
