@@ -7,7 +7,7 @@ import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -17,6 +17,8 @@ import { useLayout } from './useLayout.js';
 import { customMaskImages, decoImages, maskImages } from './visual.js';
 import { motionData } from './anim.js';
 import { clipStartTl, motionDataPinned, stickerPinCurves, trackedClips } from './track.js';
+import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from './cropMath.js';
+import { cropOf } from './visual.js';
 import { isLookPatch, lookAction, selectedPictures } from './look.js';
 import { loadProjectLuts, onLutLoaded } from './fx/lut.js';
 import LeftPanel from './components/LeftPanel.jsx';
@@ -97,6 +99,7 @@ export default function App() {
   const [exporting, setExporting] = useState(null);
   const [renderJob, setRenderJob] = useState(null); // derivative renders: { kind: 'reverse' | 'detach', label, fraction } | { error }
   const [trackPick, setTrackPick] = useState(null); // motion tracking pick mode: { track, id, point: {x,y} | null, box: {w,h} }
+  const [cropEdit, setCropEdit] = useState(null); // visual crop mode: { track, id, snapshot: { crop, cropAspect } }
   const [tab, setTab] = useState('media');
   const { layout: panes, startDrag: startResize, reset: resetSize, nudge: nudgeSize } = useLayout();
   const [tool, setTool] = useState('select'); // timeline tool: 'select' | 'razor'
@@ -1053,6 +1056,55 @@ export default function App() {
     seek(clipStartTl(project, sel.track, c) + 0.01);
     setTrackPick({ track: sel.track, id: sel.id, point: null, box: { w: 0.055, h: 0.095 } });
   };
+  // ---- Visual crop: an on-player mode (like track-pick). The whole mode is ONE undo step:
+  // a gesture opens on entry, drags in the player dispatch transient updates inside it,
+  // Done folds it into a single history entry, Cancel puts the entry snapshot back first.
+  // Playback and scrubbing stay live while the mode is open. ----
+  const startCropEdit = (sel) => {
+    const c = findClip(project, sel);
+    if (!c || c.gap) return;
+    select(sel);
+    const start = clipStartTl(project, sel.track, c);
+    const len = ((c.out ?? 0) - (c.in ?? 0)) / (c.speed || 1);
+    if (time < start - 1e-6 || time > start + len + 1e-6) seek(start + 0.01);
+    dispatch({ type: 'beginGesture' });
+    setCropEdit({ track: sel.track, id: sel.id, snapshot: { crop: cropOf(c), cropAspect: c.cropAspect || 'free' } });
+  };
+  const doneCropEdit = () => {
+    dispatch({ type: 'endGesture' });
+    setCropEdit(null);
+  };
+  const cancelCropEdit = () => {
+    if (cropEdit) {
+      const c = findClip(projectRef.current, cropEdit);
+      if (c) {
+        const now = cropOf(c);
+        const snap = cropEdit.snapshot;
+        if (JSON.stringify(now) !== JSON.stringify(snap.crop) || (c.cropAspect || 'free') !== snap.cropAspect) {
+          dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { crop: snap.crop, cropAspect: snap.cropAspect } });
+        }
+      }
+    }
+    dispatch({ type: 'endGesture' });
+    setCropEdit(null);
+  };
+  const applyCropAspect = (id) => {
+    if (!cropEdit) return;
+    const c = findClip(projectRef.current, cropEdit);
+    const m = c && projectRef.current.media.find((x) => x.id === c.mediaId);
+    if (!c || !m) return;
+    if (id === 'free') { dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { cropAspect: 'free' } }); return; }
+    const R = aspectRatioOf(id, m.width, m.height);
+    if (!R) return;
+    dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { crop: cropForAspect(cropOf(c), m.width, m.height, R), cropAspect: id } });
+  };
+  useEffect(() => {
+    if (!cropEdit) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); cancelCropEdit(); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cropEdit]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const runTrack = async () => {
     const pick = trackPick;
     if (!pick || !pick.point) return;
@@ -1739,10 +1791,11 @@ export default function App() {
           onAddPeek={(m) => { setPeekId(null); setAssetPeek(null); if (m && m.assetPath) addFile(m.assetPath, m.assetWhere || 'main'); else if (m) addToTimeline(m.id); }}
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
           clockRef={clockRef}
-          trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))} />
+          trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))}
+          cropEdit={cropEdit} />
         <Inspector project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} onSeek={seek}
           onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
-          onTrackPick={(sel) => startTrackPick(sel)} />
+          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} />
         <Splitter which="left" style={{ left: panes.left }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the left panel" />
         <Splitter which="right" style={{ right: panes.right }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the properties panel" />
       </div>
@@ -1827,6 +1880,24 @@ export default function App() {
           <button className="btn btn-sm btn-ghost" onClick={() => setTrackPick(null)}>Cancel</button>
         </div>
       )}
+      {cropEdit && (() => {
+        const c = findClip(project, cropEdit);
+        const cur = c?.cropAspect || 'free';
+        return (
+          <div className="render-job crop-bar" role="status">
+            <Crop size={15} />
+            <span>Cropping{c ? ` “${project.media.find((m) => m.id === c.mediaId)?.name || 'clip'}”` : ''} — drag the frame on the player; what is dimmed gets cut. Playback still runs, so scrub to check other frames.</span>
+            <span className="chips" role="group" aria-label="Crop aspect">
+              {CROP_ASPECTS.map((a) => (
+                <button key={a.id} type="button" className={`chip ${cur === a.id ? 'on' : ''}`} aria-pressed={cur === a.id}
+                  onClick={() => applyCropAspect(a.id)}>{a.label}</button>
+              ))}
+            </span>
+            <button className="btn btn-sm" onClick={doneCropEdit}>Done</button>
+            <button className="btn btn-sm btn-ghost" onClick={cancelCropEdit}>Cancel</button>
+          </div>
+        );
+      })()}
       {exporting && <ExportDialog state={exporting} onCancel={cancelExport} onStart={confirmExport}
         onClose={() => setExporting(null)} onShow={() => window.api.showInFolder(exporting.file)}
         onOpen={() => window.api.openFile(exporting.file)} onPickTarget={pickExportTarget}

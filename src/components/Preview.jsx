@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { FIT_VIEW, QUALITY_LABELS, QUALITY_MAX_SIDE, applyZoomChoice, clipLen, formatTime, freeLen, getPlaybackQuality, levelCopyState, previewPath, toFileUrl, videoLayout, zoomByFactor, zoomTransform } from '../store.js';
 import { hasMotion } from '../anim.js';
 import { fitFactors, mediaToStage, pinOffsetAt, stageToMedia, stateAtPinned } from '../track.js';
+import { aspectRatioOf, dragCrop } from '../cropMath.js';
 import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, LoaderCircle, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
 import { clipCss, textAnim } from '../effects.js';
 import { drawTextLayer } from '../text/render.js';
@@ -180,6 +181,7 @@ export default function Preview({
   project, editProject, selection, onSelect, dispatch, time, seekVer, playing, duration, onTime, onEnd, onTogglePlay, onSeek, onDropItem,
   peek, onClosePeek, onAddPeek, quality = 'full', onQualityChange, clockRef,
   trackPick, onTrackPoint,
+  cropEdit,
 }) {
   const [dropOver, setDropOver] = useState(false);
   const slots = [useRef(null), useRef(null)];
@@ -349,7 +351,9 @@ export default function Preview({
       // Chroma key / matte: the media element stays (it plays the sound and decodes), the keyed canvas is what shows.
       const src = m.type === 'image' ? img : v;
       const pfx = pixelPasses(project, c, item.start, t - item.start);
-      const crop = hasCrop(c) ? cropOf(c) : null;
+      // While this clip is being visually cropped, the player shows its FULL source so the
+      // crop frame can be dragged over the whole picture; the crop applies again on Done.
+      const crop = cropEdit && c.id === cropEdit.id ? null : (hasCrop(c) ? cropOf(c) : null);
       const custom = hasCustomMask(c) ? customMaskCanvas(c, m.width || project.width, m.height || project.height) : null;
       const processed = chroma.on || pfx.length > 0 || matte || !!crop || !!custom;
       cv.style.display = processed ? 'block' : 'none';
@@ -437,7 +441,7 @@ export default function Preview({
       if (matte) syncMatte(el.mv, toFileUrl(m.matte), el.v, isPlaying, c.speed || 1);
       else if (el.mv && !el.mv.paused) el.mv.pause();
       const pfx = pixelPasses(project, c, c.start, lt);
-      const crop = hasCrop(c) ? cropOf(c) : null;
+      const crop = cropEdit && c.id === cropEdit.id ? null : (hasCrop(c) ? cropOf(c) : null);
       const custom = hasCustomMask(c) ? customMaskCanvas(c, m.width || project.width, m.height || project.height) : null;
       const processed = chroma.on || pfx.length > 0 || !!matte || !!crop || !!custom;
       el.cv.style.display = processed ? 'block' : 'none';
@@ -626,8 +630,17 @@ export default function Preview({
             );
           })}
           <canvas ref={textCanvas} className="text-layer" />
-          <TransformBox project={editProject || project} time={time} selection={selection} onSelect={onSelect} dispatch={dispatch}
-            sw={project.width * scale} sh={project.height * scale} />
+          {!cropEdit && (
+            <TransformBox project={editProject || project} time={time} selection={selection} onSelect={onSelect} dispatch={dispatch}
+              sw={project.width * scale} sh={project.height * scale} />
+          )}
+          {cropEdit && (() => {
+            const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === cropEdit.id);
+            const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
+            if (!srcClip || !srcMedia) return null;
+            const track = (project.overlayClips || []).some((c) => c.id === srcClip.id) ? 'overlay' : 'video';
+            return <CropEditOverlay project={project} clip={srcClip} media={srcMedia} track={track} dispatch={dispatch} />;
+          })()}
           {trackPick && (() => {
             const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === trackPick.id);
             const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
@@ -739,5 +752,98 @@ export default function Preview({
         </span>
       </div>
     </section>
+  );
+}
+
+// ---- Visual crop mode overlay (CROP-2) -------------------------------------------------
+// The clip renders UNCROPPED while this is up (the redraw paths above skip its crop), so
+// the frame below sits over the whole source picture: the violet frame bounds what stays,
+// everything outside it is dimmed, and a rule-of-thirds grid inside helps the composition.
+// The overlay copies the layer's own transform, and inside it the FITTED picture box (the
+// contain-fit rectangle every layer element uses), so the fractions line up with what the
+// preview and the export actually show. Dragging dispatches the store's crop field live,
+// inside the gesture App opened on entry — one undo step for the whole mode.
+// Known simplifications (same class as track-pick's): a rotated or transform-animated clip
+// is framed by its base transform, and pointer fractions come from the fitted box's screen
+// rect, so a heavy rotation makes a drag approximate.
+const CROP_HANDLES = ['tl', 't', 'tr', 'r', 'br', 'b', 'bl', 'l'];
+const CROP_CURSORS = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize', t: 'ns-resize', b: 'ns-resize', l: 'ew-resize', r: 'ew-resize' };
+
+function CropEditOverlay({ project, clip, media, track, dispatch }) {
+  const srcRef = useRef(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = srcRef.current;
+    if (!el) return undefined;
+    const measure = () => { const r = el.getBoundingClientRect(); setBox({ w: r.width, h: r.height }); };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const crop = cropOf(clip);
+  const { fx, fy } = fitFactors(project, media);
+  const aspect = aspectRatioOf(clip.cropAspect, media.width, media.height);
+  const midX = (crop.l + 1 - crop.r) / 2;
+  const midY = (crop.t + 1 - crop.b) / 2;
+  // A handle centred exactly on the picture's right/bottom edge lands on the stage's clip
+  // boundary and stops receiving the pointer (found in QA: those handles were dead at a
+  // zero crop). Keep every handle's centre a few px inside the picture; the drag math uses
+  // the pointer's absolute position, so the grip point and the crop edge stay consistent.
+  const insetX = box.w ? Math.min(0.08, 9 / box.w) : 0.02;
+  const insetY = box.h ? Math.min(0.08, 9 / box.h) : 0.02;
+  const gx = (v) => Math.min(1 - insetX, Math.max(insetX, v));
+  const gy = (v) => Math.min(1 - insetY, Math.max(insetY, v));
+  const pos = {
+    tl: [gx(crop.l), gy(crop.t)], t: [gx(midX), gy(crop.t)], tr: [gx(1 - crop.r), gy(crop.t)], r: [gx(1 - crop.r), gy(midY)],
+    br: [gx(1 - crop.r), gy(1 - crop.b)], b: [gx(midX), gy(1 - crop.b)], bl: [gx(crop.l), gy(1 - crop.b)], l: [gx(crop.l), gy(midY)],
+  };
+  const startDrag = (e, handle) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = srcRef.current;
+    if (!el) return;
+    const start = cropOf(clip);
+    let last = start;
+    const move = (ev) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const pt = { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height };
+      const next = dragCrop(start, handle, pt, aspect, media.width, media.height);
+      if (JSON.stringify(next) === JSON.stringify(last)) return;
+      last = next;
+      dispatch({ type: 'update', track, id: clip.id, patch: { crop: next } });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="crop-edit" aria-label="Crop frame">
+      <div className="crop-edit-xform" style={{ transform: layerStyle(clip, project.width, project.height).transform }}>
+        <div className="crop-edit-src" ref={srcRef}
+          style={{ left: `${((1 - fx) / 2) * 100}%`, top: `${((1 - fy) / 2) * 100}%`, width: `${fx * 100}%`, height: `${fy * 100}%` }}>
+          <div className="crop-dim" style={{ left: 0, right: 0, top: 0, height: `${crop.t * 100}%` }} />
+          <div className="crop-dim" style={{ left: 0, right: 0, bottom: 0, height: `${crop.b * 100}%` }} />
+          <div className="crop-dim" style={{ left: 0, width: `${crop.l * 100}%`, top: `${crop.t * 100}%`, height: `${(1 - crop.t - crop.b) * 100}%` }} />
+          <div className="crop-dim" style={{ right: 0, width: `${crop.r * 100}%`, top: `${crop.t * 100}%`, height: `${(1 - crop.t - crop.b) * 100}%` }} />
+          <div className="crop-keep"
+            style={{ left: `${crop.l * 100}%`, top: `${crop.t * 100}%`, width: `${(1 - crop.l - crop.r) * 100}%`, height: `${(1 - crop.t - crop.b) * 100}%` }}>
+            <i className="crop-grid-v" style={{ left: '33.333%' }} />
+            <i className="crop-grid-v" style={{ left: '66.666%' }} />
+            <i className="crop-grid-h" style={{ top: '33.333%' }} />
+            <i className="crop-grid-h" style={{ top: '66.666%' }} />
+          </div>
+          {CROP_HANDLES.map((h) => (
+            <span key={h} className="crop-handle" role="slider" aria-label={`Crop edge ${h}`} title="Drag to crop"
+              style={{ left: `${pos[h][0] * 100}%`, top: `${pos[h][1] * 100}%`, cursor: CROP_CURSORS[h] }}
+              onPointerDown={(e) => startDrag(e, h)} />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

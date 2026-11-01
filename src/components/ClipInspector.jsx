@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Pipette, RotateCcw,
+  Crop, Pipette, RotateCcw,
 } from 'lucide-react';
 import { clipLen, formatTime, uid } from '../store.js';
 import { FILTERS, TRANSITIONS } from '../effects.js';
@@ -8,6 +8,7 @@ import { directionGroupFor } from '../fx/collections.js';
 import {
   BLEND_MODES, DEFAULT_CHROMA, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_TRANSFORM, MASK_SHAPES, chromaOf, cropOf, maskOf, scaleXY, transformOf,
 } from '../visual.js';
+import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from '../cropMath.js';
 import { hasCustomMask } from '../customMask.js';
 import CustomMaskEditor from './CustomMaskEditor.jsx';
 import Slider from './Slider.jsx';
@@ -206,7 +207,7 @@ export function PinToTrack({ clip, project, set, card = false }) {
 
 // Properties of a picture clip (main track or overlay), laid out like CapCut's clip panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
-export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null }) {
+export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null }) {
   const [tab, setTab] = useState('video');
   const [sub, setSub] = useState('basic');
   const [maskEdit, setMaskEdit] = useState(false);
@@ -400,15 +401,34 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                   </label>
                 ))}
               </Section>
-              <Section title="Crop" onReset={() => set({ crop: { ...DEFAULT_CROP } })}>
+              <Section title="Crop" onReset={() => set({ crop: { ...DEFAULT_CROP }, cropAspect: 'free' })}>
                 <p className="dim small">Cut away the edges of the picture, in percent of the source. The part that remains fills the clip's place, in the preview and the export.</p>
+                <div className="chips pad-x" role="group" aria-label="Crop aspect">
+                  {CROP_ASPECTS.map((a) => {
+                    const cur = (clip.cropAspect || 'free') === a.id;
+                    return (
+                      <button key={a.id} type="button" className={`chip ${cur ? 'on' : ''}`} aria-pressed={cur}
+                        onClick={() => {
+                          if (a.id === 'free') { set({ cropAspect: 'free' }); return; }
+                          const R = aspectRatioOf(a.id, media?.width, media?.height);
+                          if (!R) return;
+                          set({ crop: cropForAspect(cropNow, media.width, media.height, R), cropAspect: a.id });
+                        }}>{a.label}</button>
+                    );
+                  })}
+                </div>
                 {[['l', 'Left'], ['t', 'Top'], ['r', 'Right'], ['b', 'Bottom']].map(([k, name]) => (
                   <div className="numrow" key={k}>
                     <span className="numrow-label">{name}</span>
                     <NumBox label="" value={Number((cropNow[k] * 100).toFixed(1))} step={1} precision={1} min={0} max={90} suffix="%"
-                      onChange={(v) => set({ crop: { ...cropNow, [k]: Math.min(90, Math.max(0, v)) / 100 } })} />
+                      onChange={(v) => set({ crop: { ...cropNow, [k]: Math.min(90, Math.max(0, v)) / 100 }, cropAspect: 'free' })} />
                   </div>
                 ))}
+                <button type="button" className="btn btn-sm" disabled={!onCropEdit || !media}
+                  onClick={() => onCropEdit && onCropEdit({ track, id: clip.id })}>
+                  <Crop size={13} /> Crop on the player
+                </button>
+                <p className="dim small">Drag the frame on the player itself — you can keep playing or scrubbing while you crop.</p>
               </Section>
             </>
           )}
