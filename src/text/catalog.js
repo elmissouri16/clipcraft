@@ -156,7 +156,7 @@ export const HIGHLIGHTS = [
   { id: 'color', name: 'Color' },
   { id: 'box', name: 'Box' },
   { id: 'scale', name: 'Scale Up' },
-  { id: 'karaoke', name: 'Karaoke' },
+  { id: 'karaoke', name: 'Word Sweep' },
   { id: 'marker', name: 'Marker' },
   { id: 'reveal', name: 'Word Reveal' },
   { id: 'single', name: 'One Word' },
@@ -172,10 +172,10 @@ const anim = (inId, outId = 'fade', loop = 'none') => ({ animIn: { id: inId, dur
 // Templates set a complete look. `caption: true` ones are tuned for auto captions.
 export const TEXT_TEMPLATES = [
   // Captions
-  { id: 'cap-classic', name: 'Classic', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, color: '#ffffff', stroke: stroke(6), shadow: shadow(), bg: NO_BG, effect: 'none', bubble: 'none', highlight: { mode: 'none' }, ...anim('fade') } },
-  { id: 'cap-hormozi', name: 'Hormozi', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, uppercase: true, color: '#ffffff', stroke: stroke(9), shadow: shadow('#000000', 0, 6, 1), bg: NO_BG, effect: 'none', bubble: 'none', highlight: { mode: 'scale', color: '#ffd400' }, ...anim('pop', 'none') } },
-  { id: 'cap-beast', name: 'Beast', cat: 'Captions', caption: true, patch: { font: 'luckiest', bold: false, uppercase: true, color: '#ffffff', stroke: stroke(10), shadow: shadow('#000000', 0, 8, 1), effect: 'none', bubble: 'none', bg: NO_BG, highlight: { mode: 'color', color: '#22e55b' }, ...anim('pop', 'none', 'none') } },
-  { id: 'cap-karaoke', name: 'Karaoke', cat: 'Captions', caption: true, patch: { font: 'poppins', bold: true, color: '#ffffff', stroke: stroke(5), shadow: shadow(), effect: 'none', bubble: 'none', bg: NO_BG, highlight: { mode: 'karaoke', color: '#ff3df2' }, ...anim('fade') } },
+  { id: 'cap-classic', name: 'Essential', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, color: '#ffffff', stroke: stroke(5), shadow: shadow('#000000', 12, 3, 0.8), bg: NO_BG, effect: 'soft', bubble: 'none', highlight: { mode: 'none' }, ...anim('fade') } },
+  { id: 'cap-hormozi', name: 'Impact Pop', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, uppercase: true, color: '#ffffff', stroke: stroke(8), shadow: shadow('#000000', 0, 6, 1), bg: NO_BG, effect: 'none', bubble: 'none', highlight: { mode: 'scale', color: '#a78bfa' }, ...anim('pop', 'none') } },
+  { id: 'cap-beast', name: 'Bold Stomp', cat: 'Captions', caption: true, patch: { font: 'luckiest', bold: false, uppercase: true, color: '#ffffff', stroke: stroke(10), shadow: shadow('#000000', 0, 8, 1), effect: 'none', bubble: 'none', bg: NO_BG, highlight: { mode: 'color', color: '#ffcf3f' }, ...anim('pop', 'none', 'none') } },
+  { id: 'cap-karaoke', name: 'Word Sweep', cat: 'Captions', caption: true, patch: { font: 'poppins', bold: true, color: '#ffffff', stroke: stroke(5), shadow: shadow(), effect: 'none', bubble: 'none', bg: NO_BG, highlight: { mode: 'karaoke', color: '#825cfb' }, ...anim('fade') } },
   { id: 'cap-boxed', name: 'Word Box', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, uppercase: true, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 8, 2, 0.6), effect: 'none', bubble: 'none', bg: NO_BG, highlight: { mode: 'box', color: '#ffffff', bg: '#7c3aed' }, ...anim('pop', 'fade') } },
   { id: 'cap-marker', name: 'Highlighter', cat: 'Captions', caption: true, patch: { font: 'poppins', bold: true, color: '#111111', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'rounded', bubbleColor: '#ffffff', bg: NO_BG, highlight: { mode: 'marker', color: '#111111', bg: '#ffe14d' }, ...anim('pop', 'fade') } },
   { id: 'cap-oneword', name: 'One Word', cat: 'Captions', caption: true, patch: { font: 'anton', bold: false, uppercase: true, size: 110, color: '#ffffff', stroke: stroke(8), shadow: shadow('#000000', 0, 7, 1), effect: 'none', bubble: 'none', bg: NO_BG, highlight: { mode: 'single', color: '#ffd400' }, y: 0.62, ...anim('pop', 'none') } },
@@ -209,32 +209,45 @@ export const TEXT_TEMPLATES = [
   { id: 'label-frame', name: 'Frame', cat: 'Labels', patch: { font: 'bebas', size: 70, letterSpacing: 6, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'frame', bubbleColor: '#ffffff', bg: NO_BG, y: 0.5, ...anim('zoomIn', 'fade') } },
   { id: 'label-brackets', name: 'Brackets', cat: 'Labels', patch: { font: 'poppins', bold: true, size: 60, color: '#ffffff', stroke: stroke(0), shadow: shadow(), effect: 'none', bubble: 'brackets', bubbleColor: '#ffd400', bg: NO_BG, y: 0.5, ...anim('stretch', 'fade') } },
   { id: 'label-comic', name: 'Comic', cat: 'Labels', patch: { font: 'bangers', uppercase: true, size: 80, color: '#ffe600', stroke: stroke(6, '#111111'), shadow: shadow('#111111', 0, 6, 1), effect: 'none', bubble: 'none', bg: NO_BG, y: 0.4, ...anim('pop', 'pop', 'shake') } },
-  // Material-inspired set: clean geometric type, pill chips, accent bars, duotone accents.
-  { id: 'mat-duo-title', name: 'Duo Title', cat: 'Titles', patch: { font: 'montserrat', bold: true, uppercase: true, size: 104, color: '#ffffff', color2: '#825cfb', stroke: stroke(0), shadow: shadow('#000000', 16, 5, 0.65), effect: 'gradient', bubble: 'none', bg: NO_BG, y: 0.5, ...anim('slideUpSmooth', 'fade') } },
-  { id: 'mat-pill-label', name: 'Pill Label', cat: 'Labels', patch: { font: 'poppins', bold: true, size: 52, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'pill', bubbleColor: '#6d28e0', bg: NO_BG, y: 0.24, ...anim('pop', 'fade') } },
-  { id: 'mat-accent-bar', name: 'Accent Bar', cat: 'Titles', patch: { font: 'montserrat', bold: true, size: 84, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 12, 4, 0.6), effect: 'none', bubble: 'underline', bubbleColor: '#825cfb', bg: NO_BG, y: 0.5, ...anim('slideRight', 'fade') } },
-  { id: 'mat-caption-chip', name: 'Caption Chip', cat: 'Captions', caption: true, patch: { font: 'poppins', bold: true, color: '#16161f', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'rounded', bubbleColor: '#ffffff', bg: NO_BG, highlight: { mode: 'color', color: '#6d28e0' }, ...anim('pop', 'fade') } },
-  { id: 'mat-quote', name: 'Quote Sans', cat: 'Titles', patch: { font: 'poppins', bold: false, size: 72, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 14, 3, 0.7), effect: 'soft', bubble: 'none', bg: NO_BG, letterSpacing: 1, y: 0.5, ...anim('fade', 'fade') } },
-  { id: 'mat-lower-third', name: 'Lower Third', cat: 'Labels', patch: { font: 'montserrat', bold: true, size: 60, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'none', bg: bg('#6d28e0', 0.92, 10, 'line'), x: 0.3, y: 0.8, ...anim('slideRight', 'fade') } },
-  { id: 'mat-big-number', name: 'Big Number', cat: 'Titles', patch: { font: 'anton', uppercase: true, size: 150, color: '#a78bfa', stroke: stroke(0), shadow: shadow('#000000', 18, 6, 0.6), effect: 'none', bubble: 'none', bg: NO_BG, y: 0.5, ...anim('zoomIn', 'fade') } },
-  { id: 'mat-minimal', name: 'Minimal Sans', cat: 'Titles', patch: { font: 'poppins', bold: false, uppercase: true, size: 66, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 10, 2, 0.55), effect: 'none', bubble: 'none', bg: NO_BG, letterSpacing: 6, y: 0.5, ...anim('blurIn', 'fade') } },
-  { id: 'mat-duo-caption', name: 'Duo Caption', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, uppercase: true, color: '#ffffff', color2: '#825cfb', stroke: stroke(4), shadow: shadow(), effect: 'gradient', bubble: 'none', bg: NO_BG, highlight: { mode: 'scale', color: '#ffd54a' }, ...anim('pop', 'fade') } },
-  { id: 'mat-chip-dark', name: 'Chip Dark', cat: 'Labels', patch: { font: 'bebas', size: 58, letterSpacing: 2, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'pill', bubbleColor: '#16161f', bg: NO_BG, y: 0.3, ...anim('pop', 'pop') } },
-  { id: 'mat-headline-bar', name: 'Headline Bar', cat: 'Titles', patch: { font: 'oswald', bold: true, uppercase: true, size: 86, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'none', bg: bg('#111118', 0.88, 8, 'block'), y: 0.5, ...anim('slideUpSmooth', 'fade') } },
-  { id: 'mat-caption-clean', name: 'Caption Clean', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'none', bg: bg('#000000', 0.55, 12, 'line'), highlight: { mode: 'none' }, ...anim('fade', 'fade') } },
+  // The Craft set: ClipCraft's own clean geometric system — duotone violet gradients,
+  // pill chips, accent rules and quiet sans type. (Ids keep their original mat- prefix:
+  // saved projects and bundled template packages reference them.)
+  { id: 'mat-duo-title', name: 'Violet Duo', cat: 'Titles', patch: { font: 'montserrat', bold: true, uppercase: true, size: 104, color: '#ffffff', color2: '#825cfb', stroke: stroke(0), shadow: shadow('#000000', 16, 5, 0.65), effect: 'gradient', bubble: 'none', bg: NO_BG, y: 0.5, ...anim('slideUpSmooth', 'fade') } },
+  { id: 'mat-pill-label', name: 'Craft Pill', cat: 'Labels', patch: { font: 'poppins', bold: true, size: 52, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'pill', bubbleColor: '#6d28e0', bg: NO_BG, y: 0.24, ...anim('pop', 'fade') } },
+  { id: 'mat-accent-bar', name: 'Accent Rule', cat: 'Titles', patch: { font: 'montserrat', bold: true, size: 84, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 12, 4, 0.6), effect: 'none', bubble: 'underline', bubbleColor: '#825cfb', bg: NO_BG, y: 0.5, ...anim('slideRight', 'fade') } },
+  { id: 'mat-caption-chip', name: 'Craft Chip', cat: 'Captions', caption: true, patch: { font: 'poppins', bold: true, color: '#16161f', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'rounded', bubbleColor: '#ffffff', bg: NO_BG, highlight: { mode: 'color', color: '#6d28e0' }, ...anim('pop', 'fade') } },
+  { id: 'mat-quote', name: 'Soft Quote', cat: 'Titles', patch: { font: 'poppins', bold: false, size: 72, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 14, 3, 0.7), effect: 'soft', bubble: 'none', bg: NO_BG, letterSpacing: 1, y: 0.5, ...anim('fade', 'fade') } },
+  { id: 'mat-lower-third', name: 'Violet Third', cat: 'Labels', patch: { font: 'montserrat', bold: true, size: 60, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'none', bg: bg('#6d28e0', 0.92, 10, 'line'), x: 0.3, y: 0.8, ...anim('slideRight', 'fade') } },
+  { id: 'mat-big-number', name: 'Big Violet', cat: 'Titles', patch: { font: 'anton', uppercase: true, size: 150, color: '#a78bfa', stroke: stroke(0), shadow: shadow('#000000', 18, 6, 0.6), effect: 'none', bubble: 'none', bg: NO_BG, y: 0.5, ...anim('zoomIn', 'fade') } },
+  { id: 'mat-minimal', name: 'Air Sans', cat: 'Titles', patch: { font: 'poppins', bold: false, uppercase: true, size: 66, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 10, 2, 0.55), effect: 'none', bubble: 'none', bg: NO_BG, letterSpacing: 6, y: 0.5, ...anim('blurIn', 'fade') } },
+  { id: 'mat-duo-caption', name: 'Duo Pop', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, uppercase: true, color: '#ffffff', color2: '#825cfb', stroke: stroke(4), shadow: shadow(), effect: 'gradient', bubble: 'none', bg: NO_BG, highlight: { mode: 'scale', color: '#ffd54a' }, ...anim('pop', 'fade') } },
+  { id: 'mat-chip-dark', name: 'Night Chip', cat: 'Labels', patch: { font: 'bebas', size: 58, letterSpacing: 2, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'pill', bubbleColor: '#16161f', bg: NO_BG, y: 0.3, ...anim('pop', 'pop') } },
+  { id: 'mat-headline-bar', name: 'Headline Block', cat: 'Titles', patch: { font: 'oswald', bold: true, uppercase: true, size: 86, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'none', bg: bg('#111118', 0.88, 8, 'block'), y: 0.5, ...anim('slideUpSmooth', 'fade') } },
+  { id: 'mat-caption-clean', name: 'Clean Line', cat: 'Captions', caption: true, patch: { font: 'montserrat', bold: true, color: '#ffffff', stroke: stroke(0), shadow: NO_SHADOW, effect: 'none', bubble: 'none', bg: bg('#000000', 0.55, 12, 'line'), highlight: { mode: 'none' }, ...anim('fade', 'fade') } },
+  // The Motion set (W3): complete templates built on the slide family of the animation
+  // engine — each pairs its typography with the slide it is named for, at a duration
+  // that lets the move read (0.5–0.7 s instead of the snappy default 0.35 s).
+  { id: 'mot-slide-up', name: 'Slide Up', cat: 'Titles', patch: { font: 'montserrat', bold: true, uppercase: true, size: 96, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 16, 5, 0.65), effect: 'none', bubble: 'none', bg: NO_BG, y: 0.5, animIn: { id: 'slideUp', dur: 0.5 }, animOut: { id: 'fade', dur: 0.25 }, animLoop: { id: 'none', speed: 1 } } },
+  { id: 'mot-smooth-slide', name: 'Smooth Slide', cat: 'Titles', patch: { font: 'poppins', bold: true, size: 92, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 14, 4, 0.6), effect: 'soft', bubble: 'underline', bubbleColor: '#825cfb', bg: NO_BG, y: 0.5, animIn: { id: 'slideUpSmooth', dur: 0.65 }, animOut: { id: 'fade', dur: 0.3 }, animLoop: { id: 'none', speed: 1 } } },
+  { id: 'mot-slide-down', name: 'Slide Down', cat: 'Titles', patch: { font: 'oswald', bold: true, uppercase: true, size: 100, color: '#ffffff', stroke: stroke(5), shadow: shadow(), effect: 'none', bubble: 'none', bg: NO_BG, y: 0.5, animIn: { id: 'slideDown', dur: 0.5 }, animOut: { id: 'fade', dur: 0.25 }, animLoop: { id: 'none', speed: 1 } } },
+  { id: 'mot-smooth-left', name: 'Smooth Left', cat: 'Titles', patch: { font: 'bebas', size: 104, letterSpacing: 2, color: '#ffffff', stroke: stroke(0), shadow: shadow(), effect: 'none', bubble: 'none', bg: NO_BG, x: 0.32, y: 0.5, animIn: { id: 'slideLeftSmooth', dur: 0.6 }, animOut: { id: 'fade', dur: 0.3 }, animLoop: { id: 'none', speed: 1 } } },
+  { id: 'mot-smooth-right', name: 'Smooth Right', cat: 'Titles', patch: { font: 'bebas', size: 104, letterSpacing: 2, color: '#ffffff', stroke: stroke(0), shadow: shadow(), effect: 'none', bubble: 'none', bg: NO_BG, x: 0.68, y: 0.5, animIn: { id: 'slideRightSmooth', dur: 0.6 }, animOut: { id: 'fade', dur: 0.3 }, animLoop: { id: 'none', speed: 1 } } },
+  { id: 'mot-rise-fade', name: 'Rise & Fade', cat: 'Titles', patch: { font: 'poppins', bold: false, size: 84, color: '#ffffff', stroke: stroke(0), shadow: shadow('#000000', 14, 3, 0.7), effect: 'soft', bubble: 'none', bg: NO_BG, letterSpacing: 1, y: 0.5, animIn: { id: 'fadeUp', dur: 0.7 }, animOut: { id: 'fade', dur: 0.3 }, animLoop: { id: 'none', speed: 1 } } },
+  { id: 'mot-slide-blur', name: 'Slide Blur', cat: 'Titles', patch: { font: 'montserrat', bold: true, uppercase: true, size: 96, color: '#ffffff', color2: '#a78bfa', stroke: stroke(0), shadow: shadow(), effect: 'gradient', bubble: 'none', bg: NO_BG, y: 0.5, animIn: { id: 'slideUpBlur', dur: 0.6 }, animOut: { id: 'fade', dur: 0.3 }, animLoop: { id: 'none', speed: 1 } } },
 ];
 
-// Browsing categories (like CapCut's Trending / Classic / Word / Glow rows). A template can be in several.
+// Browsing rows for the Templates panel. A template can live in several rows.
 const TAGS = {
   Trending: ['cap-hormozi', 'cap-beast', 'cap-karaoke', 'cap-boxed', 'cap-oneword', 'cap-y2k', 'title-3d', 'label-subscribe'],
-  Classic: ['cap-classic', 'cap-subtitle', 'cap-minimal', 'title-bold', 'title-elegant', 'title-typewriter'],
+  Basics: ['cap-classic', 'cap-subtitle', 'cap-minimal', 'title-bold', 'title-elegant', 'title-typewriter'],
   Word: ['cap-karaoke', 'cap-boxed', 'cap-marker', 'cap-oneword', 'cap-reveal', 'cap-hormozi', 'cap-beast'],
   Glow: ['cap-neon', 'cap-gradient', 'title-fire', 'title-ice', 'title-neon', 'title-glitch'],
   Arabic: ['cap-arabic', 'cap-arabic-box', 'title-arabic'],
-  Material: ['mat-duo-title', 'mat-pill-label', 'mat-accent-bar', 'mat-caption-chip', 'mat-quote', 'mat-lower-third', 'mat-big-number', 'mat-minimal', 'mat-duo-caption', 'mat-chip-dark', 'mat-headline-bar', 'mat-caption-clean'],
+  Craft: ['mat-duo-title', 'mat-pill-label', 'mat-accent-bar', 'mat-caption-chip', 'mat-quote', 'mat-lower-third', 'mat-big-number', 'mat-minimal', 'mat-duo-caption', 'mat-chip-dark', 'mat-headline-bar', 'mat-caption-clean'],
+  Motion: ['mot-slide-up', 'mot-smooth-slide', 'mot-slide-down', 'mot-smooth-left', 'mot-smooth-right', 'mot-rise-fade', 'mot-slide-blur', 'title-retro', 'mat-duo-title', 'mat-headline-bar'],
 };
 TEXT_TEMPLATES.forEach((t) => {
   t.tags = [t.cat, ...Object.keys(TAGS).filter((k) => TAGS[k].includes(t.id))];
 });
 
-export const TEMPLATE_CATEGORIES = ['All', 'Favorites', 'Trending', 'Material', 'Classic', 'Word', 'Glow', 'Captions', 'Titles', 'Labels', 'Arabic'];
+export const TEMPLATE_CATEGORIES = ['All', 'Favorites', 'Trending', 'Craft', 'Motion', 'Basics', 'Word', 'Glow', 'Captions', 'Titles', 'Labels', 'Arabic'];

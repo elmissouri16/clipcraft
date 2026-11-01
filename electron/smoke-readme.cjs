@@ -60,7 +60,7 @@ module.exports = async function readmeShots(win, dir, result) {
     await q(`(() => { const p = window.__fve.exportData().project; const c = p.textClips[p.textClips.length - 1]; window.__fve.dispatch({ type: 'update', track: 'text', id: c.id, patch: ${JSON.stringify(patch)} }); })()`);
   };
   await addTpl('Big Title', 0.2, { text: 'ClipCraft', start: 0.2, duration: 3.4, y: 0.42 });
-  await addTpl('Hormozi', 4.4, { text: 'FREE FOREVER · NO WATERMARK', start: 4.3, duration: 3.4, y: 0.82 });
+  await addTpl('Impact Pop', 4.4, { text: 'FREE FOREVER · NO WATERMARK', start: 4.3, duration: 3.4, y: 0.82 });
   await q('window.__fve.select(null)');
 
   // 1) The whole app.

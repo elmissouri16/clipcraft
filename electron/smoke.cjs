@@ -906,6 +906,15 @@ module.exports = async function smoke(win, app, dir) {
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }
+  if (process.env.FVE_SMOKE_MODE === 'tplmotion') {
+    try {
+      await require('./smoke-tplmotion.cjs')(win, dir, result);
+    } catch (e) {
+      result.error = e.message;
+    }
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
+    return app.quit();
+  }
   if (process.env.FVE_SMOKE_MODE === 'textsmooth') {
     try {
       await require('./smoke-textsmooth.cjs')(win, dir, result);

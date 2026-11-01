@@ -174,10 +174,10 @@ export const EDIT_STYLES = {
   },
   podcast: {
     emoji: '🛋️',
-    tag: 'Karaoke captions, clean two-cam cuts',
+    tag: 'Word Sweep captions, clean two-cam cuts',
     title: 'Talk Show',
     aliases: ['podcast', 'interview', 'talking head', 'clip'],
-    look: 'Clean clip of a conversation: centered karaoke captions, subtle cuts in.',
+    look: 'Clean clip of a conversation: centered Word Sweep captions, subtle cuts in.',
     recipe: `1. set_aspect_ratio 9:16 if for social. remove_silences.
 2. add_captions style cap-karaoke, y 0.65.
 3. Alternate framing every 6-10 s: zoom style "cut" 1.15 (like a second camera).
