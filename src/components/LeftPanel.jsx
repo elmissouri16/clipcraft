@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import AssetsTab from './AssetsPanel.jsx';
 import PackMusic from './PackMusic.jsx';
+import PackOffer from './PackOffer.jsx';
 import { useAssets } from '../useAssets.js';
 import { mediaTreeCounts, mediaTreeFilter } from '../assetsLib.js';
 import ForgePanel from './ForgePanel.jsx';
@@ -304,6 +305,12 @@ function AudioTab(props) {
           {catChips.map(([id, label]) => (
             <button key={id} className={`chip ${sub === id ? 'on' : ''}`} aria-pressed={sub === id} onClick={() => setSub(id)}>{label}</button>
           ))}
+        </div>
+      )}
+      {view === 'music' && lib && !packSubs.length && (
+        <div className="pad-block pack-music-offer">
+          <p className="empty-note">The free Creator Pack's music is not installed yet:</p>
+          <PackOffer categories={['music']} />
         </div>
       )}
       <div className="pad-block">

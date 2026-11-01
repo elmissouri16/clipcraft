@@ -171,4 +171,20 @@ function setProxy(on) {
   return setQuality(on === true ? 'medium' : 'full') !== 'full';
 }
 
-module.exports = { getProxy, setProxy, getQuality, setQuality, getPublic, getActive, save, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, PROVIDERS, DEFAULT_MODELS };
+// ---- First-run experience: the onboarding tour and the Creator Pack prompt each show
+// exactly once. Their seen-flags live here, alongside the other settings. ----
+const FIRST_RUN_KEYS = ['tourSeen', 'packPromptSeen'];
+const getFirstRun = () => {
+  const f = read().firstRun || {};
+  return Object.fromEntries(FIRST_RUN_KEYS.map((k) => [k, f[k] === true]));
+};
+function setFirstRun(patch) {
+  const data = read();
+  const cur = { ...(data.firstRun || {}) };
+  for (const k of FIRST_RUN_KEYS) if (typeof patch?.[k] === 'boolean') cur[k] = patch[k];
+  data.firstRun = cur;
+  write(data);
+  return getFirstRun();
+}
+
+module.exports = { getProxy, setProxy, getQuality, setQuality, getPublic, getActive, save, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Pause, Play, Plus } from 'lucide-react';
 import SearchBox from './SearchBox.jsx';
+import PackOffer from './PackOffer.jsx';
 import { formatTime, toFileUrl } from '../store.js';
 import { useAssets } from '../useAssets.js';
 
@@ -50,6 +51,12 @@ export default function PackMusic({ collection, onAddFile }) {
       {err && <p className="error-text">{err}</p>}
       {!lib ? (
         <p className="empty-note"><Loader2 size={14} className="spin" /> Reading the assets folder…</p>
+      ) : !lib.hasLibrary || !items.length && !query ? (
+        <>
+          <p className="empty-note">No {collection} tracks in the assets folder yet — the pack's music is a free download, whenever you want it:</p>
+          <PackOffer categories={['music']} />
+          <p className="lib-note">From your asset pack folder — free to use, no credits needed.</p>
+        </>
       ) : (
         <>
           <div className="panel-search"><SearchBox value={q} onChange={setQ} placeholder={`Search ${collection}…`} ariaLabel={`Search pack ${collection}`} /></div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Film, FolderOpen, Layers, Loader2, Music2, Plus, RefreshCw } from 'lucide-react';
 import SearchBox from './SearchBox.jsx';
+import PackOffer from './PackOffer.jsx';
 import { ASSET_GROUPS, assetAddWhere } from '../assetsLib.js';
 import { formatTime, toFileUrl } from '../store.js';
 import { refreshAssets, useAssets } from '../useAssets.js';
@@ -132,7 +133,8 @@ export default function AssetsTab({ onAddFile }) {
       ) : !lib.hasLibrary ? (
         <div className="assets-empty">
           <p><b>No asset pack found yet.</b></p>
-          <p className="muted">ClipCraft reads its pack from this folder on this PC:</p>
+          <PackOffer categories={['music', 'sfx', 'assets']} />
+          <p className="muted">Or place a pack by hand — ClipCraft reads it from this folder on this PC:</p>
           <p className="muted path">{lib.root}</p>
           <p className="muted">Put the pack's <b>library.json</b> and its media files there (keeping the folder layout), then Refresh — Sound FX, Transitions and Overlays appear here, and the pack's music appears in Audio → Music. Nothing is bundled into the app, so the pack can grow without reinstalling.</p>
           <button className="btn btn-sm" onClick={() => window.api.openFolder(lib.root)}><FolderOpen size={13} /> Open assets folder</button>
@@ -169,6 +171,20 @@ export default function AssetsTab({ onAddFile }) {
             )}
           </Group>
           <p className="muted small pad-x">Pack folder: {lib.root} · {lib.total} files indexed. Music from the pack lives in Audio → Music.</p>
+          {(() => {
+            // A partial pack keeps its standing offer for the categories still missing.
+            const missing = [
+              ...(lib.counts.Music ? [] : ['music']),
+              ...(lib.counts['Sound FX'] ? [] : ['sfx']),
+              ...(lib.counts.Transitions || lib.counts.Overlays ? [] : ['assets']),
+            ];
+            return missing.length ? (
+              <div className="assets-pack-more">
+                <p className="muted small">More of the free Creator Pack is available:</p>
+                <PackOffer categories={missing} />
+              </div>
+            ) : null;
+          })()}
         </>
       )}
     </div>

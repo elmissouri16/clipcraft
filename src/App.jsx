@@ -29,6 +29,8 @@ import CloseDialog from './components/CloseDialog.jsx';
 import TopBar from './components/TopBar.jsx';
 import SettingsDialog from './components/SettingsDialog.jsx';
 import { AboutDialog, UpdateNotice, useUpdateCheck } from './components/About.jsx';
+import OnboardingTour from './components/OnboardingTour.jsx';
+import PackPrompt from './components/PackPrompt.jsx';
 import ScreenRecordDialog from './components/ScreenRecordDialog.jsx';
 import { useScreenRecorder } from './useScreenRecorder.js';
 import CraftAI from './components/CraftPilot.jsx';
@@ -95,6 +97,54 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quality, setQuality] = useState('full'); // Playback quality: which scaled copy the player uses
   const [aboutOpen, setAboutOpen] = useState(false);
+  // ---- First run: the onboarding tour, then the Creator Pack prompt — each shows exactly
+  // once (flags in settings.json via firstrun IPC); About replays the tour on demand. ----
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourStep, setTourStep] = useState(0); // lives here: the tour remounts across the Home↔editor transition
+  const [packPromptOpen, setPackPromptOpen] = useState(false);
+  const packPromptSeenRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    window.api.firstRunGet?.().then((f) => {
+      if (!alive || !f) return;
+      packPromptSeenRef.current = !!f.packPromptSeen;
+      if (!f.tourSeen) setTourOpen(true);
+      else if (!f.packPromptSeen) setPackPromptOpen(true);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const closeTour = useCallback(() => {
+    setTourOpen(false);
+    window.api.firstRunSet?.({ tourSeen: true }).catch(() => {});
+    if (!packPromptSeenRef.current) setPackPromptOpen(true);
+  }, []);
+  const closePackPrompt = useCallback(() => {
+    setPackPromptOpen(false);
+    packPromptSeenRef.current = true;
+    window.api.firstRunSet?.({ packPromptSeen: true }).catch(() => {});
+  }, []);
+  // The tour's editor steps run in a scratch "Tour project" — but only when the current
+  // project is empty; a user replaying the tour mid-work keeps their own project.
+  const openTourDemo = useCallback(() => {
+    const p = projectRef.current;
+    const hasContent = (p.media || []).length > 0
+      || (p.videoClips || []).some((c) => !c.gap) || (p.overlayClips || []).length > 0
+      || (p.textClips || []).length > 0 || (p.audioClips || []).length > 0;
+    if (!hasContent) {
+      const np = {
+        ...emptyProject(), name: 'Tour project', ratio: '16:9',
+        ...sizeFor('16:9', 1080), resolution: 1080, fps: 30, ratioLocked: true,
+      };
+      autosave.current.file = null;
+      autosave.current.pendingRestore = false;
+      dispatch({ type: 'load', project: np });
+      setSaveState('new');
+      setUnsavedNote(null);
+      setSelection(null);
+      setTime(0);
+    }
+    setScreen('editor');
+  }, []);
   const [update, setUpdate] = useUpdateCheck(); // manual update check state (About dialog)
   const [updateSeen, setUpdateSeen] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0); // bumps when Settings closes so the assistant re-reads the AI setup
@@ -1423,6 +1473,8 @@ export default function App() {
           }}
           onDiscardUnsaved={() => { autosave.current.pendingRestore = false; keepRecovery(false); setUnsavedNote(null); }} />
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
+        {tourOpen && <OnboardingTour onClose={closeTour} goHome={() => setScreen('home')} openDemo={openTourDemo} setTab={setTab} stepIndex={tourStep} onStepChange={setTourStep} />}
+        {packPromptOpen && !tourOpen && <PackPrompt onClose={closePackPrompt} />}
       </div>
     );
   }
@@ -1502,7 +1554,10 @@ export default function App() {
         </div>
       )}
             {!updateSeen && !aboutOpen && <UpdateNotice update={update} onDismiss={() => setUpdateSeen(true)} />}
-      {aboutOpen && <AboutDialog update={update} onUpdate={setUpdate} onClose={() => { setAboutOpen(false); setUpdateSeen(true); }} />}
+      {aboutOpen && <AboutDialog update={update} onUpdate={setUpdate} onClose={() => { setAboutOpen(false); setUpdateSeen(true); }}
+        onTour={() => { setAboutOpen(false); setTourStep(0); setTourOpen(true); }} />}
+      {tourOpen && <OnboardingTour onClose={closeTour} goHome={() => setScreen('home')} openDemo={openTourDemo} setTab={setTab} stepIndex={tourStep} onStepChange={setTourStep} />}
+      {packPromptOpen && !tourOpen && <PackPrompt onClose={closePackPrompt} />}
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}

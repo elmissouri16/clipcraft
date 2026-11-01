@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Download, Globe, Instagram, RefreshCw, Sparkles, WifiOff, X } from 'lucide-react';
+import { CheckCircle2, Compass, Download, Globe, Instagram, RefreshCw, Sparkles, WifiOff, X } from 'lucide-react';
 import { DEV_INSTAGRAM_URL } from './HomeScreen.jsx';
 
 // About ClipCraft — version, the developer (Hamza Abika), his links, and a manual update
@@ -7,7 +7,7 @@ import { DEV_INSTAGRAM_URL } from './HomeScreen.jsx';
 // The check asks the update feed on hamzaabika.com (see electron/updates.cjs).
 const DEV_SITE_URL = 'https://hamzaabika.com';
 
-export function AboutDialog({ onClose }) {
+export function AboutDialog({ onClose, onTour }) {
   const [version, setVersion] = useState('');
   const [check, setCheck] = useState(null); // null | 'checking' | result object from updates:check
   useEffect(() => {
@@ -54,6 +54,12 @@ export function AboutDialog({ onClose }) {
           <span>No watermark</span>
           <span>Free to use</span>
         </div>
+        {onTour && (
+          <div className="about-tour">
+            <button className="btn" onClick={onTour}><Compass size={14} /> Take the tour</button>
+            <span className="muted small">A one-minute walk through the editor, any time you want it.</span>
+          </div>
+        )}
         <div className="about-updates">
           {check !== 'checking' && !(check && check.newer) && (
             <button className="btn" onClick={runCheck}><RefreshCw size={14} /> Check for updates</button>
