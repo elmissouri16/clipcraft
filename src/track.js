@@ -78,7 +78,8 @@ export function trackAt(track, srcT) {
 // deltas scale by this on their way from media fractions to frame fractions. The implementation
 // lives in src/pictureGeometry.js — the single source of truth for displayed-picture geometry,
 // shared with the crop overlay, the transform box and the colour sampler.
-export { fitFactors } from './pictureGeometry.js';
+import { fitFactors } from './pictureGeometry.js';
+export { fitFactors };
 
 const srcTimeAt = (clip, startTl, tlT) => (clip.in || 0) + (tlT - startTl) * (clip.speed || 1);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
