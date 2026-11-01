@@ -253,7 +253,9 @@ export default function Preview({
   // Dragging empty stage area pans a zoomed view. Drags starting on the transform layer or any
   // control keep their own behaviour (the transform layer handles clip dragging itself).
   const onStageMouseDown = (e) => {
-    if (e.button !== 0 || view.fit || e.target.closest('.tbox-layer, button, input, select, textarea, a')) return;
+    // Crop mode owns the stage (CROP-3 addendum, 2026-11-01): while it is open, no
+    // view pan — a drag there must only ever move the crop frame, never the picture.
+    if (e.button !== 0 || view.fit || cropEdit || e.target.closest('.tbox-layer, button, input, select, textarea, a')) return;
     const sx = e.clientX;
     const sy = e.clientY;
     const v0 = view;
