@@ -1,6 +1,6 @@
 import { spritePosterStyle } from '../recents.js';
 import React, { useState } from 'react';
-import { Clock3, Film, FolderOpen, Import, Instagram, LayoutTemplate, Monitor, Play, Plus, Search, X } from 'lucide-react';
+import { Clock3, Film, FolderOpen, Import, Instagram, Monitor, Play, Plus, Search, X } from 'lucide-react';
 
 // The developer's Instagram — shown in the home footer and the About dialog.
 export const DEV_INSTAGRAM_URL = 'https://www.instagram.com/hamza_abika/';
@@ -93,14 +93,13 @@ function EmptyStage() {
   );
 }
 
-export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onStartTemplate, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved }) {
+export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved }) {
   const [fps, setFps] = useState(30);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const shownRecents = q ? recents.filter((r) => (r.name || '').toLowerCase().includes(q) || (r.ratio || '').includes(q)) : recents;
   const featured = shownRecents[0] || null;
   const rest = shownRecents.slice(1);
-  const vertical = PRESETS.find((p) => p.ratio === '9:16');
   return (
     <div className="home">
       <header className="home-top">
@@ -165,10 +164,6 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
             <span className="home-action-icon"><Import size={18} /></span>
             <span className="home-action-text"><b>Import media…</b><span>Start from clips you already have — a new project opens around them.</span></span>
           </button>
-          <button className="home-action" onClick={() => onStartTemplate?.(vertical, fps)}>
-            <span className="home-action-icon"><LayoutTemplate size={18} /></span>
-            <span className="home-action-text"><b>Start from a template</b><span>A fresh vertical project, opened on the template gallery.</span></span>
-          </button>
           <button className="home-action" onClick={() => onRecordStart?.(fps)}>
             <span className="home-action-icon"><Monitor size={18} /></span>
             <span className="home-action-text"><b>Record screen</b><span>Capture your screen straight onto a new timeline.</span></span>
@@ -205,7 +200,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
               <div className="home-continue-body">
                 <span className="home-eyebrow">Jump back in</span>
                 <b className="home-continue-name">{featured.name || 'Untitled'}</b>
-                <span className="home-continue-meta">{featured.ratio || '16:9'} · {relDate(featured.modifiedAt)}</span>
+                <span className="home-continue-meta">{featured.ratio || '16:9'} · {relDate(featured.modifiedAt)}{featured.slotId && !featured.path ? ' · Auto-saved' : ''}</span>
                 <span className="home-continue-cta">
                   <button className="btn btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); onOpenRecent(featured); }}>
                     <Play size={13} fill="currentColor" /> Resume
@@ -213,23 +208,23 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
                 </span>
               </div>
               <button className="icon-btn home-card-x" aria-label={`Remove ${featured.name || 'project'} from recents`} title="Remove from recents"
-                onClick={(e) => { e.stopPropagation(); onRemoveRecent(featured.path); }}><X size={14} /></button>
+                onClick={(e) => { e.stopPropagation(); onRemoveRecent(featured); }}><X size={14} /></button>
             </div>
           )}
           {rest.length > 0 && (
             <div className="home-grid">
               {rest.map((r) => (
-                <div key={r.path} className="home-card" onClick={() => onOpenRecent(r)} title={r.path}>
+                <div key={r.slotId || r.path} className="home-card" onClick={() => onOpenRecent(r)} title={r.path || ''}>
                   <div className="home-card-thumb">
                     <RecentThumb r={r} />
                     <span className="home-card-ratio">{r.ratio || '16:9'}</span>
                   </div>
                   <div className="home-card-body">
                     <b className="home-card-name">{r.name || 'Untitled'}</b>
-                    <span className="home-card-meta">{relDate(r.modifiedAt)}</span>
+                    <span className="home-card-meta">{relDate(r.modifiedAt)}{r.slotId && !r.path ? ' · Auto-saved' : ''}</span>
                   </div>
                   <button className="icon-btn home-card-x" aria-label={`Remove ${r.name || 'project'} from recents`} title="Remove from recents"
-                    onClick={(e) => { e.stopPropagation(); onRemoveRecent(r.path); }}><X size={14} /></button>
+                    onClick={(e) => { e.stopPropagation(); onRemoveRecent(r); }}><X size={14} /></button>
                 </div>
               ))}
             </div>

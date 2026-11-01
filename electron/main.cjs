@@ -468,6 +468,23 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
   }
 });
 
+// ---- Per-project autosave slots (electron/autosave.cjs): one slot per project id under
+// <userData>/autosave, so Home is a switchboard — leaving a project (Home, another open,
+// a new project) flushes its slot, and every project the user touched is listed there.
+const autosaveStore = require('./autosave.cjs');
+const autosaveDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'autosave-test') : path.join(app.getPath('userData'), 'autosave'));
+ipcMain.handle('slots:write', (_e, record) => autosaveStore.writeSlot(autosaveDir(), record));
+ipcMain.handle('slots:list', () => autosaveStore.listSlots(autosaveDir()));
+ipcMain.handle('slots:forFile', (_e, filePath) => autosaveStore.slotForFile(autosaveDir(), filePath));
+ipcMain.handle('slots:read', (_e, id) => {
+  const slot = autosaveStore.readSlot(autosaveDir(), id);
+  // A slot bound to a project file adopts that file as known (same trust as project:openPath),
+  // so the auto-save-to-file writes keep working for a project reopened from its slot.
+  if (slot?.file && fs.existsSync(slot.file)) projectFiles.add(slot.file);
+  return slot;
+});
+ipcMain.handle('slots:delete', (_e, id) => autosaveStore.deleteSlot(autosaveDir(), id));
+
 // Closing the window: the interface saves the project, or asks (in its own dialog) about a project that never had
 // a file. If it does not answer (frozen), the window closes anyway after a few seconds; the next start offers the
 // autosaved copy.

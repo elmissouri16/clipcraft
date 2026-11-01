@@ -20,6 +20,10 @@ export function ratioFor(w, h) {
 
 export function emptyProject() {
   return {
+    // A stable identity for the per-project autosave store (electron/autosave.cjs): it is
+    // born with the project, survives saves/loads (normalizeProject keeps a stored id and
+    // mints one for older files), and keys the project's slot on the Home switchboard.
+    id: uid(),
     name: 'Untitled', ratio: '16:9', resolution: 720, width: 1280, height: 720, fps: 30, background: '#000000',
     media: [], videoClips: [], overlayClips: [], textClips: [], audioClips: [], stickerClips: [],
     effectClips: [], // effects on the Effects track: { id, fx, start, duration }

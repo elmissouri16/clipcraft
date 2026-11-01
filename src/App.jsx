@@ -132,7 +132,7 @@ export default function App() {
       || (p.textClips || []).length > 0 || (p.audioClips || []).length > 0;
     if (!hasContent) {
       const np = {
-        ...emptyProject(), name: 'Tour project', ratio: '16:9',
+        ...emptyProject(), id: `tour-${uid()}`, name: 'Tour project', ratio: '16:9',
         ...sizeFor('16:9', 1080), resolution: 1080, fps: 30, ratioLocked: true,
       };
       autosave.current.file = null;
@@ -161,7 +161,10 @@ export default function App() {
   useEffect(() => { loadProjectLuts(project); }, [project]);
   // Auto save: a project that has a file is written to it 1.5 s after each change. A project that never had a file
   // is kept in local storage only; closing asks to save it, and the next start offers it back if it was lost.
-  const autosave = useRef({ timer: null, project, file: null, fileTimer: null, writing: null });
+  // On top of that, EVERY project is kept in its own autosave slot (electron/autosave.cjs, keyed by
+  // project.id): Home lists the slots next to the file recents, so leaving a project — Home, a new
+  // project, another open — never strands it. Switching flushes the slot first (flushAutosave).
+  const autosave = useRef({ timer: null, project, file: null, fileTimer: null, writing: null, slotTimer: null });
   autosave.current.project = project;
   const [saveState, setSaveState] = useState('new'); // 'new' | 'saving' | 'saved' | 'error'
   const [unsavedNote, setUnsavedNote] = useState(null); // { savedAt, project } left by a session that ended unsaved
@@ -207,6 +210,49 @@ export default function App() {
     setSaveState(ok ? 'saved' : 'error');
     return ok;
   };
+  // ---- Per-project autosave slots: Home's switchboard ----
+  const [autoSlots, setAutoSlots] = useState([]);
+  const refreshSlots = () => {
+    window.api.slotList?.().then((l) => { if (Array.isArray(l)) setAutoSlots(l); }).catch(() => {});
+  };
+  useEffect(() => { refreshSlots(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (screen === 'home') refreshSlots(); }, [screen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The onboarding tour's scratch project lives in a reserved id namespace: it never gets
+  // a slot, so it can never pollute the Home list.
+  const isTourId = (id) => typeof id === 'string' && id.startsWith('tour-');
+  // The slot record for a project (defaults: the one in the editor). A project earns a slot
+  // once it has content, or from the start when it is file-backed; a pristine empty project
+  // has nothing to lose and stays slotless until the first real edit.
+  const slotRecord = (p = autosave.current.project, file = autosave.current.file) => {
+    if (!p || !p.id || isTourId(p.id)) return null;
+    if (!file && !hasContent(p)) return null;
+    const e = recentEntryFor(p, file || '', toFileUrl);
+    return { id: p.id, title: p.name || 'Untitled', file: file || null, ratio: p.ratio || '', thumb: e.thumb, updatedAt: Date.now(), projectJson: JSON.stringify(p) };
+  };
+  const writeSlotNow = async (p, file) => {
+    const a = autosave.current;
+    clearTimeout(a.slotTimer);
+    a.slotTimer = null;
+    const rec = slotRecord(p, file);
+    if (!rec) return;
+    try { await window.api.slotWrite(rec); refreshSlots(); } catch { /* the next change retries */ }
+  };
+  // Force-write everything pending for the CURRENT project (its file, then its slot) —
+  // awaited before any switch (Home, new, open) so no edit hides inside a debounce window.
+  const flushAutosave = async () => {
+    await writeFile();
+    await writeSlotNow();
+  };
+  // Opening a project FILE adopts the id of the slot bound to that file (if any), so the
+  // file and its slot stay one identity; the caller then rewrites the slot from the file's
+  // content (at open time the file wins — it is what the user chose to open).
+  const adoptFileBinding = async (p, file) => {
+    if (!file) return p;
+    try {
+      const entry = await window.api.slotForFile(file);
+      return entry?.id ? { ...p, id: entry.id } : p;
+    } catch { return p; }
+  };
   useEffect(() => {
     const a = autosave.current;
     // At most once a second, and always the latest project (thumbnails arriving keep changing it).
@@ -223,6 +269,10 @@ export default function App() {
       clearTimeout(a.fileTimer);
       a.fileTimer = setTimeout(writeFile, 1500);
     }
+    // The project's own autosave slot, a second after the last change (true debounce:
+    // thumbnail arrivals keep pushing it out, the write always carries the latest state).
+    clearTimeout(a.slotTimer);
+    a.slotTimer = setTimeout(() => { a.slotTimer = null; writeSlotNow(); }, 1000);
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let saved = null;
@@ -231,17 +281,32 @@ export default function App() {
     } catch {
       // nothing usable saved
     }
-    window.api.wasRecovered?.().then((was) => {
-      if (was && saved?.project) {
+    window.api.wasRecovered?.().then(async (was) => {
+      // The recovery snapshot lives in localStorage, whose commits lag behind the
+      // edits (and a hard kill can lose the last one). The project's autosave slot is
+      // written to disk on the same cadence, atomically — so when a slot exists for
+      // the snapshot's project, the slot's state is the recovery payload: the exact
+      // project that was open, at its freshest state.
+      let snap = saved;
+      const pid = saved?.project?.id;
+      if (pid && !isTourId(pid)) {
+        try {
+          const slot = await window.api.slotRead?.(pid);
+          if (slot?.project) {
+            snap = { savedAt: slot.updatedAt || saved.savedAt, project: slot.project, file: slot.file || null, unsaved: saved.unsaved };
+          }
+        } catch { /* slot unreadable: the snapshot stands */ }
+      }
+      if (was && snap?.project) {
         // The window crashed and reloaded: same project, same file.
-        autosave.current.file = saved.file || null;
-        if (saved.file) setSaveState('saved');
-        dispatch({ type: 'load', project: saved.project });
+        autosave.current.file = snap.file || null;
+        if (snap.file) setSaveState('saved');
+        dispatch({ type: 'load', project: snap.project });
         setRecoveredNote(true);
         setScreen('editor');
-      } else if (saved?.unsaved && saved.project && hasContent(saved.project)) {
+      } else if (snap?.unsaved && snap.project && hasContent(snap.project)) {
         autosave.current.pendingRestore = true;
-        setUnsavedNote(saved);
+        setUnsavedNote(snap);
       }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1106,6 +1171,7 @@ export default function App() {
     setSaveState('saved');
     pushRecent(recentOf(p, res));
     keepRecovery(false);
+    writeSlotNow(p, res); // the slot binds to the file it was just saved to
     return true;
   };
 
@@ -1113,8 +1179,8 @@ export default function App() {
     const res = await window.api.openProject();
     if (!res) return;
     try {
-      const p = JSON.parse(res.json);
-      await writeFile(); // the current project keeps its last changes
+      const p = await adoptFileBinding(JSON.parse(res.json), res.file);
+      await flushAutosave(); // the current project keeps its last changes (file + slot)
       autosave.current.file = res.file;
       dispatch({ type: 'load', project: p });
       setSaveState('saved');
@@ -1122,6 +1188,7 @@ export default function App() {
       setTime(0);
       setSelection(null);
       pushRecent(recentOf(p, res.file));
+      writeSlotNow(p, res.file); // the slot syncs to the file's content under the shared id
       setScreen('editor');
     } catch (e) {
       alert('Invalid project file: ' + e.message);
@@ -1129,7 +1196,8 @@ export default function App() {
   };
 
   // ---- Home screen actions ----
-  const startNewProject = (preset, fps) => {
+  const startNewProject = async (preset, fps) => {
+    await flushAutosave(); // the project being left keeps everything, slot included
     const p = {
       ...emptyProject(), name: 'Untitled', ratio: preset.ratio,
       ...sizeFor(preset.ratio, preset.short), resolution: preset.short, fps, ratioLocked: true,
@@ -1151,7 +1219,29 @@ export default function App() {
     setScreenOpen(true);
   };
 
+  // Open a project from its autosave slot (the card may be slot-only or merged with the
+  // file recent for the same project). The current project is flushed first, then the
+  // slot's state is restored whole — media paths included, exactly like a file open.
+  const openSlot = async (entry) => {
+    await flushAutosave(); // whatever is in the editor right now keeps its latest state
+    const slot = await window.api.slotRead(entry.slotId);
+    if (!slot) {
+      refreshSlots();
+      alert('That auto-saved project could not be found any more, so it was removed from the list.');
+      return;
+    }
+    autosave.current.file = slot.file || null;
+    autosave.current.pendingRestore = false;
+    dispatch({ type: 'load', project: { ...slot.project, id: slot.id } });
+    setSaveState(slot.file ? 'saved' : 'new');
+    setUnsavedNote(null);
+    setTime(0);
+    setSelection(null);
+    setScreen('editor');
+  };
+
   const openRecent = async (r) => {
+    if (r.slotId) return openSlot(r);
     const res = await window.api.openProjectPath?.(r.path);
     if (!res) {
       storeRecents(recents.filter((x) => x.path !== r.path));
@@ -1159,8 +1249,8 @@ export default function App() {
       return;
     }
     try {
-      const p = JSON.parse(res.json);
-      await writeFile();
+      const p = await adoptFileBinding(JSON.parse(res.json), res.file);
+      await flushAutosave();
       autosave.current.file = res.file;
       dispatch({ type: 'load', project: p });
       setSaveState('saved');
@@ -1168,6 +1258,7 @@ export default function App() {
       setTime(0);
       setSelection(null);
       pushRecent(recentOf(p, res.file));
+      writeSlotNow(p, res.file); // the slot syncs to the file's content under the shared id
       setScreen('editor');
     } catch (e) {
       alert('Invalid project file: ' + e.message);
@@ -1175,6 +1266,7 @@ export default function App() {
   };
 
   const importFromHome = async () => {
+    await flushAutosave(); // the project in the editor keeps its state before media lands
     const ok = await importMedia();
     if (ok.length) {
       autosave.current.file = null;
@@ -1182,6 +1274,57 @@ export default function App() {
       setScreen('editor');
     }
   };
+
+  // The startup offer (a project the last session ended on, unsaved): restoring loads it
+  // with its file binding, exactly as it was left; the editor's current work is flushed
+  // first. Discarding clears the recovery AND the project's slot — the user said no.
+  const restoreUnsaved = async () => {
+    const note = unsavedNote;
+    if (!note) return;
+    await flushAutosave();
+    autosave.current.file = note.file || null;
+    autosave.current.pendingRestore = false;
+    dispatch({ type: 'load', project: note.project });
+    if (note.file) setSaveState('saved');
+    setUnsavedNote(null);
+    setTime(0);
+    setSelection(null);
+    setScreen('editor');
+  };
+  const discardUnsaved = () => {
+    autosave.current.pendingRestore = false;
+    const id = unsavedNote?.project?.id;
+    keepRecovery(false);
+    if (id && !isTourId(id)) window.api.slotDelete?.(id).then(refreshSlots).catch(() => {});
+    setUnsavedNote(null);
+  };
+
+  // Removing a Home card: a file recent leaves the recents list (the file itself is never
+  // touched); a slot entry deletes its autosave slot. A merged card does both.
+  const removeHomeEntry = (entry) => {
+    if (entry?.path) removeRecent(entry.path);
+    if (entry?.slotId) window.api.slotDelete?.(entry.slotId).then(refreshSlots).catch(() => {});
+  };
+
+  // Home's switchboard: autosave slots and file recents merged into ONE list, newest
+  // first. A file-backed project appears once — its slot and its recent describe the same
+  // project, merged by path (the open then restores the slot's latest state).
+  const homeProjects = useMemo(() => {
+    const list = autoSlots.map((s) => ({
+      slotId: s.id, path: s.file || null, file: s.file || null,
+      name: s.title || 'Untitled', ratio: s.ratio || '', modifiedAt: s.updatedAt || 0, thumb: s.thumb || null,
+    }));
+    for (const r of recents) {
+      const m = list.find((e) => e.path && e.path === r.path);
+      if (m) {
+        if (!m.thumb && r.thumb) m.thumb = r.thumb;
+        if ((r.modifiedAt || 0) > (m.modifiedAt || 0)) m.modifiedAt = r.modifiedAt;
+      } else {
+        list.push({ ...r });
+      }
+    }
+    return list.sort((a, b) => (b.modifiedAt || 0) - (a.modifiedAt || 0));
+  }, [autoSlots, recents]);
 
   // Closing the window: write the project's file, or ask about a project that never had one.
   useEffect(() => window.api.onCloseRequest(async () => {
@@ -1207,6 +1350,8 @@ export default function App() {
     }
     if (choice === 'discard') {
       keepRecovery(false);
+      const id = a.project?.id;
+      if (id && !isTourId(id)) { try { await window.api.slotDelete(id); } catch { /* closing anyway */ } }
       return window.api.closeNow();
     }
     return window.api.closeCancel();
@@ -1461,17 +1606,12 @@ export default function App() {
   if (screen === 'home') {
     return (
       <div className="app home-app">
-        <HomeScreen recents={recents} onNew={startNewProject} onOpen={open} onOpenRecent={openRecent}
-          onRemoveRecent={removeRecent} onImportMedia={importFromHome}
+        <HomeScreen recents={homeProjects} onNew={startNewProject} onOpen={open} onOpenRecent={openRecent}
+          onRemoveRecent={removeHomeEntry} onImportMedia={importFromHome}
           onRecordStart={startRecording}
           unsavedNote={unsavedNote}
-          onRestoreUnsaved={() => {
-            dispatch({ type: 'load', project: unsavedNote.project });
-            autosave.current.pendingRestore = false;
-            setUnsavedNote(null);
-            setScreen('editor');
-          }}
-          onDiscardUnsaved={() => { autosave.current.pendingRestore = false; keepRecovery(false); setUnsavedNote(null); }} />
+          onRestoreUnsaved={restoreUnsaved}
+          onDiscardUnsaved={discardUnsaved} />
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
         {tourOpen && <OnboardingTour onClose={closeTour} goHome={() => setScreen('home')} openDemo={openTourDemo} setTab={setTab} stepIndex={tourStep} onStepChange={setTourStep} />}
         {packPromptOpen && !tourOpen && <PackPrompt onClose={closePackPrompt} />}
@@ -1485,7 +1625,7 @@ export default function App() {
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
       <TopBar project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onExportTemplate={packTemplate} onSettings={() => setSettingsOpen(true)}
-        onHome={() => setScreen('home')}
+        onHome={async () => { await flushAutosave(); refreshSlots(); setScreen('home'); }}
         onAbout={() => setAboutOpen(true)} updateReady={!!update?.newer} />
 
       <div className="workspace" style={{ gridTemplateColumns: `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
@@ -1545,12 +1685,8 @@ export default function App() {
       {unsavedNote && !recoveredNote && (
         <div className="recovered-note" role="status">
           <span><b>Your last project was not saved.</b> It was kept on this PC ({new Date(unsavedNote.savedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}).</span>
-          <button className="btn btn-primary btn-sm" onClick={() => {
-            dispatch({ type: 'load', project: unsavedNote.project });
-            autosave.current.pendingRestore = false;
-            setUnsavedNote(null);
-          }}>Restore</button>
-          <button className="btn btn-sm" onClick={() => { autosave.current.pendingRestore = false; keepRecovery(false); setUnsavedNote(null); }}>Discard</button>
+          <button className="btn btn-primary btn-sm" onClick={restoreUnsaved}>Restore</button>
+          <button className="btn btn-sm" onClick={discardUnsaved}>Discard</button>
         </div>
       )}
             {!updateSeen && !aboutOpen && <UpdateNotice update={update} onDismiss={() => setUpdateSeen(true)} />}
