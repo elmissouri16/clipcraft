@@ -3,13 +3,16 @@ import { Loader2, Pause, Play, Plus } from 'lucide-react';
 import SearchBox from './SearchBox.jsx';
 import PackOffer from './PackOffer.jsx';
 import { formatTime, toFileUrl } from '../store.js';
+import { assetAddWhere } from '../assetsLib.js';
 import { useAssets } from '../useAssets.js';
 
-// The asset pack's music, inside the Audio tab's Music place (Hamza's IA: pack music goes
-// to the Music place, NOT to Assets). One collection per manifest sub ("Library" songs and
-// instrumentals, "آهات" vocal tracks). Rows preview from disk and add at the playhead
-// through App's addFile, like every other file add.
-export default function PackMusic({ collection, onAddFile }) {
+// The asset pack's AUDIO, inside the Audio tab (Hamza's IA: pack audio goes with the
+// music, NOT to Assets) — the Music place serves the pack's Music collections, and the
+// Sound FX place its Sound FX collections (Hamza, 2026-11-01: sound effects belong in
+// Music, with the music). One collection per manifest sub ("Library" songs and
+// instrumentals, "آهات" vocal tracks; the SFX subs from the pack folders). Rows preview
+// from disk and add at the playhead through App's addFile, like every other file add.
+export default function PackMusic({ collection, onAddFile, group = 'Music' }) {
   const lib = useAssets();
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState('');
@@ -24,7 +27,7 @@ export default function PackMusic({ collection, onAddFile }) {
   }, []);
   useEffect(() => { audio.current?.pause(); setPlaying(''); setQ(''); }, [collection]);
 
-  const items = (lib?.items || []).filter((i) => i.group === 'Music' && i.sub === collection);
+  const items = (lib?.items || []).filter((i) => i.group === group && i.sub === collection);
   const query = q.trim().toLowerCase();
   const shown = items.filter((i) => !query || i.name.toLowerCase().includes(query));
 
@@ -40,21 +43,22 @@ export default function PackMusic({ collection, onAddFile }) {
     if (item.missing || adding) return;
     setAdding(item.path);
     setErr('');
-    const r = await onAddFile?.(item.path);
+    const r = await onAddFile?.(item.path, assetAddWhere(item));
     setAdding('');
     if (r?.error) setErr(r.error);
   };
+  const isMusic = group === 'Music';
 
   return (
     <>
-      <div className="tab-title">Music · Pack — {collection}</div>
+      <div className="tab-title">{isMusic ? 'Music' : 'Sound effects'} · Pack — {collection}</div>
       {err && <p className="error-text">{err}</p>}
       {!lib ? (
         <p className="empty-note"><Loader2 size={14} className="spin" /> Reading the assets folder…</p>
       ) : !lib.hasLibrary || !items.length && !query ? (
         <>
-          <p className="empty-note">No {collection} tracks in the assets folder yet — the pack's music is a free download, whenever you want it:</p>
-          <PackOffer categories={['music']} />
+          <p className="empty-note">No {collection} {isMusic ? 'tracks' : 'sounds'} in the assets folder yet — the pack's {isMusic ? 'music' : 'sound effects'} is a free download, whenever you want it:</p>
+          <PackOffer categories={[isMusic ? 'music' : 'sfx']} />
           <p className="lib-note">From your asset pack folder — free to use, no credits needed.</p>
         </>
       ) : (
@@ -80,7 +84,7 @@ export default function PackMusic({ collection, onAddFile }) {
               </div>
             ))}
           </div>
-          {!shown.length && <p className="empty-note">{items.length ? `Nothing in ${collection} matches “${q.trim()}”.` : `No ${collection} tracks in the assets folder yet.`}</p>}
+          {!shown.length && <p className="empty-note">{items.length ? `Nothing in ${collection} matches “${q.trim()}”.` : `No ${collection} ${isMusic ? 'tracks' : 'sounds'} in the assets folder yet.`}</p>}
           <p className="lib-note">From your asset pack folder — free to use, no credits needed.</p>
         </>
       )}
