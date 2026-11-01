@@ -90,6 +90,7 @@
   },
   "build": {
     "appId": "com.clipcraft.app",
+    "afterPack": "build/after-pack.cjs",
     "productName": "ClipCraft",
     "directories": {
       "output": "release"
