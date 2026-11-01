@@ -138,14 +138,20 @@ function enhancePathOf(clip) {
 // (electron/enhance.cjs writes -ac 2), so the enhanced path never takes the pan.
 const monoUp = (m, enhanced) => (!enhanced && m && m.channels === 1 ? 'pan=stereo|c0=c0|c1=c0' : null);
 
-function clipAudioFilter(clip, m, idx, i, enhIdx = -1) {
+function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false) {
   const len = clipLen(clip);
   if (clip.gap || !m || m.type === 'image' || !m.hasAudio || clip.muted) {
     return `anullsrc=r=48000:cl=stereo,atrim=duration=${num(len)},aformat=sample_fmts=fltp[a${i}]`;
   }
+  // Perf B1 (2026-11-01): when the caller input-seeked this clip's input (-ss before -i),
+  // the stream already starts at clip.in, so the trim runs from 0 — identical samples,
+  // without decoding the skipped prefix. The enhanced branch is pre-trimmed by the
+  // enhance render and always reads from 0.
   const src = enhIdx >= 0
     ? [`[${enhIdx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
-    : [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS'];
+    : seeked
+      ? [`[${idx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
+      : [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS'];
   const up = monoUp(m, enhIdx >= 0);
   return [...src, ...(up ? [up] : []), ...atempo(clip.speed || 1),
     `volume=${clip.volume ?? 1}`, 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
@@ -169,10 +175,10 @@ function buildTimelineAudioArgs(project, outWav, source = 'all') {
       const m = mediaById[clip.mediaId];
       let idx = -1;
       if (m && m.type !== 'image' && m.hasAudio && !clip.muted) {
-        inputs.push('-i', m.path);
+        inputs.push('-ss', num(clip.in), '-i', m.path); // B1: input seeking, as in exports
         idx = n++;
       }
-      filters.push(clipAudioFilter(clip, m, idx, i));
+      filters.push(clipAudioFilter(clip, m, idx, i, -1, idx >= 0));
     });
     let ca = 'a0';
     for (let i = 1; i < clips.length; i++) {
@@ -186,11 +192,11 @@ function buildTimelineAudioArgs(project, outWav, source = 'all') {
 
   const extra = source === 'video' ? [] : project.audioClips.filter((c) => mediaById[c.mediaId] && mediaById[c.mediaId].hasAudio);
   extra.forEach((c, j) => {
-    inputs.push('-i', mediaById[c.mediaId].path);
+    inputs.push('-ss', num(c.in), '-i', mediaById[c.mediaId].path);
     const idx = n++;
     const ms = Math.round(c.start * 1000);
     filters.push(
-      `[${idx}:a]atrim=start=${num(c.in)}:end=${num(c.out)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`].join(',')},` +
+      `[${idx}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`].join(',')},` +
         `aresample=16000,aformat=sample_fmts=fltp:channel_layouts=mono,adelay=${ms}:all=1[x${j}]`
     );
     mix.push(`[x${j}]`);
@@ -294,24 +300,28 @@ function narrowClip(clip, m, from, to) {
 // label of the stream, or null when the clip has none. The matte is constant frame rate from 0 s in source time.
 function matteSource(clip, m, fps, addInput, tag, filters) {
   if (!clip.bgRemove || !m || m.type !== 'video' || !m.matte || !fs.existsSync(m.matte)) return null;
-  const idx = addInput(['-i', m.matte]);
-  filters.push(`[${idx}:v]trim=start=${num(clip.in)}:end=${num(clip.out)},setpts=(PTS-STARTPTS)/${clip.speed || 1},fps=${fps},` +
+  const idx = addInput(['-ss', num(clip.in), '-i', m.matte]);
+  filters.push(`[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${clip.speed || 1},fps=${fps},` +
     `tpad=stop_mode=clone:stop_duration=1[mt${tag}]`);
   return `mt${tag}`;
 }
 
 function pictureSource(clip, m, len, fps, addInput) {
+  // Perf B1: media inputs are input-seeked (-ss before -i) to the clip's first frame and
+  // the trim runs from 0 — the encoder never decodes the skipped prefix (measured at
+  // +48% export time for a clip starting 55 min into its source). `audioSeeked` tells
+  // the caller whether THIS input also carries the clip's (already seeked) audio.
   if (clip.videoOverride) {
     const o = clip.videoOverride;
-    const idx = addInput(['-i', o.file]);
-    return { idx, chain: `[${idx}:v]trim=start=${num(o.start)}:end=${num(o.end)},setpts=PTS-STARTPTS`, own: false };
+    const idx = addInput(['-ss', num(o.start), '-i', o.file]);
+    return { idx, chain: `[${idx}:v]trim=duration=${num(o.end - o.start)},setpts=PTS-STARTPTS`, own: false, audioSeeked: false };
   }
   if (m.type === 'image') {
     const idx = addInput(stillInput(m.path, fps, len));
-    return { idx, chain: `[${idx}:v]trim=duration=${num(len)},setpts=PTS-STARTPTS`, own: true };
+    return { idx, chain: `[${idx}:v]trim=duration=${num(len)},setpts=PTS-STARTPTS`, own: true, audioSeeked: false };
   }
-  const idx = addInput(['-i', m.path]);
-  return { idx, chain: `[${idx}:v]trim=start=${num(clip.in)}:end=${num(clip.out)},setpts=(PTS-STARTPTS)/${clip.speed || 1}${toSdr(m)}`, own: true };
+  const idx = addInput(['-ss', num(clip.in), '-i', m.path]);
+  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${clip.speed || 1}${toSdr(m)}`, own: true, audioSeeked: true };
 }
 
 // opts.raw: only the main track's picture, as raw RGBA frames on stdout (frames for the effects pass).
@@ -363,11 +373,12 @@ function buildExportArgs(project, outFile, opts = {}) {
     } else {
       filters.push(`${src.chain},${clipVideoFilters(clip, W, H, fps, bg)}[v${i}]`);
     }
-    // Sound comes from the media even when the picture was pre-rendered.
-    const audioIdx = src.own || m.type === 'image' || !m.hasAudio || clip.muted ? src.idx : addInput(['-i', m.path]);
+    // Sound comes from the media even when the picture was pre-rendered. A dedicated
+    // audio input (picture came from an override file) is input-seeked too (B1).
+    const audioIdx = src.own || m.type === 'image' || !m.hasAudio || clip.muted ? src.idx : addInput(['-ss', num(clip.in), '-i', m.path]);
     const enhP = !opts.raw && enhancePathOf(clip);
     const enhIdx = enhP ? addInput(['-i', enhP]) : -1;
-    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx));
+    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx, src.own ? !!src.audioSeeked : true));
   });
 
   // 2) Join clips: xfade/acrossfade where a transition is set, plain concat otherwise.
@@ -423,7 +434,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     const tag = `o${j}`;
     const src = pictureSource(c, m, len, fps, addInput);
     filters.push(`${src.chain},fps=${fps}[os${j}]`);
-    const idx = src.own ? src.idx : m.hasAudio && !c.muted && m.type === 'video' ? addInput(['-i', m.path]) : src.idx;
+    const idx = src.own ? src.idx : m.hasAudio && !c.muted && m.type === 'video' ? addInput(['-ss', num(c.in), '-i', m.path]) : src.idx;
     const maskFile = project.maskFiles && project.maskFiles[c.id];
     const maskIdx = maskFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', maskFile]) : null;
     const decoFile = maskFile && project.decoFiles && project.decoFiles[c.id];
@@ -458,11 +469,13 @@ function buildExportArgs(project, outFile, opts = {}) {
   const mixLabels = [`[${ca}]`];
   music.forEach((c, j) => {
     const enhP = enhancePathOf(c);
-    const idx = addInput(['-i', enhP || mediaById[c.mediaId].path]);
+    // B1: the media input is input-seeked to c.in (the enhanced render is pre-trimmed),
+    // so the trim runs from 0 in both cases.
+    const idx = addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', mediaById[c.mediaId].path]);
     const len = (c.out - c.in) / (c.speed || 1); // timeline length (audio clips carry a speed, e.g. detached ones)
     const delay = Math.round(c.start * 1000);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));
@@ -473,7 +486,9 @@ function buildExportArgs(project, outFile, opts = {}) {
   overlayAudio.forEach(({ idx, c, len, start, sp, enh }, j) => {
     const delay = Math.round(start * 1000);
     const up = monoUp(mediaById[c.mediaId], !!enh);
-    const chain = [`atrim=start=${enh ? 0 : num(c.in)}:end=${num(enh ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(sp), `volume=${c.volume ?? 1}`,
+    // B1: idx always names an input seeked to c.in (or the pre-trimmed enhanced render),
+    // so the trim runs from 0.
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(sp), `volume=${c.volume ?? 1}`,
       'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', ...audioFxFilters(c.audioFx), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[oa${j}]`);
     mixLabels.push(`[oa${j}]`);
@@ -518,7 +533,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   const filters = [];
   const mix = [];
   let n = 0;
-  const addInput = (file) => { inputs.push('-i', file); return n++; };
+  const addInput = (args) => { inputs.push(...args); return n++; };
   const fmt = 'aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo';
   let sound = false;
 
@@ -529,7 +544,8 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
       const has = m && m.type === 'video' && m.hasAudio && !clip.muted && !clip.gap;
       if (has) sound = true;
       const enhP = has && enhancePathOf(clip);
-      filters.push(clipAudioFilter(clip, m, has ? addInput(m.path) : -1, i, enhP ? addInput(enhP) : -1));
+      // B1: seek the media input to the clip start; clipAudioFilter trims from 0.
+      filters.push(clipAudioFilter(clip, m, has ? addInput(['-ss', num(clip.in), '-i', m.path]) : -1, i, enhP ? addInput(['-i', enhP]) : -1, true));
     });
     let ca = 'a0';
     for (let i = 1; i < clips.length; i++) {
@@ -546,7 +562,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
     const upO = monoUp(m, !!enhP);
-    filters.push(`[${addInput(enhP || m.path)}:a]atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFxFilters(c.audioFx)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
+    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', m.path])}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFxFilters(c.audioFx)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
   project.audioClips.filter((c) => mediaById[c.mediaId]).forEach((c, j) => {
@@ -555,11 +571,11 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const delay = Math.round(c.start * 1000);
     const enhP = enhancePathOf(c);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [`atrim=start=${enhP ? 0 : num(c.in)}:end=${num(enhP ? c.out - c.in : c.out)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
     if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
     if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
     chain.push(...audioFxFilters(c.audioFx));
-    filters.push(`[${addInput(enhP || mediaById[c.mediaId].path)}:a]${chain.join(',')},${fmt},adelay=${delay}|${delay}[m${j}]`);
+    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', mediaById[c.mediaId].path])}:a]${chain.join(',')},${fmt},adelay=${delay}|${delay}[m${j}]`);
     mix.push(`[m${j}]`);
   });
   if (!sound) throw new Error('Nothing to export: no clip on the timeline has sound.');
