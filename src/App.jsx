@@ -7,7 +7,7 @@ import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2, Unlink,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -1185,6 +1185,25 @@ export default function App() {
     }
     if (sel.track === 'audio') items.push({ label: c.reversed ? 'Reverse (restore original)' : 'Reverse', icon: Rewind, onClick: () => reverseClip(sel) });
     items.push({ label: 'Export clip audio (MP3)', icon: AudioLines, onClick: () => exportAudio('mp3', sel), disabled: !withSound, hint: 'This clip has no sound' });
+    // Enhance voice on the clip's own menu too — the same render the inspector's
+    // Enhance voice section drives (clip.enhance via enhanceClip), for audio clips and
+    // picture clips with sound alike. Hamza, 2026-11-01: it must appear in the audio
+    // context, not only in the video panel.
+    if (withSound && m?.hasAudio) {
+      const e = c.enhance;
+      const stale = !!(e?.path && (Math.abs((e.from ?? -1) - (c.in || 0)) > 0.02 || Math.abs((e.to ?? -1) - (c.out ?? -1)) > 0.02));
+      const enhOn = !!(e?.on && e?.path && !stale);
+      items.push({
+        label: enhOn ? `Enhance voice (on · ${e.strength})` : 'Enhance voice', icon: Sparkles,
+        submenu: [
+          { label: 'Off', disabled: !e?.on, hint: 'Enhance voice is already off', onClick: () => dispatch({ type: 'update', ...sel, patch: { enhance: { ...e, on: false } } }) },
+          ...[['light', 'Light'], ['standard', 'Standard'], ['strong', 'Strong']].map(([s, name]) => ({
+            label: enhOn && e.strength === s ? `${name} ✓` : name,
+            onClick: () => enhanceClip(sel, s),
+          })),
+        ],
+      });
+    }
     items.push(c.disabled
       ? { label: 'Activate clip', icon: Eye, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: false } }) }
       : { label: 'Deactivate clip', icon: EyeOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: true } }) });

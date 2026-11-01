@@ -6,6 +6,7 @@ import { ChevronRight } from 'lucide-react';
 // Closes on a click outside, Escape, scroll or resize; stays inside the window.
 export default function ContextMenu({ x, y, items, onClose, label = 'Clip menu' }) {
   const ref = useRef(null);
+  const subRef = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
   const [openSub, setOpenSub] = useState(-1); // index of the item whose submenu is open
   const [subPos, setSubPos] = useState(null); // fixed position of the open submenu
@@ -30,6 +31,20 @@ export default function ContextMenu({ x, y, items, onClose, label = 'Clip menu' 
     const left = r.right + W + 6 > window.innerWidth ? Math.max(4, r.left - W - 3) : r.right + 3;
     setSubPos({ left, top: Math.max(4, r.top - 5) });
   }, [openSub ]);
+
+  // The placement above only knows the parent item's top; a submenu that starts
+  // low on the screen would spill past the bottom edge with its last items
+  // unreachable. Measure the rendered submenu and shift it up to fit.
+  useLayoutEffect(() => {
+    if (openSub < 0 || !subPos) return;
+    const el = subRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.bottom > window.innerHeight - 4) {
+      const top = Math.max(4, window.innerHeight - r.height - 4);
+      if (Math.abs(top - subPos.top) > 1) setSubPos({ ...subPos, top });
+    }
+  }, [openSub, subPos]);
 
   useEffect(() => {
     const down = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
@@ -67,7 +82,7 @@ export default function ContextMenu({ x, y, items, onClose, label = 'Clip menu' 
             <ChevronRight size={13} className="ctx-chev" />
           </button>
           {openSub === i && subPos && (
-            <div className="ctx-menu ctx-sub" role="menu" aria-label={it.label} style={subPos}>
+            <div className="ctx-menu ctx-sub" role="menu" aria-label={it.label} style={subPos} ref={subRef}>
               {renderItems(it.submenu, true)}
             </div>
           )}
