@@ -17,7 +17,14 @@ export function recentEntryFor(p, path, urlFor) {
   }
   if (!vid) vid = media.find((m) => m.type === 'video') || null;
   let thumb = null;
-  if (vid && vid.thumb && vid.thumbCount) {
+  // W4: prefer the dedicated poster frame (640 px long edge) — a sprite frame is only
+  // 90 px tall and smears at card size. The sprite remains the fallback for media whose
+  // poster has not been generated yet, AND stays in charge when the user picked a cover
+  // time in the Export dialog (project.posterAt) — that choice is mapped into the sprite
+  // below, exactly as before.
+  if (vid && vid.poster && !(p && typeof p.posterAt === 'number')) {
+    thumb = { kind: 'image', src: urlFor(vid.poster) };
+  } else if (vid && vid.thumb && vid.thumbCount) {
     thumb = { kind: 'sprite', src: urlFor(vid.thumb), w: vid.thumbW || 160, h: vid.thumbH || 90, count: vid.thumbCount };
     // The poster time is a TIMELINE time; the sprite spans the first clip's SOURCE. Map through the
     // layout when the poster sits inside that first clip; anywhere else keeps frame 0 (the sprite

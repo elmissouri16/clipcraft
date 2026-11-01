@@ -66,6 +66,13 @@ function StageFrame({ preset }) {
   );
 }
 
+// '9:16' -> '9 / 16' for CSS aspect-ratio: card thumbnails take the PROJECT's true shape
+// (W4) instead of a forced 16/9 box that letterboxes portrait projects into a smear.
+function ratioCss(ratio) {
+  const m = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(String(ratio || ''));
+  return m ? `${m[1]} / ${m[2]}` : '16 / 9';
+}
+
 // A recent's thumbnail: the video sprite's first frame, an image, or the placeholder glyph.
 // Shared by the continue card and the gallery cards.
 function RecentThumb({ r, placeholder = 22 }) {
@@ -193,7 +200,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           )}
           {featured && (
             <div className="home-continue" onClick={() => onOpenRecent(featured)} title={featured.path}>
-              <div className="home-card-thumb home-continue-thumb">
+              <div className="home-card-thumb home-continue-thumb" style={{ aspectRatio: ratioCss(featured.ratio) }}>
                 <RecentThumb r={featured} placeholder={30} />
                 <span className="home-card-ratio">{featured.ratio || '16:9'}</span>
               </div>
@@ -215,7 +222,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
             <div className="home-grid">
               {rest.map((r) => (
                 <div key={r.slotId || r.path} className="home-card" onClick={() => onOpenRecent(r)} title={r.path || ''}>
-                  <div className="home-card-thumb">
+                  <div className="home-card-thumb" style={{ aspectRatio: ratioCss(r.ratio) }}>
                     <RecentThumb r={r} />
                     <span className="home-card-ratio">{r.ratio || '16:9'}</span>
                   </div>

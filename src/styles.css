@@ -1769,7 +1769,7 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .home-card { position: relative; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg);
   overflow: hidden; cursor: pointer; transition: border-color var(--t-fast), transform var(--t-fast); }
 .home-card:hover { border-color: var(--primary); transform: translateY(-1px); }
-.home-card-thumb { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #241d47, #12121d);
+.home-card-thumb { position: relative; aspect-ratio: 16 / 9; max-height: 340px; background: linear-gradient(135deg, #241d47, #12121d);
   display: grid; place-items: center; color: var(--text-3); overflow: hidden; }
 .home-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .home-card-ratio { position: absolute; right: 8px; bottom: 8px; background: rgba(0, 0, 0, 0.65); color: #fff;
@@ -2078,8 +2078,11 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 @media (max-width: 1080px) { .home-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .home-quick { grid-template-columns: 1fr; } }
 
-/* Jump back in: the latest project as a wide continue card */
-.home-continue { position: relative; display: grid; grid-template-columns: 302px minmax(0, 1fr);
+/* Jump back in: the latest project as a COMPACT continue card (W4) — sized to its
+   content instead of stretching the full column: the thumbnail is a fixed-height box in
+   the project's true aspect (<= 300 px wide) and the info sits beside it. */
+.home-continue { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  max-width: 880px;
   margin-bottom: 14px; border-radius: 18px; overflow: hidden; cursor: pointer;
   background: linear-gradient(115deg, #1a1531, var(--surface-1) 56%);
   border: 1px solid rgba(130, 92, 251, 0.38);
@@ -2087,7 +2090,7 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
   transition: border-color var(--t-fast), transform var(--t-fast), box-shadow var(--t-fast); }
 .home-continue:hover { border-color: var(--primary); transform: translateY(-2px);
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.48), 0 10px 30px rgba(130, 92, 251, 0.20); }
-.home-continue-thumb { aspect-ratio: auto; height: 100%; min-height: 158px; }
+.home-continue-thumb { height: 168px; min-height: 0; max-width: 300px; }
 .home-continue-body { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 18px 22px; min-width: 0; }
 .home-continue-name { font-size: 19.5px; font-weight: 700; letter-spacing: -0.2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2096,8 +2099,8 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .home-continue-cta .btn { display: inline-flex; align-items: center; gap: 6px; }
 .home-continue .home-card-x { z-index: 2; }
 @media (max-width: 680px) {
-  .home-continue { grid-template-columns: 1fr; }
-  .home-continue-thumb { aspect-ratio: 16 / 9; height: auto; min-height: 0; }
+  .home-continue { grid-template-columns: 1fr; max-width: none; }
+  .home-continue-thumb { height: auto; min-height: 0; max-width: none; width: 100%; }
 }
 
 /* Gallery: larger cards, hover lift + brand glow, relative-date meta */

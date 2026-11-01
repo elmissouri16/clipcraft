@@ -315,9 +315,10 @@ export default function App() {
   // When a video thumbnail lands for the project that backs a recents entry, refresh that
   // entry's poster in place (no reorder, no date change). Degrades silently otherwise.
   const firstVideoThumb = (project.media || []).find((m) => m.type === 'video' && m.thumb)?.thumb || null;
+  const firstVideoPoster = (project.media || []).find((m) => m.type === 'video' && m.poster)?.poster || null;
   useEffect(() => {
     const f = autosave.current.file;
-    if (!f || !firstVideoThumb) return;
+    if (!f || (!firstVideoThumb && !firstVideoPoster)) return;
     setRecents((list) => {
       const e = list.find((r) => r.path === f);
       if (!e) return list;
@@ -328,13 +329,13 @@ export default function App() {
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firstVideoThumb]);
+  }, [firstVideoThumb, firstVideoPoster]);
   // Ask for visuals that are missing (older projects, files imported before this feature, moved caches).
   // Below Full playback quality, every video also needs its copy for the level (levelCopyState 'fallback':
   // not made yet; 'failed' is not retried). While the copy is missing the player uses a fallback file.
-  const mediaKey = project.media.map((m) => `${m.path}|${m.thumbCount ? 1 : 0}|${m.wave ? 1 : 0}|${m.optimizing ? 1 : 0}|${m.lightProxy == null ? 0 : 1}|${m.proxies?.[quality] == null ? 0 : 1}`).join(';') + `|${quality}`;
+  const mediaKey = project.media.map((m) => `${m.path}|${m.thumbCount ? 1 : 0}|${m.poster ? 1 : 0}|${m.wave ? 1 : 0}|${m.optimizing ? 1 : 0}|${m.lightProxy == null ? 0 : 1}|${m.proxies?.[quality] == null ? 0 : 1}`).join(';') + `|${quality}`;
   useEffect(() => {
-    const missing = project.media.filter((m) => (m.type === 'video' && (!m.thumbCount || m.optimizing || levelCopyState(m, quality) === 'fallback')) || (m.hasAudio && !m.wave));
+    const missing = project.media.filter((m) => (m.type === 'video' && (!m.thumbCount || !m.poster || m.optimizing || levelCopyState(m, quality) === 'fallback')) || (m.hasAudio && !m.wave));
     if (missing.length) {
       window.api.ensureVisuals(missing.map(({ path, type, duration, hasAudio, width, height, proxy, lightProxy, proxies }) => ({ path, type, duration, hasAudio, width, height, proxy, lightProxy, proxies })));
     }

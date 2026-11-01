@@ -13,7 +13,7 @@ const API = `${BASE}/api/v1/templates`;
 const SLUG = /^[0-9a-f]{12}$/;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 // Cache fields of a media item (made again on the PC that opens the template).
-const GENERATED = ['thumb', 'thumbCount', 'thumbInterval', 'thumbW', 'thumbH', 'wave', 'proxy', 'optimizing'];
+const GENERATED = ['thumb', 'thumbCount', 'thumbInterval', 'thumbW', 'thumbH', 'wave', 'proxy', 'optimizing', 'poster'];
 const LIST_KEYS = ['q', 'category', 'ratio', 'clips', 'length', 'sort', 'page'];
 const MAX_FILE = 1024 * 1024 * 1024;
 

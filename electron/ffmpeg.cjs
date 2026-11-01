@@ -796,12 +796,14 @@ function runFfmpeg(args) {
 // onUpdate(partial) is called as each piece becomes available. Failures are non-fatal.
 async function makeVisuals(item, cacheDir, onUpdate = () => {}) {
   const st = fs.statSync(item.path);
-  const key = require('crypto').createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|v2`).digest('hex').slice(0, 16);
+  // v3 (W4, 2026-11-01): visuals now include a dedicated full-frame poster (below) — the
+  // version bump makes media cached under v2 regenerate once so posters appear everywhere.
+  const key = require('crypto').createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|v3`).digest('hex').slice(0, 16);
   fs.mkdirSync(cacheDir, { recursive: true });
   const metaFile = path.join(cacheDir, `${key}-visuals.json`);
   if (fs.existsSync(metaFile)) {
     const cached = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
-    if ([cached.thumb, cached.wave].every((f) => !f || fs.existsSync(f))) {
+    if ([cached.thumb, cached.wave, cached.poster].every((f) => !f || fs.existsSync(f))) {
       onUpdate(cached);
       return cached;
     }
@@ -825,6 +827,19 @@ async function makeVisuals(item, cacheDir, onUpdate = () => {}) {
       Object.assign(out, meta, { thumb: exact });
       onUpdate({ ...meta, thumb: exact });
     } else if (fs.existsSync(fast)) Object.assign(out, meta, { thumb: fast });
+    // W4: a dedicated POSTER frame for project cards. The sprite frames are only 90 px
+    // tall (a portrait frame is ~52x90) — showing one at card size is the blurry smear
+    // Hamza reported. The poster is one frame at 640 px on its long edge, taken a little
+    // into the file (min(2 s, ~10% of duration), at least 0.4 s in) so it is a stable,
+    // representative frame rather than a fade-in instant or a mid-transition blur.
+    const poster = path.join(cacheDir, `${key}-poster.jpg`);
+    const pt = Math.min(2, Math.max(0.4, item.duration * 0.1));
+    await runFfmpeg(['-ss', pt.toFixed(3), '-i', item.path, '-an', '-frames:v', '1',
+      '-vf', 'scale=640:640:force_original_aspect_ratio=decrease', '-q:v', '3', poster]).catch(() => {});
+    if (fs.existsSync(poster)) {
+      out.poster = poster;
+      onUpdate({ poster });
+    }
   }
   if (item.hasAudio && item.duration > 0) {
     const wave = path.join(cacheDir, `${key}-wave.png`);
