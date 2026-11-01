@@ -2,16 +2,19 @@
 // and for the Media panel's tree (Workstream C). No React, no window — the test suite
 // (scripts/test-assets.cjs) exercises this file directly.
 
-// Assets-tab groups, in order. Music is deliberately NOT here: the pack's music lives in
-// the Audio tab's Music place. Generated is not a manifest group either — it is the Forge
-// shelf, read through window.api.forgeList in the panel.
-export const ASSET_GROUPS = ['Sound FX', 'Transitions', 'Overlays'];
+// Assets-tab groups, in order. The pack's AUDIO is deliberately NOT here (Hamza,
+// 2026-11-01): Music lives in the Audio tab's Music place and Sound FX in the Audio
+// tab's Sound FX place, with the music — Assets holds the visual/other groups only.
+// Generated is not a manifest group either — it is the Forge shelf, read through
+// window.api.forgeList in the panel. Characters, Icons and 3D arrived with pack 2.
+export const ASSET_GROUPS = ['Transitions', 'Overlays', 'Characters', 'Icons', '3D'];
 
 // Where a pack item goes when clicked in a library panel, as the `where` argument of
 // App's addFile(path, where): audio files land on the audio lane at the playhead (addFile
-// routes by media type), video files become overlay clips at the playhead. Must agree with
+// routes by media type), video and image files become overlay clips at the playhead
+// (images with the default image duration, like imported photos). Must agree with
 // electron/assets.cjs laneFor(); test-assets.cjs pins the agreement.
-export const assetAddWhere = (item) => (item && item.kind === 'video' ? 'overlay' : 'main');
+export const assetAddWhere = (item) => (item && (item.kind === 'video' || item.kind === 'image') ? 'overlay' : 'main');
 
 // ---- Media tree classification ----
 // Kinds come from the media registry itself (m.type). Speech and Processed are subsets

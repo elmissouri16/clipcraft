@@ -1,5 +1,7 @@
 // Asset pack library: a FOLDER-BACKED library (Hamza's decision — the app stays light, the
-// pack never ships inside the installer). The app reads one assets folder:
+// pack never ships inside the installer). One exception, also his call: the 2026-11-01 TEST
+// build bundles the merged pack as an extraResource and reads it in place when the user's
+// own folder has no library yet (see readLibraryFor). The app reads one assets folder:
 //
 //   <assets root>/library.json     the manifest: { items: [{ name, file, group, sub, kind,
 //                                  duration, dims, size, poster? }] } — file/poster are
@@ -16,13 +18,31 @@ const path = require('path');
 
 // Library groups, in panel order. Music is NOT an Assets-tab group: it is integrated into
 // the Audio tab's Music place instead (see src/components/PackMusic.jsx); it is listed here
-// because the manifest carries it and the counts cover the whole pack.
-const GROUPS = ['Music', 'Sound FX', 'Transitions', 'Overlays'];
+// because the manifest carries it and the counts cover the whole pack. Characters, Icons
+// and 3D arrived with pack 2 (2026-11-01).
+const GROUPS = ['Music', 'Sound FX', 'Transitions', 'Overlays', 'Characters', 'Icons', '3D'];
 
 function assetsRoot(userDataDir, env = process.env) {
   if (env.CLIPCRAFT_ASSETS_DIR) return path.resolve(env.CLIPCRAFT_ASSETS_DIR);
   if (env.FVE_SMOKE) return path.join(env.FVE_SMOKE, 'clipcraft-assets-test');
   return path.join(userDataDir, 'clipcraft-assets');
+}
+
+// The BUNDLED pack (test builds only): electron-builder's extraResources carry the merged
+// library to <resources>/clipcraft-pack. The public design stays download-only — this is
+// purely a read source for builds that ship it. CLIPCRAFT_BUNDLED_PACK_DIR points dev and
+// tests at a bundle folder explicitly; otherwise the packaged location is probed. Returns
+// the bundle root only when it actually holds a library.json, else null.
+function bundledRoot(resourcesPath, env = process.env) {
+  if (env.CLIPCRAFT_BUNDLED_PACK_DIR) {
+    const p = path.resolve(env.CLIPCRAFT_BUNDLED_PACK_DIR);
+    return fs.existsSync(path.join(p, 'library.json')) ? p : null;
+  }
+  if (resourcesPath) {
+    const p = path.join(resourcesPath, 'clipcraft-pack');
+    if (fs.existsSync(path.join(p, 'library.json'))) return p;
+  }
+  return null;
 }
 
 function ensureRoot(root) {
@@ -31,9 +51,11 @@ function ensureRoot(root) {
 }
 
 // Where a pack item lands when clicked: audio files go to the audio lane at the playhead,
-// video files become overlay clips at the playhead (the Assets behaviour Hamza asked for —
-// transitions and overlays are picture-in-picture material, never main-track replacements).
-const laneFor = (item) => (item && item.kind === 'video' ? 'overlay' : 'audio');
+// video and image files become overlay clips at the playhead (the Assets behaviour Hamza
+// asked for — transitions and overlays are picture-in-picture material, never main-track
+// replacements). Images get the app's default image duration on the overlay lane, exactly
+// like an imported photo (src/store.js IMAGE_DEFAULT).
+const laneFor = (item) => (item && (item.kind === 'video' || item.kind === 'image') ? 'overlay' : 'audio');
 
 function readLibrary(root) {
   const empty = { root, hasLibrary: false, items: [], counts: {}, total: 0 };
@@ -61,7 +83,7 @@ function readLibrary(root) {
       file: it.file,
       group: String(it.group || 'Other'),
       sub: String(it.sub || ''),
-      kind: it.kind === 'video' ? 'video' : 'audio',
+      kind: it.kind === 'video' ? 'video' : it.kind === 'image' ? 'image' : 'audio',
       duration: Number(it.duration) || 0,
       dims: it.dims || null,
       size: Number(it.size) || 0,
@@ -78,4 +100,24 @@ function readLibrary(root) {
   return { root, hasLibrary: true, items, counts, total: items.length };
 }
 
-module.exports = { GROUPS, assetsRoot, ensureRoot, readLibrary, laneFor };
+// The library the panels should show. Rule: the user's own assets folder wins — if it
+// holds a library.json (hand-placed or installed by a pack download), that is the library,
+// exactly as before. Only when the user folder has NO library does a bundled pack (test
+// builds) become the read source, read in place (never copied). Writes never go to the
+// bundle: pack installs keep targeting assetsRoot() via the pack:install handler, and
+// once an install lands a library.json in the user folder it takes over reads too. The
+// result gains `bundled: true` in the fallback case so the UI can say where the pack came
+// from and the first-run pack prompt can stay out of the way.
+function readLibraryFor(userDataDir, env = process.env, resourcesPath = process.resourcesPath) {
+  const root = assetsRoot(userDataDir, env);
+  const lib = readLibrary(root);
+  if (lib.hasLibrary) return { ...lib, bundled: false };
+  const bundle = bundledRoot(resourcesPath, env);
+  if (bundle && path.resolve(bundle) !== path.resolve(root)) {
+    const blib = readLibrary(bundle);
+    if (blib.hasLibrary) return { ...blib, bundled: true, userRoot: root };
+  }
+  return { ...lib, bundled: false };
+}
+
+module.exports = { GROUPS, assetsRoot, ensureRoot, readLibrary, readLibraryFor, bundledRoot, laneFor };

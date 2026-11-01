@@ -111,6 +111,15 @@
       "node_modules/ffprobe-static/**",
       "node_modules/onnxruntime-node/**"
     ],
+    "extraResources": [
+      {
+        "from": "../clipcraft-pack-merged",
+        "to": "clipcraft-pack",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "linux": {
       "target": [
         "deb"

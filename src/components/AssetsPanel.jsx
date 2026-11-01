@@ -1,41 +1,71 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Film, FolderOpen, Layers, Loader2, Music2, Plus, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Film, FolderOpen, Image as ImageIcon, Layers, Loader2, Music2, Plus, RefreshCw } from 'lucide-react';
 import SearchBox from './SearchBox.jsx';
 import PackOffer from './PackOffer.jsx';
 import { ASSET_GROUPS, assetAddWhere } from '../assetsLib.js';
 import { formatTime, toFileUrl } from '../store.js';
 import { refreshAssets, useAssets } from '../useAssets.js';
 
-// Assets tab — the folder-backed pack library (Sound FX / Transitions / Overlays) plus the
-// app's own generated media (the Forge shelf). It replaced the Templates tab in the dock,
-// with the same icon. The pack's Music is NOT here: it lives in the Audio tab's Music
-// place (PackMusic.jsx), as Hamza's IA specifies.
+// Assets tab — the folder-backed pack library's VISUAL groups (Transitions / Overlays /
+// Characters / Icons / 3D) plus the app's own generated media (the Forge shelf). It
+// replaced the Templates tab in the dock, with the same icon. The pack's audio is NOT
+// here (Hamza, 2026-11-01): Music lives in the Audio tab's Music place and Sound FX in
+// its Sound FX place (PackMusic.jsx), with the music.
 //
 // Adding: one click on a row (or its + button) puts the file on the timeline at the
-// playhead through App's addFile — audio files land on the audio lane, video files become
-// overlay clips. Posters come from the pack itself (Mister Horse previews matched by the
-// analysis) and lazy-load; a closed group renders nothing, so the full 312-item library
-// opens instantly and scrolls without jank.
+// playhead through App's addFile — audio files land on the audio lane, video and image
+// files become overlay clips (images with the default image duration). Posters come from
+// the pack itself (Mister Horse previews matched by the analysis) and lazy-load; image
+// items thumbnail from the file itself, and a sub made only of images renders as a
+// thumbnail grid. A closed group renders nothing, so the full 570-item library opens
+// instantly and scrolls without jank (rows also carry content-visibility: auto).
 const dur = (s) => (s ? formatTime(s).slice(0, 5) : '');
+const KIND_LABEL = { video: 'Video', image: 'Image', audio: 'Sound' };
+// The picture a row/tile shows: the pack poster when there is one, else — for image
+// items — the file itself (it IS the picture).
+const thumbOf = (item) => item.poster || (item.kind === 'image' && !item.missing ? item.path : null);
 
 function AssetRow({ item, onAdd, adding }) {
+  const thumb = thumbOf(item);
   return (
     <div className={`lib-row asset-row ${item.missing ? 'missing' : ''}`} onDoubleClick={() => onAdd(item)}
       title={item.missing ? 'This file is not in the assets folder' : `Add ${item.name} at the playhead`}>
-      {item.poster
-        ? <img className="asset-poster" src={toFileUrl(item.poster)} loading="lazy" decoding="async" alt="" draggable={false} />
-        : <span className="asset-kind">{item.kind === 'video' ? <Film size={16} /> : <Music2 size={16} />}</span>}
+      {thumb
+        ? <img className="asset-poster" src={toFileUrl(thumb)} loading="lazy" decoding="async" alt="" draggable={false} />
+        : <span className="asset-kind">{item.kind === 'video' ? <Film size={16} /> : item.kind === 'image' ? <ImageIcon size={16} /> : <Music2 size={16} />}</span>}
       <div className="lib-meta">
         <b title={item.name}>{item.name}</b>
         <span className="lib-sub">
-          <span>{item.kind === 'video' ? 'Video' : 'Sound'}{item.dims ? ` · ${item.dims.replace('x', '×')}` : ''}{item.duration ? ` · ${dur(item.duration)}` : ''}</span>
+          <span>{KIND_LABEL[item.kind] || 'Sound'}{item.dims ? ` · ${item.dims.replace('x', '×')}` : ''}{item.duration ? ` · ${dur(item.duration)}` : ''}</span>
           {item.missing && <i className="lic by">Missing file</i>}
         </span>
       </div>
       <button className="lib-add" onClick={() => onAdd(item)} disabled={item.missing || adding === item.path}
-        aria-label={`Add ${item.name} at the playhead`} title={item.kind === 'video' ? 'Add as overlay at the playhead' : 'Add at the playhead'}>
+        aria-label={`Add ${item.name} at the playhead`} title={item.kind === 'audio' ? 'Add at the playhead' : 'Add as overlay at the playhead'}>
         {adding === item.path ? <Loader2 size={15} className="spin" /> : <Plus size={16} />}
       </button>
+    </div>
+  );
+}
+
+// One tile of an image sub's thumbnail grid (Characters, Frames…): the picture large,
+// the name under it, the + on hover. Double-click adds, like rows.
+function AssetTile({ item, onAdd, adding }) {
+  const thumb = thumbOf(item);
+  return (
+    <div className={`asset-tile ${item.missing ? 'missing' : ''}`} onDoubleClick={() => onAdd(item)}
+      title={item.missing ? 'This file is not in the assets folder' : `Add ${item.name} at the playhead`}>
+      <span className="asset-tile-img">
+        {thumb
+          ? <img src={toFileUrl(thumb)} loading="lazy" decoding="async" alt="" draggable={false} />
+          : <ImageIcon size={22} />}
+        <button className="lib-add asset-tile-add" onClick={() => onAdd(item)} disabled={item.missing || adding === item.path}
+          aria-label={`Add ${item.name} at the playhead`} title="Add as overlay at the playhead">
+          {adding === item.path ? <Loader2 size={15} className="spin" /> : <Plus size={16} />}
+        </button>
+      </span>
+      <span className="asset-tile-name" title={item.name}>{item.name}</span>
+      <span className="asset-tile-sub">{item.dims ? item.dims.replace('x', '×') : ''}{item.missing ? ' · Missing file' : ''}</span>
     </div>
   );
 }
@@ -54,20 +84,26 @@ function Group({ name, count, open, onToggle, children }) {
 }
 
 // Sub-sections of one group: [label, items] pairs; a single pair renders without a header.
-function SubLists({ pairs, renderItem }) {
-  return pairs.map(([label, items]) => (
-    <div key={label || 'all'} className="lib-group">
-      {pairs.length > 1 && <span className="lib-group-name">{label} · {items.length}</span>}
-      <div className="lib-list">{items.map(renderItem)}</div>
-    </div>
-  ));
+// A sub whose items are ALL images renders as a thumbnail grid instead of rows.
+function SubLists({ pairs, renderItem, renderTile }) {
+  return pairs.map(([label, items]) => {
+    const grid = items.length > 0 && items.every((i) => i.kind === 'image');
+    return (
+      <div key={label || 'all'} className="lib-group">
+        {pairs.length > 1 && <span className="lib-group-name">{label} · {items.length}</span>}
+        {grid
+          ? <div className="asset-grid">{items.map(renderTile)}</div>
+          : <div className="lib-list">{items.map(renderItem)}</div>}
+      </div>
+    );
+  });
 }
 
 export default function AssetsTab({ onAddFile }) {
   const lib = useAssets();
   const [q, setQ] = useState('');
   const [shelf, setShelf] = useState([]);
-  const [open, setOpen] = useState({ 'Sound FX': true });
+  const [open, setOpen] = useState({ Transitions: true });
   const [adding, setAdding] = useState('');
   const [err, setErr] = useState('');
   useEffect(() => { window.api.forgeList().then(setShelf).catch(() => {}); }, []);
@@ -91,24 +127,32 @@ export default function AssetsTab({ onAddFile }) {
   const groups = useMemo(() => {
     if (!lib) return null;
     const by = (g) => lib.items.filter((i) => i.group === g && match(i.name));
+    const row = (i) => <AssetRow key={i.path} item={i} onAdd={add} adding={adding} />;
+    const tile = (i) => <AssetTile key={i.path} item={i} onAdd={add} adding={adding} />;
+    // The plain shape most groups take: one sub-list per manifest sub.
+    const bySub = (g) => () => {
+      const items = by(g);
+      const subs = [...new Set(items.map((i) => i.sub))];
+      return <SubLists pairs={subs.map((s) => [s, items.filter((i) => i.sub === s)])} renderItem={row} renderTile={tile} />;
+    };
     return {
-      'Sound FX': () => {
-        const items = by('Sound FX');
-        const subs = [...new Set(items.map((i) => i.sub))];
-        return <SubLists pairs={subs.map((s) => [s, items.filter((i) => i.sub === s)])} renderItem={(i) => <AssetRow key={i.path} item={i} onAdd={add} adding={adding} />} />;
-      },
-      // Honest kinds, not folder names: the pack's "sounds" folder holds 4 video files, so
-      // the split is by the file's real media kind (22 video / 3 sound in this pack).
+      // Honest kinds, not folder names: pack 1's "sounds" folder holds video files, so the
+      // split stays by the file's real media kind — with pack 2's real subgroups (Ink,
+      // Premium) named inside the video side.
       Transitions: () => {
         const items = by('Transitions');
-        const pairs = [['Video', items.filter((i) => i.kind === 'video')], ['Sound', items.filter((i) => i.kind === 'audio')]].filter(([, l]) => l.length);
-        return <SubLists pairs={pairs} renderItem={(i) => <AssetRow key={i.path} item={i} onAdd={add} adding={adding} />} />;
+        const vids = items.filter((i) => i.kind === 'video');
+        const vsubs = [...new Set(vids.map((i) => i.sub))];
+        const pairs = [
+          ...vsubs.map((s) => [vsubs.length > 1 && s !== 'Video' ? `Video · ${s}` : 'Video', vids.filter((i) => i.sub === s)]),
+          ['Sound', items.filter((i) => i.kind === 'audio')],
+        ].filter(([, l]) => l.length);
+        return <SubLists pairs={pairs} renderItem={row} renderTile={tile} />;
       },
-      Overlays: () => {
-        const items = by('Overlays');
-        const subs = [...new Set(items.map((i) => i.sub))];
-        return <SubLists pairs={subs.map((s) => [s, items.filter((i) => i.sub === s)])} renderItem={(i) => <AssetRow key={i.path} item={i} onAdd={add} adding={adding} />} />;
-      },
+      Overlays: bySub('Overlays'),
+      Characters: bySub('Characters'),
+      Icons: bySub('Icons'),
+      '3D': bySub('3D'),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lib, query, adding]);
@@ -133,10 +177,10 @@ export default function AssetsTab({ onAddFile }) {
       ) : !lib.hasLibrary ? (
         <div className="assets-empty">
           <p><b>No asset pack found yet.</b></p>
-          <PackOffer categories={['music', 'sfx', 'assets']} />
+          <PackOffer categories={['music', 'assets']} />
           <p className="muted">Or place a pack by hand — ClipCraft reads it from this folder on this PC:</p>
           <p className="muted path">{lib.root}</p>
-          <p className="muted">Put the pack's <b>library.json</b> and its media files there (keeping the folder layout), then Refresh — Sound FX, Transitions and Overlays appear here, and the pack's music appears in Audio → Music. Nothing is bundled into the app, so the pack can grow without reinstalling.</p>
+          <p className="muted">Put the pack's <b>library.json</b> and its media files there (keeping the folder layout), then Refresh — Transitions, Overlays, Characters, Icons and 3D appear here, and the pack's music and sound effects appear in Audio. Nothing is bundled into the app, so the pack can grow without reinstalling.</p>
           <button className="btn btn-sm" onClick={() => window.api.openFolder(lib.root)}><FolderOpen size={13} /> Open assets folder</button>
         </div>
       ) : (
@@ -170,12 +214,15 @@ export default function AssetsTab({ onAddFile }) {
               </div>
             )}
           </Group>
-          <p className="muted small pad-x">Pack folder: {lib.root} · {lib.total} files indexed. Music from the pack lives in Audio → Music.</p>
+          {lib.bundled
+            ? <p className="muted small pad-x">Creator Pack bundled with this build — {lib.total} files, read in place. Music and sound effects from the pack live in Audio.</p>
+            : <p className="muted small pad-x">Pack folder: {lib.root} · {lib.total} files indexed. Music and sound effects from the pack live in Audio.</p>}
           {(() => {
             // A partial pack keeps its standing offer for the categories still missing.
+            // Sound FX is not offered here — it belongs to Audio now, which carries its
+            // own standing offer in the Sound FX view.
             const missing = [
               ...(lib.counts.Music ? [] : ['music']),
-              ...(lib.counts['Sound FX'] ? [] : ['sfx']),
               ...(lib.counts.Transitions || lib.counts.Overlays ? [] : ['assets']),
             ];
             return missing.length ? (
