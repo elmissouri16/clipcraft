@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Eraser, Paintbrush, RotateCcw, Trash2, X } from 'lucide-react';
-import { toFileUrl } from '../store.js';
+import { previewPath, toFileUrl } from '../store.js';
 import { rasterizeCustomMask } from '../customMask.js';
 
 // Custom removal editor: paint Erase / Restore strokes over the clip's frame. The strokes are
@@ -91,7 +91,11 @@ export default function CustomMaskEditor({ clip, media, onClose, onSave }) {
         </div>
         <div className="cmask-stage" ref={stageRef} style={{ aspectRatio: String(aspect) }}>
           {isVideo ? (
-            <video ref={frameRef} src={toFileUrl(media.path)} muted preload="auto" playsInline
+            // The frame comes through the player's own source chain (previewPath): phone
+            // footage the player needs a proxy for (HEVC, 10-bit, HDR, oversized) cannot
+            // decode from the original file in Chromium at all — loading media.path here
+            // directly gave those clips a permanently black paint stage (W5).
+            <video ref={frameRef} src={toFileUrl(previewPath(media))} muted preload="auto" playsInline
               onLoadedMetadata={(e) => { e.currentTarget.currentTime = Math.min(clip.in || 0, (media.duration || 1) - 0.05); }} />
           ) : (
             <img ref={frameRef} src={toFileUrl(media.path)} alt="" />
