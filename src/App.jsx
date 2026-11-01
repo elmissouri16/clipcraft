@@ -32,7 +32,7 @@ import CloseDialog from './components/CloseDialog.jsx';
 import TopBar from './components/TopBar.jsx';
 import SettingsDialog from './components/SettingsDialog.jsx';
 import { AboutDialog, UpdateNotice, useUpdateCheck } from './components/About.jsx';
-import OnboardingTour from './components/OnboardingTour.jsx';
+import WelcomeCard from './components/WelcomeCard.jsx';
 import PackPrompt from './components/PackPrompt.jsx';
 import ScreenRecordDialog from './components/ScreenRecordDialog.jsx';
 import { useScreenRecorder } from './useScreenRecorder.js';
@@ -90,13 +90,16 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quality, setQuality] = useState('full'); // Playback quality: which scaled copy the player uses
   const [aboutOpen, setAboutOpen] = useState(false);
-  // ---- First run: the onboarding tour, then the Creator Pack prompt — each shows exactly
-  // once (flags in settings.json via firstrun IPC); About replays the tour on demand. ----
-  const [tourOpen, setTourOpen] = useState(false);
-  const [tourStep, setTourStep] = useState(0); // lives here: the tour remounts across the Home↔editor transition
-  // W6 (2026-11-01): the tour no longer fires at app launch on the Home screen. It starts
-  // the first time the user ENTERS a project (the editor), once only. tourSeen stays null
-  // until the persisted flags load, so a fast first click can't slip past it either way.
+  // ---- First run: the welcome card, then the Creator Pack prompt — each shows exactly
+  // once (flags in settings.json via firstrun IPC); About replays the card on demand. ----
+  // B3 (2026-11-01): the multi-step tour became this single card. The persisted flag
+  // keeps its name (tourSeen) so profiles that already saw the tour count as seen and
+  // never get the card; the trigger and the dismissal chain are unchanged.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  // W6 (2026-11-01): the first-run surface no longer fires at app launch on the Home
+  // screen. It starts the first time the user ENTERS a project (the editor), once
+  // only. tourSeen stays null until the persisted flags load, so a fast first click
+  // can't slip past it either way.
   const [tourSeen, setTourSeen] = useState(null);
   const [packPromptOpen, setPackPromptOpen] = useState(false);
   const packPromptSeenRef = useRef(false);
@@ -116,8 +119,8 @@ export default function App() {
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  const closeTour = useCallback(() => {
-    setTourOpen(false);
+  const closeWelcome = useCallback(() => {
+    setWelcomeOpen(false);
     setTourSeen(true);
     window.api.firstRunSet?.({ tourSeen: true }).catch(() => {});
     if (!packPromptSeenRef.current && !packBundledRef.current) setPackPromptOpen(true);
@@ -126,28 +129,6 @@ export default function App() {
     setPackPromptOpen(false);
     packPromptSeenRef.current = true;
     window.api.firstRunSet?.({ packPromptSeen: true }).catch(() => {});
-  }, []);
-  // The tour's editor steps run in a scratch "Tour project" — but only when the current
-  // project is empty; a user replaying the tour mid-work keeps their own project.
-  const openTourDemo = useCallback(() => {
-    const p = projectRef.current;
-    const hasContent = (p.media || []).length > 0
-      || (p.videoClips || []).some((c) => !c.gap) || (p.overlayClips || []).length > 0
-      || (p.textClips || []).length > 0 || (p.audioClips || []).length > 0;
-    if (!hasContent) {
-      const np = {
-        ...emptyProject(), id: `tour-${uid()}`, name: 'Tour project', ratio: '16:9',
-        ...sizeFor('16:9', 1080), resolution: 1080, fps: 30, ratioLocked: true,
-      };
-      autosave.current.file = null;
-      autosave.current.pendingRestore = false;
-      dispatch({ type: 'load', project: np });
-      setSaveState('new');
-      setUnsavedNote(null);
-      setSelection(null);
-      setTime(0);
-    }
-    setScreen('editor');
   }, []);
   const [update, setUpdate] = useUpdateCheck(); // manual update check state (About dialog)
   const [updateSeen, setUpdateSeen] = useState(false);
@@ -175,12 +156,12 @@ export default function App() {
   const [closeAsk, setCloseAsk] = useState(null); // { name, resolve }: the "Save before closing?" question
   // ---- Home screen + recent projects (localStorage 'clipcraft.recents') ----
   const [screen, setScreen] = useState('home'); // 'home' | 'editor'
-  // W6 deferred tour trigger: the first entry into the editor with an unseen tour opens
-  // it (declared here, after `screen`). The pack prompt is NOT moved — it still chains
-  // off closeTour, exactly as before.
+  // W6 deferred welcome trigger: the first entry into the editor with the first-run
+  // surface unseen opens the welcome card (declared here, after `screen`). The pack
+  // prompt is NOT moved — it still chains off closeWelcome, exactly as before.
   useEffect(() => {
-    if (screen === 'editor' && tourSeen === false && !tourOpen) setTourOpen(true);
-  }, [screen, tourSeen, tourOpen]);
+    if (screen === 'editor' && tourSeen === false && !welcomeOpen) setWelcomeOpen(true);
+  }, [screen, tourSeen, welcomeOpen]);
   const [recents, setRecents] = useState(() => {
     try { return JSON.parse(localStorage.getItem('clipcraft.recents') || '[]'); } catch { return []; }
   });
@@ -227,8 +208,9 @@ export default function App() {
   };
   useEffect(() => { refreshSlots(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (screen === 'home') refreshSlots(); }, [screen]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The onboarding tour's scratch project lives in a reserved id namespace: it never gets
-  // a slot, so it can never pollute the Home list.
+  // Legacy namespace: the pre-B3 tour's scratch projects carried 'tour-' ids. None are
+  // created any more, but ones saved by users still exist — they never get a slot, so
+  // they can never pollute the Home list.
   const isTourId = (id) => typeof id === 'string' && id.startsWith('tour-');
   // The slot record for a project (defaults: the one in the editor). A project earns a slot
   // once it has content, or from the start when it is file-backed; a pristine empty project
@@ -1772,8 +1754,8 @@ export default function App() {
           onRestoreUnsaved={restoreUnsaved}
           onDiscardUnsaved={discardUnsaved} />
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
-        {tourOpen && <OnboardingTour onClose={closeTour} goHome={() => setScreen('home')} openDemo={openTourDemo} setTab={setTab} stepIndex={tourStep} onStepChange={setTourStep} />}
-        {packPromptOpen && !tourOpen && <PackPrompt onClose={closePackPrompt} />}
+        {welcomeOpen && <WelcomeCard onClose={closeWelcome} />}
+        {packPromptOpen && !welcomeOpen && <PackPrompt onClose={closePackPrompt} />}
       </div>
     );
   }
@@ -1854,9 +1836,9 @@ export default function App() {
       )}
             {!updateSeen && !aboutOpen && <UpdateNotice update={update} onDismiss={() => setUpdateSeen(true)} />}
       {aboutOpen && <AboutDialog update={update} onUpdate={setUpdate} onClose={() => { setAboutOpen(false); setUpdateSeen(true); }}
-        onTour={() => { setAboutOpen(false); setTourStep(0); setTourOpen(true); }} />}
-      {tourOpen && <OnboardingTour onClose={closeTour} goHome={() => setScreen('home')} openDemo={openTourDemo} setTab={setTab} stepIndex={tourStep} onStepChange={setTourStep} />}
-      {packPromptOpen && !tourOpen && <PackPrompt onClose={closePackPrompt} />}
+        onWelcome={() => { setAboutOpen(false); setWelcomeOpen(true); }} />}
+      {welcomeOpen && <WelcomeCard onClose={closeWelcome} />}
+      {packPromptOpen && !welcomeOpen && <PackPrompt onClose={closePackPrompt} />}
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}

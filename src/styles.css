@@ -2347,25 +2347,24 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .asset-tile-sub { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .asset-tile.missing { opacity: .55; }
 
-/* ---- First run: onboarding tour ---- */
-.tour-root { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
-.tour-dim { position: absolute; inset: 0; background: rgba(4, 4, 10, 0.62); pointer-events: auto; }
-.tour-spot { position: fixed; border-radius: 10px; pointer-events: none;
-  box-shadow: 0 0 0 9999px rgba(4, 4, 10, 0.62), 0 0 0 2px var(--primary), 0 0 24px rgba(130, 92, 251, 0.45);
-  transition: left var(--t-med) var(--ease), top var(--t-med) var(--ease), width var(--t-med) var(--ease), height var(--t-med) var(--ease); }
-.tour-card { position: fixed; width: 348px; pointer-events: auto; background: var(--surface-2);
-  border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-dialog);
-  padding: 16px 18px 14px; z-index: 91;
-  transition: left var(--t-med) var(--ease), top var(--t-med) var(--ease); }
-.tour-kicker { font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--focus); }
-.tour-card h3 { margin: 5px 0 6px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
-.tour-card p { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.55; }
-.tour-dots { display: flex; gap: 5px; margin: 13px 0 11px; }
-.tour-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--surface-4); }
-.tour-dot.done { background: var(--primary-2); }
-.tour-dot.on { background: var(--primary); box-shadow: 0 0 8px rgba(130, 92, 251, 0.8); }
-.tour-actions { display: flex; align-items: center; gap: 8px; }
-.tour-actions-spacer { flex: 1; }
+/* ---- First run: welcome card (B3 — replaces the onboarding tour) ---- */
+.welcome-root { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; }
+.welcome-dim { position: absolute; inset: 0; background: rgba(4, 4, 10, 0.62); }
+.welcome-card { position: relative; width: 360px; max-width: calc(100vw - 40px); text-align: center;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-dialog); padding: 30px 30px 26px; }
+.welcome-halo { width: 84px; height: 84px; border-radius: 24px; display: grid; place-items: center; margin: 0 auto 6px;
+  background: radial-gradient(closest-side, rgba(130, 92, 251, .38), rgba(130, 92, 251, .07) 68%, transparent);
+  box-shadow: 0 0 0 1px rgba(130, 92, 251, .35), 0 12px 34px rgba(109, 40, 224, .35); }
+.welcome-halo img { width: 56px; height: 56px; border-radius: 14px; }
+.welcome-card h3 { margin: 8px 0 7px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+.welcome-card p { margin: 0 0 20px; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.welcome-go { min-width: 170px; justify-content: center; }
+
+/* ---- Support (PayPal) spots: editor top bar + Home quick tools ---- */
+.support-btn { gap: 6px; }
+.paypal-mark { height: 15px; width: auto; display: block; }
+.home-paypal-mark { height: 21px; width: auto; display: block; }
 
 /* ---- First run: Creator Pack prompt + standing offers ---- */
 .pack-backdrop { z-index: 80; }

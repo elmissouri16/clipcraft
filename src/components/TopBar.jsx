@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AudioLines, Check, ChevronDown, CircleAlert, Coffee, Download, Film, FolderOpen, Home, Info, Instagram, Save, Settings } from 'lucide-react';
 import ContextMenu from './ContextMenu.jsx';
 import { RATIOS, sizeFor } from '../effects.js';
+import { SUPPORT_URL } from './HomeScreen.jsx';
 
 
 // Next to Save: where the project stands (it saves itself once it has a file).
@@ -46,6 +47,10 @@ export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 
           <Info size={15} /> <span>About</span>{updateReady && <i className="update-dot" aria-hidden="true" />}
         </button>
         <button className="icon-btn" onClick={onSettings} aria-label="Settings" title="Settings"><Settings size={17} /></button>
+        <button className="btn btn-ghost support-btn" onClick={() => window.api.openHelp(SUPPORT_URL)} aria-label="Support ClipCraft on PayPal"
+          title="Support ClipCraft's development on PayPal">
+          <img src="./paypal.svg" alt="" className="paypal-mark" draggable={false} /> <span className="top-word">Support</span>
+        </button>
         <div className="export-split">
           <button className="btn btn-export" onClick={onExport}><Download size={15} /> Export</button>
           <button className="btn btn-export caret" aria-label="More export options" aria-haspopup="menu"

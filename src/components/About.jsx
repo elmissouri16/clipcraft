@@ -7,7 +7,7 @@ import { DEV_INSTAGRAM_URL } from './HomeScreen.jsx';
 // The check asks the update feed on hamzaabika.com (see electron/updates.cjs).
 const DEV_SITE_URL = 'https://hamzaabika.com';
 
-export function AboutDialog({ onClose, onTour }) {
+export function AboutDialog({ onClose, onWelcome }) {
   const [version, setVersion] = useState('');
   const [check, setCheck] = useState(null); // null | 'checking' | result object from updates:check
   useEffect(() => {
@@ -54,10 +54,10 @@ export function AboutDialog({ onClose, onTour }) {
           <span>No watermark</span>
           <span>Free to use</span>
         </div>
-        {onTour && (
+        {onWelcome && (
           <div className="about-tour">
-            <button className="btn" onClick={onTour}><Compass size={14} /> Take the tour</button>
-            <span className="muted small">A one-minute walk through the editor, any time you want it.</span>
+            <button className="btn" onClick={onWelcome}><Compass size={14} /> Welcome card</button>
+            <span className="muted small">The first-run welcome, any time you want to see it again.</span>
           </div>
         )}
         <div className="about-updates">

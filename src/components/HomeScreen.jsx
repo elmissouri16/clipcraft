@@ -5,6 +5,10 @@ import { Clock3, Film, FolderOpen, Import, Instagram, Monitor, Play, Plus, Searc
 // The developer's Instagram — shown in the home footer and the About dialog.
 export const DEV_INSTAGRAM_URL = 'https://www.instagram.com/hamza_abika/';
 
+// Support ClipCraft's development — the developer's PayPal.me page, opened in the
+// system browser (app:openHelp allowlist) from the Home quick tools and the top bar.
+export const SUPPORT_URL = 'https://paypal.me/hamzaAbika';
+
 // ClipCraft home / start screen (pass 3) — ClipCraft's own layout: a slim brand header with a
 // time-aware greeting, a "stage" hero whose five format frames carry real photography (the
 // bundled preview photos) and launch a project on click, a quick-tools row where every tile
@@ -174,6 +178,10 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           <button className="home-action" onClick={() => onRecordStart?.(fps)}>
             <span className="home-action-icon"><Monitor size={18} /></span>
             <span className="home-action-text"><b>Record screen</b><span>Capture your screen straight onto a new timeline.</span></span>
+          </button>
+          <button className="home-action" onClick={() => window.api.openHelp(SUPPORT_URL)} aria-label="Support ClipCraft on PayPal">
+            <span className="home-action-icon"><img src="./paypal.svg" alt="" className="home-paypal-mark" draggable={false} /></span>
+            <span className="home-action-text"><b>Support ClipCraft</b><span>Support its development via PayPal.</span></span>
           </button>
         </section>
 
