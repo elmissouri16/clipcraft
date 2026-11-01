@@ -3,7 +3,7 @@
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.
 import { clipLen, projectDuration, videoLayout, uid } from '../store.js';
-import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, STICKERS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
+import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
 import { BLEND_MODES, cropOf, transformOf, opacityOf } from '../visual.js';
@@ -13,7 +13,6 @@ const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
 const ids = (list) => list.map((x) => x.id).join(', ');
 const CAPTION_STYLES = TEXT_TEMPLATES.filter((t) => t.caption);
-const STICKER_ANIMS = ['none', 'fade', 'pop', 'slideup'];
 
 const S = { type: 'STRING' };
 const N = { type: 'NUMBER' };
@@ -35,7 +34,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'list_options',
-    description: 'Ids you can use: what = text_templates, caption_styles, fonts, text_animations, text_effects, highlights, bubbles, filters, effects, transitions, clip_animations, blend_modes, stickers.',
+    description: 'Ids you can use: what = text_templates, caption_styles, fonts, text_animations, text_effects, highlights, bubbles, filters, effects, transitions, clip_animations, blend_modes.',
     parameters: { type: 'OBJECT', properties: { what: S }, required: ['what'] },
   },
   {
@@ -173,11 +172,6 @@ export const TOOL_DECLARATIONS = [
     parameters: { type: 'OBJECT', properties: { stock_id: S, as: S, start_sec: N, duration_sec: N, main_index: N }, required: ['stock_id'] },
   },
   {
-    name: 'add_sticker',
-    description: 'Emoji sticker over the video. x / y 0-1, size px (default 180), animation none / fade / pop / slideup.',
-    parameters: { type: 'OBJECT', properties: { emoji: S, start_sec: N, duration_sec: N, x: N, y: N, size: N, rotation: N, animation: S }, required: ['emoji'] },
-  },
-  {
     name: 'add_effect',
     description: 'Effect over everything for a time range (ids: list_options effects).',
     parameters: { type: 'OBJECT', properties: { effect_id: S, start_sec: N, duration_sec: { ...N, description: 'default 3' } }, required: ['effect_id', 'start_sec'] },
@@ -224,7 +218,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_scene',
-    description: 'Background without footage (intro, title card, end card): one color, or a gradient to color2 (direction horizontal / vertical / diagonal), on the main track at main_index (default the end) for duration_sec. Put texts, stickers and overlays on it.',
+    description: 'Background without footage (intro, title card, end card): one color, or a gradient to color2 (direction horizontal / vertical / diagonal), on the main track at main_index (default the end) for duration_sec. Put texts and overlays on it.',
     parameters: { type: 'OBJECT', properties: { color: S, color2: S, direction: S, duration_sec: N, main_index: N }, required: ['color'] },
   },
   {
@@ -299,7 +293,6 @@ export function summarizeProject(p) {
     // Captions are many: listed by count and time span, their look once.
     text_track: p.textClips.filter((c) => !c.caption).map((c) => ({ id: c.id, text: c.text.slice(0, 80), start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) })),
     captions: captionInfo(p.textClips.filter((c) => c.caption)),
-    sticker_track: p.stickerClips.map((c) => ({ id: c.id, label: c.emoji || label(c), start: r2(c.start), end: r2(c.start + c.duration), x: r2(c.x ?? 0.5), y: r2(c.y ?? 0.4), size: c.size })),
     effects_track: (p.effectClips || []).map((c) => ({ id: c.id, effect: c.fx, start: r2(c.start), end: r2(c.start + c.duration) })),
     media_library: p.media.map((m) => ({ name: m.name, type: m.type, duration_sec: r2(m.duration || 0) })),
   };
@@ -328,7 +321,7 @@ export function createToolRunner(ctx) {
   };
   const findClip = (id) => {
     const p = project();
-    for (const [track, key] of [['video', 'videoClips'], ['overlay', 'overlayClips'], ['audio', 'audioClips'], ['text', 'textClips'], ['sticker', 'stickerClips'], ['effect', 'effectClips']]) {
+    for (const [track, key] of [['video', 'videoClips'], ['overlay', 'overlayClips'], ['audio', 'audioClips'], ['text', 'textClips'], ['effect', 'effectClips']]) {
       const clip = (p[key] || []).find((c) => c.id === id);
       if (clip) return { track, clip };
     }
@@ -821,7 +814,6 @@ export function createToolRunner(ctx) {
         transitions: () => named(TRANSITIONS),
         clip_animations: () => ({ in: ANIMATIONS.in.map((x) => x.id), out: ANIMATIONS.out.map((x) => x.id), combo: ANIMATIONS.combo.map((x) => x.id) }),
         blend_modes: () => BLEND_MODES.map((b) => b.id),
-        stickers: () => STICKERS,
       };
       const fn = lists[String(what || '').toLowerCase()];
       if (!fn) return { error: `what must be one of: ${Object.keys(lists).join(', ')}.` };
@@ -843,18 +835,6 @@ export function createToolRunner(ctx) {
       if (a.duration_sec !== undefined) patch.duration = Math.max(0.2, Number(a.duration_sec) || 0.2);
       dispatch({ type: 'update', track: 'text', id: f.clip.id, patch });
       return after();
-    },
-
-    async add_sticker({ emoji, start_sec = 0, duration_sec = 2, x = 0.5, y = 0.4, size = 180, rotation = 0, animation = 'pop' }) {
-      const e = String(emoji || '').trim();
-      if (!e || [...e].length > 4) return { error: 'emoji must be one emoji, e.g. 🔥.' };
-      if (!STICKER_ANIMS.includes(animation)) return { error: `animation must be one of: ${STICKER_ANIMS.join(', ')}.` };
-      const clipId = uid();
-      dispatch({
-        type: 'addOverlay', clipId, at: Math.max(0, Number(start_sec) || 0),
-        clip: { emoji: e, duration: Math.max(0.2, Number(duration_sec) || 2), x: clamp(x, 0, 1, 0.5), y: clamp(y, 0, 1, 0.4), size: clamp(size, 20, 1000, 180), rotation: Number(rotation) || 0, anim: animation },
-      });
-      return after({ clip_id: clipId });
     },
 
     async add_effect({ effect_id, start_sec, duration_sec = 3 }) {
@@ -890,7 +870,7 @@ export function createToolRunner(ctx) {
       const ne = end_sec === undefined ? end : Number(end_sec);
       if (!Number.isFinite(ns) || !Number.isFinite(ne) || ne - ns < 0.1) return { error: 'The new end must be at least 0.1 s after the new start.' };
       let patch;
-      if (f.track === 'text' || f.track === 'sticker' || f.track === 'effect') patch = { start: Math.max(0, ns), duration: ne - Math.max(0, ns) };
+      if (f.track === 'text' || f.track === 'effect') patch = { start: Math.max(0, ns), duration: ne - Math.max(0, ns) };
       else {
         // Media: move the source in / out points (speed-scaled for picture clips).
         const sp = f.track === 'audio' ? 1 : c.speed || 1;

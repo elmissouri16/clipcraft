@@ -156,7 +156,7 @@ class FxJobs {
     const lenA = clipLen(A);
     // Animated clips keep their motion: the outgoing one from where its last td seconds start.
     const mini = (clip, from) => ({
-      ...project, videoClips: [clip], overlayClips: [], textClips: [], audioClips: [], stickerClips: [], fxSegments: {},
+      ...project, videoClips: [clip], overlayClips: [], textClips: [], audioClips: [], fxSegments: {},
       motion: project.motion && project.motion[clip.id] ? { [clip.id]: shiftCurves(project.motion[clip.id], from) } : {},
     });
     const decs = [[narrowClip(A, mediaById[A.mediaId], lenA - td, lenA), lenA - td], [narrowClip(B, mediaById[B.mediaId], 0, td), 0]]

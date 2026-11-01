@@ -51,7 +51,6 @@ contextBridge.exposeInMainWorld('api', {
   libraryAdd: (item) => ipcRenderer.invoke('library:add', item),
   ensureVisuals: (items) => ipcRenderer.invoke('media:ensureVisuals', items),
   colorSample: (item, from, to) => ipcRenderer.invoke('color:sample', item, from, to),
-  stickersList: () => ipcRenderer.invoke('stickers:list'),
   stabilizeRun: (item, from, to, level) => ipcRenderer.invoke('stabilize:run', item, from, to, level),
   reverseRun: (item, from, to) => ipcRenderer.invoke('reverse:run', item, from, to),
   reverseCancel: () => ipcRenderer.invoke('reverse:cancel'),
@@ -88,7 +87,6 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('track:progress', handler);
     return () => ipcRenderer.removeListener('track:progress', handler);
   },
-  stickersGet: (id, name) => ipcRenderer.invoke('stickers:get', id, name),
   proxyStatus: () => ipcRenderer.invoke('proxy:status'),
   proxySet: (on) => ipcRenderer.invoke('proxy:set', on === true),
   qualitySet: (q) => ipcRenderer.invoke('proxy:setQuality', q),
@@ -123,7 +121,7 @@ contextBridge.exposeInMainWorld('api', {
   exportTextFrame: (dir, frame) => ipcRenderer.invoke('export:textFrame', dir, frame),
   exportTextEnd: (dir) => ipcRenderer.invoke('export:textEnd', dir),
   exportAbort: (dir) => ipcRenderer.invoke('export:abort', dir),
-  exportRun: (project, target, textFrames, stickerPngs) => ipcRenderer.invoke('export:run', project, target, textFrames, stickerPngs),
+  exportRun: (project, target, textFrames) => ipcRenderer.invoke('export:run', project, target, textFrames),
   cancelExport: () => ipcRenderer.invoke('export:cancel'),
   fxBegin: (project, spec) => ipcRenderer.invoke('fx:begin', project, spec),
   fxRead: (id) => ipcRenderer.invoke('fx:read', id),

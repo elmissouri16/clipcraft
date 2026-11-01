@@ -62,7 +62,7 @@ async function main() {
     const fol = { id: 't1', start: 1, duration: 3, pin: { to: 'v1' } };
     const project = {
       ...S.emptyProject(), width: 1280, height: 720, fps: 30, media,
-      videoClips: [{ ...src, track }], overlayClips: [], textClips: [fol], stickerClips: [], audioClips: [],
+      videoClips: [{ ...src, track }], overlayClips: [], textClips: [fol], audioClips: [],
     };
     near(T.pinOffsetAt(project, { track: 'text', clip: fol }, 1).dx, 0, 1e-9, 'pin offset is zero at the follower start');
     near(T.pinOffsetAt(project, { track: 'text', clip: fol }, 2).dx, 0.2, 1e-9, 'pin offset follows the path');
@@ -76,16 +76,17 @@ async function main() {
     ok(JSON.stringify(T.motionDataPinned(keyed)) === JSON.stringify(A.motionData(keyed)), 'motionDataPinned == motionData for unpinned clips');
     const pinnedMd = T.motionDataPinned({ ...keyed, overlayClips: [{ ...keyed.overlayClips[0], keyframes: undefined, pin: { to: 'v1' } }] });
     ok(pinnedMd.o1 && pinnedMd.o1.x.length > 1, 'a pinned clip with no keyframes of its own still gets motion curves');
-    // Sticker pin curves ride in timeline seconds.
-    const sp = { ...project, stickerClips: [{ id: 's1', start: 1, duration: 2, x: 0.3, y: 0.3, pin: { to: 'v1' } }] };
-    const curves = T.stickerPinCurves(sp);
-    ok(curves.s1 && curves.s1.x[0][0] === 1 && Math.abs(curves.s1.x[curves.s1.x.length - 1][1] - 0.5) < 1e-6,
-      `sticker pin curves span the sticker in timeline time (${JSON.stringify(curves.s1?.x)})`);
+    // R1 (2026-11-01): the sticker follower is gone with the Stickers feature; the export-curve
+    // proof now rides the pinned OVERLAY follower through motionDataPinned (x ends at base + offset).
+    const op = { ...project, overlayClips: [{ id: 'o9', mediaId: 'm1', start: 1, in: 0, out: 3, speed: 1, pin: { to: 'v1' } }] };
+    const oc = T.motionDataPinned(op).o9;
+    ok(oc && oc.x.length > 1 && oc.x[0][1] === 0 && Math.abs(oc.x[oc.x.length - 1][1] - 0.2) < 1e-6,
+      `pinned overlay curves carry the pin offset (${JSON.stringify(oc?.x)})`);
     // Cleanup: removing the tracked clip (through the real reducer) unpins its followers.
-    let state = { past: [], present: sp, future: [] };
+    let state = { past: [], present: project, future: [] };
     state = S.historyReducer(state, { type: 'delete', track: 'video', id: 'v1' });
-    ok(!state.present.stickerClips[0].pin, 'deleting the tracked clip unpins its followers (no dangling pin)');
-    ok(T.cleanPins(sp) === sp, 'cleanPins is a no-op (same object) when every pin resolves');
+    ok(!state.present.textClips[0].pin, 'deleting the tracked clip unpins its followers (no dangling pin)');
+    ok(T.cleanPins(project) === project, 'cleanPins is a no-op (same object) when every pin resolves');
   }
 
   // ---------- 3) The engine against ground truth ----------
@@ -141,13 +142,8 @@ async function main() {
       overlayClips: [],
       textClips: [{ id: 't1', text: 'TRACKED', start: 1, duration: 4, x: CX(1) / 1920, y: CY(1) / 1080, size: 44, color: '#ff00ff' }],
       audioClips: [],
-      stickerClips: [{ id: 's1', mediaId: 'm1', start: 1, duration: 4, x: 0.8, y: 0.2, size: 90, emoji: '🎯' }],
       effectClips: [],
     };
-    // The sticker needs its own image media; reuse the still as an image media entry.
-    const stillInfo = await probe(still);
-    project.media.push({ id: 'm2', path: still, name: 'still.png', ...stillInfo });
-    project.stickerClips[0].mediaId = 'm2';
     fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify(project, null, 2));
     fs.writeFileSync(path.join(dir, 'pick.json'), JSON.stringify({ x: CX(0.02) / 1920, y: CY(0.02) / 1080 }));
 
@@ -171,8 +167,8 @@ async function main() {
     ok(result.markerShown, 'the pick marker + template box show on the player');
     ok(result.tracked && result.trackPoints > 20, `the in-app track landed on the clip (${result.trackPoints} points, ${result.lowConf} low-confidence)`);
     ok(result.pinButton && result.pinnedTo === 'v1', 'the text clip pinned through its inspector card');
-    ok(result.stickerPinButton && result.stickerPinnedTo === 'v1' && result.stickerCurvePts > 1,
-      `the sticker pinned through its inspector card and produced export curves (${result.stickerCurvePts} points)`);
+    // R1 (2026-11-01): the sticker-pin UI assertion was retired with the Stickers feature;
+    // the text-follower pin above is the end-to-end pin proof.
     ok(/complete/i.test(result.exportStatus || ''), `export completed (${result.exportStatus || 'no status'})`);
     for (const [srcName, dstName] of [['track-ui.png', 'v32-track-ui.png'], ['track-pick.png', 'v32-track-pick.png']]) {
       const srcP = path.join(dir, srcName);

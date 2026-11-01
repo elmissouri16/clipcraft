@@ -36,7 +36,6 @@ export const MOTION_GUIDE = {
   end_card: `End card / call to action (last 3 s):
 1. add_scene (gradient in the brand colors) 3 s at the end, or freeze on the last shot with set_color brightness -0.3 to darken it.
 2. add_text the call to action ("Follow for more", "اشترك فالقناة") anim_in "pop", anim_loop "pulse".
-3. add_sticker 👇 or 🔔 with animation "pop", 0.3 s after the text.
 4. Music: fade_out_sec 2 so it ends with the video.`,
 
   logo_reveal: `Logo or picture reveal:
@@ -57,7 +56,7 @@ export const MOTION_GUIDE = {
 
   sound_design: `Sound design:
 - Music under speech: volume 0.15-0.25, fade_in_sec 1, fade_out_sec 2, duration_sec ending with the video. Without speech: 0.6-0.8.
-- sfx at most every 3-5 s: whoosh (moves, transitions), pop (text or sticker appears), ding (list items, checkmarks), impact (big reveal), camera shutter (photos), record scratch (sudden stop).
+- sfx at most every 3-5 s: whoosh (moves, transitions), pop (text appears), ding (list items, checkmarks), impact (big reveal), camera shutter (photos), record scratch (sudden stop).
 - Meme sounds (kind "meme": bruh, vine boom, fah) only for funny or casual videos, at the joke, never under speech.
 - Place each sfx 0.05 s before the visual event it belongs to.`,
 
@@ -105,7 +104,7 @@ export const EDIT_STYLES = {
     recipe: `1. remove_silences. set_filter "crisp" on every clip. On 16:9 keep it; for phones use 9:16.
 2. Key points (from transcribe) appear as notification cards at the top: add_text 4-7 words, y 0.12, size 44, font "poppins", color #111111, background_color #ffffff, bubble "rounded", anim_in "slideDown", anim_out "slideUp", 2.5 s; one every 6-10 s.
 3. Dialogues or questions as chat bubbles: add_text bubble "speech", alternating x 0.3 (white #ffffff, dark text) and x 0.7 (blue #2563eb, white text), y 0.35-0.6, anim_in "pop".
-4. Check marks: add_sticker ✅ next to each finished point, animation "pop"; sfx search_sounds sfx "mouse click" on each card and "notification" on the first.
+4. Check marks: a small add_text "✅" next to each finished point, anim_in "pop"; sfx search_sounds sfx "mouse click" on each card and "notification" on the first.
 5. Captions: add_captions, edit_text "captions" style cap-boxed, font "poppins", background_color #ffffff, color #111111, bubble "pill", highlight "color" #2563eb.
 6. Transitions: add_transition "fx_phone" or "slideleft" between parts.
 7. Title / end: add_scene light gradient #f8fafc -> #e2e8f0, a card text with bubble "rounded" and a subscribe label (template_id label-subscribe).
@@ -134,7 +133,7 @@ export const EDIT_STYLES = {
     recipe: `1. remove_silences tight (min_silence_sec 0.35, keep_padding_sec 0.08).
 2. add_captions, edit_text "captions" style cap-hormozi, size large, y 0.7 on 9:16.
 3. zoom style "cut" 1.25 every 4-6 s on key claims (transcribe), alternating 1.0 / 1.25.
-4. add_sticker emojis on 3-5 key words (💰 🔥 ✅ 🚀), animation "pop", 1 s; "pop" sfx on each.
+4. Emphasis on 3-5 key words: zoom or a "pop" sfx on each (💰 🔥 ✅ 🚀 moments).
 5. No transitions. Music optional, very low (0.1). set_color all saturation 1.1, contrast 1.05.`,
   },
   mrbeast: {
@@ -168,10 +167,10 @@ export const EDIT_STYLES = {
     aliases: ['vlog', 'daily vlog', 'lifestyle', 'sunny'],
     look: 'Warm, light and friendly: jump cuts, upbeat music, place names.',
     recipe: `1. remove_silences. set_filter "warm" or "golden" on every clip.
-2. Place names: lower third (motion_guide lower_third) with 📍 sticker when the place changes.
+2. Place names: lower third (motion_guide lower_third) when the place changes.
 3. add_captions style cap-classic. Transitions "slideleft" between places, whoosh on each.
 4. Music: "upbeat vlog" volume 0.2 under speech, louder (0.6) on parts without speech.
-5. A few stickers (😂 ❤️ ✨) on fun moments.`,
+5. A light "pop" sfx on fun moments.`,
   },
   podcast: {
     emoji: '🛋️',
@@ -193,7 +192,7 @@ export const EDIT_STYLES = {
     look: 'Clean and calm: white or black space, thin type, soft fades.',
     recipe: `1. set_filter "matte" or "crisp". Transitions "fade" 0.5 s.
 2. Titles on add_scene #ffffff (text #111111) or #000000 (text #ffffff), font "montserrat" or "poppins", size 70, anim_in "slideUp" with fade, generous margins.
-3. Captions cap-minimal. Very few stickers or none.
+3. Captions cap-minimal.
 4. Music: "soft piano" volume 0.2.`,
   },
   glitch: {
@@ -247,7 +246,7 @@ export const EDIT_STYLES = {
     aliases: ['trip', 'adventure', 'travel'],
     look: 'Sunny and moving: big place titles, quick b-roll, slides.',
     recipe: `1. set_filter "sunset" or "golden".
-2. Big place title when the place changes: add_text font "bebas" size 140, anim_in "wordRise", 📍 sticker.
+2. Big place title when the place changes: add_text font "bebas" size 140, anim_in "wordRise".
 3. Transitions "slideleft" / "slideright" alternating with whoosh. set_speed 1.2 on calm b-roll.
 4. Stock b-roll of the places when the footage is short. Music "travel upbeat" 0.4.`,
   },

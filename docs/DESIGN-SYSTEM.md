@@ -62,7 +62,6 @@ This is a spec for the redesign phases — it changes nothing by itself.
 | video | `#2b5ccf` (clip body) — head accent currently resolves to this; brand-led alternative `#825cfb` is used by overlay today. **Ruling needed:** keep blue video body (media convention) but heads use the color-mix tint of the same hue (already implemented via `--lane-accent`). |
 | overlay | `#825cfb` |
 | text | `#7c4ddb` (captions `#5b3fb0`) |
-| sticker | `#c17a16` |
 | audio | `#0f8f6a` |
 | effect | `#a855f7` |
 

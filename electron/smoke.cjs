@@ -1,6 +1,6 @@
 // Automated UI smoke test: FVE_SMOKE=<dir> electron .
 // Loads <dir>/project.json, drives the UI through the test hook, takes screenshots and
-// exports the edited project (including emoji stickers rendered by the UI) to <dir>/ui-export.mp4.
+// exports the edited project to <dir>/ui-export.mp4.
 const fs = require('fs');
 const path = require('path');
 const { runExport, probe } = require('./ffmpeg.cjs');
@@ -735,9 +735,10 @@ module.exports = async function smoke(win, app, dir) {
       result.boxed = await sel();
       result.note = await q(`document.querySelector('.multi-note')?.textContent.slice(0, 20) || ''`);
       await shot('multisel.png');
-      // Ctrl + click takes the sticker out of the selection.
-      const st = await q(`(() => { const r = document.querySelector('[data-sel-id="s1"]').getBoundingClientRect(); return { x: r.left + 10, y: r.top + 10 }; })()`);
-      await pointer('pointerdown', st, '[data-sel-id="s1"]', { ctrlKey: true });
+      // Ctrl + click takes the effect clip out of the selection. (R1: this leg used a sticker
+      // clip before the Stickers feature was removed.)
+      const st = await q(`(() => { const r = document.querySelector('[data-sel-id="e2"]').getBoundingClientRect(); return { x: r.left + 10, y: r.top + 10 }; })()`);
+      await pointer('pointerdown', st, '[data-sel-id="e2"]', { ctrlKey: true });
       await wait(200);
       result.afterCtrl = await sel();
       // Drag the overlay clip 1 s right: the free clips of the selection move together.
@@ -749,13 +750,13 @@ module.exports = async function smoke(win, app, dir) {
       await pointer('pointerup', { x: o1.x + pps, y: o1.y });
       await wait(200);
       const after = await P();
-      const start = (p, track, id) => (p[{ overlay: 'overlayClips', effect: 'effectClips', sticker: 'stickerClips' }[track]].find((c) => c.id === id) || {}).start;
-      result.moved = ['overlay:o1', 'effect:e2', 'sticker:s1'].map((k) => { const [t, id] = k.split(':'); return [k, start(before, t, id), start(after, t, id)]; });
+      const start = (p, track, id) => (p[{ overlay: 'overlayClips', effect: 'effectClips' }[track]].find((c) => c.id === id) || {}).start;
+      result.moved = ['overlay:o1'].map((k) => { const [t, id] = k.split(':'); return [k, start(before, t, id), start(after, t, id)]; });
       // Delete removes every selected clip; one Ctrl+Z brings them all back.
       await q(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))`);
       await wait(200);
       let p = await P();
-      result.deleted = { o1: !p.overlayClips.some((c) => c.id === 'o1'), e2: !p.effectClips.some((c) => c.id === 'e2'), s1: p.stickerClips.some((c) => c.id === 's1') };
+      result.deleted = { o1: !p.overlayClips.some((c) => c.id === 'o1'), e2: p.effectClips.some((c) => c.id === 'e2') };
       await q(`window.__fve.dispatch({ type: 'undo' })`);
       await wait(200);
       p = await P();
@@ -1162,41 +1163,6 @@ module.exports = async function smoke(win, app, dir) {
       await until(`!!window.__fve.exportData().project.videoClips[0].stabilize`, 30000);
       result.cachedMs = Date.now() - t1;
       result.mediaCount = (await q('window.__fve.exportData()')).project.media.length;
-    } catch (e) {
-      result.error = e.message;
-    }
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
-  }
-  if (process.env.FVE_SMOKE_MODE === 'stickers') {
-    // Stickers > Animated: the list loads, a search narrows it, a click downloads the GIF and puts it on the Stickers
-    // track; the player and an exported frame show it.
-    const q = run;
-    const until = async (js, ms) => { for (let t = 0; t < ms; t += 250) { if (await q(js)) return true; await wait(250); } return false; };
-    try {
-      await wait(800);
-      await q(`window.__fve.load(${fs.readFileSync(path.join(dir, 'project.json'), 'utf8')})`);
-      await wait(1000);
-      await q(`document.querySelector('.stats-note .icon-btn')?.click(); window.__fve.tab('stickers')`);
-      result.listed = await until(`document.querySelectorAll('.sticker-grid.anim .sticker-btn').length > 100`, 30000);
-      result.count = await q(`document.querySelectorAll('.sticker-grid.anim .sticker-btn').length`);
-      await q(`(() => { const i = document.querySelector('[aria-label="Search stickers"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'fire'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-      await wait(400);
-      result.searched = await q(`document.querySelectorAll('.sticker-grid.anim .sticker-btn').length`);
-      await q(`document.querySelector('.sticker-grid.anim .sticker-btn').click()`);
-      result.added = await until(`window.__fve.exportData().project.stickerClips.some((s) => s.mediaId)`, 30000);
-      const p = (await q('window.__fve.exportData()')).project;
-      const st = p.stickerClips.find((s) => s.mediaId);
-      const m = p.media.find((x) => x.id === st?.mediaId);
-      result.media = m && { name: m.name, type: m.type, credit: m.credit && m.credit.license };
-      await q('window.__fve.seek(1)');
-      await wait(1500);
-      await shot('stickers.png');
-      const out = path.join(dir, 'stickers-export.mp4');
-      const exp = await q('window.__fve.exportData()');
-      await runExport(exp.project, out, () => {}, exp.pngs).promise;
-      const { execFileSync } = require('child_process');
-      execFileSync(require('./ffmpeg.cjs').ffmpegPath, ['-y', '-v', 'error', '-ss', '1', '-i', out, '-frames:v', '1', path.join(dir, 'stickers-export.png')]);
     } catch (e) {
       result.error = e.message;
     }
@@ -2145,7 +2111,7 @@ module.exports = async function smoke(win, app, dir) {
     try {
       await wait(800);
       const p = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
-      const empty = { ...p, videoClips: [], textClips: [], audioClips: [], stickerClips: [] };
+      const empty = { ...p, videoClips: [], textClips: [], audioClips: [] };
       await run(`window.__fve.load(${JSON.stringify(empty)}); window.__fve.tab('media');`);
       await wait(600);
       await shot('dnd-0-empty.png');
@@ -2170,9 +2136,6 @@ module.exports = async function smoke(win, app, dir) {
       await wait(150);
       await dnd(`${assets}[0]`, '[data-lane=video]', 0.0);   // insert at the start
       await wait(150);
-      await run(`window.__fve.tab('stickers')`);
-      await wait(300);
-      await dnd(`document.querySelectorAll('.sticker-btn')[12]`, '[data-lane=sticker]', 0.03);
       await run(`window.__fve.tab('text')`);
       await wait(300);
       await dnd(`document.querySelectorAll('.tpl-btn')[1]`, '[data-lane=text]', 0.02);
@@ -2210,7 +2173,6 @@ module.exports = async function smoke(win, app, dir) {
       const { project: q } = await run(`window.__fve.exportData()`);
       result.state = {
         video: q.videoClips.map((c) => `${q.media.find((m) => m.id === c.mediaId).name}|${c.filter}|${c.transition?.type || '-'}`),
-        stickers: q.stickerClips.map((c) => c.emoji || c.mediaId),
         texts: q.textClips.map((c) => `${c.text}@${c.start.toFixed(2)}`),
         audio: q.audioClips.map((c) => `${q.media.find((m) => m.id === c.mediaId).name}@${c.start.toFixed(2)}`),
       };
@@ -2246,22 +2208,20 @@ module.exports = async function smoke(win, app, dir) {
     await wait(800);
     const project = fs.readFileSync(path.join(dir, 'project.json'), 'utf8');
     await run(`window.__fve.load(${project});`);
-    await run(`window.__fve.dispatch({ type: 'addOverlay', clipId: 'emo', at: 0.2, clip: { emoji: '🔥', x: 0.15, y: 0.3, size: 160 } })`);
     await run(`window.__fve.tab('transitions'); window.__fve.select({ track: 'video', id: 'c2' }); window.__fve.seek(1.25);`);
     await wait(1500);
     await shot('ui-1-transition.png');
     await run(`window.__fve.tab('filters'); window.__fve.select({ track: 'video', id: 'c3' }); window.__fve.seek(3.4);`);
     await wait(1200);
     await shot('ui-2-filters.png');
-    await run(`window.__fve.tab('stickers'); window.__fve.select({ track: 'sticker', id: 'emo' }); window.__fve.seek(0.8); window.__fve.play();`);
+    await run(`window.__fve.seek(0.8); window.__fve.play();`);
     await wait(2000);
     await run(`window.__fve.pause()`);
     await wait(400);
     await shot('ui-3-played.png');
     result.timecode = await run(`document.querySelector('.tc').textContent`);
-    const { project: p, pngs } = await run(`window.__fve.exportData()`);
-    const assets = Object.fromEntries(Object.entries(pngs).map(([id, u]) => [id, Buffer.from(u.split(',')[1], 'base64')]));
-    await runExport(p, path.join(dir, 'ui-export.mp4'), null, assets).promise;
+    const { project: p } = await run(`window.__fve.exportData()`);
+    await runExport(p, path.join(dir, 'ui-export.mp4'), null).promise;
     result.exported = true;
   } catch (e) {
     result.error = e.message;

@@ -69,7 +69,7 @@ ClipCraft is a free desktop video editor and covers what people actually open an
 
 - 🚫 **No watermark. No account. No paywall.**
 - 🔒 **100% local.** Nothing uploads. Works offline.
-- 🎞️ **Multi-track timeline.** Video, audio, text, stickers, overlays and effects tracks, with keyframes, masks and chroma key.
+- 🎞️ **Multi-track timeline.** Video, audio, text, overlays and effects tracks, with keyframes, masks and chroma key.
 - 🌈 **135+ transitions and a growing effects library**, every one previewed on real footage before you apply it.
 - 💬 **Auto-captions.** Free on-device Whisper — including a Darija model — or bring a cloud key for speed.
 - 🔤 **Animated text done properly.** Dozens of in/out animations, word-by-word styling, and real RTL/Arabic shaping.
@@ -79,7 +79,7 @@ ClipCraft is a free desktop video editor and covers what people actually open an
 
 ## Edit
 
-**A timeline you already know.** Drag media in, trim on the track, stack text, stickers and overlays above the picture. Per-clip keyframes, masks, chroma key, background removal, stabilization and speed control are all there, and the player previews the real render pipeline — transitions, effects and text included.
+**A timeline you already know.** Drag media in, trim on the track, stack text and overlays above the picture. Per-clip keyframes, masks, chroma key, background removal, stabilization and speed control are all there, and the player previews the real render pipeline — transitions, effects and text included.
 
 - **Color grading** — curves, HSL, wheels and .cube LUTs.
 - **Subtitles as clips** — import an SRT, restyle one caption or all of them, timing untouched.

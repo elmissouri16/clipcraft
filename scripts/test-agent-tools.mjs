@@ -1,4 +1,4 @@
-// RocketPilot's editing tools beyond cuts and motion (sounds, voice-over, stock, text, stickers, effects, clips,
+// RocketPilot's editing tools beyond cuts and motion (sounds, voice-over, stock, text, effects, clips,
 // colors, compositing, project, undo, export) against the real reducer, with the main process faked.
 // Usage: node scripts/test-agent-tools.mjs
 import assert from 'node:assert/strict';
@@ -127,11 +127,7 @@ assert.equal(sum.captions.count, 2);
 assert.ok(sum.text_track.every((x) => x.id !== 'c1'), 'captions are summarized, not listed');
 assert.equal(sum.text_track.find((x) => x.id === tid).font, 'anton');
 
-// Sticker and effect over a range.
-r = await run('add_sticker', { emoji: '🔥', start_sec: 3, x: 0.8, size: 150 });
-ok(r, 'add_sticker');
-assert.ok(p().stickerClips.some((c) => c.emoji === '🔥' && c.x === 0.8 && c.size === 150));
-err(await run('add_sticker', { emoji: 'this is not an emoji' }), /one emoji/, 'one emoji only');
+// Effect over a range. (R1, 2026-11-01: the add_sticker tool was removed with the Stickers feature.)
 r = await run('add_effect', { effect_id: p().effectClips ? 'vignette' : 'vignette', start_sec: 2, duration_sec: 4 });
 ok(r, 'add_effect');
 const fxId = r.clip_id;

@@ -10,11 +10,11 @@ How to work:
 - Do the edit with the tools, then answer in one to three short sentences saying what you changed and the important numbers. The user can undo everything with one click, so do not ask for confirmation unless the request is genuinely ambiguous or would remove most of the video.
 - Reply in the language the user writes in. If they write Arabic or Darija, answer in Arabic script, never in Latin transliteration. Keep tool names and technical words (FFmpeg, Undo) as they are.
 - Only use what your tools can do. If something is not possible with them, say so plainly and suggest the closest thing you can do.
-- Times are in seconds on the timeline. Only the main (video) track is cut by cutting tools; music, text and stickers keep their own time.
+- Times are in seconds on the timeline. Only the main (video) track is cut by cutting tools; music and text keep their own time.
 - Use transcribe when the request depends on what is said (highlights, summaries, finding a moment). It can be slow on long videos, so use it once and reuse the result.
 - For captions in Arabic or Darija pass language "ar". Auto-detect is unreliable.
 - Zoom (punch-in), size, position, rotation, opacity, keyframes and In / Out / Combo animations are all possible: use zoom, set_transform, add_keyframes and set_animation. For "zoom on the important moments", transcribe first, pick a few short moments (1 to 3 s each, a few seconds apart) and call zoom for each.
-- You can reach everything in the editor: sounds (search_sounds + add_sound: music, sound effects, meme sounds), voice-over (list_voices + add_voiceover), stock b-roll (search_stock + add_stock), text and captions (add_text, edit_text; clip_id "captions" restyles all captions), stickers, effects over a range, moving / trimming / duplicating clips, overlays, colors, green screen, project settings, export. If a step went wrong, use undo (it only undoes your own changes).
+- You can reach everything in the editor: sounds (search_sounds + add_sound: music, sound effects, meme sounds), voice-over (list_voices + add_voiceover), stock b-roll (search_stock + add_stock), text and captions (add_text, edit_text; clip_id "captions" restyles all captions), effects over a range, moving / trimming / duplicating clips, overlays, colors, green screen, project settings, export. If a step went wrong, use undo (it only undoes your own changes).
 - A full edit ("edit this video", "make it ready for TikTok / Reels / YouTube") usually means, in this order, adapted to the video: get_project; set the format if a platform is named (9:16 for TikTok / Reels / Shorts); remove_silences; transcribe once; captions in the video's language with a fitting style; a few zooms on strong moments; a title or hook text at the start when it helps; background music at a low volume (about 0.2) with fades, ending with the video; a few sound effects on key moments (whoosh on zooms or cuts, pop on texts) without overdoing it; b-roll from stock only when it clearly illustrates what is said; then get_project to check, and a short summary. Do not export unless asked.
 - Named editing styles: when the user names a style for the edit ("Moon Drift", "App Story", "Tube TV", "Loud & Clear", "Silver Screen"...), call edit_style with that name first and follow its recipe on the whole video.
 - Motion graphics (intro, hook, title card, kinetic text, lower third, logo reveal, end card, list, nicer captions): read motion_guide for the topic first, then build it; add_scene makes a color or gradient background when there is no footage. Prefer eased keyframes (spring, back, out) over linear ones.
@@ -55,7 +55,6 @@ export function describeCall(name, args) {
     case 'add_stock': return `Adding stock ${a.as === 'main' ? 'clip' : 'b-roll'}`;
     case 'edit_text': return a.clip_id === 'captions' ? 'Styling the captions' : 'Editing a text';
     case 'list_options': return `Looking up ${String(a.what || 'options').replace(/_/g, ' ')}`;
-    case 'add_sticker': return `Adding ${a.emoji || 'a sticker'}`;
     case 'add_effect': return `Adding effect ${a.effect_id}`;
     case 'move_clip': return 'Moving a clip';
     case 'trim_clip': return 'Trimming a clip';

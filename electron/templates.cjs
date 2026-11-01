@@ -22,7 +22,7 @@ const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\
 // Media ids the timeline uses (unused imports stay out of the package).
 function usedMedia(p) {
   const ids = new Set();
-  for (const key of ['videoClips', 'overlayClips', 'audioClips', 'stickerClips']) {
+  for (const key of ['videoClips', 'overlayClips', 'audioClips']) {
     for (const c of p[key] || []) if (c.mediaId && !c.gap) ids.add(c.mediaId);
   }
   return (p.media || []).filter((m) => ids.has(m.id));

@@ -44,9 +44,7 @@ const { ffmpegPath, probe, runExport } = require('../electron/ffmpeg.cjs');
     // Text is rendered by the UI (canvas) and covered by the FVE_SMOKE_MODE=text UI test.
     textClips: [],
     audioClips: [{ id: 'a1', mediaId: 'm3', start: 1, in: 0, out: 4, volume: 0.5, fadeIn: 1, fadeOut: 1 }],
-    stickerClips: [
-      { id: 's1', mediaId: 'm5', start: 0.5, duration: 4, x: 0.85, y: 0.25, size: 150, rotation: 20, anim: 'pop' },
-    ],
+    // (R1, 2026-11-01: the fixture's sticker clip was removed with the Stickers feature.)
   };
   fs.writeFileSync(path.join(dir, 'project.json'), JSON.stringify(project, null, 2));
   const out = path.join(dir, 'out.mp4');

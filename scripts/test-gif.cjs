@@ -1,5 +1,6 @@
-// Animated GIFs as clips: on the main track, as an overlay (layered path) and as a sticker, the export works and
-// the GIF animation plays. Usage: node scripts/test-gif.cjs
+// Animated GIFs as clips: on the main track and as an overlay (layered path), the export works and
+// the GIF animation plays. (R1, 2026-11-01: the GIF-as-sticker placement was removed with the
+// Stickers feature.) Usage: node scripts/test-gif.cjs
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -20,7 +21,6 @@ const { ffmpegPath, probe, runExport } = require('../electron/ffmpeg.cjs');
     name: 'gif', width: 320, height: 180, fps: 30, background: '#000000', media: [m],
     videoClips: [{ ...clip, id: 'v', mediaId: 'g', in: 0, out: 3 }],
     overlayClips: [{ ...clip, id: 'o', mediaId: 'g', start: 0.5, in: 0, out: 2, transform: { scale: 0.4, x: 0.25, y: -0.25 } }],
-    stickerClips: [{ id: 's', mediaId: 'g', start: 1, duration: 1.5, x: 0.2, y: 0.8, size: 50, rotation: 0 }],
     textClips: [], audioClips: [],
   };
   const out = path.join(dir, 'out.mp4');

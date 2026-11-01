@@ -607,17 +607,14 @@ ipcMain.handle('export:caps', async () => {
   return exportCapsCache;
 });
 
-ipcMain.handle('export:run', async (_e, projectIn, target, textFrames, stickerPngs = {}) => {
+ipcMain.handle('export:run', async (_e, projectIn, target, textFrames) => {
   try {
     const project = fxJobs.resolve(projectIn);
-    const assets = Object.fromEntries(
-      Object.entries(stickerPngs).map(([id, dataUrl]) => [id, Buffer.from(dataUrl.split(',')[1], 'base64')])
-    );
     const textFile = path.join(target.frameDir, 'text.mov');
     const withText = textFrames > 0 && frameDirs.has(target.frameDir) && fs.existsSync(textFile)
       ? { ...project, textOverlay: { file: textFile, count: textFrames } }
       : project;
-    currentExport = runExport(withText, target.file, (p) => win.webContents.send('export:progress', p), assets);
+    currentExport = runExport(withText, target.file, (p) => win.webContents.send('export:progress', p));
     await currentExport.promise;
     let size = 0;
     try { size = fs.statSync(target.file).size; } catch { /* the done card shows no size */ }
@@ -1235,27 +1232,6 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
     const [m] = await probeAll([out]);
     if (!m || m.error) return { error: 'Could not read the frozen frame.' };
     return m;
-  } catch (e) {
-    return { error: e.message };
-  }
-});
-
-// Animated stickers (Noto Animated Emoji, CC BY 4.0): the list, and a sticker as a media item with its credit.
-const stickers = require('./stickers.cjs');
-const stickersDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'stickers-test') : path.join(app.getPath('userData'), 'stickers'));
-ipcMain.handle('stickers:list', async () => {
-  try {
-    return { items: await stickers.list(net.fetch, stickersDir()), downloaded: stickers.downloaded(stickersDir()), dir: stickersDir() };
-  } catch (e) {
-    return { error: e.message };
-  }
-});
-ipcMain.handle('stickers:get', async (_e, id, name) => {
-  try {
-    const s = await stickers.get(net.fetch, stickersDir(), String(id), String(name || ''));
-    const [m] = await probeAll([s.path]);
-    if (!m || m.error) return { error: m ? m.error : 'Could not read the sticker.' };
-    return { ...m, name: s.name, credit: s.credit };
   } catch (e) {
     return { error: e.message };
   }

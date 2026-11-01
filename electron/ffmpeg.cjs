@@ -259,8 +259,7 @@ async function detectSilences(project, { minDur = 0.6, noiseDb = -35, source = '
   }
 }
 
-// project: { width, height, fps, background, media[], videoClips[], textClips[], audioClips[], stickerClips[] }
-// Sticker clips may carry `png` (a file path written by the caller) for emoji stickers.
+// project: { width, height, fps, background, media[], videoClips[], textClips[], audioClips[] }
 // Size of a picture fitted inside the W x H frame (even numbers), as the layered path and the effects pass use.
 function fitSize(m, W, H) {
   const mw = (m && m.width) || W;
@@ -446,34 +445,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     }
   });
 
-  // 4) Stickers / image overlays.
-  (project.stickerClips || []).forEach((s, i) => {
-    const file = s.png || (s.mediaId && mediaById[s.mediaId] && mediaById[s.mediaId].path);
-    if (!file) return;
-    const idx = addInput(stillInput(file, fps, total));
-    const chain = [`scale=-2:${Math.max(2, Math.round(s.size))}`, 'format=rgba'];
-    if (s.rotation) {
-      const r = `${num(s.rotation)}*PI/180`;
-      chain.push(`rotate=${r}:c=none:ow=rotw(${r}):oh=roth(${r})`);
-    }
-    if (s.anim && s.anim !== 'none') {
-      const d = Math.min(0.4, s.duration / 2);
-      chain.push(`fade=t=in:st=${num(s.start)}:d=${num(d)}:alpha=1`, `fade=t=out:st=${num(s.start + s.duration - d)}:d=${num(d)}:alpha=1`);
-    }
-    filters.push(`[${idx}:v]${chain.join(',')}[st${i}]`);
-    // A sticker pinned to a motion track carries its position as curves in timeline seconds (attached by
-    // the renderer, src/track.js stickerPinCurves); the overlay filter's t is the finished video's time.
-    const pin = s.pinCurves && s.pinCurves.x && s.pinCurves.x.length ? s.pinCurves : null;
-    const xExpr = pin ? `(${layers.curveExpr(pin.x, num)})*${W}-w/2` : `${W}*${num(s.x)}-w/2`;
-    const yExpr = pin ? `(${layers.curveExpr(pin.y, num)})*${H}-h/2` : `${H}*${num(s.y)}-h/2`;
-    filters.push(
-      `[${cv}][st${i}]overlay=x='${xExpr}':y='${yExpr}':` +
-        `enable='between(t,${num(s.start)},${num(s.start + s.duration)})':eof_action=pass[sv${i}]`
-    );
-    cv = `sv${i}`;
-  });
-
-  // 5) Text layer: frames drawn by the UI's canvas text renderer (same code as the preview), packed in text.mov.
+  // 4) Text layer: frames drawn by the UI's canvas text renderer (same code as the preview), packed in text.mov.
   if (project.textOverlay && project.textOverlay.count > 0) {
     const idx = addInput(['-i', project.textOverlay.file]);
     filters.push(`[${idx}:v]format=rgba[txt]`);
@@ -481,7 +453,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     cv = 'tv';
   }
 
-  // 6) Music track and overlay sound: trim, fade, delay to timeline position, mix with the main audio.
+  // 5) Music track and overlay sound: trim, fade, delay to timeline position, mix with the main audio.
   const music = project.audioClips.filter((c) => mediaById[c.mediaId]);
   const mixLabels = [`[${ca}]`];
   music.forEach((c, j) => {
@@ -511,7 +483,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     ca = 'amix';
   }
 
-  // 7) Output stage: the effective export settings' resolution cap (downscale only) and fps resample,
+  // 6) Output stage: the effective export settings' resolution cap (downscale only) and fps resample,
   // applied to the finished picture — every layer above stays at project size.
   const eff = effectiveExport(project);
   let outLabel = cv;
@@ -623,7 +595,6 @@ function graphFile(args, dir = os.tmpdir()) {
 }
 
 // Runs the export; onProgress receives a 0..1 fraction. Returns { promise, cancel }.
-// `assets` maps sticker clip id -> PNG buffer (emoji stickers rendered by the UI).
 // ---- Video encoder: the graphics card's H.264 encoder when one works, else libx264 on the CPU ----
 // A hardware encoder is faster and leaves the processor free, at about the same quality (its quality number is a
 // few steps above the CRF to match: h264_qsv at 23 measured like libx264 veryfast at CRF 20).
@@ -732,7 +703,7 @@ function pickEncoder() {
   return encoderPick;
 }
 
-function runExport(project, outFile, onProgress, assets = {}) {
+function runExport(project, outFile, onProgress) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-'));
   const maskFiles = {};
   for (const [n, [clipId, dataUrl]] of Object.entries(project.maskImages || {}).entries()) {
@@ -757,12 +728,6 @@ function runExport(project, outFile, onProgress, assets = {}) {
     maskFiles,
     decoFiles,
     customMaskFiles,
-    stickerClips: (project.stickerClips || []).map((s) => {
-      if (!assets[s.id]) return s;
-      const png = path.join(tmpDir, `sticker_${s.id}.png`);
-      fs.writeFileSync(png, assets[s.id]);
-      return { ...s, png };
-    }),
   };
   let proc = null;
   let canceled = false;

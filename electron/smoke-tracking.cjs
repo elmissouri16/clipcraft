@@ -1,10 +1,10 @@
 // FVE_SMOKE_MODE=tracking: motion tracking end to end in the real app — the inspector's Track motion
 // button opens the pick mode, a real input click picks the moving square on the player, the render-job
 // pill runs the engine, the path lands on the clip; a text clip is then pinned through its inspector
-// card, and the project (with a pre-pinned sticker) is exported. The runner
-// (scripts/test-tracking.cjs) measures the exported frames against the fixture's known path.
-// Needs <dir>/project.json (video clip 'v1' without a track, text 't1' unpinned, sticker 's1' pinned
-// to 'v1') and <dir>/pick.json ({ x, y } stage fractions of the target at the pick frame).
+// card, and the project is exported. The runner (scripts/test-tracking.cjs) measures the exported
+// frames against the fixture's known path.
+// Needs <dir>/project.json (video clip 'v1' without a track, text 't1' unpinned) and <dir>/pick.json
+// ({ x, y } stage fractions of the target at the pick frame).
 const fs = require('fs');
 const path = require('path');
 
@@ -92,22 +92,15 @@ module.exports = async function trackingSmoke(win, dir, result) {
   const text = await q(`window.__fve.exportData().project.textClips[0]`);
   result.pinnedTo = text?.pin?.to || null;
 
-  // 5) Pin the sticker through ITS inspector card too, then check it resolves to export curves.
-  await q(`window.__fve.select({ track: 'sticker', id: 's1' })`);
-  result.stickerPinButton = await until(`[...document.querySelectorAll('aside.inspector button')].some((b) => b.textContent.trim().startsWith('Pin to'))`, 30, 300);
-  await q(`[...document.querySelectorAll('aside.inspector button')].find((b) => b.textContent.trim().startsWith('Pin to'))?.click()`);
-  await wait(300);
   const data = await q(`window.__fve.exportData()`);
-  result.stickerPinnedTo = data?.project?.stickerClips?.[0]?.pin?.to || null;
-  result.stickerCurvePts = data?.project?.stickerClips?.[0]?.pinCurves?.x?.length || 0;
   result.motionHasText = !!data?.project?.motion?.v1;
 
-  // 6) Mid-motion screenshot: the pinned text rides the target.
+  // 5) Mid-motion screenshot: the pinned text rides the target.
   await q(`window.__fve.seek(3.2)`);
   await wait(700);
   await shot('track-ui.png');
 
-  // 7) Export through the real flow.
+  // 6) Export through the real flow.
   await q(`window.__fve.exportNow()`);
   for (let i = 0; i < 240; i++) {
     await wait(500);

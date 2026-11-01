@@ -76,6 +76,7 @@ st = run(fresh(), { type: 'delete', track: 'audio', id: 'y' }, { type: 'undo' })
 assert.equal(audio(st.present), 'x@0(2) y@3(2) z@6(2)');
 
 // Old project files get default magnets.
-assert.deepEqual(normalizeProject({ videoClips: [] }).magnet, { video: true, overlay: false, audio: true, text: false, sticker: false });
+// R1 (2026-11-01): the sticker magnet toggle was removed with the Stickers feature.
+assert.deepEqual(normalizeProject({ videoClips: [] }).magnet, { video: true, overlay: false, audio: true, text: false });
 
 console.log('MAGNET OK');
