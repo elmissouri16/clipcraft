@@ -129,11 +129,16 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
       onDoubleClick={() => onAdd(m.id)}
       title={`${m.name}\n${onPeek ? 'Click to watch it in the player · ' : ''}Drag to the timeline or double-click${onRemove ? '\nDelete: remove from the project' : ''}`}>
       <div className="asset-thumb">
-        {m.type === 'video' && (m.thumb && m.thumbCount > 1 ? (
-          // One frame of the sprite at the video's own shape: a tall video shows tall, with bars at the sides.
+        {m.type === 'video' && (m.poster ? (
+          // W4b: the dedicated poster frame fills the card (object-fit: cover) — a portrait
+          // video no longer renders as a thin strip in a wide black card.
+          <img src={toFileUrl(m.poster)} alt="" draggable={false} />
+        ) : m.thumb && m.thumbCount > 1 ? (
+          // Sprite fallback (poster not generated yet): one frame, sized to COVER the
+          // thumb box — the frame overflows on its long axis and the box crops it.
           <div className="asset-sprite" style={{
             aspectRatio: `${m.thumbW || 16} / ${m.thumbH || 9}`,
-            [(m.thumbW || 16) / (m.thumbH || 9) < 16 / 9 ? 'height' : 'width']: '100%',
+            [(m.thumbW || 16) / (m.thumbH || 9) < 4 / 3 ? 'width' : 'height']: '100%',
             backgroundImage: `url("${toFileUrl(m.thumb)}")`,
             backgroundSize: `${m.thumbCount * 100}% 100%`,
             backgroundPosition: `${(Math.min(1, m.thumbCount - 1) / (m.thumbCount - 1)) * 100}% 0`,

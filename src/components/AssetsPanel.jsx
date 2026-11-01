@@ -94,7 +94,7 @@ function SubLists({ pairs, renderItem, renderTile }) {
       <div key={label || 'all'} className="lib-group">
         {pairs.length > 1 && <span className="lib-group-name">{label} · {items.length}</span>}
         {grid
-          ? <div className="asset-grid">{items.map(renderTile)}</div>
+          ? <div className="asset-tile-grid">{items.map(renderTile)}</div>
           : <div className="lib-list">{items.map(renderItem)}</div>}
       </div>
     );
