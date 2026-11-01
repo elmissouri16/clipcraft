@@ -94,6 +94,10 @@ export default function App() {
   // once (flags in settings.json via firstrun IPC); About replays the tour on demand. ----
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0); // lives here: the tour remounts across the Home↔editor transition
+  // W6 (2026-11-01): the tour no longer fires at app launch on the Home screen. It starts
+  // the first time the user ENTERS a project (the editor), once only. tourSeen stays null
+  // until the persisted flags load, so a fast first click can't slip past it either way.
+  const [tourSeen, setTourSeen] = useState(null);
   const [packPromptOpen, setPackPromptOpen] = useState(false);
   const packPromptSeenRef = useRef(false);
   // Builds that BUNDLE the pack (the test build) never show the download prompt — the
@@ -107,13 +111,14 @@ export default function App() {
       if (!alive || !f) return;
       packPromptSeenRef.current = !!f.packPromptSeen;
       packBundledRef.current = !!lib?.bundled;
-      if (!f.tourSeen) setTourOpen(true);
-      else if (!f.packPromptSeen && !lib?.bundled) setPackPromptOpen(true);
+      setTourSeen(!!f.tourSeen);
+      if (f.tourSeen && !f.packPromptSeen && !lib?.bundled) setPackPromptOpen(true);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const closeTour = useCallback(() => {
     setTourOpen(false);
+    setTourSeen(true);
     window.api.firstRunSet?.({ tourSeen: true }).catch(() => {});
     if (!packPromptSeenRef.current && !packBundledRef.current) setPackPromptOpen(true);
   }, []);
@@ -170,6 +175,12 @@ export default function App() {
   const [closeAsk, setCloseAsk] = useState(null); // { name, resolve }: the "Save before closing?" question
   // ---- Home screen + recent projects (localStorage 'clipcraft.recents') ----
   const [screen, setScreen] = useState('home'); // 'home' | 'editor'
+  // W6 deferred tour trigger: the first entry into the editor with an unseen tour opens
+  // it (declared here, after `screen`). The pack prompt is NOT moved — it still chains
+  // off closeTour, exactly as before.
+  useEffect(() => {
+    if (screen === 'editor' && tourSeen === false && !tourOpen) setTourOpen(true);
+  }, [screen, tourSeen, tourOpen]);
   const [recents, setRecents] = useState(() => {
     try { return JSON.parse(localStorage.getItem('clipcraft.recents') || '[]'); } catch { return []; }
   });
