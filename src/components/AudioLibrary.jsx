@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Loader2, Mic, Music, Pause, Play, Plus, Search, Square, Upload, WifiOff, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, KeyRound, Loader2, Mic, Music, Pause, Play, Plus, Search, Square, Upload, WifiOff, X } from 'lucide-react';
 import { formatTime, toFileUrl } from '../store.js';
 import { FavStar, favLibrary, useFavorites } from '../favorites.jsx';
 import TextToSpeech from './TextToSpeech.jsx';
