@@ -16,6 +16,10 @@ const H = 360;
 
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-tplmotion-'));
+  // First-run surfaces are not this suite's subject (W6 moved the tour to first project
+  // entry, where it races this harness): seed the persisted flags as already-seen.
+  fs.mkdirSync(path.join(dir, 'settings-test'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'settings-test', 'settings.json'), JSON.stringify({ firstRun: { tourSeen: true, packPromptSeen: true } }));
   const gen = (args) => execFileSync(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', ...args]);
   const bg = path.join(dir, 'bg.mp4');
   gen(['-f', 'lavfi', '-i', `color=c=black:size=${W}x${H}:rate=30:duration=3`, '-pix_fmt', 'yuv420p', bg]);

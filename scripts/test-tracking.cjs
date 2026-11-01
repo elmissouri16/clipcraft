@@ -20,6 +20,10 @@ const CY = (t) => 545 + 180 * Math.sin(0.9 * t);
 
 async function main() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-tracking-'));
+  // First-run surfaces are not this suite's subject (W6 moved the tour to first project
+  // entry, where it races this harness): seed the persisted flags as already-seen.
+  fs.mkdirSync(path.join(dir, 'settings-test'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'settings-test', 'settings.json'), JSON.stringify({ firstRun: { tourSeen: true, packPromptSeen: true } }));
   const gen = (args) => execFileSync(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', ...args]);
 
   // ---------- 1) The matcher on synthetic frame sequences (known shifts) ----------
