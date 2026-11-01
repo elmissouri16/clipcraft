@@ -272,7 +272,7 @@ function EffectPanel({ project, selection, dispatch }) {
   );
 }
 
-export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null }) {
+export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
   const multi = selection?.items && (
     <div className="multi-note" role="status">
       <b>{selection.items.length} clips selected.</b> Delete removes them all; drag one (off the main track) to move them together.
@@ -353,7 +353,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
 
       {clip && (track === 'video' || track === 'overlay') && !clip.gap && (
         <ClipInspector key={clip.id} clip={clip} media={media} project={project} set={set} dispatch={dispatch} track={track}
-          time={time} onSeek={onSeek} onEnhance={onEnhance} onTrackPick={onTrackPick} onCropEdit={onCropEdit}
+          time={time} onSeek={onSeek} onEnhance={onEnhance} onTrackPick={onTrackPick} onCropEdit={onCropEdit} onColorPick={onColorPick}
           start={track === 'overlay' ? clip.start : videoLayout(project.videoClips).find((l) => l.clip.id === clip.id)?.start ?? 0} />
       )}
 

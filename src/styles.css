@@ -338,6 +338,7 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--primary)
 .crop-handle { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--violet, #825cfb); box-shadow: 0 0 0 1.5px #fff, 0 1px 5px rgba(0, 0, 0, 0.55); transform: translate(-50%, -50%); pointer-events: auto; touch-action: none; }
 .crop-bar { flex-wrap: wrap; max-width: min(780px, 94vw); row-gap: 8px; }
 .crop-bar .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.color-pick { position: absolute; inset: 0; z-index: 9; cursor: crosshair; }
 .track-pick { position: absolute; inset: 0; z-index: 7; cursor: crosshair; }
 .track-box { position: absolute; border: 1.5px dashed var(--violet, #825cfb); border-radius: 4px; pointer-events: none; }
 .track-dot { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--violet, #825cfb); border: 2px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.5); pointer-events: none; }

@@ -9,7 +9,7 @@ import { drawTextLayer } from '../text/render.js';
 import { applyElementVolume, resumeAudioGraph, wireElement } from '../audioTap.js';
 import { fontsReady, onFontsChanged } from '../fonts.js';
 import { isInternal, readPayload } from '../dnd.js';
-import { applyChromaKey, blendOf, chromaOf, cropOf, customMaskCanvas, decoStyle, hasCrop, hasCustomMask, layerStyle } from '../visual.js';
+import { applyChromaKey, blendOf, chromaOf, cropOf, customMaskCanvas, decoStyle, hasCrop, hasCustomMask, layerStyle, scaleXY, transformOf } from '../visual.js';
 import TransformBox from './TransformBox.jsx';
 import MediaPeek from './MediaPeek.jsx';
 import { fxTransition } from '../fx/catalog.js';
@@ -182,6 +182,7 @@ export default function Preview({
   peek, onClosePeek, onAddPeek, quality = 'full', onQualityChange, clockRef,
   trackPick, onTrackPoint,
   cropEdit,
+  colorPick, onColorPicked,
 }) {
   const [dropOver, setDropOver] = useState(false);
   const slots = [useRef(null), useRef(null)];
@@ -630,7 +631,7 @@ export default function Preview({
             );
           })}
           <canvas ref={textCanvas} className="text-layer" />
-          {!cropEdit && (
+          {!cropEdit && !colorPick && (
             <TransformBox project={editProject || project} time={time} selection={selection} onSelect={onSelect} dispatch={dispatch}
               sw={project.width * scale} sh={project.height * scale} />
           )}
@@ -641,6 +642,22 @@ export default function Preview({
             const track = (project.overlayClips || []).some((c) => c.id === srcClip.id) ? 'overlay' : 'video';
             return <CropEditOverlay project={project} clip={srcClip} media={srcMedia} track={track} dispatch={dispatch} />;
           })()}
+          {colorPick && (
+            <div className="color-pick" role="button" aria-label="Click the color to key out"
+              onClick={async (e) => {
+                const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === colorPick.id);
+                const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
+                if (!srcClip || !srcMedia) { onColorPicked(null); return; }
+                const track = (project.overlayClips || []).some((c) => c.id === srcClip.id) ? 'overlay' : 'video';
+                const r = e.currentTarget.getBoundingClientRect();
+                const res = await pickColorAt({
+                  project, clip: srcClip, media: srcMedia, track, time, overlayEls,
+                  sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height,
+                });
+                if (res === 'miss') return; // clicked outside the picture: stay in the mode
+                onColorPicked(res); // hex, or null when sampling failed (exits without changes)
+              }} />
+          )}
           {trackPick && (() => {
             const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === trackPick.id);
             const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
@@ -846,4 +863,90 @@ function CropEditOverlay({ project, clip, media, track, dispatch }) {
       </div>
     </div>
   );
+}
+
+// ---- Chroma color pick (K6) ------------------------------------------------------------
+// Maps a stage click into the clip's SOURCE frame and reads that pixel's color. The
+// geometry mirrors TransformBox.geo: the displayed picture is the contain-fitted box,
+// centred at (0.5 + t.x, 0.5 + t.y), sized by the fit fractions and the transform scale,
+// rotated by t.rot — so the click is un-rotated around the box centre, turned into a
+// box fraction, un-flipped (the mirror/flipv effects flip the element inside the layer),
+// then mapped through the crop (the kept region fills the fitted box) into source
+// fractions. Sampling prefers the clip's own media element (its current frame is exactly
+// what the user sees); if that readback is unavailable it falls back to the media:frame
+// IPC grab of the same source instant. Returns a hex string, 'miss' when the click
+// landed outside the picture, or null when sampling failed.
+function sampleDrawable(drawable, w, h, fx, fy) {
+  try {
+    if (!w || !h) return null;
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    if (!cx) return null;
+    cx.drawImage(drawable, 0, 0, w, h);
+    const d = cx.getImageData(Math.min(w - 1, Math.max(0, Math.floor(fx * w))), Math.min(h - 1, Math.max(0, Math.floor(fy * h))), 1, 1).data;
+    return '#' + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
+async function pickColorAt({ project, clip, media, track, time, sx, sy, overlayEls }) {
+  const len = clipLen(clip);
+  let start = clip.start || 0;
+  if (track === 'video') {
+    const item = videoLayout(project.videoClips).find((l) => l.clip.id === clip.id);
+    if (item) start = item.start;
+  }
+  const lt = Math.min(len, Math.max(0, time - start));
+  const t = (hasMotion(clip) || clip.pin)
+    ? stateAtPinned(project, { track, clip }, lt, len).transform
+    : transformOf(clip);
+  const { sx: scx, sy: scy } = scaleXY(t);
+  if (!scx || !scy) return null;
+  const { fx, fy } = fitFactors(project, media);
+  const W = project.width;
+  const H = project.height;
+  const dx = sx * W - (0.5 + t.x) * W;
+  const dy = sy * H - (0.5 + t.y) * H;
+  const a = (-(t.rot || 0) * Math.PI) / 180;
+  const lx = dx * Math.cos(a) - dy * Math.sin(a);
+  const ly = dx * Math.sin(a) + dy * Math.cos(a);
+  let bx = 0.5 + lx / (fx * W * scx);
+  let by = 0.5 + ly / (fy * H * scy);
+  if (bx < 0 || bx > 1 || by < 0 || by > 1) return 'miss';
+  const eff = clip.effects || [];
+  if (eff.includes('mirror')) bx = 1 - bx;
+  if (eff.includes('flipv')) by = 1 - by;
+  const crop = cropOf(clip);
+  const srcX = crop.l + bx * (1 - crop.l - crop.r);
+  const srcY = crop.t + by * (1 - crop.t - crop.b);
+  // Route 1: the clip's own element, showing this exact frame.
+  let el = null;
+  if (track === 'overlay' && overlayEls && overlayEls.current) {
+    const o = overlayEls.current[clip.id];
+    if (o) el = media.type === 'image' ? o.img : o.v;
+  }
+  if (!el) {
+    const url = toFileUrl(media.path);
+    el = [...document.querySelectorAll('.stage video, .stage img')].find((n) => (n.currentSrc || n.src) === url) || null;
+  }
+  if (el) {
+    const ready = media.type === 'image' ? (el.complete && !!el.naturalWidth) : el.readyState >= 2;
+    if (ready) {
+      const hex = sampleDrawable(el, media.type === 'image' ? el.naturalWidth : el.videoWidth, media.type === 'image' ? el.naturalHeight : el.videoHeight, srcX, srcY);
+      if (hex) return hex;
+    }
+  }
+  // Route 2: a full-res frame grab of the same source instant via IPC.
+  try {
+    const at = media.type === 'video' ? (clip.in || 0) + lt * (clip.speed || 1) : 0;
+    const res = await window.api.frameGrab(media.path, at);
+    if (res && res.ok) {
+      const img = new Image();
+      await new Promise((done, fail) => { img.onload = done; img.onerror = fail; img.src = toFileUrl(res.path); });
+      return sampleDrawable(img, img.naturalWidth, img.naturalHeight, srcX, srcY);
+    }
+  } catch { /* fall through */ }
+  return null;
 }

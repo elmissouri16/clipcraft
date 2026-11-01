@@ -7,7 +7,7 @@ import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Pipette, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -18,7 +18,7 @@ import { customMaskImages, decoImages, maskImages } from './visual.js';
 import { motionData } from './anim.js';
 import { clipStartTl, motionDataPinned, stickerPinCurves, trackedClips } from './track.js';
 import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from './cropMath.js';
-import { cropOf } from './visual.js';
+import { chromaOf, cropOf } from './visual.js';
 import { isLookPatch, lookAction, selectedPictures } from './look.js';
 import { loadProjectLuts, onLutLoaded } from './fx/lut.js';
 import LeftPanel from './components/LeftPanel.jsx';
@@ -1060,6 +1060,35 @@ export default function App() {
   // a gesture opens on entry, drags in the player dispatch transient updates inside it,
   // Done folds it into a single history entry, Cancel puts the entry snapshot back first.
   // Playback and scrubbing stay live while the mode is open. ----
+  // ---- Chroma color pick: an on-player sampler (stage mode like track-pick). Replaces the
+  // OS EyeDropper, which silently rejects under Electron on Linux — the old Pick button did
+  // nothing there (K6). The player maps the click into the clip's source frame and reads
+  // the pixel; a successful sample is the only thing that changes the project. ----
+  const [colorPick, setColorPick] = useState(null); // { track, id }
+  const startColorPick = (sel) => {
+    const c = findClip(project, sel);
+    if (!c || c.gap) return;
+    select(sel);
+    setPlaying(false);
+    const start = clipStartTl(project, sel.track, c);
+    const len = ((c.out ?? 0) - (c.in ?? 0)) / (c.speed || 1);
+    if (time < start - 1e-6 || time > start + len + 1e-6) seek(start + 0.01);
+    setColorPick({ track: sel.track, id: sel.id });
+  };
+  const finishColorPick = (hex) => {
+    if (colorPick && hex) {
+      const c = findClip(projectRef.current, colorPick);
+      if (c) dispatch({ type: 'update', track: colorPick.track, id: colorPick.id, patch: { chroma: { ...chromaOf(c), on: true, color: hex } } });
+    }
+    setColorPick(null);
+  };
+  useEffect(() => {
+    if (!colorPick) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); setColorPick(null); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [colorPick]);
+
   const startCropEdit = (sel) => {
     const c = findClip(project, sel);
     if (!c || c.gap) return;
@@ -1792,10 +1821,11 @@ export default function App() {
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
           clockRef={clockRef}
           trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))}
-          cropEdit={cropEdit} />
+          cropEdit={cropEdit}
+          colorPick={colorPick} onColorPicked={finishColorPick} />
         <Inspector project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} onSeek={seek}
           onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
-          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} />
+          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} onColorPick={(sel) => startColorPick(sel)} />
         <Splitter which="left" style={{ left: panes.left }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the left panel" />
         <Splitter which="right" style={{ right: panes.right }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the properties panel" />
       </div>
@@ -1898,6 +1928,13 @@ export default function App() {
           </div>
         );
       })()}
+      {colorPick && (
+        <div className="render-job" role="status">
+          <Pipette size={15} />
+          <span>Click the color in the player — that exact pixel becomes the key color.</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => setColorPick(null)}>Cancel</button>
+        </div>
+      )}
       {exporting && <ExportDialog state={exporting} onCancel={cancelExport} onStart={confirmExport}
         onClose={() => setExporting(null)} onShow={() => window.api.showInFolder(exporting.file)}
         onOpen={() => window.api.openFile(exporting.file)} onPickTarget={pickExportTarget}

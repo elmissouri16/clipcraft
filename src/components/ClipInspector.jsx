@@ -207,7 +207,7 @@ export function PinToTrack({ clip, project, set, card = false }) {
 
 // Properties of a picture clip (main track or overlay), laid out like CapCut's clip panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
-export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null }) {
+export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
   const [tab, setTab] = useState('video');
   const [sub, setSub] = useState('basic');
   const [maskEdit, setMaskEdit] = useState(false);
@@ -281,15 +281,9 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
     dot: { left: `${[14, 50, 86][i % 3]}%`, top: `${[18, 50, 82][Math.floor(i / 3)]}%` },
   }));
 
-  const pickColor = async () => {
-    if (!window.EyeDropper) return;
-    try {
-      const r = await new window.EyeDropper().open();
-      setC({ on: true, color: r.sRGBHex });
-    } catch {
-      // canceled
-    }
-  };
+  // Pick samples a color from the player itself (an App stage mode, like track-pick): the
+  // OS EyeDropper it used before silently rejects under Electron on Linux, so the button
+  // did nothing there. The in-app sampler behaves the same on every platform.
 
   // Fit / Fill (item 13): the transform's scale 1 is the contain fit in both preview and
   // export, so Fit = scale 1 centred, and Fill = the cover/contain ratio, centred. Both write
@@ -441,9 +435,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
               <div className="numrow">
                 <span className="numrow-label">Color</span>
                 <input type="color" value={chroma.color} aria-label="Key color" onChange={(e) => setC({ on: true, color: e.target.value })} />
-                {window.EyeDropper && (
-                  <button className="btn btn-sm" onClick={pickColor} title="Pick a color from the screen"><Pipette size={13} /> Pick</button>
-                )}
+                <button className="btn btn-sm" disabled={!onColorPick} onClick={() => onColorPick && onColorPick({ track, id: clip.id })} title="Pick a color from the player"><Pipette size={13} /> Pick</button>
                 <span className="chips">
                   {['#00ff00', '#00b140', '#0047bb', '#ffffff', '#000000'].map((c) => (
                     <button key={c} className="swatch" style={{ background: c }} aria-label={`Key ${c}`} onClick={() => setC({ on: true, color: c })} />
