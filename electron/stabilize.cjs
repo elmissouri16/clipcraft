@@ -9,18 +9,28 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 // smoothing: frames averaged on each side for the camera path (more = steadier, more zoom); shakiness / accuracy
-// of the analysis; zoom: extra zoom in percent on top of the automatic one.
+// of the analysis; zoom: extra zoom in percent on top of the automatic one; optzoom: 2 lets the transform pick
+// the best per-frame zoom instead of one static zoom for the whole clip.
+//
+// Tuned 2026-11-01 against a ground-truth fixture (a still detailed scene shaken by a known analytic path;
+// jitter = RMS frame-step of the recovered camera path via sub-pixel NCC, 720p, baseline 3.94 px): the old
+// recommended (shakiness 7 / smoothing 20 / optzoom 1) left 0.12 px of jitter; shakiness 10 + smoothing 30 +
+// optzoom 2 leaves 0.05 px, and adding the 3% static zoom 0.04 px. Heavier smoothing (60) is WORSE (0.14 px):
+// the virtual camera lags the shake and the lag itself reads as jitter. Minimal (measured 0.66 px) stays the
+// gentle option. For reference ffmpeg's deshake leaves 1.26 px on the same fixture. The old suite's
+// "~25-36%" was its metric — mean frame difference over testsrc2, whose own content moves — not the
+// stabilizer; scripts/test-stabilize.cjs now measures the camera path itself.
 const LEVELS = {
-  minimal: { name: 'Minimal crop', smoothing: 10, shakiness: 5, accuracy: 12, zoom: 0 },
-  recommended: { name: 'Recommended', smoothing: 20, shakiness: 7, accuracy: 15, zoom: 0 },
-  most: { name: 'Most stable', smoothing: 40, shakiness: 10, accuracy: 15, zoom: 3 },
+  minimal: { name: 'Minimal crop', smoothing: 10, shakiness: 5, accuracy: 12, zoom: 0, optzoom: 1 },
+  recommended: { name: 'Recommended', smoothing: 30, shakiness: 10, accuracy: 15, zoom: 0, optzoom: 2 },
+  most: { name: 'Most stable', smoothing: 30, shakiness: 10, accuracy: 15, zoom: 3, optzoom: 2 },
 };
 
 const num = (v) => Number(v.toFixed(3)).toString();
 
 function outFile(item, from, to, level, cacheDir) {
   const st = fs.statSync(item.path);
-  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|stab1|${num(from)}|${num(to)}|${level}`).digest('hex').slice(0, 16);
+  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|stab2|${num(from)}|${num(to)}|${level}`).digest('hex').slice(0, 16);
   return path.join(cacheDir, `${key}-stab.mp4`);
 }
 
@@ -72,7 +82,7 @@ async function stabilize(item, { from = 0, to, level = 'recommended', cacheDir, 
     await run(ffmpegPath, [...input, '-an', '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}vidstabdetect=shakiness=${L.shakiness}:accuracy=${L.accuracy}:result=${trf}`,
       '-f', 'null', '-'], cacheDir, (t) => onProgress(Math.min(0.5, (t / len) * 0.5)), isCanceled);
     await run(ffmpegPath, [...input, '-map', '0:v:0', '-map', '0:a:0?',
-      '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}vidstabtransform=input=${trf}:smoothing=${L.smoothing}:optzoom=1:zoom=${L.zoom}:interpol=bicubic,unsharp=5:5:0.6:3:3:0.3,format=yuv420p`,
+      '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}vidstabtransform=input=${trf}:smoothing=${L.smoothing}:optzoom=${L.optzoom ?? 1}:zoom=${L.zoom}:interpol=bicubic,unsharp=5:5:0.6:3:3:0.3,format=yuv420p`,
       ...(sdr ? ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'] : []),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '17', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', part],
     cacheDir, (t) => onProgress(Math.min(0.99, 0.5 + (t / len) * 0.5)), isCanceled);

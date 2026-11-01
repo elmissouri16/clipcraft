@@ -7,7 +7,7 @@ import Slider from './Slider.jsx';
 import CurveEditor from './CurveEditor.jsx';
 import NumBox from './NumBox.jsx';
 import TextInspector from './TextInspector.jsx';
-import ClipInspector from './ClipInspector.jsx';
+import ClipInspector, { PinToTrack } from './ClipInspector.jsx';
 import AudioFxControls from './AudioFx.jsx';
 import EnhanceVoice from './EnhanceVoice.jsx';
 import { isLookPatch, lookAction, selectedPictures } from '../look.js';
@@ -272,7 +272,7 @@ function EffectPanel({ project, selection, dispatch }) {
   );
 }
 
-export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null }) {
+export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null }) {
   const multi = selection?.items && (
     <div className="multi-note" role="status">
       <b>{selection.items.length} clips selected.</b> Delete removes them all; drag one (off the main track) to move them together.
@@ -317,7 +317,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
       {multi}
       {!clip && <ProjectDetails project={project} dispatch={dispatch} duration={duration} />}
 
-      {clip && track === 'text' && <TextInspector key={clip.id} clip={clip} dispatch={dispatch} />}
+      {clip && track === 'text' && <TextInspector key={clip.id} clip={clip} dispatch={dispatch} project={project} />}
 
       {clip && track === 'sticker' && (
         <div className="fields">
@@ -335,6 +335,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
           <Num label="Start (s)" value={clip.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
           <Num label="Duration (s)" value={clip.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
           </div>
+          <PinToTrack clip={clip} project={project} set={set} card />
         </div>
       )}
 
@@ -352,7 +353,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
 
       {clip && (track === 'video' || track === 'overlay') && !clip.gap && (
         <ClipInspector key={clip.id} clip={clip} media={media} project={project} set={set} dispatch={dispatch} track={track}
-          time={time} onSeek={onSeek} onEnhance={onEnhance}
+          time={time} onSeek={onSeek} onEnhance={onEnhance} onTrackPick={onTrackPick}
           start={track === 'overlay' ? clip.start : videoLayout(project.videoClips).find((l) => l.clip.id === clip.id)?.start ?? 0} />
       )}
 

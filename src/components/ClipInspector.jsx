@@ -18,6 +18,7 @@ import GradePanel from './GradePanel.jsx';
 import AudioFxControls from './AudioFx.jsx';
 import EnhanceVoice from './EnhanceVoice.jsx';
 import { baseAt, editAt, hasAnyKeys, localTime, nextArrival, segmentEase, setSegmentEase } from '../anim.js';
+import { findClipAnywhere, trackedClips } from '../track.js';
 import CurveEditor from './CurveEditor.jsx';
 
 const pct = (v) => `${Math.round(v * 100)}%`;
@@ -149,9 +150,63 @@ function Stabilize({ clip, media, project, set, dispatch }) {
   );
 }
 
+// Motion tracking: the point is picked on the player (App drives the pick mode), the engine follows it
+// through the clip in the main process, and the path is stored on the clip (clip.track). Followers pin
+// to it with PinToTrack below. Progress and cancel live in App's render-job pill, like the other renders.
+function MotionTracking({ clip, media, set, onTrackPick, track }) {
+  if (!media || media.type !== 'video') return null;
+  const tr = clip.track && clip.track.points && clip.track.points.length ? clip.track : null;
+  const low = tr ? tr.points.filter((p) => (p.c ?? 1) < 0.35).length : 0;
+  return (
+    <Section title="Motion tracking">
+      <p className="dim small">Follow a moving point in this clip — a face, a product, a car. Overlay, text and sticker clips can then be pinned to it and travel with it.</p>
+      {tr ? (
+        <>
+          <p className="dim small">Tracked {tr.points.length} points across the clip{low ? `; ${low} were uncertain and held their place (for example behind something)` : ''}.</p>
+          <div className="row">
+            <button className="btn btn-sm" disabled={!onTrackPick} onClick={() => onTrackPick({ track, id: clip.id })}>Track again…</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => set({ track: null })}>Remove track</button>
+          </div>
+        </>
+      ) : (
+        <button className="btn btn-sm" disabled={!onTrackPick} onClick={() => onTrackPick({ track, id: clip.id })}>Track motion…</button>
+      )}
+    </Section>
+  );
+}
+
+// Pin to track: this clip keeps its position relative to a tracked point in another clip and follows
+// it (src/track.js evaluates the offset live, in the preview and the export alike). Rendered as a
+// Section inside ClipInspector and as a card in the text / sticker inspectors (card prop).
+export function PinToTrack({ clip, project, set, card = false }) {
+  const sources = trackedClips(project).filter((s) => s.clip.id !== clip.id);
+  const pinnedTo = clip.pin && clip.pin.to ? findClipAnywhere(project, clip.pin.to) : null;
+  const nameOf = (ref) => {
+    const m = ref && project.media.find((x) => x.id === ref.clip.mediaId);
+    return m?.name || 'a clip';
+  };
+  const body = pinnedTo ? (
+    <>
+      <p className="dim small">Following the motion tracked in “{nameOf(pinnedTo)}”. The clip keeps the position it has when it starts, then travels with the point.</p>
+      <button className="btn btn-sm" onClick={() => set({ pin: null })}>Unpin</button>
+    </>
+  ) : sources.length ? (
+    <>
+      <p className="dim small">Make this clip follow a moving point tracked in another clip.</p>
+      {sources.map((s) => (
+        <button key={s.clip.id} className="btn btn-sm" onClick={() => set({ pin: { to: s.clip.id } })}>Pin to “{nameOf(s)}”</button>
+      ))}
+    </>
+  ) : (
+    <p className="dim small">No tracked clips yet. Select a video clip and use Track motion in its inspector first.</p>
+  );
+  if (card) return <div className="insp-card"><div className="insp-card-title">Pin to track</div>{body}</div>;
+  return <Section title="Pin to track">{body}</Section>;
+}
+
 // Properties of a picture clip (main track or overlay), laid out like CapCut's clip panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
-export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null }) {
+export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null }) {
   const [tab, setTab] = useState('video');
   const [sub, setSub] = useState('basic');
   const [maskEdit, setMaskEdit] = useState(false);
@@ -323,6 +378,8 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                 </Section>
               )}
               {media && <Stabilize clip={clip} media={media} project={project} set={set} dispatch={dispatch} />}
+              {media && <MotionTracking clip={clip} media={media} set={set} onTrackPick={onTrackPick} track={track} />}
+              {track === 'overlay' && <PinToTrack clip={clip} project={project} set={set} />}
               <Section title="Blend" onReset={() => set({ blend: 'normal', opacity: 1, keyframes: dropKeys(['opacity']) })}>
                 <label className="field">
                   <span>Mode</span>

@@ -40,7 +40,7 @@ export async function renderTextFrames(project, frameDir, onProgress, isCanceled
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
     drawFxOverlays(ctx, project, t, W, H);
-    drawTextLayer(ctx, project.textClips, t, W, H);
+    drawTextLayer(ctx, project, t, W, H);
     const px = ctx.getImageData(0, 0, W, H).data;
     const cur = new Uint32Array(px.buffer, px.byteOffset, W * H);
     const r = changedRect(prev, cur, W, H);

@@ -3,6 +3,7 @@ import { RotateCw } from 'lucide-react';
 import { clipLen, freeLen, videoLayout } from '../store.js';
 import { scaleXY, transformOf } from '../visual.js';
 import { baseAt, editAt, hasMotion, stateAt } from '../anim.js';
+import { pinOffsetAt, stateAtPinned } from '../track.js';
 import { resolveStyle, textBox, textVisible } from '../text/render.js';
 
 // Direct manipulation in the player, like CapCut: click a picture to select it, drag to move, corners to scale,
@@ -51,9 +52,11 @@ export default function TransformBox({ project, time, selection, onSelect, dispa
       const b = textBox(clip, project.width, project.height);
       const kx = sw / project.width;
       const ky = sh / project.height;
-      return { cx: b.cx * kx, cy: b.cy * ky, w: b.w * kx, h: b.h * ky, rot: b.rot };
+      // A pinned text is drawn offset from its base anchor (src/track.js); the box follows the drawing.
+      const off = clip.pin ? pinOffsetAt(project, { track: 'text', clip }, time) : { dx: 0, dy: 0 };
+      return { cx: (b.cx + off.dx * project.width) * kx, cy: (b.cy + off.dy * project.height) * ky, w: b.w * kx, h: b.h * ky, rot: b.rot };
     }
-    const t = hasMotion(clip) ? stateAt(clip, item.lt, clipLen(clip)).transform : transformOf(clip);
+    const t = (hasMotion(clip) || clip.pin) ? stateAtPinned(project, { track: item.track, clip }, item.lt, clipLen(clip)).transform : transformOf(clip);
     const { sx, sy } = scaleXY(t);
     const { fw, fh } = fitOf(mediaById[clip.mediaId], project.width, project.height);
     return { t, cx: (0.5 + t.x) * sw, cy: (0.5 + t.y) * sh, w: fw * sw * Math.abs(sx), h: fh * sh * Math.abs(sy), rot: t.rot };

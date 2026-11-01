@@ -461,8 +461,13 @@ function buildExportArgs(project, outFile, opts = {}) {
       chain.push(`fade=t=in:st=${num(s.start)}:d=${num(d)}:alpha=1`, `fade=t=out:st=${num(s.start + s.duration - d)}:d=${num(d)}:alpha=1`);
     }
     filters.push(`[${idx}:v]${chain.join(',')}[st${i}]`);
+    // A sticker pinned to a motion track carries its position as curves in timeline seconds (attached by
+    // the renderer, src/track.js stickerPinCurves); the overlay filter's t is the finished video's time.
+    const pin = s.pinCurves && s.pinCurves.x && s.pinCurves.x.length ? s.pinCurves : null;
+    const xExpr = pin ? `(${layers.curveExpr(pin.x, num)})*${W}-w/2` : `${W}*${num(s.x)}-w/2`;
+    const yExpr = pin ? `(${layers.curveExpr(pin.y, num)})*${H}-h/2` : `${H}*${num(s.y)}-h/2`;
     filters.push(
-      `[${cv}][st${i}]overlay=x=${W}*${num(s.x)}-w/2:y=${H}*${num(s.y)}-h/2:` +
+      `[${cv}][st${i}]overlay=x='${xExpr}':y='${yExpr}':` +
         `enable='between(t,${num(s.start)},${num(s.start + s.duration)})':eof_action=pass[sv${i}]`
     );
     cv = `sv${i}`;

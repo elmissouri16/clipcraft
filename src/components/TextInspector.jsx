@@ -10,6 +10,7 @@ import {
   ANIM_LOOP, BUBBLES, HIGHLIGHTS, TEMPLATE_CATEGORIES, TEXT_EFFECTS, TEXT_TEMPLATES,
 } from '../text/catalog.js';
 import TextAnimBrowser from './TextAnimBrowser.jsx';
+import { PinToTrack } from './ClipInspector.jsx';
 
 const TABS = ['Basic', 'Templates', 'Bubble', 'Effects', 'Animation'];
 // Keys that describe how text looks (shared by "apply to all captions"); text and timing stay per clip.
@@ -115,7 +116,7 @@ function Color({ label, value, onChange }) {
   );
 }
 
-export default function TextInspector({ clip, dispatch }) {
+export default function TextInspector({ clip, dispatch, project = null }) {
   const [tab, setTab] = useState('Basic');
   const [applyAll, setApplyAll] = useState(true);
   const [animTab, setAnimTab] = useState('In');
@@ -157,6 +158,8 @@ export default function TextInspector({ clip, dispatch }) {
 
       {tab === 'Basic' && (
         <div className="fields">
+          {project && <PinToTrack clip={clip} project={project} card
+            set={(patch) => dispatch({ type: 'update', track: 'text', id: clip.id, patch })} />}
           <div className="insp-card">
             <div className="insp-card-title">Type</div>
           <label className="field">

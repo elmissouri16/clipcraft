@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FIT_VIEW, QUALITY_LABELS, QUALITY_MAX_SIDE, applyZoomChoice, clipLen, formatTime, freeLen, getPlaybackQuality, levelCopyState, previewPath, toFileUrl, videoLayout, zoomByFactor, zoomTransform } from '../store.js';
-import { hasMotion, stateAt } from '../anim.js';
+import { hasMotion } from '../anim.js';
+import { fitFactors, mediaToStage, pinOffsetAt, stageToMedia, stateAtPinned } from '../track.js';
 import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, LoaderCircle, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
 import { clipCss, textAnim } from '../effects.js';
 import { drawTextLayer } from '../text/render.js';
@@ -178,6 +179,7 @@ function transitionStyles(type, p) {
 export default function Preview({
   project, editProject, selection, onSelect, dispatch, time, seekVer, playing, duration, onTime, onEnd, onTogglePlay, onSeek, onDropItem,
   peek, onClosePeek, onAddPeek, quality = 'full', onQualityChange, clockRef,
+  trackPick, onTrackPoint,
 }) {
   const [dropOver, setDropOver] = useState(false);
   const slots = [useRef(null), useRef(null)];
@@ -311,7 +313,7 @@ export default function Preview({
       slot.style.zIndex = item === incoming ? 2 : 1;
       slot.style.filter = clipCss(c);
       slot.style.mixBlendMode = blendOf(c).css;
-      const motionNow = hasMotion(c) ? stateAt(c, t - item.start, clipLen(c)) : undefined;
+      const motionNow = (hasMotion(c) || c.pin) ? stateAtPinned(project, { track: 'video', clip: c }, t - item.start, clipLen(c)) : undefined;
       Object.assign(layer.style, layerStyle(c, project.width, project.height, motionNow));
       if (decos[k].current) Object.assign(decos[k].current.style, decoStyle(c, project.width, project.height, motionNow));
       const chroma = chromaOf(c);
@@ -412,7 +414,7 @@ export default function Preview({
       const fx = c.effects || [];
       el.slot.style.filter = clipCss(c);
       el.slot.style.mixBlendMode = blendOf(c).css;
-      const motionNow = hasMotion(c) ? stateAt(c, lt, clipLen(c)) : undefined;
+      const motionNow = (hasMotion(c) || c.pin) ? stateAtPinned(project, { track: 'overlay', clip: c }, lt, clipLen(c)) : undefined;
       Object.assign(el.layer.style, layerStyle(c, project.width, project.height, motionNow));
       if (el.deco) Object.assign(el.deco.style, decoStyle(c, project.width, project.height, motionNow));
       const flip = `scale(${fx.includes('mirror') ? -1 : 1}, ${fx.includes('flipv') ? -1 : 1})`;
@@ -550,7 +552,7 @@ export default function Preview({
     ctx.clearRect(0, 0, w, h);
     ctx.setTransform(w / project.width, 0, 0, h / project.height, 0, 0);
     drawFxOverlays(ctx, project, time, project.width, project.height);
-    drawTextLayer(ctx, project.textClips, time, project.width, project.height);
+    drawTextLayer(ctx, project, time, project.width, project.height);
   }, [time, project, scale, fontTick]);
   const stickers = project.stickerClips.filter((c) => time >= c.start && time < c.start + c.duration);
 
@@ -613,9 +615,10 @@ export default function Preview({
           {stickers.map((s) => {
             const a = textAnim(s, time - s.start);
             const m = s.mediaId && project.media.find((x) => x.id === s.mediaId);
+            const off = s.pin ? pinOffsetAt(project, { track: 'sticker', clip: s }, time) : { dx: 0, dy: 0 };
             return (
               <div key={s.id} className="overlay-sticker" style={{
-                left: `${s.x * 100}%`, top: `${s.y * 100}%`, height: s.size * scale, opacity: a.opacity,
+                left: `${(s.x + off.dx) * 100}%`, top: `${(s.y + off.dy) * 100}%`, height: s.size * scale, opacity: a.opacity,
                 transform: `translate(-50%, -50%) rotate(${s.rotation || 0}deg) ${a.transform}`,
               }}>
                 {m ? <img src={toFileUrl(m.path)} alt="" /> : <span style={{ fontSize: s.size * scale * 0.8 }}>{s.emoji}</span>}
@@ -625,6 +628,34 @@ export default function Preview({
           <canvas ref={textCanvas} className="text-layer" />
           <TransformBox project={editProject || project} time={time} selection={selection} onSelect={onSelect} dispatch={dispatch}
             sw={project.width * scale} sh={project.height * scale} />
+          {trackPick && (() => {
+            const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === trackPick.id);
+            const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
+            const at = trackPick.point && srcMedia ? mediaToStage(project, srcMedia, trackPick.point) : null;
+            const fit = srcMedia ? fitFactors(project, srcMedia) : { fx: 1, fy: 1 };
+            const bw = trackPick.box ? trackPick.box.w * fit.fx * 100 : 9;
+            const bh = trackPick.box ? trackPick.box.h * fit.fy * 100 : 9;
+            return (
+              <div className="track-pick" role="button" aria-label="Click the object to track"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const sx = (e.clientX - r.left) / r.width;
+                  const sy = (e.clientY - r.top) / r.height;
+                  if (srcMedia) onTrackPoint(stageToMedia(project, srcMedia, sx, sy));
+                }}>
+                {at && (
+                  <>
+                    <span className="track-box" style={{
+                      left: `${at.x * 100 - bw / 2}%`, top: `${at.y * 100 - bh / 2}%`,
+                      width: `${bw}%`, height: `${bh}%`,
+                    }} />
+                    <span className="track-dot" style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }} />
+                  </>
+                )}
+                <span className="track-pick-hint">{trackPick.point ? 'Click again to move the point, then Track in the inspector' : 'Click the object you want to follow'}</span>
+              </div>
+            );
+          })()}
           {!project.videoClips.length && (
             <div className="stage-empty">
               <img src="./logo.png" alt="" draggable={false} />

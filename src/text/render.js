@@ -2,6 +2,7 @@
 // Coordinates are project pixels (e.g. 1280x720); callers scale the context for the preview.
 import { cssFont } from '../fonts.js';
 import { INHERENT_UNIT_ANIMS, effectiveUnit, isAnimUnit, unitProgress } from './units.js';
+import { pinOffsetAt } from '../track.js';
 
 export const TEXT_DEFAULTS = {
   text: '',
@@ -443,7 +444,7 @@ export function textVisible(clip, t) {
 }
 
 // Draws a text clip at local time lt (seconds since clip start) onto ctx (project pixel space W x H).
-export function drawTextClip(ctx, clip, lt, W, H) {
+export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
   const st = resolveStyle(clip);
   let text = st.text || '';
   if (st.uppercase) text = text.toLocaleUpperCase();
@@ -484,7 +485,7 @@ export function drawTextClip(ctx, clip, lt, W, H) {
   const L = layout(ctx, stl, shownText, W);
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
-  ctx.translate(st.x * W + A.dx, st.y * H + A.dy);
+  ctx.translate((st.x + (pinOff ? pinOff.dx : 0)) * W + A.dx, (st.y + (pinOff ? pinOff.dy : 0)) * H + A.dy);
   if (st.rotation) ctx.rotate((st.rotation * Math.PI) / 180);
   if (A.rot) ctx.rotate(A.rot);
   ctx.scale(A.sx, A.sy);
@@ -694,9 +695,14 @@ export function drawTextClip(ctx, clip, lt, W, H) {
   ctx.restore();
 }
 
-// Draws every text clip visible at timeline time t (bottom to top in track order).
-export function drawTextLayer(ctx, textClips, t, W, H) {
-  for (const c of textClips) {
-    if (textVisible(c, t)) drawTextClip(ctx, c, t - c.start, W, H);
+// Draws every text clip visible at timeline time t (bottom to top in track order). Takes the whole
+// project (not just the text clips) because a text clip pinned to a motion track (clip.pin) needs the
+// tracked clip to compute its offset — the preview and the export call this same function, so a pinned
+// text sits at the same place in both.
+export function drawTextLayer(ctx, project, t, W, H) {
+  for (const c of project.textClips) {
+    if (!textVisible(c, t)) continue;
+    const off = c.pin ? pinOffsetAt(project, { track: 'text', clip: c }, t) : null;
+    drawTextClip(ctx, c, t - c.start, W, H, off);
   }
 }

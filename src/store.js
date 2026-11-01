@@ -7,6 +7,7 @@
 // Overlay clips (picture-in-picture) are videos / photos with a free `start` drawn above the main track.
 
 import { RATIOS, sizeFor } from './effects.js';
+import { cleanPins } from './track.js';
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 export const MIN_CLIP = 0.1;
@@ -256,7 +257,7 @@ export function canvasFor(p, m) {
   return ratio && ratio !== p.ratio ? { ratio, ...sizeFor(ratio, p.resolution) } : {};
 }
 
-function reduceProject(p, a) {
+function reduceProjectInner(p, a) {
   switch (a.type) {
     case 'load':
       return normalizeProject(a.project);
@@ -582,6 +583,18 @@ function reduceProject(p, a) {
     default:
       return p;
   }
+}
+
+// Every reduction funnels through here so a motion-tracking pin can never dangle: deleting a clip (or
+// a whole layer of clips) or clearing a clip's track takes the pin off every follower that used it.
+function reduceProject(p, a) {
+  const next = reduceProjectInner(p, a);
+  if (next === p) return next;
+  if (a.type === 'delete') return cleanPins(next, new Set([a.id]));
+  if (a.type === 'deleteLayer' || a.type === 'load') return cleanPins(next);
+  if (a.type === 'update' && 'track' in (a.patch || {}) && !a.patch.track) return cleanPins(next);
+  if (a.type === 'updateMany') return cleanPins(next);
+  return next;
 }
 
 // Trims one edge of a clip. `delta` is how much that edge moves INTO the clip, in timeline seconds

@@ -7,7 +7,7 @@ import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2, Unlink,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Split, Trash2, Unlink,
 } from 'lucide-react';
 import { fillSlot, slotList, templateMeta } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
@@ -16,6 +16,7 @@ import { useRecorder } from './useRecorder.js';
 import { useLayout } from './useLayout.js';
 import { customMaskImages, decoImages, maskImages } from './visual.js';
 import { motionData } from './anim.js';
+import { clipStartTl, motionDataPinned, stickerPinCurves, trackedClips } from './track.js';
 import { isLookPatch, lookAction, selectedPictures } from './look.js';
 import { loadProjectLuts, onLutLoaded } from './fx/lut.js';
 import LeftPanel from './components/LeftPanel.jsx';
@@ -55,6 +56,14 @@ function emojiPng(emoji, size = 256) {
 const stickerPngs = (project) =>
   Object.fromEntries(project.stickerClips.filter((s) => s.emoji).map((s) => [s.id, emojiPng(s.emoji)]));
 
+// Stickers are placed by a static FFmpeg overlay, so a pinned sticker's travel is attached to the
+// export copy of the project as position curves (the saved project keeps only the pin reference).
+const withPinCurves = (p) => {
+  const curves = stickerPinCurves(p);
+  if (!Object.keys(curves).length) return p;
+  return { ...p, stickerClips: (p.stickerClips || []).map((s) => (curves[s.id] ? { ...s, pinCurves: curves[s.id] } : s)) };
+};
+
 export default function App() {
   const [state, dispatch] = useReducer(historyReducer, { past: [], present: emptyProject(), future: [] });
   const project = state.present;
@@ -87,6 +96,7 @@ export default function App() {
   }, []);
   const [exporting, setExporting] = useState(null);
   const [renderJob, setRenderJob] = useState(null); // derivative renders: { kind: 'reverse' | 'detach', label, fraction } | { error }
+  const [trackPick, setTrackPick] = useState(null); // motion tracking pick mode: { track, id, point: {x,y} | null, box: {w,h} }
   const [tab, setTab] = useState('media');
   const { layout: panes, startDrag: startResize, reset: resetSize, nudge: nudgeSize } = useLayout();
   const [tool, setTool] = useState('select'); // timeline tool: 'select' | 'razor'
@@ -103,20 +113,26 @@ export default function App() {
   const [tourStep, setTourStep] = useState(0); // lives here: the tour remounts across the Home↔editor transition
   const [packPromptOpen, setPackPromptOpen] = useState(false);
   const packPromptSeenRef = useRef(false);
+  // Builds that BUNDLE the pack (the test build) never show the download prompt — the
+  // library is already populated. The flag comes from the same assets:list the panels
+  // read; without a bundle nothing changes.
+  const packBundledRef = useRef(false);
   useEffect(() => {
     let alive = true;
-    window.api.firstRunGet?.().then((f) => {
+    const libP = window.api.assetsList ? window.api.assetsList().catch(() => null) : Promise.resolve(null);
+    Promise.all([window.api.firstRunGet?.(), libP]).then(([f, lib]) => {
       if (!alive || !f) return;
       packPromptSeenRef.current = !!f.packPromptSeen;
+      packBundledRef.current = !!lib?.bundled;
       if (!f.tourSeen) setTourOpen(true);
-      else if (!f.packPromptSeen) setPackPromptOpen(true);
+      else if (!f.packPromptSeen && !lib?.bundled) setPackPromptOpen(true);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const closeTour = useCallback(() => {
     setTourOpen(false);
     window.api.firstRunSet?.({ tourSeen: true }).catch(() => {});
-    if (!packPromptSeenRef.current) setPackPromptOpen(true);
+    if (!packPromptSeenRef.current && !packBundledRef.current) setPackPromptOpen(true);
   }, []);
   const closePackPrompt = useCallback(() => {
     setPackPromptOpen(false);
@@ -1020,6 +1036,39 @@ export default function App() {
     setSelection({ track, id: clip.id });
     setMenu({ x: e.clientX, y: e.clientY, track, id: clip.id });
   };
+
+  // ---- Motion tracking: the user picks a point on the player (Preview reports it in media fractions),
+  // the engine follows it through the clip (electron/track.cjs) and the path lands on the clip; overlay,
+  // text and sticker clips can then be pinned to it (clip.pin — see src/track.js). ----
+  const startTrackPick = (sel) => {
+    const c = findClip(project, sel);
+    if (!c || c.gap) return;
+    select(sel);
+    setPlaying(false);
+    seek(clipStartTl(project, sel.track, c) + 0.01);
+    setTrackPick({ track: sel.track, id: sel.id, point: null, box: { w: 0.055, h: 0.095 } });
+  };
+  const runTrack = async () => {
+    const pick = trackPick;
+    if (!pick || !pick.point) return;
+    const p = projectRef.current;
+    const c = findClip(p, pick);
+    const m = c && p.media.find((x) => x.id === c.mediaId);
+    setTrackPick(null);
+    if (!c || !m) return;
+    setRenderJob({ kind: 'track', label: `Tracking motion in "${m.name || 'clip'}"`, fraction: 0 });
+    const off = window.api.onTrackProgress(({ fraction }) => setRenderJob((j) => (j && j.kind === 'track' ? { ...j, fraction } : j)));
+    let res = null;
+    try { res = await window.api.trackRun(m, c.in || 0, c.out ?? m.duration, pick.point, pick.box); } catch { /* reported below */ }
+    off();
+    if (res && res.points && res.points.length) {
+      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'update', track: pick.track, id: pick.id, patch: { track: { points: res.points, box: pick.box, fps: res.fps } } });
+      dispatch({ type: 'endGesture' });
+      setRenderJob(null);
+    } else if (res && res.canceled) setRenderJob(null);
+    else setRenderJob({ error: (res && res.error) || 'Tracking failed.' });
+  };
   const menuItems = (sel) => {
     if (sel.track === 'effect' && !sel.id.includes('|')) {
       return [
@@ -1139,6 +1188,24 @@ export default function App() {
     items.push(c.disabled
       ? { label: 'Activate clip', icon: Eye, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: false } }) }
       : { label: 'Deactivate clip', icon: EyeOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: true } }) });
+    // Motion tracking: track a video clip's moving point; pin overlay / text / sticker clips to a track.
+    if (pic && m?.type === 'video') {
+      items.push('sep', { label: c.track ? 'Track motion again…' : 'Track motion…', icon: Crosshair, onClick: () => startTrackPick(sel) });
+    }
+    if (sel.track === 'overlay' || sel.track === 'text' || sel.track === 'sticker') {
+      const sources = trackedClips(project).filter((s) => s.clip.id !== c.id);
+      const submenu = [];
+      if (c.pin) submenu.push({ label: 'Unpin', icon: PinOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { pin: null } }) });
+      for (const s of sources) {
+        const sm = project.media.find((x) => x.id === s.clip.mediaId);
+        submenu.push({
+          label: `Track in "${sm?.name || 'clip'}"`, icon: Pin,
+          onClick: () => dispatch({ type: 'update', ...sel, patch: { pin: { to: s.clip.id } } }),
+        });
+      }
+      if (!submenu.length) submenu.push({ label: 'No tracked clips yet', disabled: true, hint: 'Track motion in a video clip first' });
+      items.push({ label: 'Pin to track', icon: Pin, submenu });
+    }
     return items;
   };
 
@@ -1472,7 +1539,7 @@ export default function App() {
     }
     await loadProjectLuts(project);
     // Animated effects and transitions are drawn with the preview's WebGL shaders, frame by frame.
-    let toExport = { ...project, export: eff, maskImages: maskImages(project), decoImages: decoImages(project), customMaskImages: customMaskImages(project), motion: motionData(project) };
+    let toExport = { ...withPinCurves(project), export: eff, maskImages: maskImages(project), decoImages: decoImages(project), customMaskImages: customMaskImages(project), motion: motionDataPinned(project) };
     const fxShare = fxWork(project) ? 0.4 * (1 - textShare) : 0;
     if (fxShare) {
       setExporting((e) => e && { ...e, stage: 'Rendering effects' });
@@ -1533,7 +1600,7 @@ export default function App() {
       dispatch,
       exportData: () => {
         const p = renderable(projectRef.current);
-        return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionData(p) }, pngs: stickerPngs(p) };
+        return { project: { ...withPinCurves(p), maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionDataPinned(p) }, pngs: stickerPngs(p) };
       },
       // Test hook: exports immediately (no summary gate), resolving settings the same way.
       exportNow: () => { const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p)); },
@@ -1647,9 +1714,11 @@ export default function App() {
           peek={project.media.find((m) => m.id === peekId)} onClosePeek={() => setPeekId(null)}
           onAddPeek={(id) => { setPeekId(null); addToTimeline(id); }}
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
-          clockRef={clockRef} />
+          clockRef={clockRef}
+          trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))} />
         <Inspector project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} onSeek={seek}
-          onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)} />
+          onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
+          onTrackPick={(sel) => startTrackPick(sel)} />
         <Splitter which="left" style={{ left: panes.left }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the left panel" />
         <Splitter which="right" style={{ right: panes.right }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the properties panel" />
       </div>
@@ -1722,8 +1791,16 @@ export default function App() {
           ) : (
             <><Loader2 size={15} className="spin" /><span>{renderJob.label}</span>
               <div className="progress render-job-bar"><div style={{ width: `${Math.round((renderJob.fraction || 0) * 100)}%` }} /></div>
-              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : renderJob.kind === 'enhance' ? window.api.enhanceCancel() : window.api.reverseCancel())}>Cancel</button></>
+              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : renderJob.kind === 'enhance' ? window.api.enhanceCancel() : renderJob.kind === 'track' ? window.api.trackCancel() : window.api.reverseCancel())}>Cancel</button></>
           )}
+        </div>
+      )}
+      {trackPick && (
+        <div className="render-job" role="status">
+          <Crosshair size={15} />
+          <span>{trackPick.point ? 'Point set — track it through the whole clip?' : 'Click the object on the player that you want to follow'}</span>
+          <button className="btn btn-sm" disabled={!trackPick.point} onClick={runTrack}>Track motion</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setTrackPick(null)}>Cancel</button>
         </div>
       )}
       {exporting && <ExportDialog state={exporting} onCancel={cancelExport} onStart={confirmExport}
