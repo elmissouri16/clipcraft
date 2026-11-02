@@ -106,9 +106,16 @@ const QUALITY_OPTIONS = [
   ['medium', 'Medium', 'Up to 960 px'],
   ['low', 'Low', 'Up to 640 px'],
 ];
+const PERF_MODE_OPTIONS = [
+  ['low-end', 'Low-End', 'Low playback copies, one background job at a time, exports yield to the PC'],
+  ['balanced', 'Balanced', 'Your playback quality, two background jobs at a time'],
+  ['high-performance', 'High-Performance', 'Full-quality playback, three background jobs at a time'],
+];
 function ProxySettings({ onCleared }) {
   const [st, setSt] = useState(null);
+  const [mode, setMode] = useState(null);
   useEffect(() => { window.api.proxyStatus().then(setSt).catch(() => {}); }, []);
+  useEffect(() => { window.api.perfGetMode?.().then(setMode).catch(() => {}); }, []);
   if (!st) return null;
   const mb = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : `${Math.max(0, Math.round(b / 1048576))} MB`);
   const clear = async () => {
@@ -136,6 +143,17 @@ function ProxySettings({ onCleared }) {
             <Trash2 size={13} /> Delete proxies
           </button>
         )}
+      </div>
+      <div className="settings-title" style={{ marginTop: 22 }}><Gauge size={16} /> Performance mode</div>
+      <p className="muted">Modes trade background work against responsiveness: how many thumbnails, waveforms and copies
+        ClipCraft builds at once, which playback quality it defaults to, and whether an export yields the PC's
+        processor to everything else. A mode never changes export quality — exports always render from the
+        original files at your chosen quality settings.</p>
+      <div className="seg-tabs small" role="radiogroup" aria-label="Performance mode">
+        {PERF_MODE_OPTIONS.map(([id, label, hint]) => (
+          <button key={id} type="button" role="radio" aria-checked={mode === id} className={mode === id ? 'on' : ''}
+            title={hint} onClick={async () => { const r = await window.api.perfSetMode(id); setMode(r.mode); setSt(r); }}>{label}</button>
+        ))}
       </div>
     </section>
   );

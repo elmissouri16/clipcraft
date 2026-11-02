@@ -159,11 +159,13 @@ async function probeAll(files) {
   return items;
 }
 
-// Thumbnails and waveforms are generated one file at a time in the background; the UI gets each
-// result through 'media:visuals' so importing never waits for them.
+// Thumbnails and waveforms are generated in the background; the UI gets each result
+// through 'media:visuals' so importing never waits for them. How many jobs run at once
+// is the performance mode's concurrency knob (measured per mode — see PERF-REPORT).
 const visualsQueue = [];
 const visualsQueued = new Set();
-let visualsBusy = false;
+let visualsActive = 0;
+const VISUALS_CONCURRENCY = { 'low-end': 1, balanced: 2, 'high-performance': 3 };
 
 function queueVisuals(items) {
   for (const it of items) {
@@ -194,11 +196,17 @@ function mediaCacheDir() {
   return dir;
 }
 
-async function pumpVisuals() {
-  if (visualsBusy) return;
-  visualsBusy = true;
-  while (visualsQueue.length) {
-    const it = visualsQueue.shift();
+function pumpVisuals() {
+  const limit = VISUALS_CONCURRENCY[settings.getPerfMode()] || 2;
+  while (visualsActive < limit && visualsQueue.length) {
+    visualsActive++;
+    processVisualItem(visualsQueue.shift())
+      .catch(() => {})
+      .finally(() => { visualsActive--; pumpVisuals(); });
+  }
+}
+
+async function processVisualItem(it) {
     const send = (v) => { if (win && !win.isDestroyed()) win.webContents.send('media:visuals', { path: it.path, ...v }); };
     const cache = mediaCacheDir();
     await makeVisuals(it, cache, send).catch(() => {});
@@ -234,8 +242,6 @@ async function pumpVisuals() {
       send({ optimizing: false });
     }
     visualsQueued.delete(it.path);
-  }
-  visualsBusy = false;
 }
 
 // Playback quality: the current level, the space the scaled copies take, and deleting them
@@ -260,6 +266,17 @@ ipcMain.handle('proxy:set', (_e, on) => {
 ipcMain.handle('proxy:setQuality', (_e, q) => {
   settings.setQuality(q);
   return proxyStatus();
+});
+// Performance mode: a bundle applied on selection — Low-End defaults playback to the
+// Low tier, High-Performance to Full, Balanced leaves the user's tier alone. The other
+// knobs (visuals concurrency, export priority) read the persisted mode where they run.
+ipcMain.handle('perf:getMode', () => settings.getPerfMode());
+ipcMain.handle('perf:setMode', (_e, mode) => {
+  const m = settings.setPerfMode(mode);
+  if (m === 'low-end') settings.setQuality('low');
+  if (m === 'high-performance') settings.setQuality('full');
+  pumpVisuals(); // a wider or narrower gate applies to the queue right away
+  return { mode: m, ...proxyStatus() };
 });
 ipcMain.handle('proxy:clear', () => {
   if (settings.getQuality() !== 'full') return { ...proxyStatus(), deleted: [] };
@@ -614,7 +631,9 @@ ipcMain.handle('export:run', async (_e, projectIn, target, textFrames) => {
     const withText = textFrames > 0 && frameDirs.has(target.frameDir) && fs.existsSync(textFile)
       ? { ...project, textOverlay: { file: textFile, count: textFrames } }
       : project;
-    currentExport = runExport(withText, target.file, (p) => win.webContents.send('export:progress', p));
+    // Low-End mode: the export yields CPU to the rest of the PC (nice +10). Other modes
+    // run at normal priority. Priority never changes the encoder settings or output.
+    currentExport = runExport(withText, target.file, (p) => win.webContents.send('export:progress', p), { nice: settings.getPerfMode() === 'low-end' ? 10 : 0 });
     await currentExport.promise;
     let size = 0;
     try { size = fs.statSync(target.file).size; } catch { /* the done card shows no size */ }

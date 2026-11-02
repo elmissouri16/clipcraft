@@ -171,6 +171,18 @@ function setProxy(on) {
   return setQuality(on === true ? 'medium' : 'full') !== 'full';
 }
 
+// Performance mode (perf program, 2026-11-01): a bundle of resource knobs — the
+// playback-quality default, how many background media jobs run at once, and whether
+// exports yield CPU to the rest of the PC. It never touches export quality settings.
+const PERF_MODES = ['low-end', 'balanced', 'high-performance'];
+const getPerfMode = () => { const m = read().perfMode; return PERF_MODES.includes(m) ? m : 'balanced'; };
+function setPerfMode(m) {
+  const data = read();
+  data.perfMode = PERF_MODES.includes(m) ? m : 'balanced';
+  write(data);
+  return data.perfMode;
+}
+
 // ---- First-run experience: the onboarding tour and the Creator Pack prompt each show
 // exactly once. Their seen-flags live here, alongside the other settings. ----
 const FIRST_RUN_KEYS = ['tourSeen', 'packPromptSeen'];
@@ -187,4 +199,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getProxy, setProxy, getQuality, setQuality, getPublic, getActive, save, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };

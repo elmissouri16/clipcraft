@@ -90,6 +90,8 @@ contextBridge.exposeInMainWorld('api', {
   proxyStatus: () => ipcRenderer.invoke('proxy:status'),
   proxySet: (on) => ipcRenderer.invoke('proxy:set', on === true),
   qualitySet: (q) => ipcRenderer.invoke('proxy:setQuality', q),
+  perfGetMode: () => ipcRenderer.invoke('perf:getMode'),
+  perfSetMode: (m) => ipcRenderer.invoke('perf:setMode', m),
   proxyClear: () => ipcRenderer.invoke('proxy:clear'),
   onMediaVisuals: (cb) => {
     const handler = (_e, v) => cb(v);

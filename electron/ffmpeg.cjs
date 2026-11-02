@@ -719,7 +719,7 @@ function pickEncoder() {
   return encoderPick;
 }
 
-function runExport(project, outFile, onProgress) {
+function runExport(project, outFile, onProgress, runOpts = {}) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-'));
   const maskFiles = {};
   for (const [n, [clipId, dataUrl]] of Object.entries(project.maskImages || {}).entries()) {
@@ -750,6 +750,9 @@ function runExport(project, outFile, onProgress) {
   const once = (encoder) => new Promise((resolve, reject) => {
     const { args, total } = buildExportArgs(withAssets, outFile, { encoder });
     proc = spawn(ffmpegPath, graphFile(args, tmpDir), { windowsHide: true });
+    // Perf mode (Low-End): run the encoder below normal priority so the PC stays
+    // responsive during exports. Scheduling only — the graph and output are identical.
+    if (runOpts.nice) { try { os.setPriority(proc.pid, runOpts.nice); } catch { /* not permitted on every platform */ } }
     let log = '';
     proc.stdout.on('data', (d) => {
       const m = /out_time_us=(\d+)/.exec(d.toString());
