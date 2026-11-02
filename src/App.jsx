@@ -89,8 +89,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quality, setQuality] = useState('full'); // Playback quality: which scaled copy the player uses
   const [aboutOpen, setAboutOpen] = useState(false);
-  // ---- First run: the welcome card, then the Creator Pack prompt — each shows exactly
-  // once (flags in settings.json via firstrun IPC); About replays the card on demand. ----
+  // ---- First run: the welcome card shows exactly once (flag in settings.json via
+  // firstrun IPC); About replays the card on demand. ----
   // B3 (2026-11-01): the multi-step tour became this single card. The persisted flag
   // keeps its name (tourSeen) so profiles that already saw the tour count as seen and
   // never get the card; the trigger and the dismissal chain are unchanged.
