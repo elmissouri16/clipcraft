@@ -1,7 +1,7 @@
 {
   "name": "clipcraft",
   "productName": "ClipCraft",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "homepage": "https://hamzaabika.com",
   "description": "ClipCraft - free, open-source desktop video editor (Electron + React + FFmpeg)",
   "main": "electron/main.cjs",
@@ -130,6 +130,19 @@
       "description": "ClipCraft - free desktop video editor by Hamza Abika",
       "icon": "build/icon.png",
       "syncDesktopName": true
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.video"
     },
     "deb": {
       "afterInstall": "build/after-install.sh"
