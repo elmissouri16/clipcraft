@@ -7,7 +7,7 @@
   "bestFor": "Interviews, gentle scene changes",
   "priority": "P0",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "dip-to-black",
@@ -17,7 +17,7 @@
   "bestFor": "Section breaks, endings, time jumps",
   "priority": "P0",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "fade-in",
@@ -47,7 +47,7 @@
   "bestFor": "Soft modern edits",
   "priority": "P1",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "dip-to-color",
@@ -57,7 +57,7 @@
   "bestFor": "Brand colors, chapter breaks",
   "priority": "P1",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "dip-to-white",
@@ -67,7 +67,7 @@
   "bestFor": "Bright, airy scene changes",
   "priority": "P1",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "film-dissolve",
@@ -77,7 +77,7 @@
   "bestFor": "Cinematic edits",
   "priority": "P1",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "luma-fade",
@@ -87,7 +87,7 @@
   "bestFor": "Moody or graphic scene changes",
   "priority": "P1",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "additive-dissolve",
@@ -97,7 +97,7 @@
   "bestFor": "Dreamy highlights, music videos",
   "priority": "P2",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "morph-cut",
@@ -107,7 +107,7 @@
   "bestFor": "Talking-head edits with a similar framing",
   "priority": "P2",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "non-additive-dissolve",
@@ -117,7 +117,7 @@
   "bestFor": "Natural dissolves",
   "priority": "P2",
   "controls": "Duration; midpoint; fade color where relevant; easing",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "circle-reveal",
@@ -147,7 +147,7 @@
   "bestFor": "Clean branded transitions",
   "priority": "P0",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "shape-matte-reveal",
@@ -187,7 +187,7 @@
   "bestFor": "Retro reveal / vignette transition",
   "priority": "P1",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "luma-matte-reveal",
@@ -207,7 +207,7 @@
   "bestFor": "Modern graphic video",
   "priority": "P1",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "radial-wipe",
@@ -217,7 +217,7 @@
   "bestFor": "UI-like, geometric or energetic edits",
   "priority": "P1",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "soft-wipe",
@@ -227,7 +227,7 @@
   "bestFor": "Soft, polished scene changes",
   "priority": "P1",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "stripe-band-wipe",
@@ -247,7 +247,7 @@
   "bestFor": "Symmetric scene reveals",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "checkerboard-wipe",
@@ -257,7 +257,7 @@
   "bestFor": "Retro digital transitions",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "clock-wipe",
@@ -267,7 +267,7 @@
   "bestFor": "Playful, timed or graphic edits",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "heart-matte",
@@ -287,7 +287,7 @@
   "bestFor": "Retro / stylized transitions",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "iris-cross",
@@ -297,7 +297,7 @@
   "bestFor": "Retro graphic edits",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "iris-diamond",
@@ -307,7 +307,7 @@
   "bestFor": "Stylized edits",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "page-peel",
@@ -317,7 +317,7 @@
   "bestFor": "Paper / scrapbook storytelling",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "page-turn",
@@ -327,7 +327,7 @@
   "bestFor": "Book / magazine visual themes",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "paint-splatter-wipe",
@@ -337,7 +337,7 @@
   "bestFor": "Creative / messy motion",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "random-blocks",
@@ -347,7 +347,7 @@
   "bestFor": "Digital / playful edits",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "spiral-wipe",
@@ -367,7 +367,7 @@
   "bestFor": "Playful / celebratory edits",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "venetian-blinds-louver",
@@ -377,7 +377,7 @@
   "bestFor": "Graphic / tech edits",
   "priority": "P2",
   "controls": "Duration; direction; edge softness; start/end alignment",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "camera-push-in",
@@ -397,7 +397,7 @@
   "bestFor": "Travel, explainer, fast-paced content",
   "priority": "P0",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "slide-left-right-up-down",
@@ -407,7 +407,7 @@
   "bestFor": "Clean transitions, tutorials, social edits",
   "priority": "P0",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "whip-pan",
@@ -417,7 +417,7 @@
   "bestFor": "Vlogs, action, creator edits",
   "priority": "P0",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "camera-pull-out",
@@ -437,7 +437,7 @@
   "bestFor": "Playful / short-form edits",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "frame-transition",
@@ -447,7 +447,7 @@
   "bestFor": "Brand frames / product videos",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "pop-motion",
@@ -457,7 +457,7 @@
   "bestFor": "Short-form edits",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "pull-motion",
@@ -467,7 +467,7 @@
   "bestFor": "Action / creator edits",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "slice",
@@ -477,7 +477,7 @@
   "bestFor": "Music videos / graphic edits",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "spin-transition",
@@ -497,7 +497,7 @@
   "bestFor": "Social reels, graphic transitions",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "stretch",
@@ -507,7 +507,7 @@
   "bestFor": "Elastic / energetic transitions",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "stretch-wipe",
@@ -517,7 +517,7 @@
   "bestFor": "Modern social edits",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "travel-motion",
@@ -527,7 +527,7 @@
   "bestFor": "Basic dynamic scene changes",
   "priority": "P1",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "3d-roll",
@@ -537,7 +537,7 @@
   "bestFor": "Dynamic intros and reels",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "3d-spin",
@@ -547,7 +547,7 @@
   "bestFor": "Gaming / energetic edits",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "3d-spinback",
@@ -557,7 +557,7 @@
   "bestFor": "High-energy creator edits",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "band-slide",
@@ -567,7 +567,7 @@
   "bestFor": "Graphic edits",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "block-motion",
@@ -577,7 +577,7 @@
   "bestFor": "Gaming / digital edits",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "center-split",
@@ -587,7 +587,7 @@
   "bestFor": "Modern graphic reveal",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "film-roll",
@@ -597,7 +597,7 @@
   "bestFor": "Retro film edits",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "fold",
@@ -607,7 +607,7 @@
   "bestFor": "Graphic storytelling",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "mirror",
@@ -617,7 +617,7 @@
   "bestFor": "Stylized montage",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "orbit-transition",
@@ -637,7 +637,7 @@
   "bestFor": "Motion graphics / abstract edits",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "roll",
@@ -647,7 +647,7 @@
   "bestFor": "Playful / stylized motion",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "spring-motion",
@@ -657,7 +657,7 @@
   "bestFor": "Playful / energetic social clips",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "wave",
@@ -667,7 +667,7 @@
   "bestFor": "Dreamy / artistic scenes",
   "priority": "P2",
   "controls": "Duration; direction; distance; easing; motion blur",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "cross-zoom",
@@ -677,7 +677,7 @@
   "bestFor": "Fast modern edits",
   "priority": "P0",
   "controls": "Zoom amount; direction; blur amount; easing; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "directional-blur-transition",
@@ -687,7 +687,7 @@
   "bestFor": "Motion continuity / fast cuts",
   "priority": "P0",
   "controls": "Zoom amount; direction; blur amount; easing; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "snap-zoom",
@@ -707,7 +707,7 @@
   "bestFor": "Action / sports / creator clips",
   "priority": "P0",
   "controls": "Zoom amount; direction; blur amount; easing; duration",
-  "referenceScope": "Filmora official categories / transition docs; individual preset names vary"
+  "referenceScope": "Common transition categories; individual preset names vary"
  },
  {
   "slug": "zoom-blur",
@@ -717,7 +717,7 @@
   "bestFor": "Dynamic creator / gaming edits",
   "priority": "P0",
   "controls": "Zoom amount; direction; blur amount; easing; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "zoom-in-transition",
@@ -747,7 +747,7 @@
   "bestFor": "High-energy edits",
   "priority": "P1",
   "controls": "Zoom amount; direction; blur amount; easing; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "speed-ramp-match-transition",
@@ -777,7 +777,7 @@
   "bestFor": "Beat cuts, energetic reels",
   "priority": "P0",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "light-leak",
@@ -787,7 +787,7 @@
   "bestFor": "Lifestyle / cinematic edits",
   "priority": "P0",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "white-flash",
@@ -817,7 +817,7 @@
   "bestFor": "Brand chapters / clean edits",
   "priority": "P1",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "chroma-leak",
@@ -827,7 +827,7 @@
   "bestFor": "Music videos / social clips",
   "priority": "P1",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "flare",
@@ -837,7 +837,7 @@
   "bestFor": "Cinematic / outdoor scenes",
   "priority": "P1",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "glow",
@@ -847,7 +847,7 @@
   "bestFor": "Dreamy / glossy clips",
   "priority": "P1",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "lens-blur",
@@ -857,7 +857,7 @@
   "bestFor": "Soft / cinematic scenes",
   "priority": "P1",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "light-sweep",
@@ -867,7 +867,7 @@
   "bestFor": "Product / branded videos",
   "priority": "P1",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "overexposure-bloom",
@@ -887,7 +887,7 @@
   "bestFor": "Experimental / energetic edits",
   "priority": "P2",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "light-stripe",
@@ -897,7 +897,7 @@
   "bestFor": "Tech / product videos",
   "priority": "P2",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "phosphor-trail",
@@ -907,7 +907,7 @@
   "bestFor": "Neon / night visuals",
   "priority": "P2",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "ray-burst",
@@ -917,7 +917,7 @@
   "bestFor": "Epic / reveal edits",
   "priority": "P2",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "soft-focus-wipe",
@@ -927,7 +927,7 @@
   "bestFor": "Dreamy / romantic edits",
   "priority": "P2",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "solarize",
@@ -937,7 +937,7 @@
   "bestFor": "Retro / experimental edits",
   "priority": "P2",
   "controls": "Intensity; color; direction; blur radius; blend; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "glitch",
@@ -947,7 +947,7 @@
   "bestFor": "Gaming / tech / energetic reels",
   "priority": "P0",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "burn-alpha",
@@ -957,7 +957,7 @@
   "bestFor": "Film burn / organic reveals",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "chromatic-aberration",
@@ -977,7 +977,7 @@
   "bestFor": "Experimental / gaming edits",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Filmora official categories / transition docs; individual preset names vary"
+  "referenceScope": "Common transition categories; individual preset names vary"
  },
  {
   "slug": "earthquake-shake",
@@ -987,7 +987,7 @@
   "bestFor": "Impact / action / gaming",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "flicker",
@@ -997,7 +997,7 @@
   "bestFor": "Music / energetic videos",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "liquid-distortion",
@@ -1007,7 +1007,7 @@
   "bestFor": "Creative / fashion videos",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "mosaic-blocks",
@@ -1017,7 +1017,7 @@
   "bestFor": "Digital / retro edits",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "negative-invert-flash",
@@ -1037,7 +1037,7 @@
   "bestFor": "Night / tech / branded visuals",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "pixelate-reveal",
@@ -1057,7 +1057,7 @@
   "bestFor": "Digital / music videos",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Premiere effects list includes RGB Split as an effect; transition-style use is a custom combo"
+  "referenceScope": "RGB Split is usually an effect; the transition-style use here is a custom combination"
  },
  {
   "slug": "vhs-damage",
@@ -1067,7 +1067,7 @@
   "bestFor": "Retro / nostalgic edits",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "wave-warp",
@@ -1077,7 +1077,7 @@
   "bestFor": "Stylized / dreamy edits",
   "priority": "P1",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "chaos-distortion",
@@ -1087,7 +1087,7 @@
   "bestFor": "Experimental transitions",
   "priority": "P2",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "glass-shatter",
@@ -1097,7 +1097,7 @@
   "bestFor": "Stylized reveals",
   "priority": "P2",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "grunge-distortion",
@@ -1107,7 +1107,7 @@
   "bestFor": "Alternative / music edits",
   "priority": "P2",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "kaleidoscope",
@@ -1117,7 +1117,7 @@
   "bestFor": "Experimental / psychedelic clips",
   "priority": "P2",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "posterize-stutter",
@@ -1137,7 +1137,7 @@
   "bestFor": "Retro / comedic ending",
   "priority": "P2",
   "controls": "Intensity; scale; frequency; channel offset; seed; duration",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "beat-flash",
@@ -1297,7 +1297,7 @@
   "bestFor": "Custom animated transitions",
   "priority": "P1",
   "controls": "Text/shape; timing; easing; position; scale; opacity",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "shape-dissolve",
@@ -1307,7 +1307,7 @@
   "bestFor": "Branded or stylized video",
   "priority": "P1",
   "controls": "Text/shape; timing; easing; position; scale; opacity",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "text-animator-transition",
@@ -1317,7 +1317,7 @@
   "bestFor": "Branded social / motion graphics",
   "priority": "P1",
   "controls": "Text/shape; timing; easing; position; scale; opacity",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "typewriter-reveal",
@@ -1327,7 +1327,7 @@
   "bestFor": "Titles / lower thirds / captions",
   "priority": "P1",
   "controls": "Text/shape; timing; easing; position; scale; opacity",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "motion-camera",
@@ -1337,7 +1337,7 @@
   "bestFor": "Montage / photo animation",
   "priority": "P2",
   "controls": "Text/shape; timing; easing; position; scale; opacity",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  },
  {
   "slug": "shape-flow",
@@ -1347,6 +1347,6 @@
   "bestFor": "Brand packages / motion design",
   "priority": "P2",
   "controls": "Text/shape; timing; easing; position; scale; opacity",
-  "referenceScope": "Adobe Premiere official list / modern transitions"
+  "referenceScope": "Standard transition reference set"
  }
 ]

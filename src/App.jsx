@@ -1711,7 +1711,7 @@ export default function App() {
   // After the assistant dispatches edits, wait for React to render them so the next tool reads the new project.
   const settle = useCallback(() => new Promise((r) => setTimeout(r, 60)), []);
 
-  // Keyboard shortcuts (CapCut-like).
+  // Keyboard shortcuts.
   const keys = useRef({});
   keys.current = { togglePlay, split, remove, duplicate, seek, time, trimSide, toggleMarker, setTool, copy, cut, paste, extractAudio: detachAudio, save };
   useEffect(() => {

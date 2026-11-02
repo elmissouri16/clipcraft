@@ -56,8 +56,12 @@ const safeUrl = (url) => {
 
 // Validates a parsed pack.json. Returns { version, categories } keeping only well-formed
 // categories (gated URL, positive size, 64-hex sha256), or { error } when none survive.
+// A manifest whose categories object is explicitly EMPTY is the published "no pack yet"
+// state (the public feed serves exactly that until a pack is released): report it as
+// { none: true } — the calm unavailable state — not as a malformed feed.
 function parseManifest(json) {
   if (!json || typeof json !== 'object') return { error: 'The pack feed did not contain a valid pack description.' };
+  if (json.categories && typeof json.categories === 'object' && !Object.keys(json.categories).length) return { none: true };
   const cats = {};
   for (const id of CATEGORIES) {
     const c = json.categories && json.categories[id];

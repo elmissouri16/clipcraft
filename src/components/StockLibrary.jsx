@@ -36,7 +36,7 @@ export function Thumb({ url, alt }) {
   return src ? <img src={src} alt={alt} draggable={false} /> : <div className="stock-ph" aria-hidden="true" />;
 }
 
-// Stock photos and videos from Pixabay, like CapCut's Library.
+// Stock photos and videos from Pixabay.
 export default function StockLibrary({ onStockAdd, onOpenSettings, hasKey, kind = 'video', chip = 'Trending' }) {
   const [q, setQ] = useState('');
   const [orientation, setOrientation] = useState('');

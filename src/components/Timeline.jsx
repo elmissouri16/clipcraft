@@ -287,8 +287,8 @@ export default function Timeline({
     window.addEventListener('pointerup', up);
   };
 
-  // Drag a keyframe diamond along its clip (all the properties keyed at that moment move together), like
-  // CapCut. Lands on whole frames and snaps to the playhead; a click without moving puts the playhead on it.
+  // Drag a keyframe diamond along its clip (all the properties keyed at that moment move together).
+  // Lands on whole frames and snaps to the playhead; a click without moving puts the playhead on it.
   const startKeyDrag = (e, track, clip, t, length, start) => {
     if (e.button !== 0) return;
     if (trackLocked(track, clip)) return;
@@ -618,7 +618,7 @@ export default function Timeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mouse wheel like CapCut: Ctrl + wheel (or a touchpad pinch) zooms around the mouse, Shift + wheel scrolls
+  // Mouse wheel: Ctrl + wheel (or a touchpad pinch) zooms around the mouse, Shift + wheel scrolls
   // left / right. A plain wheel keeps scrolling the tracks up and down.
   const wheelState = useRef({});
   wheelState.current = { pps, zoomTo };
@@ -679,7 +679,7 @@ export default function Timeline({
   };
   const common = { pps, selection, onMenu: onClipMenu, onToggle: toggleSel,
     layerStateFor: (track, clip) => layerStateOf(project, track, clipLayer(track, clip)) };
-  // The filter of a picture clip as a chip on the clip, removable from the timeline like in CapCut.
+  // The filter of a picture clip as a chip on the clip, removable from the timeline.
   const lookTags = (track, clip) => {
     if (!clip.filter || clip.filter === 'none') return null;
     const name = filterName(clip.filter);
@@ -1012,7 +1012,7 @@ function Clip({ pps, selection, track, selTrack, clip, start, length, label, ico
       data-sel-track={st} data-sel-id={clip.id}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
-        // Ctrl / Shift + click adds the clip to the selection (or takes it out), like CapCut.
+        // Ctrl / Shift + click adds the clip to the selection (or takes it out).
         if ((e.ctrlKey || e.shiftKey || e.metaKey) && onToggle) { e.stopPropagation(); onToggle(st, clip.id); return; }
         onDown(e, 'move');
       }} title={clip.disabled ? `${label} (deactivated)` : label}
@@ -1040,7 +1040,7 @@ function Clip({ pps, selection, track, selTrack, clip, start, length, label, ico
 }
 
 // Animations as bands at the clip's start / end (or along it for a Combo), and the keyframes of the selected
-// clip as diamonds, like CapCut.
+// clip as diamonds.
 function ClipMotion({ clip, length, pps, selected, onKeyDrag }) {
   const a = animOf(clip, length);
   const times = selected ? keyTimes(clip).filter((t) => t >= -1e-6 && t <= length + 1e-6) : [];
@@ -1060,7 +1060,7 @@ function ClipMotion({ clip, length, pps, selected, onKeyDrag }) {
 const THUMB_H = 50; // filmstrip height inside a main-track clip
 const MAX_TILES = 400;
 
-// CapCut-style filmstrip: thumbnails at their real aspect ratio, each showing the frame at its
+// Filmstrip: thumbnails at their real aspect ratio, each showing the frame at its
 // position on the timeline (follows trim, speed and zoom). Uses the sprite from makeVisuals.
 function Filmstrip({ m, clip, width, pps }) {
   if (!m) return null;

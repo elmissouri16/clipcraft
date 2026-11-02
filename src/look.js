@@ -1,4 +1,4 @@
-// Look edits (filter, color adjustments) applied to every selected picture clip at once, like CapCut.
+// Look edits (filter, color adjustments) applied to every selected picture clip at once.
 // An edit is made on one clip (the one the panel shows); only what changed is copied to the others, so each clip
 // keeps its own other settings (a brightness change does not overwrite another clip's saturation).
 

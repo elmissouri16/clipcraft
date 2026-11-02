@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Repeat } from 'lucide-react';
 import { toFileUrl } from '../store.js';
 
-// The replaceable clips of a template, over the timeline (like CapCut): click one, pick your video or photo, it
+// The replaceable clips of a template, over the timeline: click one, pick your video or photo, it
 // takes the slot's place and length. slots: from slotList().
 export default function SlotStrip({ slots, media, selection, onPick, onReplace, title }) {
   const [hidden, setHidden] = useState(false);

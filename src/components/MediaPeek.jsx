@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Music, Pause, Play, Plus, X } from 'lucide-react';
 import { formatTime, previewPath, toFileUrl } from '../store.js';
 
-// Watches a media item from the Media panel before it is on the timeline, like CapCut: click a card and it
+// Watches a media item from the Media panel before it is on the timeline: click a card and it
 // plays in the player at its own shape (tall stays tall, wide stays wide). Space plays / pauses, ← / → step a
 // frame, Esc or × goes back to the project.
 export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {

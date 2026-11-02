@@ -361,7 +361,7 @@ function EffectsTab({ target, updateTarget, clipSelected, onAddFreeEffect }) {
   const [query, setQuery] = useState('');
   const fx = clipSelected ? target?.clip.effects || [] : [];
   const toggle = (id) => updateTarget({ effects: fx.includes(id) ? fx.filter((x) => x !== id) : [...fx, id] });
-  // Like CapCut: with a clip selected the effect goes on that clip; otherwise it goes on the Effects track at
+  // With a clip selected the effect goes on that clip; otherwise it goes on the Effects track at
   // the playhead, as an object you can move and stretch over several clips.
   const pick = (id) => (clipSelected && target ? toggle(id) : onAddFreeEffect(id));
   const q = query.trim().toLowerCase();

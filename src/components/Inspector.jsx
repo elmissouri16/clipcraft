@@ -182,7 +182,7 @@ function ProjectDetails({ project, dispatch, duration }) {
   );
 }
 
-// A selected transition (its marker on the timeline), like CapCut's Transition panel.
+// A selected transition (its marker on the timeline), the Transition panel.
 function TransitionPanel({ project, selection, dispatch }) {
   const clips = project.videoClips;
   const i = clips.findIndex((c) => c.id === selection.id);

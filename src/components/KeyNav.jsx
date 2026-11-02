@@ -2,7 +2,7 @@ import React from 'react';
 import { ChevronLeft, ChevronRight, Diamond } from 'lucide-react';
 import { addKeys, keyAt, keyTimes, removeKeys } from '../anim.js';
 
-// Keyframe control of one or more properties, like CapCut: jump to the previous keyframe, add / remove the
+// Keyframe control of one or more properties: jump to the previous keyframe, add / remove the
 // keyframe at the playhead (filled diamond when there is one), jump to the next keyframe.
 // lt: playhead in clip time (null when the playhead is outside the clip). start: clip start on the timeline.
 export default function KeyNav({ clip, props, lt, start, fps, set, onSeek, label }) {

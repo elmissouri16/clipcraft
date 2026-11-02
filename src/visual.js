@@ -74,7 +74,7 @@ export function isLayered(clip) {
   return hasTransform(clip) || hasMask(clip) || hasChroma(clip) || hasCrop(clip) || hasCustomMask(clip) || opacityOf(clip) < 1 || blendOf(clip).id !== 'normal';
 }
 
-// CapCut-like sliders (0 to 100) mapped to FFmpeg's chromakey / despill parameters.
+// Sliders (0 to 100) mapped to FFmpeg's chromakey / despill parameters.
 export function chromaParams(c) {
   return {
     similarity: 0.02 + (c.intensity / 100) * 0.4,

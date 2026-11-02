@@ -1,4 +1,4 @@
-// Video stabilization (like CapCut's): FFmpeg's vid.stab, in two passes over the clip's part of the file. Pass 1
+// Video stabilization: FFmpeg's vid.stab, in two passes over the clip's part of the file. Pass 1
 // (vidstabdetect) measures the camera shake frame by frame; pass 2 (vidstabtransform) moves each frame against it
 // along a smoothed path and zooms in just enough to hide the moving borders. The result is a new video file (the
 // clip's range only, full quality), cached by file, range and level, that the clip then plays; the original

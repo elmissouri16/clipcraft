@@ -203,7 +203,7 @@ export default function Preview({
   const overlayEls = useRef({}); // clip id -> { slot, layer, v, img, cv }
   const stageRef = useRef(null);
   const [scale, setScale] = useState(1);
-  // Full screen player (button or F, Esc to leave), like CapCut's: only the video and the transport bar.
+  // Full screen player (button or F, Esc to leave): only the video and the transport bar.
   const playerRef = useRef(null);
   const [full, setFull] = useState(false);
   // Level meter tap (item 11): route every sounding element through the shared audio graph,

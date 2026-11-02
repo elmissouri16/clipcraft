@@ -876,7 +876,7 @@ async function makeVisuals(item, cacheDir, onUpdate = () => {}) {
 
 // The player (Chromium) only decodes 8-bit 4:2:0 H.264 / VP8 / VP9 / AV1 smoothly. 10-bit or 4:2:2 video, HEVC,
 // ProRes and pictures above 1080p play with a stuck or black picture, so they get a light preview copy (proxy),
-// like CapCut does. The export always uses the original file.
+// The export always uses the original file.
 function needsProxy(info) {
   if (!info || info.type !== 'video') return false;
   const okCodec = ['h264', 'vp8', 'vp9', 'av1'].includes(info.vcodec);

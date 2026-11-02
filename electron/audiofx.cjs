@@ -44,7 +44,7 @@ function audioFxFilters(fx) {
 
 const hasAudioFx = (fx) => audioFxFilters(fx).length > 0;
 
-// One-click "essentials" presets (Premiere Essential Sound style). A preset is a COMPLETE
+// One-click "essentials" presets (essential-sound style). A preset is a COMPLETE
 // audioFx object: every parameter it does not name is off/neutral, so applying one fully
 // replaces the clip's audioFx. The renderer mirrors this table (src/fx/audioPresets.js);
 // a test keeps the two in sync.

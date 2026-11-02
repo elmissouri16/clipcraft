@@ -1,4 +1,4 @@
-// Color grade of a picture clip (Adjust > Basic, laid out like CapCut's): temperature, tint, saturation, exposure,
+// Color grade of a picture clip (Adjust > Basic): temperature, tint, saturation, exposure,
 // contrast, highlights, shadows, whites, blacks, brilliance, sharpen, clarity, grain (particles), fade, vignette.
 // Our own formulas, written in the effects' expression language: gradeExpr() becomes one GPU pass, drawn by the
 // player and by the export's effects pass alike (src/fx/apply.js), so both show the same picture.

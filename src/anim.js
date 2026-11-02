@@ -170,7 +170,7 @@ export function previewState(kind, id, p) {
 // ---- Keyframes ----
 // clip.keyframes: { scale: [{ t, v }], x: [...], y: [...], rot: [...], opacity: [...] } sorted by t. t is in the
 // clip's source time (seconds of the media, like clip.in / clip.out), so trimming, splitting or changing the speed
-// keeps every keyframe on the same picture, as in CapCut.
+// keeps every keyframe on the same picture.
 export const KEY_PROPS = ['scale', 'x', 'y', 'rot', 'opacity'];
 const sourceTime = (clip, lt) => (clip.in || 0) + lt * (clip.speed || 1);
 export const localTime = (clip, srcT) => (srcT - (clip.in || 0)) / (clip.speed || 1);
@@ -308,7 +308,7 @@ export function addKeys(clip, props, lt) {
 }
 
 // Moves every keyframe at local time `from` (any property) to local time `to`, like dragging a diamond on the
-// timeline in CapCut. A keyframe already at `to` is replaced. Returns the patch.
+// timeline. A keyframe already at `to` is replaced. Returns the patch.
 export function moveKeys(clip, from, to, fps = 30) {
   const st = sourceTime(clip, to);
   const keyframes = { ...(clip.keyframes || {}) };

@@ -201,7 +201,7 @@ function install({ app, getWin, ffmpegPath, probeAll }) {
     if (bar && !bar.isDestroyed()) bar.webContents.send('recbar:state', state);
   });
   // Camera bubble: shown while the Camera option is on (before and during the recording). It is not hidden from
-  // capture: a screen recording shows it, like CapCut's.
+  // capture: a screen recording shows it.
   // The bubble is a transparent window a little larger than the camera shape (BUBBLE_ROOM on each side), so the
   // shape is drawn smooth (anti-aliased, not cut in pixel rows) and its glow shines outside it, as in the video.
   const sendCam = () => {

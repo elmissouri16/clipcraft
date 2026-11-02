@@ -3,7 +3,7 @@ import { RotateCcw } from 'lucide-react';
 import { CURVE_CHANNELS, HSL_COLORS, IDENTITY_CURVE, curveFn } from '../fx/grade.js';
 import NumBox from './NumBox.jsx';
 
-// Adjust > HSL: pick one of eight colors, then turn its hue, saturation and lightness, like CapCut.
+// Adjust > HSL: pick one of eight colors, then turn its hue, saturation and lightness.
 export function HslPanel({ hsl = {}, onChange, dispatch }) {
   const [color, setColor] = useState('red');
   const c = HSL_COLORS.find((x) => x.id === color);

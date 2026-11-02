@@ -1,5 +1,4 @@
-// Bundled template packages, rebuilt to the AutoAE standard (see
-// ~/workspace/research_notes/autoae-template-system-analysis-20261031-0024/report.md §5):
+// Bundled template packages, built to one standard:
 // every template is ONE designed scene — placeholder media are composed set pieces (layered
 // gradients, soft glows, grain, vignette, and the bundled preview PHOTOS as plates where the
 // concept fits), never bare gradients. Typography is locked to the app's text styles with a

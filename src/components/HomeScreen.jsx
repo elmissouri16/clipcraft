@@ -1,5 +1,5 @@
 import { spritePosterStyle } from '../recents.js';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Clock3, Film, FolderOpen, Import, Instagram, Monitor, Play, Plus, Search, X } from 'lucide-react';
 
 // The developer's Instagram — shown in the home footer and the About dialog.
@@ -106,6 +106,12 @@ function EmptyStage() {
 
 export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved }) {
   const [fps, setFps] = useState(30);
+  // The version badge reads the real app version (package.json via app:version) —
+  // it must never drift from the shipped build again.
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    window.api?.appVersion?.().then((v) => { if (v) setVersion(v.split('.').slice(0, 2).join('.')); }).catch(() => {});
+  }, []);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const shownRecents = q ? recents.filter((r) => (r.name || '').toLowerCase().includes(q) || (r.ratio || '').includes(q)) : recents;
@@ -119,7 +125,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           <span className="home-name">Clip<b>Craft</b></span>
           <span className="home-greet">{greeting()} — ready when you are.</span>
         </div>
-        <span className="home-ver">Version 1.0</span>
+        <span className="home-ver">{version ? `Version ${version}` : 'ClipCraft'}</span>
       </header>
 
       <main className="home-body">

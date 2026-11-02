@@ -118,12 +118,12 @@ assert.deepEqual(calls[calls.length - 1], [`${base}/use`, 'POST']);
 await assert.rejects(tpl.download(fake, cache, '../../etc'), /Unknown template/);
 console.log('store ok');
 
-// ---- legacy packages still open; an unpublished store feed is an empty store, not an error ----
-// The same package, but its template.json carries the legacy v1 format id (written before the rename).
+// ---- a package with an unknown format id is refused; an unpublished store feed is an empty store ----
+// The same package, but its template.json carries a format id this build does not accept.
 const ID2 = '0123456789cd';
 const base2 = `https://store.test/api/v1/templates/${ID2}`;
 const legacyDoc = JSON.parse(files['template.json'].toString('utf8'));
-legacyDoc.format = 'caprocket-template'; // the legacy v1 format id — kept here to prove the read shim
+legacyDoc.format = 'other-template'; // an unaccepted format id — the read gate must refuse it
 const files2 = { ...files, 'template.json': Buffer.from(JSON.stringify(legacyDoc)) };
 const fake2 = async (url, opts = {}) => {
   if (url === base2) {
@@ -134,12 +134,11 @@ const fake2 = async (url, opts = {}) => {
   if (files2[name]) return { ok: true, status: 200, body: stream(files2[name]) };
   return { ok: false, status: 404 };
 };
-const got2 = await tpl.download(fake2, path.join(tmp, 'cache2'), ID2);
-assert.equal(JSON.parse(got2.json).media[0].path.endsWith('m0.mp4'), true, 'a legacy-format package downloads and opens');
+await assert.rejects(tpl.download(fake2, path.join(tmp, 'cache2'), ID2), /newer ClipCraft/, 'an unaccepted format id is refused');
 // The store feed answering 404 (not published yet) lists as empty instead of throwing.
 const gone = async () => ({ ok: false, status: 404 });
 assert.deepEqual(await tpl.list(gone, {}), { templates: [], categories: [], page: 1, pages: 1, total: 0 }, 'a 404 store feed is an empty store');
-console.log('legacy + empty-store ok');
+console.log('format gate + empty-store ok');
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('TEMPLATES OK');

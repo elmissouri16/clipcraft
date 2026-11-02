@@ -1,6 +1,6 @@
 // Bundled templates: the 40 offline packages list, open, and form valid projects
 // (slots present, media on disk, text styles + clip animations resolvable) through the real
-// module. AutoAE rebuild: "Concept | Mechanics" titles, taxonomy tags, art-directed scene
+// module. Template rebuild: "Concept | Mechanics" titles, taxonomy tags, art-directed scene
 // media, staggered choreography, the printed slot contract (duration · ratio · N texts ·
 // N media in meta), colour variants of six hero designs, an animated preview.mp4 each.
 const assert = require('assert/strict');

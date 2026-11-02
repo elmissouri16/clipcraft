@@ -1,4 +1,4 @@
-// Voice Enhancer (clip Audio tab, like CapCut's / Adobe's enhance): cleans a clip's voice
+// Voice Enhancer (clip Audio tab): cleans a clip's voice
 // locally with the filters the bundled FFmpeg actually ships. Inventory of this build:
 // afftdn / anlmdn / arnndn / highpass / lowpass / equalizer / acompressor / agate / dynaudnorm /
 // loudnorm / speechnorm all exist — but arnndn needs external RNNoise model files (not bundled),

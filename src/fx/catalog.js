@@ -1,4 +1,4 @@
-// Animated effects and transitions in the style of CapCut's, written from scratch.
+// Animated effects and transitions, written from scratch for ClipCraft.
 //
 // Transitions and "pixel" effects are expressions (see expr.js): the export prints them for FFmpeg (xfade custom /
 // geq) and the preview compiles the very same text to JavaScript, so both show the same picture. Sizes are always

@@ -47,7 +47,7 @@ function AnimThumb({ kind, id }) {
   );
 }
 
-// Clip panel > Animation: In, Out and Combo animations, like CapCut. A Combo replaces In and Out.
+// Clip panel > Animation: In, Out and Combo animations. A Combo replaces In and Out.
 export default function AnimationPanel({ clip, len, set, dispatch }) {
   const current = animOf(clip, len);
   const [kind, setKind] = useState(current.combo ? 'combo' : current.out && !current.in ? 'out' : 'in');

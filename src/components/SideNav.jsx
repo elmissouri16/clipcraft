@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-// Category column on the left of a library tab, like CapCut: plain items, actions (e.g. Import) and groups that
+// Category column on the left of a library tab: plain items, actions (e.g. Import) and groups that
 // fold open (Music > Vlog, Funny…). items: [{ id, label, icon, action, children: [{ id, label }] }].
 export default function SideNav({ items, value, onChange, label = 'Categories' }) {
   const groupOf = (v) => items.find((it) => it.children && it.children.some((c) => c.id === v))?.id;
@@ -19,7 +19,7 @@ export default function SideNav({ items, value, onChange, label = 'Categories' }
             <div key={it.id} className="side-group">
               <button className={`side-btn group ${inside ? 'inside' : ''}`} aria-expanded={isOpen}
                 onClick={() => {
-                  // Opening a group shows its first category, like CapCut.
+                  // Opening a group shows its first category.
                   if (!isOpen && !inside) onChange(it.children[0].id);
                   toggle(it.id);
                 }}>

@@ -174,8 +174,8 @@ async function download(fetchImpl, cacheDir, id, onProgress) {
   } catch {
     throw new Error('This template is damaged.');
   }
-  // Both format ids are accepted on read — current packages and the legacy v1 format id alike.
-  if (!['caprocket-template', 'clipcraft-template'].includes(doc.format) || doc.version !== 1 || !doc.project) throw new Error('This template needs a newer ClipCraft.');
+  // Only the current format id is accepted on read.
+  if (doc.format !== 'clipcraft-template' || doc.version !== 1 || !doc.project) throw new Error('This template needs a newer ClipCraft.');
   const media = (doc.project.media || []).map((m) => {
     if (!NAME.test(String(m.path)) || !fs.existsSync(path.join(dir, m.path))) throw new Error('This template is incomplete.');
     return { ...m, path: path.join(dir, m.path) };

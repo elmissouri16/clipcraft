@@ -1,5 +1,5 @@
 // Which animated effects act at a moment, shared by the player and the export.
-// Effects come from two places, like in CapCut:
+// Effects come from two places:
 //   - on a clip (clip.effects): they last the whole clip, their time T starts with the clip;
 //   - on the Effects track (project.effectClips: { id, fx, start, duration }): free objects you move and trim;
 //     they act on every picture under them, their time T starts with the effect.

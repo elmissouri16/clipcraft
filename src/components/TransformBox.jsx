@@ -7,7 +7,7 @@ import { baseAt, editAt, hasMotion, stateAt } from '../anim.js';
 import { pinOffsetAt, stateAtPinned } from '../track.js';
 import { resolveStyle, textBox, textVisible } from '../text/render.js';
 
-// Direct manipulation in the player, like CapCut: click a picture to select it, drag to move, corners to scale,
+// Direct manipulation in the player: click a picture to select it, drag to move, corners to scale,
 // the round handle to rotate. Moves snap to the frame center (with guide lines), rotation to 0 / 90 degrees
 // (Shift: 15 degree steps). Every drag is one undo step. An animated clip shows its box where it is now; a value
 // with keyframes gets a keyframe at the playhead. Text works the same way (it is drawn above the pictures, so it is

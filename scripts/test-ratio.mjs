@@ -1,4 +1,4 @@
-// The canvas takes the shape of the first picture put on an empty main track (CapCut's "Original" format),
+// The canvas takes the shape of the first picture put on an empty main track ("Original" format),
 // unless a format was picked by hand.
 // Usage: node scripts/test-ratio.mjs
 import assert from 'node:assert/strict';

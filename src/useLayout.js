@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-// Panel sizes like CapCut: drag the borders between the left panel, the player, the properties panel and the
+// Panel sizes: drag the borders between the left panel, the player, the properties panel and the
 // timeline. Sizes are remembered on this PC (per-user convenience only) and kept valid when the window shrinks.
 const KEY = 'clipcraft.layout';
 const GAP = 6;

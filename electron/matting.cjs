@@ -1,4 +1,4 @@
-// AI background removal ("Auto removal", like CapCut): Robust Video Matting (github.com/PeterL1n/RobustVideoMatting,
+// AI background removal ("Auto removal"): Robust Video Matting (github.com/PeterL1n/RobustVideoMatting,
 // MobileNetV3, ONNX) finds the people in a video, frame after frame with its recurrent state so edges stay steady.
 // The model (15 MB, GPL-3.0, from its own GitHub release) is downloaded on first use; nothing else leaves the PC.
 // The result is a "matte": a grayscale video, white where the person is, made once per video and cached. The

@@ -2,7 +2,7 @@
 //
 // The main (video) track plays clips back to back, so a clip's timeline position is derived from order.
 // With the track magnet OFF, deleting or trimming leaves a "gap" clip ({ gap: true }) so later clips stay put;
-// with it ON the track closes up like CapCut's main track. Audio / text clips have a free `start`;
+// with it ON the track closes up the way the main track does. Audio / text clips have a free `start`;
 // their magnet snaps drags to neighbours and closes the gap after a delete or trim (ripple).
 // Overlay clips (picture-in-picture) are videos / photos with a free `start` drawn above the main track.
 
@@ -84,7 +84,7 @@ export const freeLen = (track, c) => (track === 'audio' ? (c.out - c.in) / (c.sp
 
 export const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
 
-// Layers (like CapCut's tracks): every clip of a free track sits on a layer, 0 being the one next to the main track.
+// Layers: every clip of a free track sits on a layer, 0 being the one next to the main track.
 // Clips of one layer never overlap; a clip that would is moved to the first free layer. A higher overlay, text or
 // layer is drawn above a lower one. Layers stay when they become empty (project.layers counts them).
 export const LAYERED = { overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' };
@@ -203,7 +203,7 @@ export function transitionDur(clips, i) {
   return Math.max(0, Math.min(t.duration, clipLen(clips[i]) / 2, clipLen(clips[i - 1]) / 2));
 }
 
-// Clips overlap by the length of the transition into them (like CapCut / FFmpeg xfade).
+// Clips overlap by the length of the transition into them (FFmpeg xfade).
 export function videoLayout(videoClips) {
   let end = 0;
   return videoClips.map((c, i) => {
@@ -251,7 +251,7 @@ export function newVideoClip(id, m) {
   };
 }
 
-// Like CapCut's "Original" format: the first picture on an empty main track sets the canvas shape (a tall phone
+// The "Original" format: the first picture on an empty main track sets the canvas shape (a tall phone
 // video makes a 9:16 project), unless a format was picked by hand. The canvas fields that change, or {}.
 export function canvasFor(p, m) {
   const first = !p.ratioLocked && !p.videoClips.some((c) => !c.gap);
@@ -296,7 +296,7 @@ function reduceProjectInner(p, a) {
       return { ...p, overlayClips: [...p.overlayClips, clip] };
     }
     case 'addEffectClip':
-      // A free effect on the Effects track (3 s by default, like CapCut).
+      // A free effect on the Effects track (3 s by default).
       return { ...p, effectClips: [...p.effectClips, { id: a.clipId, fx: a.fx, start: Math.max(0, a.at), duration: a.duration || 3 }] };
     case 'addText':
       return {
@@ -753,7 +753,7 @@ export function cutRanges(p, ranges) {
   return { ...p, videoClips: normalizeGaps(out) };
 }
 
-// After a split the In animation stays on the left part and the Out animation on the right one, like CapCut.
+// After a split the In animation stays on the left part and the Out animation on the right one.
 // Keyframes are in source time, so both parts keep them unchanged.
 function splitAnim(anim, side) {
   if (!anim) return anim;

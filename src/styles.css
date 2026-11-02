@@ -618,7 +618,7 @@ kbd {
 .tan-unit .seg-tabs button:disabled { opacity: 0.45; cursor: default; }
 .tan-note { margin: 0; color: var(--text-2); font-size: 11px; line-height: 1.45; }
 
-/* Main-track clip: label, filmstrip, audio waveform (CapCut layout) */
+/* Main-track clip: label, filmstrip, audio waveform */
 .clip.video { flex-direction: column; align-items: stretch; background: #0f3b44; }
 .clip.video .clip-label { position: absolute; top: 0; left: 0; z-index: 2; }
 .filmstrip { position: relative; height: 50px; flex: none; overflow: hidden; background: #0b2a30; }
@@ -774,7 +774,7 @@ kbd {
 .razor-time { position: absolute; top: 4px; transform: translateX(6px); z-index: 8; pointer-events: none; background: var(--surface-3, #23233a); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 1px 6px; font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .tl-scroll.razor, .tl-scroll.razor .clip, .tl-scroll.razor .clip .handle { cursor: crosshair; }
 
-/* Clip inspector (CapCut-like tabs) */
+/* Clip inspector: tabs */
 .clip-inspector { display: flex; flex-direction: column; gap: 10px; padding: 4px 14px 14px; }
 .ci-tabs { display: flex; gap: 14px; border-bottom: 1px solid var(--border); margin: 0 -2px; padding: 0 2px; }
 .ci-tabs button { padding: 8px 0 9px; border: 0; background: none; color: var(--text-2); font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; }
@@ -980,7 +980,7 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .transport .tc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .player .pill { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
-/* Library: tab bar on top, category column on the left (like CapCut) */
+/* Library: tab bar on top, category column on the left */
 .tabbar-wrap { position: relative; flex: none; border-bottom: 1px solid var(--border); background: var(--surface-2); }
 .tabbar { display: flex; gap: 2px; padding: 5px 6px; overflow-x: auto; scrollbar-width: none; }
 .tabbar::-webkit-scrollbar { display: none; }
@@ -2278,7 +2278,7 @@ input[type='range']:not(.grade-range)::-moz-range-thumb { width: 12px; height: 1
 .empty-state b { color: var(--text); font-size: 14px; font-weight: 650; }
 .empty-state p { font-size: 12px; color: var(--text-3); line-height: 1.5; max-width: 300px; }
 
-/* Bundled template tags + hover previews (AutoAE-modelled library) */
+/* Bundled template tags + hover previews (designed template library) */
 .tpl-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .tpl-tag { padding: 2px 7px; border-radius: 99px; background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2); font-size: 10px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
 .tpl-card .tst-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; min-height: 2.7em; }

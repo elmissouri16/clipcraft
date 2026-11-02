@@ -13,8 +13,8 @@ const rootOf = (appRoot) => path.join(appRoot, 'bundled-templates');
 function readDoc(dir) {
   try {
     const doc = JSON.parse(fs.readFileSync(path.join(dir, 'template.json'), 'utf8'));
-    // Both format ids are accepted on read — current packages and the legacy v1 format id alike.
-    if (!['caprocket-template', 'clipcraft-template'].includes(doc.format) || doc.version !== 1 || !doc.project) return null;
+    // Only the current format id is accepted on read.
+    if (doc.format !== 'clipcraft-template' || doc.version !== 1 || !doc.project) return null;
     return doc;
   } catch {
     return null;
@@ -36,7 +36,7 @@ function describe(slug, dir, doc) {
     tags: info.tags || [],
     ratio: meta.ratio || doc.project.ratio || '16:9',
     clips: meta.slots || 0,
-    // The slot contract (AutoAE's Details line): computed counts stored in meta by the packer.
+    // The slot contract (the packer's Details line): computed counts stored in meta by the packer.
     texts: meta.texts ?? (doc.project.textClips || []).length,
     media: meta.media ?? meta.slots ?? 0,
     duration: meta.duration || 0,

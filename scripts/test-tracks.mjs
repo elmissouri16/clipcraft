@@ -1,4 +1,4 @@
-// Timeline layers (like CapCut's tracks): every free clip gets a layer where it fits, empty layers stay, the lists
+// Timeline layers: every free clip gets a layer where it fits, empty layers stay, the lists
 // keep drawing order and the magnet only moves clips of the same layer.
 // Usage: node scripts/test-tracks.mjs
 import { emptyProject, historyReducer, layerCount, layerFree } from '../src/store.js';

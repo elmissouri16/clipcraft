@@ -54,7 +54,7 @@ function MaskIcon({ type }) {
   return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">{shapes[type]}</svg>;
 }
 
-// Auto removal (AI, like CapCut's): the people in a video are found on this PC (the model downloads once, about
+// Auto removal (AI): the people in a video are found on this PC (the model downloads once, about
 // 15 MB) and a matte is made once per video; then the background is transparent in the preview and the export.
 function AutoRemoval({ clip, media, set, dispatch }) {
   const [job, setJob] = useState(null); // { stage: 'download' | 'matte', fraction } while working
@@ -99,7 +99,7 @@ function AutoRemoval({ clip, media, set, dispatch }) {
   );
 }
 
-// Stabilize (like CapCut): the clip's part of the video is steadied by the main process (vid.stab) into a new file,
+// Stabilize: the clip's part of the video is steadied by the main process (vid.stab) into a new file,
 // which the clip then plays. clip.stabilize keeps the level and the original { mediaId, in, out }, so Off (or
 // another level) starts again from the original.
 const STAB_LEVELS = [['off', 'Off'], ['minimal', 'Minimal crop'], ['recommended', 'Recommended'], ['most', 'Most stable']];
@@ -205,7 +205,7 @@ export function PinToTrack({ clip, project, set, card = false }) {
   return <Section title="Pin to track">{body}</Section>;
 }
 
-// Properties of a picture clip (main track or overlay), laid out like CapCut's clip panel.
+// Properties of a picture clip (main track or overlay), the clip properties panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
 export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
   const [tab, setTab] = useState('video');
@@ -246,7 +246,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
   const mask = maskOf(clip);
   const setM = (patch) => set({ mask: { ...mask, ...patch } });
 
-  // Align the scaled picture to a frame edge or center (rotation ignored, as in CapCut).
+  // Align the scaled picture to a frame edge or center (rotation ignored).
   const cropNow = cropOf(clip);
   const fitW = media?.width ? Math.min(1, (media.width / media.height) / (W / H)) : 1;
   const fitH = media?.width ? Math.min(1, (media.height / media.width) / (H / W)) : 1;
@@ -465,7 +465,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                   {[{ id: 'none', name: 'None' }, ...MASK_SHAPES].map((m) => (
                     <button key={m.id} className={`mask-tile ${mask.type === m.id ? 'on' : ''}`} aria-pressed={mask.type === m.id}
                       onClick={() => setM(['circle', 'star', 'heart'].includes(m.id)
-                        ? { type: m.id, h: Math.min(2, (mask.w * W) / H) } // square in pixels, like CapCut
+                        ? { type: m.id, h: Math.min(2, (mask.w * W) / H) } // square in pixels
                         : { type: m.id })}>
                       <MaskIcon type={m.id} /><span>{m.name}</span>
                     </button>

@@ -8,7 +8,7 @@ import { DEFAULT_ADJUST } from '../effects.js';
 import { DEFAULT_GRADE, GRADE_GROUPS } from '../fx/grade.js';
 import { BUNDLED_LUTS, LUT_CREDIT_URL, loadLut, lutKey } from '../fx/lut.js';
 
-// One CapCut-style row: name, a slider (colored track for Temp / Tint / Saturation), a number box.
+// One grade row: name, a slider (colored track for Temp / Tint / Saturation), a number box.
 function Row({ item, value, onChange, dispatch }) {
   const pct = ((value - item.min) / (item.max - item.min)) * 100;
   return (
@@ -94,7 +94,7 @@ function LutSection({ lut, onChange, dispatch }) {
   );
 }
 
-// Adjust > Basic: Color, Lightness and Effects like CapCut, plus the older Hue / Blur settings.
+// Adjust > Basic: Color, Lightness and Effects, plus the older Hue / Blur settings.
 // grade / adjust: the clip's values; onGrade / onAdjust get the whole new object.
 // autoFrom: { media, clip } of the clip, for the Auto button (left out where there is no single clip).
 export default function GradePanel({ grade = {}, adjust = {}, onGrade, onAdjust, dispatch, onApplyAll, autoFrom }) {

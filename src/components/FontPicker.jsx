@@ -13,7 +13,7 @@ function loadFavs() {
 const ARABIC_SAMPLE = 'نص عربي';
 const isFontFile = (f) => /\.(ttf|otf|woff2?)$/i.test(f.name);
 
-// Font picker like CapCut's: every name drawn in its own font, search, groups and favorites (kept on this PC).
+// Font picker: every name drawn in its own font, search, groups and favorites (kept on this PC).
 // "Add font" (or dropping .ttf / .otf files on the list) adds your own fonts, kept for every project.
 export default function FontPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
