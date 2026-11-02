@@ -49,7 +49,7 @@ export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 
         <button className="icon-btn" onClick={onSettings} aria-label="Settings" title="Settings"><Settings size={17} /></button>
         <button className="btn btn-ghost support-btn" onClick={() => window.api.openHelp(SUPPORT_URL)} aria-label="Support ClipCraft on PayPal"
           title="Support ClipCraft's development on PayPal">
-          <img src="./paypal.svg" alt="" className="paypal-mark" draggable={false} /> <span className="top-word">Support</span>
+          <img src="./paypal.svg" alt="" className="paypal-mark" draggable={false} /> <span className="support-word-full">Support the project</span><span className="support-word-short">Support</span>
         </button>
         <div className="export-split">
           <button className="btn btn-export" onClick={onExport}><Download size={15} /> Export</button>

@@ -1754,7 +1754,10 @@ export default function App() {
           onRestoreUnsaved={restoreUnsaved}
           onDiscardUnsaved={discardUnsaved} />
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
-        {welcomeOpen && <WelcomeCard onClose={closeWelcome} />}
+        {/* The welcome card is NEVER rendered on Home (Hamza, 2026-11-02): it lives
+            only in the editor tree below. welcomeOpen state may outlive a screen
+            flip; without a mount site here it cannot appear on Home in any
+            state ordering — returning to the editor re-renders it there. */}
         {packPromptOpen && !welcomeOpen && <PackPrompt onClose={closePackPrompt} />}
       </div>
     );

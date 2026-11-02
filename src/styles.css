@@ -188,6 +188,12 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--primary)
 .kofi-short { display: none; }
 @container (max-width: 820px) { .kofi-cta { display: none; } }
 @container (max-width: 680px) { .top-actions .top-word { display: none; } }
+/* The Support label is NOT a .top-word: the support ask must stay explicit at every
+   width (Hamza, 2026-11-02). The actions container is only ~500px even on a wide
+   window (the centred project name takes the middle), so the full phrase holds
+   down to a genuinely narrow 400px before it shortens. */
+.support-word-short { display: none; }
+@container (max-width: 400px) { .support-btn .support-word-full { display: none; } .support-btn .support-word-short { display: inline; } }
 @container (max-width: 560px) { .kofi-pill .kofi-word { display: none; } .kofi-pill .kofi-short { display: inline; } }
 
 .workspace { position: relative; display: grid; grid-template-columns: 384px minmax(0, 1fr) 330px; gap: 6px; min-height: 0; }

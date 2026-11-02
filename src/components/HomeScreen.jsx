@@ -181,7 +181,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           </button>
           <button className="home-action" onClick={() => window.api.openHelp(SUPPORT_URL)} aria-label="Support ClipCraft on PayPal">
             <span className="home-action-icon"><img src="./paypal.svg" alt="" className="home-paypal-mark" draggable={false} /></span>
-            <span className="home-action-text"><b>Support ClipCraft</b><span>Support its development via PayPal.</span></span>
+            <span className="home-action-text"><b>Support the project</b><span>Support its development via PayPal.</span></span>
           </button>
         </section>
 
