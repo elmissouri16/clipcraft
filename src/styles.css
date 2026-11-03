@@ -862,6 +862,9 @@ input.switch:checked::after { transform: translateX(16px); }
 
 /* Player: move / scale / rotate box */
 .tbox-layer { position: absolute; inset: 0; z-index: 6; }
+.fx-region { position: absolute; z-index: 6; border: 1.5px dashed #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(0, 0, 0, .25); cursor: move; touch-action: none; }
+.fx-region.ellipse { border-radius: 50%; }
+.fx-region-handle { position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px; background: #fff; border: 2px solid #7c3aed; border-radius: 4px; cursor: nwse-resize; }
 
 /* Font picker: names drawn in their own font, search, groups, favorites, your fonts */
 .font-picker { display: flex; flex-direction: column; gap: 6px; min-width: 0; }

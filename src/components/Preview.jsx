@@ -26,6 +26,57 @@ export function drawFxOverlays(ctx, project, t, W, H) {
   drawOverlayPasses(ctx, project, t, W, H);
 }
 
+// ---- Effect region outline: the selected effect's region as a draggable dashed box ----
+// Resolves the selected effect instance (Effects-track clip, or an effect attached to a clip)
+// to its region + the store write for it; null when the selection has no region to show.
+export function regionTarget(project, selection) {
+  if (selection?.track !== 'effect' || !selection.id) return null;
+  if (!selection.id.includes('|')) {
+    const c = (project.effectClips || []).find((x) => x.id === selection.id);
+    return c?.region ? { region: c.region, write: (dispatch, region) => dispatch({ type: 'update', track: 'effect', id: c.id, patch: { region } }) } : null;
+  }
+  const [track, clipId, fx] = selection.id.split('|');
+  const clip = (track === 'overlay' ? project.overlayClips || [] : project.videoClips || []).find((c) => c.id === clipId);
+  const region = clip?.fxRegions?.[fx];
+  return region ? { region, write: (dispatch, r) => dispatch({ type: 'update', track, id: clipId, patch: { fxRegions: { ...(clip.fxRegions || {}), [fx]: r } } }) } : null;
+}
+
+const clamp01 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+export function RegionOverlay({ region, write, dispatch }) {
+  const ref = useRef(null);
+  const startDrag = (mode) => (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const box = ref.current?.parentElement?.getBoundingClientRect();
+    if (!box) return;
+    const o = { ...region };
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    dispatch({ type: 'beginGesture' });
+    const move = (ev) => {
+      const dx = (ev.clientX - x0) / box.width;
+      const dy = (ev.clientY - y0) / box.height;
+      if (mode === 'move') write(dispatch, { ...o, x: clamp01(o.x + dx, 0, 1 - o.w), y: clamp01(o.y + dy, 0, 1 - o.h) });
+      else write(dispatch, { ...o, w: clamp01(o.w + dx, 0.05, 1 - o.x), h: clamp01(o.h + dy, 0.05, 1 - o.y) });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      dispatch({ type: 'endGesture' });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div ref={ref} className={`fx-region ${region.shape === 'ellipse' ? 'ellipse' : ''}`} role="presentation"
+      style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.w * 100}%`, height: `${region.h * 100}%` }}
+      onPointerDown={startDrag('move')}>
+      <div className="fx-region-handle" onPointerDown={startDrag('size')} />
+    </div>
+  );
+}
+
 // Draws the current picture of a video or image into the slot's canvas with the crop, the chroma key, the AI
 // background matte and the painted custom-removal mask (CPU, at most 640 px wide) and the animated effects
 // (WebGL shaders, the same the export uses, up to 1280 px wide) applied. matte: the hidden video of the clip's
@@ -627,6 +678,10 @@ export default function Preview({
             <TransformBox project={editProject || project} time={time} selection={selection} onSelect={onSelect} dispatch={dispatch}
               sw={project.width * scale} sh={project.height * scale} />
           )}
+          {!cropEdit && !colorPick && (() => {
+            const target = regionTarget(project, selection);
+            return target ? <RegionOverlay region={target.region} write={target.write} dispatch={dispatch} /> : null;
+          })()}
           {cropEdit && (() => {
             const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === cropEdit.id);
             const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);

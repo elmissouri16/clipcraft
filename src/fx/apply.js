@@ -35,6 +35,40 @@ export const isClassic = (id) => !!TRACK_CLASSIC[id];
 // Effects that end up baked into a clip's frames by the export's effects pass.
 export const isShaderFx = (id) => isPixel(id) || isClassic(id);
 
+// ---- Effect regions ----
+// An effect instance may carry a region: { x, y, w, h, feather, shape, invert } in normalized
+// frame coordinates (x/y = top-left, w/h = size, feather = soft edge as a fraction of the frame
+// height, shape 'rect' | 'ellipse'). The region is applied as mix(original, effected, mask):
+// the effect's own expression runs unchanged and its result is blended with the untouched
+// picture by the mask, so it works for EVERY shader effect in the catalog (and the classic
+// effects' shader forms) — never inside the individual effects themselves.
+// The mask is stored in register 9 (the compilers provide r0..r9; effects use at most 0..8).
+const fnum = (n) => {
+  const v = Math.round((Number(n) || 0) * 10000) / 10000;
+  return Object.is(v, -0) ? '0' : String(v);
+};
+export function regionMaskExpr(region) {
+  const x = fnum(region.x), y = fnum(region.y), w = fnum(Math.max(0.01, region.w)), h = fnum(Math.max(0.01, region.h));
+  const fPx = `max(${fnum(Math.max(0, region.feather || 0))}*H, 1)`;
+  let dOut;
+  if (region.shape === 'ellipse') {
+    // q = elliptical distance (1 on the edge); dOut approximates the pixel distance outside it.
+    dOut = `(hypot((X - W*${fnum((Number(region.x) || 0) + (Number(region.w) || 0) / 2)})/max(W*${fnum((Number(region.w) || 0) / 2)}, 1), (Y - H*${fnum((Number(region.y) || 0) + (Number(region.h) || 0) / 2)})/max(H*${fnum((Number(region.h) || 0) / 2)}, 1)) - 1) * min(max(W*${fnum((Number(region.w) || 0) / 2)}, 1), max(H*${fnum((Number(region.h) || 0) / 2)}, 1))`;
+  } else {
+    dOut = `max(max(W*${x} - X, X - W*${fnum((Number(region.x) || 0) + (Number(region.w) || 0))}), max(H*${y} - Y, Y - H*${fnum((Number(region.y) || 0) + (Number(region.h) || 0))}))`;
+  }
+  const m = `clip(0.5 - (${dOut})/(${fPx}), 0, 1)`;
+  return region.invert ? `(1 - ${m})` : m;
+}
+// Wrap an effect expression so it only lands inside the region (identity when region is null).
+export function regionWrap(expr, region) {
+  if (!region) return expr;
+  const i = expr.lastIndexOf(';');
+  const head = i >= 0 ? expr.slice(0, i + 1) : '';
+  const tail = i >= 0 ? expr.slice(i + 1) : expr;
+  return `${head} st(9, ${regionMaskExpr(region)}); S(X, Y)*(1 - ld(9)) + (${tail})*ld(9)`;
+}
+
 const freeOn = (project, t) => (project.effectClips || []).filter((e) => !e.disabled && t >= e.start && t < e.start + e.duration);
 
 // Shader passes for a picture clip that starts at clipStart on the timeline, lt seconds into it: [{ expr, T }].
@@ -54,11 +88,11 @@ export function pixelPasses(project, clip, clipStart, lt) {
   if (lut) list.push({ lut, K: (clip.grade.lut.intensity ?? 100) / 100 });
   const grade = hasGrade(clip) ? gradeExpr(clip.grade) : null;
   if (grade) list.push({ expr: grade, T: lt });
-  list.push(...(clip.effects || []).filter(isPixel).map((id) => ({ expr: PIXEL[id], T: lt })));
+  list.push(...(clip.effects || []).filter(isPixel).map((id) => ({ expr: regionWrap(PIXEL[id], clip.fxRegions?.[id]), T: lt })));
   const t = clipStart + lt;
   for (const e of freeOn(project, t)) {
-    if (isPixel(e.fx)) list.push({ expr: PIXEL[e.fx], T: t - e.start });
-    else if (isClassic(e.fx)) list.push({ expr: TRACK_CLASSIC[e.fx], T: t - e.start });
+    if (isPixel(e.fx)) list.push({ expr: regionWrap(PIXEL[e.fx], e.region), T: t - e.start });
+    else if (isClassic(e.fx)) list.push({ expr: regionWrap(TRACK_CLASSIC[e.fx], e.region), T: t - e.start });
   }
   return list;
 }
@@ -69,17 +103,73 @@ export function clipHasPixelFx(project, clip, clipStart, len) {
   return (project.effectClips || []).some((e) => !e.disabled && isShaderFx(e.fx) && e.start < clipStart + len && e.start + e.duration > clipStart);
 }
 
+// Particle / light layers are drawn, not shaded, so a region cannot mix them — instead the
+// layer is drawn on a scratch canvas and masked with the region shape (the feather blurs the
+// mask edge), then composited. Without a region the draw goes straight to the frame as before.
+let scratch = null;
+function drawRegioned(ctx, W, H, region, draw) {
+  if (!region) { draw(ctx); return; }
+  try {
+    if (!scratch || scratch.width !== W || scratch.height !== H) scratch = new OffscreenCanvas(W, H);
+    const sctx = scratch.getContext('2d');
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.globalAlpha = 1;
+    sctx.filter = 'none';
+    sctx.clearRect(0, 0, W, H);
+    draw(sctx);
+    // Build the region mask on its own canvas (white = keep), its edge blurred by the feather.
+    const maskCv = drawRegioned.mask || (drawRegioned.mask = new OffscreenCanvas(W, H));
+    if (maskCv.width !== W || maskCv.height !== H) { maskCv.width = W; maskCv.height = H; }
+    const mctx = maskCv.getContext('2d');
+    mctx.setTransform(1, 0, 0, 1, 0, 0);
+    mctx.globalCompositeOperation = 'source-over';
+    mctx.filter = 'none';
+    mctx.clearRect(0, 0, W, H);
+    const featherPx = Math.max(0, region.feather || 0) * H;
+    if (featherPx > 0.5) mctx.filter = `blur(${featherPx.toFixed(1)}px)`;
+    mctx.fillStyle = '#ffffff';
+    mctx.beginPath();
+    if (region.shape === 'ellipse') mctx.ellipse(W * (region.x + region.w / 2), H * (region.y + region.h / 2), (W * region.w) / 2, (H * region.h) / 2, 0, 0, Math.PI * 2);
+    else mctx.rect(W * region.x, H * region.y, W * region.w, H * region.h);
+    mctx.fill();
+    mctx.filter = 'none';
+    if (region.invert) {
+      // Invert the mask: start from full white and punch the region out of it.
+      const inv = drawRegioned.inv || (drawRegioned.inv = new OffscreenCanvas(W, H));
+      if (inv.width !== W || inv.height !== H) { inv.width = W; inv.height = H; }
+      const ictx = inv.getContext('2d');
+      ictx.setTransform(1, 0, 0, 1, 0, 0);
+      ictx.globalCompositeOperation = 'source-over';
+      ictx.clearRect(0, 0, W, H);
+      ictx.fillStyle = '#ffffff';
+      ictx.fillRect(0, 0, W, H);
+      ictx.globalCompositeOperation = 'destination-out';
+      ictx.drawImage(maskCv, 0, 0);
+      mctx.clearRect(0, 0, W, H);
+      mctx.globalCompositeOperation = 'source-over';
+      mctx.drawImage(inv, 0, 0);
+    }
+    sctx.globalCompositeOperation = 'destination-in';
+    sctx.drawImage(maskCv, 0, 0);
+    sctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(scratch, 0, 0);
+  } catch {
+    draw(ctx); // no scratch canvas available: fall back to the unmasked draw
+  }
+}
+
 // Particle / light layers drawn over the frame at time t (project pixels W x H).
 export function drawOverlayPasses(ctx, project, t, W, H) {
   for (const l of videoLayout(project.videoClips)) {
     if (l.clip.gap || t < l.start || t >= l.end) continue;
-    for (const id of l.clip.effects || []) if (OVERLAY[id]) OVERLAY[id](ctx, W, H, t - l.start);
+    for (const id of l.clip.effects || []) if (OVERLAY[id]) drawRegioned(ctx, W, H, l.clip.fxRegions?.[id], (c2) => OVERLAY[id](c2, W, H, t - l.start));
   }
   for (const c of project.overlayClips || []) {
     if (t < c.start || t >= c.start + freeLen('overlay', c)) continue;
-    for (const id of c.effects || []) if (OVERLAY[id]) OVERLAY[id](ctx, W, H, t - c.start);
+    for (const id of c.effects || []) if (OVERLAY[id]) drawRegioned(ctx, W, H, c.fxRegions?.[id], (c2) => OVERLAY[id](c2, W, H, t - c.start));
   }
-  for (const e of freeOn(project, t)) if (OVERLAY[e.fx]) OVERLAY[e.fx](ctx, W, H, t - e.start);
+  for (const e of freeOn(project, t)) if (OVERLAY[e.fx]) drawRegioned(ctx, W, H, e.region, (c2) => OVERLAY[e.fx](c2, W, H, t - e.start));
 }
 
 // Time ranges with a particle / light layer, so the export knows which frames to draw.

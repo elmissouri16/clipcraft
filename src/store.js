@@ -525,7 +525,12 @@ function reduceProjectInner(p, a) {
       const { track, clipId, fx } = parseEffectKey(a.id);
       const key = TRACKS[track];
       if (!key) return p;
-      return { ...p, [key]: p[key].map((c) => (c.id === clipId ? { ...c, effects: (c.effects || []).filter((e) => e !== fx) } : c)) };
+      return { ...p, [key]: p[key].map((c) => {
+        if (c.id !== clipId) return c;
+        const fxRegions = { ...(c.fxRegions || {}) };
+        delete fxRegions[fx]; // the region belongs to the effect instance; it goes with it
+        return { ...c, effects: (c.effects || []).filter((e) => e !== fx), fxRegions };
+      }) };
     }
     case 'split':
       return splitLinked(p, a.track, a.id, a.t, a.newId);
