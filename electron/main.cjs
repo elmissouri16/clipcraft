@@ -788,10 +788,10 @@ ipcMain.handle('settings:saveServiceKey', (_e, name, key) => {
 ipcMain.handle('settings:clearServiceKey', (_e, name) => settings.clearServiceKey(name));
 
 // ---- About and updates: the version, and (only when the user asks in About) whether the
-// update feed on hamzaabika.com has a newer one — see updates.cjs. ----
+// update feed on clipcrafts.pages.dev has a newer one — see updates.cjs. ----
 const updates = require('./updates.cjs');
 ipcMain.handle('app:version', () => app.getVersion());
-// auto: the check at startup. UI tests never reach the real site.
+// Manual checks only (the About dialog); nothing checks automatically at startup.
 ipcMain.handle('updates:check', async () => { lastCheck = await updates.check(); return lastCheck; });
 let lastCheck = null;
 // In-app installer download (progress streamed to the requesting window). Uses ONLY the
