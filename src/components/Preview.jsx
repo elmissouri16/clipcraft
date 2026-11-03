@@ -29,8 +29,9 @@ export function drawFxOverlays(ctx, project, t, W, H) {
 // Draws the current picture of a video or image into the slot's canvas with the crop, the chroma key, the AI
 // background matte and the painted custom-removal mask (CPU, at most 640 px wide) and the animated effects
 // (WebGL shaders, the same the export uses, up to 1280 px wide) applied. matte: the hidden video of the clip's
-// matte (white = keep), or null. opts.crop: source-edge fractions cut away before the fit (the surviving region
-// fills the canvas, exactly like the export); opts.custom: the painted keep-map canvas in source geometry.
+// matte (white = keep), or null. opts.crop: source-edge fractions cut away before the fit — the canvas IS the
+// surviving region (its own aspect), so the layer's contain fit places it undistorted, exactly like the
+// export; opts.custom: the painted keep-map canvas in source geometry.
 // Every removal multiplies the alpha, so chroma + matte + custom union, as in electron/layers.cjs.
 const matteCv = typeof document !== 'undefined' ? document.createElement('canvas') : null;
 function drawKeyed(cv, src, w, h, chroma, passes = [], matte = null, opts = {}) {
@@ -43,11 +44,13 @@ function drawKeyed(cv, src, w, h, chroma, passes = [], matte = null, opts = {}) 
   const cap = cpu ? 640 : Math.min(1280, QUALITY_MAX_SIDE[getPlaybackQuality()] || 1280);
   const sw = crop ? w * (1 - crop.l - crop.r) : w;
   const sh = crop ? h * (1 - crop.t - crop.b) : h;
-  // The canvas keeps the SOURCE's aspect: the cropped region is drawn stretched over the whole
-  // canvas, so it lands where the full picture would (the export scales it to the same fit box).
-  const k = Math.min(1, cap / w);
-  const cw = Math.max(2, Math.round(w * k));
-  const ch = Math.max(2, Math.round(h * k));
+  // The canvas has the SURVIVING REGION's aspect (not the source's): the layer element's
+  // object-fit: contain then fits the region into the frame at a uniform scale — the
+  // picture is never stretched over the uncropped fit box (the export fits it the same
+  // way, electron/layers.cjs).
+  const k = Math.min(1, cap / sw);
+  const cw = Math.max(2, Math.round(sw * k));
+  const ch = Math.max(2, Math.round(sh * k));
   if (cv.width !== cw || cv.height !== ch) {
     cv.width = cw;
     cv.height = ch;
@@ -808,7 +811,10 @@ function CropEditOverlay({ project, clip, media, value, aspectId, onDraft, time 
   const tNow = (hasMotion(clip) || clip.pin)
     ? stateAtPinned(project, { track: (project.overlayClips || []).some((c) => c.id === clip.id) ? 'overlay' : 'video', clip }, lt, len).transform
     : transformOf(clip);
-  const geom = pictureGeometry(project, media, clip, tNow);
+  // The clip renders UNCROPPED in this mode, so the geometry must describe the full
+  // source's fitted box — pass a crop-less view of the clip (pictureGeometry is otherwise
+  // crop-aware: it boxes the surviving region the renderer would show).
+  const geom = pictureGeometry(project, media, { ...clip, crop: undefined }, tNow);
   const aspect = aspectRatioOf(aspectId, media.width, media.height);
   const midX = (crop.l + 1 - crop.r) / 2;
   const midY = (crop.t + 1 - crop.b) / 2;
