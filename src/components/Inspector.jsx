@@ -275,6 +275,24 @@ export function RegionControls({ region, onChange, dispatch }) {
   );
 }
 
+// ---- Effect strength: how strongly an effect instance lands (0..1, absent = 1) ----
+// Shader effects take it as a mix with the untouched picture and particle layers as
+// opacity (src/fx/apply.js); a classic effect on a clip is routed through its shader
+// form as soon as the strength drops below 1. Mirror and Flip are geometric — they
+// have no in-between — so they get no strength control.
+const NO_STRENGTH = ['mirror', 'flipv'];
+export function StrengthControl({ value, onChange, dispatch }) {
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const S = (p) => <Slider dispatch={dispatch} {...p} />;
+  return (
+    <div className="insp-card">
+      <div className="insp-card-title">Strength</div>
+      {S({ label: 'Intensity', value: value ?? 1, min: 0, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange })}
+      <p className="dim small">How strongly the effect lands — 0% is the untouched picture.</p>
+    </div>
+  );
+}
+
 // "Add text" card shared by both effect panels: puts a text clip over exactly the range the
 // effect covers, via the app's single add-text path (App's onAddTextOver), which also selects
 // the new clip so the text inspector opens ready to type.
@@ -303,6 +321,8 @@ function FreeEffectPanel({ project, selection, dispatch, onAddTextOver = null })
       <Num label="Start (s)" value={c.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
       <Num label="Duration (s)" value={c.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
       </div>
+      {!NO_STRENGTH.includes(c.fx) && <StrengthControl value={c.strength} dispatch={dispatch}
+        onChange={(k) => set({ strength: k >= 1 ? undefined : k })} />}
       <RegionControls region={c.region || null} dispatch={dispatch}
         onChange={(region) => set({ region: region ?? undefined })} />
       <AddTextCard onAddTextOver={onAddTextOver} start={c.start} duration={c.duration} />
@@ -325,20 +345,20 @@ function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
     if (region) next[fx] = region; else delete next[fx];
     dispatch({ type: 'update', track, id: clipId, patch: { fxRegions: next } });
   };
-  // The classic effects (Blur, Grain, …) run through CSS/FFmpeg look filters when attached to a
-  // clip — they have no shader pass to mix, so a region cannot confine them there. (On the
-  // Effects track the same effects DO take a region: they run as shader passes there.)
-  const classic = ['mirror', 'flipv', 'vignette', 'grain', 'blur', 'pixel'].includes(fx);
+  // Strength storage likewise: the clip's fxStrength map (absent = full strength).
+  const setStrength = (k) => {
+    const next = { ...(clip.fxStrength || {}) };
+    if (k == null || k >= 1) delete next[fx]; else next[fx] = k;
+    dispatch({ type: 'update', track, id: clipId, patch: { fxStrength: next } });
+  };
   return (
     <div className="fields">
       <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{e?.name || fx}</b><span className="dim">on {media?.name || 'clip'}</span></div></div>
       <div className="insp-card">
       <p className="dim small">The effect runs for the whole clip and moves with it. Remove it here, with Delete, or from the right-click menu.</p>
       </div>
-      {classic
-        ? <div className="insp-card"><div className="insp-card-title">Region</div>
-            <p className="dim small">This classic effect applies to the whole frame when attached to a clip. To confine it to one area, add it from the Effects track instead — there it takes a region like every other effect.</p></div>
-        : <RegionControls region={clip.fxRegions?.[fx] || null} dispatch={dispatch} onChange={setRegion} />}
+      {!NO_STRENGTH.includes(fx) && <StrengthControl value={clip.fxStrength?.[fx]} dispatch={dispatch} onChange={setStrength} />}
+      <RegionControls region={clip.fxRegions?.[fx] || null} dispatch={dispatch} onChange={setRegion} />
       <AddTextCard onAddTextOver={onAddTextOver} start={clipStartTl(project, track, clip)} duration={clipLenTl(track, clip)} />
       <button className="btn btn-danger" onClick={() => dispatch({ type: 'removeEffect', id: selection.id })}>Remove effect</button>
     </div>
