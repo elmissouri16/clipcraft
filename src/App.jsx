@@ -100,9 +100,7 @@ export default function App() {
   // only. tourSeen stays null until the persisted flags load, so a fast first click
   // can't slip past it either way.
   const [tourSeen, setTourSeen] = useState(null);
-  // The Creator Pack prompt is GONE (Hamza, 2026-11-02: the pack is forgotten,
-  // it must never appear). The first-run flow is the Welcome card only — nothing
-  // chains after it. The pack machinery stays dormant in the main process.
+  // The first-run flow is the Welcome card only — nothing chains after it.
   useEffect(() => {
     let alive = true;
     Promise.resolve(window.api.firstRunGet?.()).then((f) => {
