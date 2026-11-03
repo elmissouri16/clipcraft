@@ -11,6 +11,7 @@ import ClipInspector, { PinToTrack } from './ClipInspector.jsx';
 import AudioFxControls from './AudioFx.jsx';
 import EnhanceVoice from './EnhanceVoice.jsx';
 import { isLookPatch, lookAction, selectedPictures } from '../look.js';
+import { clipLenTl, clipStartTl } from '../track.js';
 
 function Num({ label, value, onChange, step = 0.1, min, max }) {
   return <NumBox layout="field" label={label} value={value} step={step} min={min} max={max} onChange={onChange} />;
@@ -274,7 +275,21 @@ export function RegionControls({ region, onChange, dispatch }) {
   );
 }
 
-function FreeEffectPanel({ project, selection, dispatch }) {
+// "Add text" card shared by both effect panels: puts a text clip over exactly the range the
+// effect covers, via the app's single add-text path (App's onAddTextOver), which also selects
+// the new clip so the text inspector opens ready to type.
+function AddTextCard({ onAddTextOver, start, duration }) {
+  if (!onAddTextOver) return null;
+  return (
+    <div className="insp-card">
+      <div className="insp-card-title">Text</div>
+      <p className="dim small">Put words over this part of the video — the text clip spans the same range.</p>
+      <button className="btn btn-primary" onClick={() => onAddTextOver(start, duration)}><Type size={14} /> Add text</button>
+    </div>
+  );
+}
+
+function FreeEffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
   const c = (project.effectClips || []).find((x) => x.id === selection.id);
   if (!c) return <div className="fields"><div className="info dim">This effect was removed.</div></div>;
   const e = EFFECTS.find((x) => x.id === c.fx);
@@ -290,13 +305,14 @@ function FreeEffectPanel({ project, selection, dispatch }) {
       </div>
       <RegionControls region={c.region || null} dispatch={dispatch}
         onChange={(region) => set({ region: region ?? undefined })} />
+      <AddTextCard onAddTextOver={onAddTextOver} start={c.start} duration={c.duration} />
       <button className="btn btn-danger" onClick={() => dispatch({ type: 'delete', track: 'effect', id: c.id })}>Remove effect</button>
     </div>
   );
 }
 
-function EffectPanel({ project, selection, dispatch }) {
-  if (!selection.id.includes('|')) return <FreeEffectPanel project={project} selection={selection} dispatch={dispatch} />;
+function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
+  if (!selection.id.includes('|')) return <FreeEffectPanel project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} />;
   const { track, clipId, fx } = parseEffectKey(selection.id);
   const list = track === 'overlay' ? project.overlayClips || [] : project.videoClips;
   const clip = list.find((c) => c.id === clipId);
@@ -323,12 +339,13 @@ function EffectPanel({ project, selection, dispatch }) {
         ? <div className="insp-card"><div className="insp-card-title">Region</div>
             <p className="dim small">This classic effect applies to the whole frame when attached to a clip. To confine it to one area, add it from the Effects track instead — there it takes a region like every other effect.</p></div>
         : <RegionControls region={clip.fxRegions?.[fx] || null} dispatch={dispatch} onChange={setRegion} />}
+      <AddTextCard onAddTextOver={onAddTextOver} start={clipStartTl(project, track, clip)} duration={clipLenTl(track, clip)} />
       <button className="btn btn-danger" onClick={() => dispatch({ type: 'removeEffect', id: selection.id })}>Remove effect</button>
     </div>
   );
 }
 
-export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
+export default function Inspector({ project, selection, dispatch, duration, time = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null }) {
   const multi = selection?.items && (
     <div className="multi-note" role="status">
       <b>{selection.items.length} clips selected.</b> Delete removes them all; drag one (off the main track) to move them together.
@@ -347,7 +364,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
     return (
       <aside className="inspector" aria-label="Properties">
         <div className="panel-head"><Sparkles size={15} aria-hidden="true" /><span className="panel-title">Effect</span></div>
-        <div className="inspector-body">{multi}<EffectPanel project={project} selection={selection} dispatch={dispatch} /></div>
+        <div className="inspector-body">{multi}<EffectPanel project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
       </aside>
     );
   }
