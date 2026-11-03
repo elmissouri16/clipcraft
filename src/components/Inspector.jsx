@@ -263,11 +263,11 @@ export function RegionControls({ region, onChange, dispatch }) {
             ))}
             <button className={`chip ${r.invert ? 'on' : ''}`} aria-pressed={!!r.invert} onClick={() => set({ invert: !r.invert })}>Invert</button>
           </div>
-          {S({ label: 'Position X', value: r.x, min: 0, max: 0.95, step: 0.01, fmt: pct, onChange: (x) => set({ x }) })}
-          {S({ label: 'Position Y', value: r.y, min: 0, max: 0.95, step: 0.01, fmt: pct, onChange: (y) => set({ y }) })}
-          {S({ label: 'Width', value: r.w, min: 0.05, max: 1, step: 0.01, fmt: pct, onChange: (w) => set({ w }) })}
-          {S({ label: 'Height', value: r.h, min: 0.05, max: 1, step: 0.01, fmt: pct, onChange: (h) => set({ h }) })}
-          {S({ label: 'Feather', value: r.feather, min: 0, max: 0.3, step: 0.01, fmt: pct, onChange: (feather) => set({ feather }) })}
+          {S({ label: 'Position X', value: r.x, min: 0, max: 0.95, step: 0.01, fmt: pct, numScale: 100, onChange: (x) => set({ x }) })}
+          {S({ label: 'Position Y', value: r.y, min: 0, max: 0.95, step: 0.01, fmt: pct, numScale: 100, onChange: (y) => set({ y }) })}
+          {S({ label: 'Width', value: r.w, min: 0.05, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange: (w) => set({ w }) })}
+          {S({ label: 'Height', value: r.h, min: 0.05, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange: (h) => set({ h }) })}
+          {S({ label: 'Feather', value: r.feather, min: 0, max: 0.3, step: 0.01, fmt: pct, numScale: 100, onChange: (feather) => set({ feather }) })}
           <p className="dim small">You can also drag the dashed box on the player.</p>
         </>
       )}
@@ -415,7 +415,7 @@ export default function Inspector({ project, selection, dispatch, duration, time
           <div className="insp-card">
             <div className="insp-card-title">Clip audio</div>
             <div className="info">{media?.name}</div>
-            {S({ label: 'Volume', value: clip.volume ?? 1, max: 2, fmt: pct, onChange: (volume) => set({ volume }) })}
+            {S({ label: 'Volume', value: clip.volume ?? 1, max: 2, fmt: pct, numScale: 100, onChange: (volume) => set({ volume }) })}
             {S({ label: 'Fade in', value: clip.fadeIn || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeIn) => set({ fadeIn }) })}
             {S({ label: 'Fade out', value: clip.fadeOut || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeOut) => set({ fadeOut }) })}
             <Num label="Timeline start (s)" value={clip.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
