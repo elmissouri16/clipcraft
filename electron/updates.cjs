@@ -134,7 +134,7 @@ async function check(fetchImpl = net.fetch) {
       newer: compare(latest, current) > 0,
       downloadUrl: safeLink(r.download_url, LINK_HOSTS) || SITE,
       notesUrl: safeLink(r.notes_url, LINK_HOSTS),
-      notes: typeof r.notes === 'string' ? r.notes.slice(0, 400) : '',
+      notes: typeof r.notes === 'string' ? r.notes.slice(0, 2000) : '',
       releaseDate: typeof r.release_date === 'string' ? r.release_date : '',
       size: typeof r.size === 'string' ? r.size : '',
     };

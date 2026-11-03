@@ -35,7 +35,7 @@ export function AboutDialog({ onClose, onWelcome }) {
   const mb = (n) => (n / 1048576).toFixed(1);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="about-title" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal about about2">
+      <div className={`modal about about2${check && check.newer ? ' has-update' : ''}`}>
         <button className="icon-btn about-close" aria-label="Close" onClick={onClose}><X size={16} /></button>
         <div className="about-hero">
           <div className="about-halo"><img src="./logo.png" alt="" draggable={false} /></div>
