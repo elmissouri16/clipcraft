@@ -1270,6 +1270,10 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .pilot-session-picker .dropdown { width: 100%; }
 .pilot-session-picker .dropdown-btn { width: 100%; text-align: left; }
 .pilot-session-picker .dropdown-list { max-height: 220px; overflow-y: auto; z-index: 4; }
+.pilot-steps .pilot-step-kind { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: var(--text-2); background: rgba(130, 92, 251, 0.1); }
+.pilot-steps li > span:not(.pilot-step-kind):not(.pilot-step-status) { flex: 1; min-width: 0; }
+.pilot-steps .pilot-step-status { flex: none; display: inline-flex; }
+.pilot-context-usage { display: block; margin-top: 6px; color: var(--text-3); font-size: 10px; }
 .pilot2 .pilot-logo {
   width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; color: #fff;
   background: radial-gradient(120% 120% at 30% 20%, #8b5cf6, #6d28e0);

@@ -158,6 +158,16 @@ the **Chat sessions** selector to return to an earlier one. Interrupted requests
 reopen as interrupted and are never run automatically. Older project files open
 with an empty chat history.
 
+CraftAI loads editing tool groups as needed and can read a specific track, clip,
+or page of project data. Matching project revisions let it reuse known ids and
+timings. Large or repeated tool results are abbreviated in model requests; the
+full saved results remain available through context recall. Repeated project,
+transcription, option and guide reads are cached within a request and invalidated
+when the project changes.
+Each tool has its own action icon beside its running, completed or failed status.
+Replies show a rough input-token estimate across their model requests, based on
+prompt and schema characters; this is not the provider's billed token count.
+
 These backends support the same CraftAI editing tools and Undo as the existing
 API providers. **Stop** cancels an in-flight SDK request. Selecting an installed
 agent never silently falls back to a different API provider. Authentication,

@@ -5,6 +5,7 @@ import { EDIT_STYLES, STYLE_NAMES } from '../agent/motionGuide.js';
 import CraftModelPicker from './CraftModelPicker.jsx';
 import Dropdown from './Dropdown.jsx';
 import { newChatSession, normalizeChatSessions, snapshotChatSessions } from '../agent/chatSessions.js';
+import ToolCallIcon from './ToolCallIcon.jsx';
 
 // Quick actions on the empty state, grouped by what they do; each sends its text as-is.
 const ACTIONS = [
@@ -178,13 +179,16 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         },
       },
       isCanceled: () => canceled.current || !isCurrent(),
-      onEvent: (ev) => updateLast((last) => {
-        const steps = [...last.steps];
-        const i = steps.findIndex((s) => s.id === ev.id);
-        if (i >= 0) steps[i] = ev;
-        else steps.push(ev);
-        return { ...last, steps };
-      }),
+      onEvent: (ev) => {
+        if (ev.type === 'context') { updateLast((last) => ({ ...last, contextUsage: ev.usage })); return; }
+        updateLast((last) => {
+          const steps = [...last.steps];
+          const i = steps.findIndex((s) => s.id === ev.id);
+          if (i >= 0) steps[i] = ev;
+          else steps.push(ev);
+          return { ...last, steps };
+        });
+      },
     }).catch((e) => ({ error: { error: e.message } }));
 
     if (!isCurrent()) return;
@@ -303,15 +307,23 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                       <ul className="pilot-steps">
                         {m.steps.map((s) => (
                           <li key={s.id} className={s.status} title={s.detail || ''}>
-                            {s.status === 'running' ? <Loader2 size={13} className="spin" /> : s.status === 'done' ? <CircleCheck size={13} />
-                              : s.status === 'switch' ? <Shuffle size={13} /> : <CircleAlert size={13} />}
+                            <ToolCallIcon name={s.name} />
                             <span>{s.label}{s.status === 'error' ? ` — ${s.detail}` : ''}</span>
+                            <span className="pilot-step-status" aria-label={s.status === 'running' ? 'Running' : s.status === 'done' ? 'Completed' : s.status === 'switch' ? 'Provider changed' : 'Failed'}>
+                              {s.status === 'running' ? <Loader2 size={12} className="spin" /> : s.status === 'done' ? <CircleCheck size={12} />
+                                : s.status === 'switch' ? <Shuffle size={12} /> : <CircleAlert size={12} />}
+                            </span>
                           </li>
                         ))}
                       </ul>
                     )}
                     {m.pending && !m.steps?.length && <div className="pilot-thinking"><Loader2 size={14} className="spin" /> Thinking…</div>}
                     {m.text && <div className="bubble" dir="auto"><Rich text={m.text} /></div>}
+                    {m.contextUsage?.requests > 0 && (
+                      <small className="pilot-context-usage" title="Rough input estimate across this reply's model requests, including conversation and tool schemas. Provider tokenization and SDK overhead can differ.">
+                        ~{Math.ceil(m.contextUsage.inputChars / 4).toLocaleString()} estimated input tokens · {m.contextUsage.requests} {m.contextUsage.requests === 1 ? 'request' : 'requests'}
+                      </small>
+                    )}
                     {m.error && (
                       <div className="pilot-error" role="alert">
                         <b>Couldn't reach the assistant</b>

@@ -8,6 +8,7 @@ import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_T
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
 import { BLEND_MODES, cropOf, transformOf, opacityOf } from '../visual.js';
 import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from './motionGuide.js';
+import { projectRevision } from './context.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -29,8 +30,8 @@ const TEXT_LOOK = {
 export const TOOL_DECLARATIONS = [
   {
     name: 'get_project',
-    description: 'Read the project: clips of every track with ids and timeline times (seconds), the captions, and the media library. Call it before editing and again after cuts (times shift).',
-    parameters: { type: 'OBJECT', properties: {} },
+    description: 'Read live project ids/times. Reuse a previous read when its revision matches. scope: all (default), overview, main, overlay, audio, text, captions, effects, media. clip_ids selects exact clips; offset/limit page lists (default 30, max 100). if_revision skips unchanged data. Read affected tracks after cuts or manual edits.',
+    parameters: { type: 'OBJECT', properties: { scope: S, clip_ids: { type: 'ARRAY', items: S }, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' }, if_revision: S } },
   },
   {
     name: 'list_options',
@@ -287,14 +288,14 @@ export function summarizeProject(p) {
       })),
     overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c) })),
     audio_track: p.audioClips.map((c) => ({
-      id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + c.out - c.in), volume: c.volume ?? 1,
+      id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + (c.out - c.in) / (c.speed || 1)), volume: c.volume ?? 1,
       ...(c.fadeIn ? { fade_in: r2(c.fadeIn) } : {}), ...(c.fadeOut ? { fade_out: r2(c.fadeOut) } : {}),
     })),
     // Captions are many: listed by count and time span, their look once.
     text_track: p.textClips.filter((c) => !c.caption).map((c) => ({ id: c.id, text: c.text.slice(0, 80), start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) })),
     captions: captionInfo(p.textClips.filter((c) => c.caption)),
     effects_track: (p.effectClips || []).map((c) => ({ id: c.id, effect: c.fx, start: r2(c.start), end: r2(c.start + c.duration) })),
-    media_library: p.media.map((m) => ({ name: m.name, type: m.type, duration_sec: r2(m.duration || 0) })),
+    media_library: p.media.map((m) => ({ id: m.id, name: m.name, type: m.type, duration_sec: r2(m.duration || 0) })),
   };
 }
 
@@ -317,7 +318,7 @@ export function createToolRunner(ctx) {
   const project = () => ctx.getProject();
   const after = async (extra = {}) => {
     await ctx.settle();
-    return { ok: true, duration_sec: r2(projectDuration(project())), ...extra };
+    return { ok: true, duration_sec: r2(projectDuration(project())), revision: projectRevision(project()), ...extra };
   };
   const findClip = (id) => {
     const p = project();
@@ -479,8 +480,31 @@ export function createToolRunner(ctx) {
   };
 
   const tools = {
-    async get_project() {
-      return summarizeProject(project());
+    async get_project({ scope = 'all', clip_ids, offset = 0, limit = 30, if_revision } = {}) {
+      const p = project();
+      const revision = projectRevision(p);
+      if (if_revision === revision) return { revision, unchanged: true };
+      const summary = summarizeProject(p);
+      const fields = { main: 'main_track', overlay: 'overlay_track', audio: 'audio_track', text: 'text_track', effects: 'effects_track', media: 'media_library' };
+      if (!['all', 'overview', 'captions', ...Object.keys(fields)].includes(scope)) return { error: `Unknown scope "${scope}".` };
+      const out = { revision, name: summary.name, format: summary.format, background: summary.background, duration_sec: summary.duration_sec,
+        counts: Object.fromEntries(Object.entries(fields).map(([name, key]) => [name, summary[key].length])), captions: summary.captions };
+      const start = Math.max(0, Math.floor(Number(offset)) || 0);
+      const count = Math.max(1, Math.min(100, Math.floor(Number(limit)) || 30));
+      const selected = Array.isArray(clip_ids) ? new Set(clip_ids) : null;
+      out.pages = {};
+      for (const [name, key] of Object.entries(fields)) {
+        if (scope !== 'all' && scope !== name && !selected) continue;
+        const rows = selected ? summary[key].filter((row) => selected.has(row.id)) : summary[key];
+        out[key] = rows.slice(start, start + count);
+        out.pages[name] = { total: rows.length, offset: start, next_offset: start + count < rows.length ? start + count : null };
+      }
+      if (scope === 'captions' || selected) {
+        const lines = p.textClips.filter((c) => c.caption && (!selected || selected.has(c.id)));
+        out.caption_lines = lines.slice(start, start + count).map((c) => ({ id: c.id, text: c.text, start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) }));
+        out.pages.captions = { total: lines.length, offset: start, next_offset: start + count < lines.length ? start + count : null };
+      }
+      return out;
     },
 
     async remove_silences({ min_silence_sec = 0.6, threshold_db = -35, keep_padding_sec = 0.12 } = {}) {
@@ -1044,12 +1068,21 @@ export function createToolRunner(ctx) {
     },
   };
 
+  const readCache = new Map();
+  const cachedTools = new Set(['get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe']);
   return {
     async run(name, args) {
-      const fn = tools[name];
+      const fn = Object.hasOwn(tools, name) ? tools[name] : null;
       if (!fn) return { error: `Unknown tool "${name}".` };
       try {
-        return await fn(args || {});
+        const key = cachedTools.has(name) ? JSON.stringify([name, args || {}, projectRevision(project())]) : null;
+        if (key && readCache.has(key)) return structuredClone(readCache.get(key));
+        const result = await fn(args || {});
+        if (key && !result.error) {
+          if (readCache.size >= 32) readCache.delete(readCache.keys().next().value);
+          readCache.set(key, structuredClone(result));
+        }
+        return result;
       } catch (e) {
         return { error: e.message || String(e) };
       }

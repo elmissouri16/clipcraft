@@ -6,7 +6,8 @@ const project = emptyProject();
 assert.deepEqual(normalizeProject(project).craftAI.sessions, [], 'older projects need no migration');
 assert.deepEqual(normalizeChatSessions({ sessions: [null, {}, { id: 3 }] }).sessions, []);
 const first = newChatSession();
-first.messages = [{ role: 'user', text: 'Remember violet' }, { role: 'assistant', text: 'Remembered', changed: true }];
+first.messages = [{ role: 'user', text: 'Remember violet' }, { role: 'assistant', text: 'Remembered', changed: true,
+  contextUsage: { requests: 2, inputChars: 4000, avoidedChars: 2000, tools: 7, abbreviated: 1 } }];
 first.contents = [{ role: 'user', parts: [{ text: 'Remember violet' }] },
   { role: 'model', parts: [{ functionCall: { name: 'get_project', args: {} } }] },
   { role: 'user', parts: [{ functionResponse: { name: 'get_project', response: { result: { changed: 'keep tool data' } } } }] },
@@ -25,6 +26,7 @@ const roundtrip = normalizeChatSessions(JSON.parse(JSON.stringify(saved)));
 assert.deepEqual(roundtrip.sessions[0].contents, saved.sessions[0].contents);
 assert.equal(roundtrip.sessions[0].draft, first.draft);
 assert.equal(roundtrip.activeSessionId, second.id);
+assert.deepEqual(roundtrip.sessions[0].messages[1].contextUsage, first.messages[1].contextUsage, 'context estimates survive project reopen');
 assert.deepEqual(normalizeChatSessions(roundtrip), roundtrip);
 
 let state = { past: [], present: project, future: [] };

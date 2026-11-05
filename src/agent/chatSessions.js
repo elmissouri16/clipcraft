@@ -17,6 +17,8 @@ export function normalizeChatSessions(value) {
     messages: (Array.isArray(s.messages) ? s.messages : []).filter((m) => record(m)
       && ['user', 'assistant'].includes(m.role) && typeof m.text === 'string').map((m) => ({
       role: m.role, text: m.pending ? 'Interrupted. Send another message to continue.' : m.text,
+      ...(record(m.contextUsage) ? { contextUsage: Object.fromEntries(['requests', 'inputChars', 'avoidedChars', 'tools', 'abbreviated']
+        .map((key) => [key, Number.isFinite(m.contextUsage[key]) && m.contextUsage[key] >= 0 ? m.contextUsage[key] : 0])) } : {}),
       ...(record(m.error) && typeof m.error.error === 'string' ? { error: {
         error: m.error.error, suggestModel: !!m.error.suggestModel,
         ...(typeof m.error.link === 'string' ? { link: m.error.link } : {}),
