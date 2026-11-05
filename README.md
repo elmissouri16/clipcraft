@@ -223,8 +223,8 @@ reference. Other editor tools run in order between image batches.
 Completed images are copied into ClipCraft's media storage before the temporary
 Codex workspace is removed. They support the usual Undo, Redo and export.
 **Stop** cancels an in-flight image request. Failed or unavailable generation
-does not insert placeholder art. Ordinary editing turns still use only the
-editor's structured tools; native image generation runs in a separate session.
+does not insert placeholder art. Editor changes use structured tools;
+native image generation runs in a separate session.
 
 Contributor checks: `node scripts/test-codex-images.cjs` and the default
 `FVE_SMOKE_MODE=codex-images` Electron smoke are offline. Opt into a real native
@@ -263,6 +263,22 @@ Checks: `node scripts/test-agent-frames.mjs` and
 smoke verifies real frame captures with a simulated model response. Set
 `FVE_CODEX_VISION_LIVE=1` to also test actual Codex image understanding using
 the installed CLI login.
+
+### Codex live web search
+
+Live web search is enabled when **Codex SDK** is selected. CraftAI can research
+requested topics and check current facts while preparing video scripts, using
+the installed CLI login. Search queries and their status appear in the chat.
+Researched replies use clickable source links that open in your browser.
+
+Try: “Use live web search to check the facts for this history video, cite the
+sources, then update the script.” Research alone does not create an Undo entry;
+requested editor changes still use the usual tools and history. **Stop** cancels
+an active search. Shell and direct file editing remain disabled for the agent.
+
+Checks: `node scripts/test-codex-web-search.mjs` and
+`FVE_SMOKE_MODE=agent-web-search` in an isolated Electron smoke profile. Set
+`FVE_CODEX_WEB_LIVE=1` to test an actual native search and source reply.
 
 ### Gemini speech generation
 

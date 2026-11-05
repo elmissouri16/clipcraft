@@ -20,12 +20,17 @@ const fakeSdk = {
     constructor(options) { captured.push({ kind: 'codex', options }); }
     startThread(options) {
       captured.push({ kind: 'thread', options });
-      return { run: async (prompt, options) => {
+      const thread = { run: async (prompt, options) => {
         captured.push({ kind: 'run', prompt, options });
         if (pending) return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
         if (failure) throw failure;
         return { finalResponse: JSON.stringify(response) };
-      } };
+      }, runStreamed: async (prompt, options) => ({ events: (async function* () {
+        const result = await thread.run(prompt, options);
+        yield {type:'item.completed',item:{id:'answer',type:'agent_message',text:result.finalResponse}};
+        yield {type:'turn.completed',usage:{}};
+      })() }) };
+      return thread;
     }
   },
   query({ prompt, options }) {
@@ -87,6 +92,9 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
       assert.equal(fs.existsSync(session.options.workingDirectory || session.options.cwd), false, 'temporary SDK workspace is removed after completion');
       if (provider === 'codex-sdk') {
         assert.equal(session.options.sandboxMode, 'read-only');
+        assert.equal(session.options.webSearchMode, 'live');
+        assert.ok(call.prompt.includes('Native live web search is enabled'));
+        assert.ok(call.prompt.includes('ordinary Markdown links'));
         const client = captured.findLast((entry) => entry.kind === 'codex');
         assert.equal(client.options.config.features.shell_tool, false);
         assert.equal(client.options.config.features.image_generation, false, 'normal editor decisions cannot generate untracked images');

@@ -6,6 +6,7 @@ import CraftModelPicker from './CraftModelPicker.jsx';
 import Dropdown from './Dropdown.jsx';
 import { newChatSession, normalizeChatSessions, snapshotChatSessions } from '../agent/chatSessions.js';
 import ToolCallIcon from './ToolCallIcon.jsx';
+import { webSourceUrl } from '../../shared/webSource.mjs';
 
 // Quick actions on the empty state, grouped by what they do; each sends its text as-is.
 const ACTIONS = [
@@ -43,10 +44,15 @@ const styledMessage = (text, styleId) => {
 (Style: ${name})` : `Make a reel of this video in the ${name} style.`;
 };
 
-// Tiny formatter for the assistant's reply: paragraphs, **bold** and "- " bullet lists.
+// Tiny formatter: paragraphs, bold, lists and safe source links.
 function Rich({ text }) {
   const blocks = text.split(/\n{2,}/);
-  const inline = (s) => s.split(/(\*\*[^*]+\*\*)/g).map((part, i) => (part.startsWith('**') ? <b key={i}>{part.slice(2, -2)}</b> : part));
+  const inline = (s) => s.split(/(\*\*[^*]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g).map((part, i) => {
+    if (part.startsWith('**')) return <b key={i}>{part.slice(2, -2)}</b>;
+    const link = /^\[([^\]]+)\]\((.+)\)$/.exec(part);
+    const url = link && webSourceUrl(link[2]);
+    return url ? <button key={i} type="button" className="pilot-source-link" title={url} onClick={() => window.api.openWebSource(url)}>{link[1]}</button> : part;
+  });
   return blocks.map((block, i) => {
     const lines = block.split('\n');
     if (lines.every((l) => /^\s*[-*•]\s+/.test(l))) {

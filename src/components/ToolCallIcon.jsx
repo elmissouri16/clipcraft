@@ -3,7 +3,7 @@ import { ClipboardList, ListFilter, AudioLines, Scissors, ListChecks, Speech, Ca
   TextCursorInput, Trash2, Split, Gauge, Volume2, SlidersHorizontal, Layers, Blend,
   RectangleHorizontal, ZoomIn, Move, Diamond, Clapperboard, FolderPlus, Search, Music,
   Users, Mic, Telescope, Film, Sparkles, ArrowLeftRight, Crop, Wrench, Palette, Pipette,
-  Settings2, BookOpen, WandSparkles, ImagePlus, Image as ImageIcon, ScanEye, Undo2, Download, Library, History, PlugZap, Shuffle } from 'lucide-react';
+  Settings2, BookOpen, WandSparkles, ImagePlus, Image as ImageIcon, ScanEye, Globe, Undo2, Download, Library, History, PlugZap, Shuffle } from 'lucide-react';
 
 export const TOOL_ICONS = {
   get_project: ClipboardList, list_options: ListFilter, remove_silences: AudioLines,
@@ -16,7 +16,7 @@ export const TOOL_ICONS = {
   add_effect: Sparkles, move_clip: ArrowLeftRight, trim_clip: Crop, clip_tools: Wrench,
   set_color: Palette, set_compositing: Pipette, set_project: Settings2, motion_guide: BookOpen,
   edit_style: WandSparkles, add_scene: ImagePlus, generate_image: ImageIcon, inspect_frames: ScanEye, undo: Undo2, export_video: Download,
-  load_tools: Library, recall_context: History, switch: Shuffle, mcp: PlugZap,
+  load_tools: Library, recall_context: History, switch: Shuffle, mcp: PlugZap, web_search: Globe,
 };
 export default function ToolCallIcon({ name }) {
   const toolName = typeof name === 'string' ? name : 'unknown';

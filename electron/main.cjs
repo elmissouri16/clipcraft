@@ -1421,7 +1421,10 @@ ipcMain.handle('agent:step', async (event, req) => {
     // provider (or launch a local SDK as an API provider's fallback).
     const images=agentFrames.images(event.sender.id,req.frameIds||[]);
     if(images.length&&first!=='codex-sdk')throw new Error('Inspected frames require Codex SDK.');
-    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, images, signal: controller.signal }));
+    const onSearch = search => {
+      if (!event.sender.isDestroyed()) event.sender.send('agent:search', { ...search, requestId: req.requestId });
+    };
+    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, images, onSearch, signal: controller.signal }));
     return {
       ok: true, ...result, provider, model: settings.getActive(provider).model,
       fellBack: failed.map((f) => ({ provider: f.provider, name: fb.NAMES[f.provider], reason: f.reason })),
@@ -1433,6 +1436,13 @@ ipcMain.handle('agent:step', async (event, req) => {
     agentRequests.delete(key);
     if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
   }
+});
+ipcMain.handle('agent:openSource', async (_event, value) => {
+  const { webSourceUrl } = await import('../shared/webSource.mjs');
+  const url = webSourceUrl(value);
+  if (!url) return { error: 'Source links must be HTTP or HTTPS URLs.' };
+  await shell.openExternal(url);
+  return { ok: true };
 });
 const { runImageJobs } = require('./imageJobs.cjs');
 const { fitImageFrame, validateImageFrame } = require('./imageFrame.cjs');
