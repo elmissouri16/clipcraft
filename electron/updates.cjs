@@ -38,6 +38,23 @@ const { pipeline } = require('node:stream/promises');
 
 let lastDownloadPath = '';
 
+// Publish only complete downloads. COPYFILE_EXCL also protects files created by
+// another download between choosing a name and copying (including symlinks).
+function publishDownload(staged, destDir, base) {
+  const ext = /\.tar\.gz$/i.test(base) ? base.slice(-7) : path.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
+  for (let n = 0; ; n++) {
+    const fileName = n ? `${stem} (${n})${ext}` : base;
+    const dest = path.join(destDir, fileName);
+    try {
+      fs.copyFileSync(staged, dest, fs.constants.COPYFILE_EXCL);
+      return { path: dest, fileName };
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+    }
+  }
+}
+
 // Streams the installer at `url` into `destDir`, reporting { received, total } as it goes.
 // The URL is gated to LINK_HOSTS again here (defense in depth — the feed was already gated).
 // Returns { path, fileName, size } or { error }. Nothing is executed here: installing the
@@ -51,12 +68,14 @@ async function downloadInstaller(url, { fetchImpl = net.fetch, destDir, onProgre
   try { base = decodeURIComponent(new URL(safe).pathname.split('/').pop() || base) || base; } catch { /* keep default */ }
   base = base.replace(/[^\w.\- ]+/g, '_');
   if (!/\.(deb|appimage|zip|tar\.gz|exe|msi|dmg)$/i.test(base)) base += '.download';
-  const dest = path.join(destDir, base);
+  let stagingDir;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15 * 60 * 1000); // generous cap for a ~200 MB installer
   try {
     const res = await fetchImpl(safe, { signal: ctrl.signal, credentials: 'omit', cache: 'no-store' });
     if (!res.ok) return { error: `The download server answered ${res.status}.` };
+    stagingDir = fs.mkdtempSync(path.join(destDir, '.clipcraft-update-'));
+    const staged = path.join(stagingDir, 'installer.part');
     const total = Number(res.headers?.get?.('content-length') || 0) || 0;
     let received = 0;
     async function* chunks() {
@@ -90,15 +109,18 @@ async function downloadInstaller(url, { fetchImpl = net.fetch, destDir, onProgre
     }
     // pipeline observes write errors immediately, including open/ENOSPC errors,
     // and tears down both sides instead of hanging while waiting for drain.
-    await pipeline(chunks(), fs.createWriteStream(dest), { signal: ctrl.signal });
-    lastDownloadPath = dest;
-    return { path: dest, fileName: base, size: received };
+    await pipeline(chunks(), fs.createWriteStream(staged), { signal: ctrl.signal });
+    const downloaded = publishDownload(staged, destDir, base);
+    lastDownloadPath = downloaded.path;
+    return { ...downloaded, size: received };
   } catch (err) {
     ctrl.abort();
-    try { fs.rmSync(dest, { force: true }); } catch { /* best effort */ }
     return { error: err?.name === 'AbortError' ? 'The download timed out.' : 'The download failed — check your connection and try again.' };
   } finally {
     clearTimeout(timer);
+    if (stagingDir) {
+      try { fs.rmSync(stagingDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
   }
 }
 

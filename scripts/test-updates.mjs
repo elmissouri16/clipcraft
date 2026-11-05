@@ -146,6 +146,29 @@ try {
 eq(!!d.error, true, 'disk-full failure is returned without hanging');
 eq(sourceCanceled, true, 'write failure cancels the response body');
 
+const original = Buffer.from('existing installer');
+const existing = path.join(destDir, 'retry.deb');
+fs.writeFileSync(existing, original);
+const brokenFetch = async () => ({ ok: true, body: (async function* () {
+  yield payload;
+  throw new Error('connection interrupted');
+})() });
+d = await downloadInstaller('https://hamzaabika.com/retry.deb', { fetchImpl: brokenFetch, destDir });
+eq(!!d.error, true, 'interrupted download returns an error');
+eq(fs.readFileSync(existing).equals(original), true, 'failed retry preserves existing installer');
+eq(lastDownload(), dl2.path, 'interrupted retry preserves last successful download');
+eq(fs.readdirSync(destDir).some((name) => name.startsWith('.clipcraft-update-')), false, 'failed downloads clean staging');
+
+const retries = await Promise.all([1, 2].map(() => downloadInstaller('https://hamzaabika.com/retry.deb', {
+  fetchImpl: streamFetch([payload]), destDir,
+})));
+eq(retries.every((r) => !r.error), true, 'concurrent retries succeed');
+eq(new Set(retries.map((r) => r.path)).size, 2, 'concurrent downloads use distinct filenames');
+eq(retries.every((r) => fs.readFileSync(r.path).equals(payload)), true, 'both retries contain complete bytes');
+eq(fs.readFileSync(existing).equals(original), true, 'successful retry preserves existing installer');
+eq(retries.every((r) => r.fileName.endsWith('.deb')), true, 'collision names retain installer extension');
+eq(fs.readdirSync(destDir).some((name) => name.startsWith('.clipcraft-update-')), false, 'successful downloads clean staging');
+
 fs.rmSync(destDir, { recursive: true, force: true });
 
 if (fails) { console.error(`test-updates: ${fails} failure(s)`); process.exit(1); }
