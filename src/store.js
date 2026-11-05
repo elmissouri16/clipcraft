@@ -39,8 +39,45 @@ export function emptyProject() {
   };
 }
 
+// Validate containers before the project reaches the reducer or render tree. Missing
+// fields remain legal for older files; unknown fields survive normalization.
+export function validateProject(p) {
+  const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const invalid = (field) => { throw new Error(`Invalid project field: ${field}`); };
+  if (!record(p)) invalid('project');
+  const nullable = new Set(['overlayClips', 'effectClips', 'markers']);
+  for (const key of ['media', 'videoClips', 'audioClips', 'textClips', ...nullable]) {
+    const list = p[key];
+    if (list === undefined || (list === null && nullable.has(key))) continue;
+    if (!Array.isArray(list)) invalid(key);
+    for (const item of list) {
+      if (!record(item)) invalid(`${key} entry`);
+      for (const field of ['in', 'out', 'start', 'duration', 'speed', 'layer']) {
+        if (item[field] !== undefined && (typeof item[field] !== 'number' || !Number.isFinite(item[field]))) invalid(`${key}.${field}`);
+      }
+      if (item.speed !== undefined && item.speed <= 0) invalid(`${key}.speed`);
+      if (item.layer !== undefined && (!Number.isInteger(item.layer) || item.layer < 0)) invalid(`${key}.layer`);
+      if (item.effects != null && !Array.isArray(item.effects)) invalid(`${key}.effects`);
+      for (const field of ['path', 'text']) {
+        if (item[field] !== undefined && typeof item[field] !== 'string') invalid(`${key}.${field}`);
+      }
+    }
+  }
+  for (const key of ['name', 'id', 'ratio', 'background']) {
+    if (p[key] !== undefined && typeof p[key] !== 'string') invalid(key);
+  }
+  for (const key of ['width', 'height', 'fps', 'resolution']) {
+    if (p[key] !== undefined && (typeof p[key] !== 'number' || !Number.isFinite(p[key]) || p[key] <= 0)) invalid(key);
+  }
+  for (const key of ['magnet', 'layerState', 'layers']) {
+    if (p[key] != null && !record(p[key])) invalid(key);
+  }
+  return p;
+}
+
 // Older project files lack the newer fields.
 export function normalizeProject(p) {
+  validateProject(p);
   const base = emptyProject();
   return {
     ...base, ...p,
@@ -1075,6 +1112,11 @@ function patchVisuals(p, a) {
 }
 
 export function historyReducer(state, a) {
+  // File/slot callers validate synchronously to show an error before dispatch.
+  // Keep direct load callers (templates, recovery and the test harness) safe too.
+  if (a.type === 'load') {
+    try { validateProject(a.project); } catch { return state; }
+  }
   if (a.type === 'mediaVisuals') {
     return {
       ...state,

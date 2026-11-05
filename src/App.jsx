@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
+import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
 import HomeScreen from './components/HomeScreen.jsx';
 import SequenceDialog from './components/SequenceDialog.jsx';
 import { mismatchFor, sequencePatchFor } from './sequence.js';
@@ -273,6 +273,10 @@ export default function App() {
             snap = { savedAt: slot.updatedAt || saved.savedAt, project: slot.project, file: slot.file || null, unsaved: saved.unsaved };
           }
         } catch { /* slot unreadable: the snapshot stands */ }
+      }
+      if (snap?.project) {
+        try { snap = { ...snap, project: normalizeProject(snap.project) }; }
+        catch { return; } // A corrupt recovery record must not prevent startup.
       }
       if (was && snap?.project) {
         // The window crashed and reloaded: same project, same file.
@@ -1314,10 +1318,10 @@ export default function App() {
   };
 
   const open = async () => {
-    const res = await window.api.openProject();
-    if (!res) return;
     try {
-      const p = await adoptFileBinding(JSON.parse(res.json), res.file);
+      const res = await window.api.openProject();
+      if (!res) return;
+      const p = await adoptFileBinding(normalizeProject(JSON.parse(res.json)), res.file);
       await flushAutosave(); // the current project keeps its last changes (file + slot)
       autosave.current.file = res.file;
       dispatch({ type: 'load', project: p });
@@ -1368,9 +1372,12 @@ export default function App() {
       alert('That auto-saved project could not be found any more, so it was removed from the list.');
       return;
     }
+    let p;
+    try { p = { ...normalizeProject(slot.project), id: slot.id }; }
+    catch (e) { alert('Invalid auto-saved project: ' + e.message); return; }
     autosave.current.file = slot.file || null;
     autosave.current.pendingRestore = false;
-    dispatch({ type: 'load', project: { ...slot.project, id: slot.id } });
+    dispatch({ type: 'load', project: p });
     setSaveState(slot.file ? 'saved' : 'new');
     setUnsavedNote(null);
     setTime(0);
@@ -1387,7 +1394,7 @@ export default function App() {
       return;
     }
     try {
-      const p = await adoptFileBinding(JSON.parse(res.json), res.file);
+      const p = await adoptFileBinding(normalizeProject(JSON.parse(res.json)), res.file);
       await flushAutosave();
       autosave.current.file = res.file;
       dispatch({ type: 'load', project: p });
@@ -1419,10 +1426,13 @@ export default function App() {
   const restoreUnsaved = async () => {
     const note = unsavedNote;
     if (!note) return;
+    let p;
+    try { p = normalizeProject(note.project); }
+    catch (e) { alert('Invalid recovery project: ' + e.message); return; }
     await flushAutosave();
     autosave.current.file = note.file || null;
     autosave.current.pendingRestore = false;
-    dispatch({ type: 'load', project: note.project });
+    dispatch({ type: 'load', project: p });
     if (note.file) setSaveState('saved');
     setUnsavedNote(null);
     setTime(0);

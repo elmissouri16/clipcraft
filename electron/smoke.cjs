@@ -14,6 +14,9 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'compatibility') {
+    return require('./smoke-compatibility.cjs')(win, app, dir);
+  }
   if (process.env.FVE_SMOKE_MODE === 'templates-pack' || process.env.FVE_SMOKE_MODE === 'templates-use') {
     // Templates. "pack": build a small project from generated clips, mark two clips replaceable and write the
     // package (plus preview.mp4) into <dir>/packages. "use": with FVE_TEMPLATES_URL pointing at a local copy of the
