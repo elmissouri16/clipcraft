@@ -4,6 +4,7 @@
 // the UI only gets a short hint (last 4 characters).
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('node:crypto');
 const { app, safeStorage } = require('electron');
 
 const PROVIDERS = ['gemini', 'groq', 'ollama', 'openai', 'openrouter', 'claude', 'custom'];
@@ -33,7 +34,24 @@ function read() {
 }
 
 function write(data) {
-  fs.writeFileSync(settingsFile(), JSON.stringify(data, null, 2), 'utf8');
+  const file = settingsFile();
+  const tmp = `${file}.${randomUUID()}.part`;
+  let fd;
+  let owned = false;
+  try {
+    fd = fs.openSync(tmp, 'wx', 0o600);
+    owned = true;
+    fs.writeFileSync(fd, JSON.stringify(data, null, 2), 'utf8');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    // Same-directory rename leaves the previous settings intact until the new
+    // encrypted payload is complete. The on-disk JSON format stays unchanged.
+    fs.renameSync(tmp, file);
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+    if (owned) { try { fs.unlinkSync(tmp); } catch {} }
+  }
 }
 
 // What the renderer may see.

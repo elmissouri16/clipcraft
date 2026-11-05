@@ -53,6 +53,34 @@ module.exports = async (win, app, dir) => {
     await until('document.querySelector(".project-name")?.value === "Legacy project"');
     assert.equal(await q('window.__fve.exportData().project.fps'), 30);
     result.checks.push('legacy project opens with compatible defaults');
+
+    // Persist from the actual Settings dialog, then inject a failed atomic rename
+    // in the main process and confirm that the UI reports failure without data loss.
+    await q('document.querySelector("button[aria-label=Settings]").click()');
+    await until('!!document.querySelector(".settings select")');
+    await q(`(() => {
+      const select = document.querySelector('.settings select');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'ollama');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await wait(100);
+    await q(`[...document.querySelectorAll('.settings button')].find(b => b.textContent.trim() === 'Save').click()`);
+    await until('document.querySelector(".settings .result.ok")?.textContent.includes("Saved")');
+    const settingsFile = path.join(dir, 'settings-test', 'settings.json');
+    const savedSettings = fs.readFileSync(settingsFile, 'utf8');
+    assert.equal(JSON.parse(savedSettings).ai.provider, 'ollama');
+    const originalRename = fs.renameSync;
+    try {
+      fs.renameSync = (from, to) => {
+        if (to === settingsFile) throw new Error('Simulated settings rename failure');
+        return originalRename(from, to);
+      };
+      await q(`[...document.querySelectorAll('.settings button')].find(b => b.textContent.trim() === 'Save').click()`);
+      await until('document.querySelector(".settings .result.bad")?.textContent.includes("Simulated settings rename failure")');
+      assert.equal(fs.readFileSync(settingsFile, 'utf8'), savedSettings);
+      assert.equal(fs.readdirSync(path.dirname(settingsFile)).some(n => n.endsWith('.part')), false);
+    } finally { fs.renameSync = originalRename; }
+    result.checks.push('Settings saves through IPC; failed atomic writes surface in the UI and retain the previous file');
     fs.writeFileSync(path.join(dir, 'compatibility.png'), (await win.capturePage()).toPNG());
     result.ok = true;
   } catch (err) {
