@@ -208,10 +208,16 @@ Codex receives the current template's pixel width, height and aspect ratio.
 If its native output size differs, the imported PNG is proportionally cropped
 and resized to the exact canvas dimensions; transparency is preserved.
 
-AI-added library and stock footage fills the current canvas by default,
+AI-added library and stock footage always fills the current canvas on insertion,
 including landscape sources in a portrait video. This uses a centered source
-crop, so subsequent zooms still fill the frame. Ask to keep the whole picture
-to use `fit: "fit"` instead. The first added source preserves the template size.
+crop, so subsequent zooms still fill the frame. Legacy `fit` arguments on
+insertion cannot turn a scene into a letterboxed strip. For an existing clip,
+`set_transform` with `fit: "fill"` reframes it to the current canvas; optional
+`focus_x` / `focus_y` keep an off-center subject in view. An explicit whole-source
+request can use `fit: "fit"` on that framing edit. The inspector's Fit / Fill
+buttons use the same base framing, with scale reset to one and old framing
+keyframes cleared; opacity fades stay intact. The first source preserves the
+template size. Project reads report base coverage and source crop percentages.
 
 For multiple independent scenes, CraftAI requests image calls together. Up to
 three native image jobs run at once; additional scenes queue automatically.

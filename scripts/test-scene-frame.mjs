@@ -6,10 +6,10 @@ import { execFileSync } from 'node:child_process';
 import ff from '../electron/ffmpeg.cjs';
 import frames from '../electron/imageFrame.cjs';
 import { emptyProject, historyReducer } from '../src/store.js';
-import { createToolRunner } from '../src/agent/tools.js';
+import { createToolRunner, summarizeProject } from '../src/agent/tools.js';
 
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-scene-frame-'));
-const source=path.join(dir,'wide.png'), transparent=path.join(dir,'alpha.png');
+const source=path.join(dir,'wide.png'), transparent=path.join(dir,'alpha.png'),wideVideo=path.join(dir,'wide.mp4');
 const gen=(filter,file)=>execFileSync(ff.ffmpegPath,['-y','-loglevel','error','-f','lavfi','-i',filter,'-frames:v','1',file]);
 const pixels=file=>execFileSync(ff.ffmpegPath,['-v','error','-i',file,'-frames:v','1','-f','rawvideo','-pix_fmt','rgba','-'],{maxBuffer:4*1024*1024});
 const redBounds=(bytes,width,height)=>{
@@ -22,6 +22,7 @@ const redBounds=(bytes,width,height)=>{
 };
 try {
   gen('color=c=blue:s=640x360,drawbox=x=270:y=130:w=100:h=100:c=red:t=fill',source);
+  execFileSync(ff.ffmpegPath,['-y','-v','error','-loop','1','-i',source,'-t','1','-pix_fmt','yuv420p',wideVideo]);
   gen('color=c=black@0:s=320x320,format=rgba,drawbox=x=120:y=120:w=80:h=80:c=red@1:t=fill:replace=1',transparent);
   const fitted=await frames.fitImageFrame(source,{width:180,height:320});
   const info=await ff.probe(fitted.path);
@@ -37,9 +38,9 @@ try {
   await assert.rejects(frames.fitImageFrame(source,{width:180,height:320,signal:AbortSignal.abort()}),{name:'AbortError'});
 
   let state={past:[],future:[],present:{...emptyProject(),ratio:'9:16',width:180,height:320,
-    media:[{...(await ff.probe(source)),id:'wide',name:'Wide',path:source}]}};
+    media:[{...(await ff.probe(source)),id:'wide',name:'Wide',path:source},{...(await ff.probe(wideVideo)),id:'wide-video',name:'Stock video',path:wideVideo}]}};
   const dispatch=a=>{state=historyReducer(state,a);};
-  const api={stockAdd:async()=>state.present.media[0],stockSearch:async()=>({results:[{id:'stock',kind:'photo'}]})};
+  const api={stockAdd:async()=>state.present.media[1],stockSearch:async req=>({results:[{id:'stock',kind:req.kind}]})};
   const runner=createToolRunner({getProject:()=>state.present,dispatch,api,settle:async()=>{},addProbed:res=>res});
   const main=await runner.run('add_media',{media_name:'Wide'});
   assert.ok(main.clip_id);assert.deepEqual([state.present.width,state.present.height,state.present.ratio],[180,320,'9:16'],'the first source cannot replace a template canvas');
@@ -55,11 +56,27 @@ try {
   const b=redBounds(frame,180,320);assert.ok(Math.abs(b.w-b.h)<=2,'export does not stretch the source');
   const overlay=await runner.run('add_media',{media_name:'Wide',as:'overlay',start_sec:0});
   assert.ok(state.present.overlayClips.find(c=>c.id===overlay.clip_id).crop.l>0.3);
-  const stock=await runner.run('search_stock',{kind:'photo',query:'wide'});
-  const added=await runner.run('add_stock',{stock_id:stock.items[0].stock_id,start_sec:0,duration_sec:1});
+  const stock=await runner.run('search_stock',{kind:'video',query:'wide'});
+  const added=await runner.run('add_stock',{stock_id:stock.items[0].stock_id,start_sec:0,duration_sec:1,fit:'fit'});
   assert.ok(state.present.overlayClips.find(c=>c.id===added.clip_id).crop.l>0.3);
   const fit=await runner.run('add_media',{media_name:'Wide',as:'overlay',start_sec:1,fit:'fit'});
+  assert.ok(state.present.overlayClips.find(c=>c.id===fit.clip_id).crop.l>0.3,'a legacy fit argument cannot undo full-frame scene insertion');
+  assert.ok(!(await runner.run('set_transform',{clip_id:fit.clip_id,fit:'fit'})).error);
   assert.deepEqual(state.present.overlayClips.find(c=>c.id===fit.clip_id).crop,{l:0,r:0,t:0,b:0});
-  assert.match((await runner.run('add_media',{media_name:'Wide',fit:'stretch'})).error,/fit/);
+  dispatch({type:'update',track:'overlay',id:fit.clip_id,patch:{keyframes:{scale:[{t:0,v:0.5}],x:[{t:0,v:0.2}],rot:[{t:0,v:20}],opacity:[{t:0,v:0},{t:0.5,v:1}]}}});
+  assert.ok(!(await runner.run('set_transform',{clip_id:fit.clip_id,fit:'fill',focus_x:0.25})).error);
+  let framed=state.present.overlayClips.find(c=>c.id===fit.clip_id);
+  assert.ok(framed.crop.l<0.1&&framed.crop.r>0.5,'source focal points can keep an off-center subject in the portrait crop');
+  assert.equal(framed.keyframes.scale,undefined);assert.equal(framed.keyframes.x,undefined);assert.equal(framed.keyframes.rot,undefined);
+  assert.equal(framed.keyframes.opacity.length,2,'reframing keeps opacity fades');
+  assert.deepEqual(summarizeProject(state.present).overlay_track.find(c=>c.id===fit.clip_id).base_coverage_pct,[100,100]);
+  const reframedCrop=framed.crop;
+  assert.ok(!(await runner.run('add_keyframes',{clip_id:fit.clip_id,property:'scale',keyframes:[{time_sec:1,value:1},{time_sec:4.5,value:1.05}]})).error);
+  assert.deepEqual(state.present.overlayClips.find(c=>c.id===fit.clip_id).crop,reframedCrop,'later zooms preserve the filled source crop');
+  assert.ok(!(await runner.run('set_transform',{clip_id:fit.clip_id,focus_x:0.75})).error);
+  framed=state.present.overlayClips.find(c=>c.id===fit.clip_id);
+  assert.ok(framed.crop.r<0.1&&framed.crop.l>0.5,'a focal point alone implies fill rather than being silently ignored');
+  assert.match((await runner.run('set_transform',{clip_id:fit.clip_id,fit:'stretch'})).error,/fit/);
+  assert.match((await runner.run('set_transform',{clip_id:fit.clip_id,fit:'fill',focus_x:2})).error,/focus/);
   console.log('scene frame ok (exact PNG dimensions, proportional fill, alpha, cancellation, template preservation, main/overlay/stock fill, zoom and real export)');
 } finally { fs.rmSync(dir,{recursive:true,force:true}); }

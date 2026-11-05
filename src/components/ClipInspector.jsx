@@ -6,7 +6,7 @@ import { clipLen, formatTime, uid } from '../store.js';
 import { FILTERS, TRANSITIONS } from '../effects.js';
 import { directionGroupFor } from '../fx/collections.js';
 import {
-  BLEND_MODES, DEFAULT_CHROMA, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_TRANSFORM, MASK_SHAPES, chromaOf, cropOf, maskOf, scaleXY, transformOf,
+  BLEND_MODES, DEFAULT_CHROMA, DEFAULT_CROP, DEFAULT_MASK, DEFAULT_TRANSFORM, MASK_SHAPES, chromaOf, cropOf, framingPatch, maskOf, scaleXY, transformOf,
 } from '../visual.js';
 import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from '../cropMath.js';
 import { hasCustomMask } from '../customMask.js';
@@ -285,15 +285,11 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
   // OS EyeDropper it used before silently rejects under Electron on Linux, so the button
   // did nothing there. The in-app sampler behaves the same on every platform.
 
-  // Fit / Fill (item 13): the transform's scale 1 is the contain fit in both preview and
-  // export, so Fit = scale 1 centred, and Fill = the cover/contain ratio, centred. Both write
-  // through setT like every other transform control (keyframe-safe).
+  // Framing is a new base picture, not an oversized transform. Later scale 1
+  // zoom keys must still cover the canvas, and Fit must restore the whole source.
   const fitFill = (mode) => {
     if (!media?.width || !media?.height || !W || !H) return;
-    if (mode === 'fit') { setT({ uniform: true, scale: 1, x: 0, y: 0 }); return; }
-    const contain = Math.min(W / media.width, H / media.height);
-    const cover = Math.max(W / media.width, H / media.height);
-    setT({ uniform: true, scale: Math.min(4, cover / contain), x: 0, y: 0 });
+    set(framingPatch(clip, media, W, H, mode));
   };
 
   const tabs = [['video', 'Video'], ['animation', 'Animation'], ...(isVideo ? [['audio', 'Audio'], ['speed', 'Speed']] : []), ['adjust', 'Adjust']];

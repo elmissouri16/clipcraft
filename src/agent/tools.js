@@ -6,7 +6,7 @@ import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable }
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
-import { BLEND_MODES, cropOf, frameCrop, transformOf, opacityOf } from '../visual.js';
+import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from '../visual.js';
 import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from './motionGuide.js';
 import { projectRevision } from './context.js';
 
@@ -129,8 +129,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'set_transform',
-    description: 'Size / position / rotation / opacity of a main or overlay clip, for its whole length. scale 1 = fitted; x / y in frame fractions from the center; rotation degrees; opacity 0-1.',
-    parameters: { type: 'OBJECT', properties: { clip_id: S, scale: N, x: N, y: N, rotation: N, opacity: N }, required: ['clip_id'] },
+    description: 'Transform a picture. fit fill/fit resets framing keys; fill crops to canvas, fit keeps the whole source only when requested. focus_x/y: 0–1 in source; scale 1: framed base; x/y: canvas fractions.',
+    parameters: { type: 'OBJECT', properties: { clip_id: S, fit: S, focus_x: N, focus_y: N, scale: N, x: N, y: N, rotation: N, opacity: N }, required: ['clip_id'] },
   },
   {
     name: 'add_keyframes',
@@ -144,8 +144,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_media',
-    description: 'Put a library file on main (end or main_index), overlay at start_sec, or audio at start_sec. Pictures fill the canvas by default; fit "fit" keeps the whole picture.',
-    parameters: { type: 'OBJECT', properties: { media_name: S, as: S, start_sec: N, main_index: N, fit: S }, required: ['media_name'] },
+    description: 'Add library media: main at main_index (default end), overlay/audio at start_sec. New scene pictures always fill the canvas.',
+    parameters: { type: 'OBJECT', properties: { media_name: S, as: S, start_sec: N, main_index: N }, required: ['media_name'] },
   },
   {
     name: 'generate_image',
@@ -184,8 +184,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_stock',
-    description: 'Add stock as "overlay" at start_sec for duration_sec (default) or "main" at main_index. Fills the canvas; fit "fit" keeps the whole picture.',
-    parameters: { type: 'OBJECT', properties: { stock_id: S, as: S, start_sec: N, duration_sec: N, main_index: N, fit: S }, required: ['stock_id'] },
+    description: 'Add stock as overlay at start_sec for duration_sec (default) or main at main_index. New footage always fills the canvas.',
+    parameters: { type: 'OBJECT', properties: { stock_id: S, as: S, start_sec: N, duration_sec: N, main_index: N }, required: ['stock_id'] },
   },
   {
     name: 'add_effect',
@@ -250,9 +250,16 @@ export const TOOL_DECLARATIONS = [
 ];
 
 // Size, place, animations and keyframed properties of a picture clip, only when they differ from the defaults.
-function motionInfo(c) {
+function motionInfo(c, media, project) {
   const t = transformOf(c);
   const out = {};
+  const crop = cropOf(c);
+  if (media?.width && media?.height && project?.width && project?.height) {
+    const w = media.width * (1 - crop.l - crop.r), h = media.height * (1 - crop.t - crop.b);
+    const k = Math.min(project.width / w, project.height / h);
+    out.base_coverage_pct = [r2(100 * w * k * t.scale * (t.uniform ? 1 : t.scaleX) / project.width), r2(100 * h * k * t.scale * (t.uniform ? 1 : t.scaleY) / project.height)];
+  }
+  if (Object.values(crop).some(Boolean)) out.source_crop_pct = Object.fromEntries(Object.entries(crop).map(([key, value]) => [key, r2(value * 100)]));
   if (t.scale !== 1) out.scale = r2(t.scale);
   if (t.x || t.y) out.position = [r2(t.x), r2(t.y)];
   if (t.rot) out.rotation = r2(t.rot);
@@ -299,9 +306,9 @@ export function summarizeProject(p) {
         source_in: r2(l.clip.in), source_out: r2(l.clip.out), speed: l.clip.speed || 1, volume: l.clip.volume ?? 1,
         muted: !!l.clip.muted, filter: l.clip.filter || 'none', effects: l.clip.effects || [],
         transition_in: l.clip.transition ? l.clip.transition.type : null,
-        ...motionInfo(l.clip),
+        ...motionInfo(l.clip, mediaById[l.clip.mediaId], p),
       })),
-    overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c) })),
+    overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c, mediaById[c.mediaId], p) })),
     audio_track: p.audioClips.map((c) => ({
       id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + (c.out - c.in) / (c.speed || 1)), volume: c.volume ?? 1,
       ...(c.fadeIn ? { fade_in: r2(c.fadeIn) } : {}), ...(c.fadeOut ? { fade_out: r2(c.fadeOut) } : {}),
@@ -382,11 +389,11 @@ export function createToolRunner(ctx) {
 
   // Puts a media item on the timeline: audio on the audio track at start_sec; a video / photo on the main track
   // (at main_index, default the end) or as an overlay at start_sec. Visuals fill
-  // the current canvas unless the caller explicitly asks to keep the whole picture.
+  // the current canvas. Whole-source fit is a separate framing edit, never an
+  // accidental insertion default (legacy fit arguments are intentionally ignored).
   // Returns { clip_id, track } or { error }.
-  const place = async (m, { as = 'main', start_sec = 0, main_index, name, fit = 'fill' } = {}) => {
+  const place = async (m, { as = 'main', start_sec = 0, main_index, name } = {}) => {
     if (!m) return { error: 'Could not add the file to the project.' };
-    if (!['fill', 'fit'].includes(fit)) return { error: 'fit must be fill or fit.' };
     const clipId = uid();
     const at = Math.max(0, Number(start_sec) || 0);
     let track;
@@ -402,7 +409,7 @@ export function createToolRunner(ctx) {
       dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, preserveCanvas: true, ...(Number.isInteger(n) && n >= 0 ? { index: n } : {}) });
     }
     if (m.type !== 'audio') dispatch({ type: 'update', track, id: clipId, patch: {
-      crop: fit === 'fill' ? frameCrop(m, project().width, project().height) : { l: 0, t: 0, r: 0, b: 0 },
+      crop: frameCrop(m, project().width, project().height),
       transform: transformOf({}),
     } });
     await ctx.settle();
@@ -772,12 +779,23 @@ export function createToolRunner(ctx) {
       return after({ zoomed_clips: hits.map((l) => l.clip.id), scale: s, style: smooth ? 'smooth' : 'cut' });
     },
 
-    async set_transform({ clip_id, scale, x, y, rotation, opacity }) {
+    async set_transform({ clip_id, fit, focus_x, focus_y, scale, x, y, rotation, opacity }) {
       const f = needPicture(clip_id);
       if (f.error) return f;
       const t = { ...transformOf(f.clip) };
       const keyframes = { ...(f.clip.keyframes || {}) };
       const patch = {};
+      if (fit !== undefined || focus_x !== undefined || focus_y !== undefined) {
+        const mode = fit ?? 'fill', fx = focus_x === undefined ? 0.5 : focus_x, fy = focus_y === undefined ? 0.5 : focus_y;
+        if (!['fill', 'fit'].includes(mode)) return { error: 'fit must be fill or fit.' };
+        if (![fx, fy].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)) return { error: 'focus_x/y must be source coordinates between 0 and 1.' };
+        const m = project().media.find(media => media.id === f.clip.mediaId);
+        if (!m?.width || !m?.height) return { error: 'Source dimensions are unavailable for framing.' };
+        const framed = framingPatch(f.clip, m, project().width, project().height, mode, fx, fy);
+        patch.crop = framed.crop;
+        Object.assign(t, framed.transform);
+        for (const key of ['scale', 'x', 'y', 'rot']) delete keyframes[key];
+      }
       const set = (name, v, lo, hi) => {
         if (v === undefined || v === null) return null;
         const n = Number(v);
@@ -833,12 +851,12 @@ export function createToolRunner(ctx) {
       return after({ animation: Object.fromEntries(Object.entries(anim).map(([k, v]) => [k, v.type])) });
     },
 
-    async add_media({ media_name, as = 'main', start_sec = 0, main_index, fit = 'fill' }) {
+    async add_media({ media_name, as = 'main', start_sec = 0, main_index }) {
       const p = project();
       const q = String(media_name || '').toLowerCase();
       const m = p.media.find((x) => x.name.toLowerCase() === q) || p.media.find((x) => x.name.toLowerCase().includes(q));
       if (!m) return { error: `No media named "${media_name}". Library: ${p.media.map((x) => x.name).join(', ') || 'empty'}.` };
-      return place(m, { as, start_sec, main_index, name: m.name, fit });
+      return place(m, { as, start_sec, main_index, name: m.name });
     },
 
     async search_sounds({ kind, query }) {
@@ -909,12 +927,12 @@ export function createToolRunner(ctx) {
       return items.length ? { items } : { items, note: 'Nothing found; try other English words.' };
     },
 
-    async add_stock({ stock_id, as = 'overlay', start_sec = 0, duration_sec, main_index, fit = 'fill' }) {
+    async add_stock({ stock_id, as = 'overlay', start_sec = 0, duration_sec, main_index }) {
       const item = found.get(stock_id);
       if (!item || !/^[vp]/.test(String(stock_id))) return { error: `Unknown stock_id "${stock_id}". Use an id from search_stock.` };
       const res = await api.stockAdd(item);
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.(res), { as, start_sec, main_index, name: res.name, fit });
+      const added = await place(ctx.addProbed?.(res), { as, start_sec, main_index, name: res.name });
       if (added.error) return added;
       if (added.track === 'overlay' && Number(duration_sec) > 0) {
         const c = findClip(added.clip_id).clip;

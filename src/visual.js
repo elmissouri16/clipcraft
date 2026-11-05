@@ -10,12 +10,23 @@ export const DEFAULT_CHROMA = { on: false, color: '#00ff00', intensity: 20, feat
 export const DEFAULT_CROP = { l: 0, t: 0, r: 0, b: 0 };
 // Fill a canvas without stretching. Crop the source before its contain fit so
 // scale 1 and later zoom keyframes still cover the whole frame.
-export function frameCrop(media, width, height) {
+export function frameCrop(media, width, height, focusX = 0.5, focusY = 0.5) {
   const source = media?.width / media?.height, target = width / height;
   if (!(source > 0) || !(target > 0) || !Number.isFinite(source) || !Number.isFinite(target)) return { ...DEFAULT_CROP };
-  if (source > target) { const edge = (1 - target / source) / 2; return { l: edge, r: edge, t: 0, b: 0 }; }
-  const edge = (1 - source / target) / 2;
-  return { l: 0, r: 0, t: edge, b: edge };
+  if (source > target) {
+    const kept = target / source, left = Math.max(0, Math.min(1 - kept, focusX - kept / 2));
+    return { l: left, r: 1 - kept - left, t: 0, b: 0 };
+  }
+  const kept = source / target, top = Math.max(0, Math.min(1 - kept, focusY - kept / 2));
+  return { l: 0, r: 0, t: top, b: 1 - kept - top };
+}
+export function framingPatch(clip, media, width, height, mode, focusX = 0.5, focusY = 0.5) {
+  const keyframes = { ...(clip.keyframes || {}) };
+  for (const key of ['scale', 'x', 'y', 'rot']) delete keyframes[key];
+  return {
+    crop: mode === 'fill' ? frameCrop(media, width, height, focusX, focusY) : { ...DEFAULT_CROP },
+    transform: { ...DEFAULT_TRANSFORM }, keyframes,
+  };
 }
 export const DEFAULT_MASK = {
   type: 'none', x: 0, y: 0, rot: 0, w: 0.5, h: 0.5, feather: 0, invert: false, round: 0, text: 'CLIPCRAFT',
