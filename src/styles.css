@@ -1053,6 +1053,8 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .fx-transition { position: absolute; inset: 0; width: 100%; height: 100%; display: none; z-index: 2; pointer-events: none; }
 .fx-group { margin-bottom: 10px; }
 .pad-x { display: block; padding: 4px 14px 6px; }
+.chips.pad-x { display: flex; }
+.chips.pad-x .chip { height: auto; min-height: 26px; max-width: 100%; padding: 4px 9px; }
 .tile-preview.fx-anim { display: grid; place-items: center; font-size: 22px; background: linear-gradient(135deg, #3b2a5c, #1e3a5f); }
 .tile-preview.fx-anim.tr { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #c4b5fd; background: linear-gradient(135deg, #2a2440, #12303f); }
 
