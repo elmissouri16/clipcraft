@@ -117,6 +117,10 @@ try {
     const guessed=regroupSegments([{start:0,end:4,text:'edited caption text',word_timing:'measured',words:[{text:'old',start:0,end:1}]}],1);
     assert.ok(guessed.every(s=>s.word_timing==='estimated'));
   });
+  check('punctuation variations keep measured word alignment', () => {
+    const grouped=regroupSegments([{start:0,end:2,text:'Hello, world!',word_timing:'measured',words:[{text:'Hello',start:.1,end:.4},{text:'world',start:1,end:1.4}]}],1);
+    assert.equal(grouped[0].words[0].text,'Hello,');assert.equal(grouped[0].start,.1);assert.equal(grouped[1].words[0].text,'world!');assert.equal(grouped[1].word_timing,'measured');
+  });
   const evidence = { ok: true, checks, inference, renders, detachedSilence: silence, overlaySilence, removedDuration: removed.removed_sec };
   if (process.env.AGENT_AUDIO_EVIDENCE) fs.writeFileSync(process.env.AGENT_AUDIO_EVIDENCE, JSON.stringify(evidence, null, 2));
   console.log(`agent audio ok (${checks.length} checks; real FFmpeg, source cache, paging, words, captions and cancellation)`);

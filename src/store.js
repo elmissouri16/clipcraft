@@ -305,7 +305,7 @@ function reduceProjectInner(p, a) {
     case 'load':
       return normalizeProject(a.project);
     case 'setProject':
-      return { ...p, ...a.patch };
+      return Object.entries(a.patch || {}).every(([key,value]) => JSON.stringify(p[key]) === JSON.stringify(value)) ? p : { ...p, ...a.patch };
     case 'addMedia':
       return { ...p, media: [...p.media, ...a.items] };
     case 'removeMedia':
@@ -361,7 +361,8 @@ function reduceProjectInner(p, a) {
         ],
       };
     case 'update': {
-      const key = TRACKS[a.track];
+      const key = TRACKS[a.track], clip = p[key]?.find(c => c.id === a.id);
+      if (!clip || Object.entries(a.patch || {}).every(([field,value]) => JSON.stringify(clip[field]) === JSON.stringify(value))) return p;
       return { ...p, [key]: p[key].map((c) => (c.id === a.id ? { ...c, ...a.patch } : c)) };
     }
     case 'addLayer':
@@ -631,6 +632,8 @@ function reduceProjectInner(p, a) {
     }
     case 'cutRanges':
       return cutRanges(p, a.ranges, { ripple: a.ripple === true });
+    case 'retimeVideo':
+      return retimeVideoClip(p, a.id, a.speed).project;
     case 'addMarker':
       return { ...p, markers: [...p.markers, { id: a.id, time: Math.max(0, a.time), label: a.label || '' }].sort((x, y) => x.time - y.time) };
     case 'removeMarker':
@@ -899,6 +902,112 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
   return result;
 }
 
+// Agent speed changes warp the complete timeline clock over one main clip.
+// Media spanning a clock boundary is split into source-continuous constant-rate
+// pieces; ordinary manual `update {speed}` retains its existing behavior.
+export function retimeVideoClip(p, clipId, speed) {
+  const layout = videoLayout(p.videoClips), hit = layout.find(l => l.clip.id === clipId && !l.clip.gap);
+  const fail = error => ({ project: p, error });
+  if (!hit) return fail('Choose an existing main-track media clip.');
+  if (!Number.isFinite(speed) || speed < 0.25 || speed > 4) return fail('speed must be between 0.25 and 4.');
+  const factor = (hit.clip.speed || 1) / speed;
+  if (Math.abs(factor - 1) < 1e-10) return { project: p };
+  if (isLayerLocked(p, 'video', 0)) return fail('The main track is locked.');
+  const from = hit.start, to = hit.end, delta = (to - from) * (factor - 1), epsilon = 1e-7;
+  const map = t => t <= from ? t : t < to ? from + (t - from) * factor : t + delta;
+  const used = new Set(Object.values(CLIP_LISTS).flatMap(key => (p[key] || []).flatMap(c => [c.id, c.linkId].filter(Boolean))));
+  const fresh = base => { let id = base, i = 1; while (used.has(id)) id = `${base}-${i++}`; used.add(id); return id; };
+  const records = new Map(), lists = {};
+  let error;
+  const slice = (track, c, start, end) => {
+    const media = ['video', 'overlay', 'audio'].includes(track);
+    const bounds = media ? [start, ...[from, to].filter(t => t > start + epsilon && t < end - epsilon), end] : [start, end];
+    if (bounds.length > 2 && c.enhance?.on) { error ||= `Clip ${c.id} has enhanced audio across a speed boundary. Render or split that processed sound before retiming.`; return []; }
+    if (bounds.length > 2 && c.anim?.combo) { error ||= `Clip ${c.id} has a continuous combo animation across a speed boundary. Replace it with source keyframes before retiming.`; return []; }
+    const parts = [];
+    for (let i = 0; i + 1 < bounds.length; i++) {
+      const a = bounds[i], b = bounds[i + 1], nextStart = map(a), nextEnd = map(b);
+      const rate = media ? (a >= from - epsilon && b <= to + epsilon ? factor : 1) : (nextEnd - nextStart) / (b - a);
+      if (Math.abs(nextStart - a) < epsilon && Math.abs(rate - 1) < epsilon && bounds.length === 2) {
+        parts.push({ clip: c, start, end, originalStart: a, originalEnd: b }); continue;
+      }
+      const next = { ...c, id: i ? fresh(`${c.id}-s${i}`) : c.id };
+      if (media) {
+        if (c.gap) Object.assign(next, { in: 0, out: nextEnd - nextStart, speed: 1 });
+        else {
+          const nextSpeed = c.id === clipId ? speed : (c.speed || 1) / rate;
+          if (nextSpeed < 0.25 - epsilon || nextSpeed > 4 + epsilon) error ||= `Retiming clip ${c.id} would require ${nextSpeed.toFixed(3)}x playback outside the supported 0.25–4x range.`;
+          Object.assign(next, { in: a === start ? c.in : c.in + (a - start) * (c.speed || 1),
+            out: b === end ? c.out : c.in + (b - start) * (c.speed || 1), speed: nextSpeed });
+        }
+        if (c.anim) {
+          const { in: enter, out: leave, ...rest } = c.anim;
+          if ((enter && a > start + epsilon && a < start + (enter.duration || 0.5) - epsilon) ||
+              (leave && b < end - epsilon && b > end - (leave.duration || 0.5) + epsilon)) error ||= `A speed boundary crosses clip ${c.id}'s entry or exit animation. Move the boundary outside that animation first.`;
+          next.anim = { ...rest,
+            ...(enter && a === start ? { in: { ...enter, duration: map(Math.min(end, start + (enter.duration || 0.5))) - map(start) } } : {}),
+            ...(leave && b === end ? { out: { ...leave, duration: map(end) - map(Math.max(start, end - (leave.duration || 0.5))) } } : {}) };
+        }
+        if (track === 'audio') {
+          if ((c.fadeIn > 0 && a > start + epsilon && a < start + c.fadeIn - epsilon) ||
+              (c.fadeOut > 0 && b < end - epsilon && b > end - c.fadeOut + epsilon)) error ||= `A speed boundary crosses audio clip ${c.id}'s fade. Move the boundary outside that fade first.`;
+          if (c.fadeIn !== undefined) next.fadeIn = a === start ? map(Math.min(end, start + c.fadeIn)) - map(start) : 0;
+          if (c.fadeOut !== undefined) next.fadeOut = b === end ? map(end) - map(Math.max(start, end - c.fadeOut)) : 0;
+        }
+      } else {
+        next.duration = nextEnd - nextStart;
+        if (c.words?.length) next.words = c.words.map(w => ({ ...w, start: map(start + w.start) - nextStart, end: map(start + w.end) - nextStart }));
+        for (const key of ['animIn', 'animOut']) if (c[key]?.dur) {
+          const duration = c[key].dur;
+          next[key] = { ...c[key], dur: key === 'animIn' ? map(Math.min(end, start + duration)) - map(start) : map(end) - map(Math.max(start, end - duration)) };
+        }
+      }
+      if (track !== 'video') next.start = nextStart;
+      parts.push({ clip: next, start: nextStart, end: nextEnd, originalStart: a, originalEnd: b });
+    }
+    records.set(c.id, parts);
+    return parts;
+  };
+  lists.video = layout.flatMap(l => slice('video', l.clip, l.start, l.end));
+  for (const [track, key] of Object.entries(CLIP_LISTS)) if (track !== 'video') lists[track] = (p[key] || []).flatMap(c => slice(track, c, c.start, c.start + freeLen(track, c)));
+  if (error) return fail(error);
+  for (let i = 0; i < lists.video.length; i++) {
+    const item = lists.video[i], previous = lists.video[i - 1];
+    const overlap = previous ? Math.max(0, previous.end - item.start) : 0;
+    if (overlap > epsilon) {
+      if (!item.clip.transition || item.clip.transition.type === 'none' || overlap > Math.min(item.end - item.start, previous.end - previous.start) + epsilon) return fail('The requested speed cannot preserve the adjacent transition overlap.');
+      item.clip = { ...item.clip, transition: { ...item.clip.transition, duration: overlap, timelineOverlap: overlap } };
+    } else if (item.clip.transition) item.clip = { ...item.clip, transition: null };
+  }
+  for (const [linkId, pair] of linkPairs(p)) {
+    if (!pair.pic || !pair.aud) continue;
+    const pictures = records.get(pair.pic.clip.id) || [], sounds = records.get(pair.aud.clip.id) || [];
+    const inOffset = pair.aud.clip.linkInOff ?? pair.aud.clip.in - pair.pic.clip.in;
+    if (pictures.length !== sounds.length) return fail('A time-offset linked pair crosses different speed boundaries. Unlink that pair before retiming.');
+    const assigned = new Set();
+    for (let i = 0; i < pictures.length; i++) {
+      const picture = pictures[i];
+      const sound = sounds.find(s => !assigned.has(s) && Math.abs(s.clip.in - picture.clip.in - inOffset) < epsilon && Math.abs(s.clip.out - picture.clip.out - inOffset) < epsilon);
+      if (!sound || Math.abs((sound.clip.speed || 1) - (picture.clip.speed || 1)) > epsilon) return fail('A time-offset linked pair cannot retain one shared playback rate across this speed boundary. Unlink it before retiming.');
+      assigned.add(sound);
+      const nextLink = i ? fresh(`${linkId}~${picture.clip.id}`) : linkId;
+      picture.clip = { ...picture.clip, linkId: nextLink };
+      sound.clip = { ...sound.clip, linkId: nextLink, linkOff: sound.start - picture.start, linkInOff: inOffset };
+    }
+  }
+  const result = { ...p, markers: (p.markers || []).map(m => ({ ...m, time: map(m.time) })) };
+  for (const [track, key] of Object.entries(CLIP_LISTS)) result[key] = lists[track].map(item => item.clip);
+  const normalized = placeLayers(result);
+  for (const [track, key] of Object.entries(CLIP_LISTS)) for (const c of p[key] || []) if (clipLocked(p, track, c)) {
+    const next = normalized[key].find(item => item.id === c.id);
+    const before = LAYERED[track] ? { ...c, layer: c.layer ?? 0 } : c;
+    if (!next || JSON.stringify(next) !== JSON.stringify(before)) return fail(`Retiming would change locked ${track} clip ${c.id}. Unlock its layer first.`);
+  }
+  const actual = videoLayout(normalized.videoClips);
+  if (actual.length !== lists.video.length || actual.some((l, i) => Math.abs(l.start - lists.video[i].start) > epsilon || Math.abs(l.end - lists.video[i].end) > epsilon)) return fail('The requested speed cannot represent the mapped transition timing exactly.');
+  return { project: normalized, time_map: { start_sec: from, end_sec: to, factor, delta_sec: delta } };
+}
+
 // After a split the In animation stays on the left part and the Out animation on the right one.
 // Keyframes are in source time, so both parts keep them unchanged.
 function splitAnim(anim, side) {
@@ -1046,7 +1155,8 @@ export function actionLocked(p, a) {
     case 'moveToOverlay': return isLayerLocked(p, 'video', 0);
     case 'moveToMain': return clipLocked(p, 'overlay', clipOf('overlay', a.id));
     case 'extractAudio': return clipLocked(p, a.track, clipOf(a.track, a.id));
-    case 'cutRanges': return isLayerLocked(p, 'video', 0);
+    case 'cutRanges':
+    case 'retimeVideo': return isLayerLocked(p, 'video', 0);
     case 'removeEffect': {
       const { track, clipId } = parseEffectKey(a.id);
       return clipLocked(p, track, clipOf(track, clipId));

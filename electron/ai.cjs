@@ -1,3 +1,4 @@
+const { attachImages, openAiParts, anthropicParts } = require('./agentImages.cjs');
 // AI provider layer for the CraftAI assistant. Runs only in the main process so API keys never reach the UI.
 // chat() takes plain messages and returns text; tool calling is added on top of this later.
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
@@ -305,6 +306,7 @@ async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeou
     if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
     return localAgents.agentStep(cfg, opts);
   }
+  opts = { ...opts, contents: attachImages(opts.contents || [], opts.images) };
   let waited = 0;
   for (let attempt = 0; ; attempt++) {
     if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
@@ -395,7 +397,7 @@ function toOpenAiMessages(system, contents) {
     const answers = parts.filter((p) => p.functionResponse);
     answers.forEach((p, k) => msgs.push({ role: 'tool', tool_call_id: lastIds[k] || `call_${i}_${k}`, content: JSON.stringify(p.functionResponse.response ?? {}) }));
     const text = parts.filter((p) => p.text).map((p) => p.text).join('');
-    if (text || !answers.length) msgs.push({ role: 'user', content: text });
+    if (text || !answers.length || parts.some(p => p.inlineData)) msgs.push({ role: 'user', content: parts.some(p => p.inlineData) ? openAiParts(parts) : text });
   });
   return msgs;
 }
@@ -422,7 +424,8 @@ function toResponsesInput(contents, model) {
     const parts = turn.parts || [];
     parts.filter((part) => part.functionResponse).forEach((part, k) => input.push({ type: 'function_call_output', call_id: lastIds[k] || `call_${index}_${k}`, output: JSON.stringify(part.functionResponse.response ?? {}) }));
     const text = parts.filter((part) => part.text).map((part) => part.text).join('');
-    if (text) input.push({ role: 'user', content: text });
+    if (text || parts.some(p => p.inlineData)) input.push({ role: 'user', content: parts.some(p => p.inlineData)
+      ? parts.filter(p => p.text || p.inlineData).map(p => p.inlineData ? { type: 'input_image', image_url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`, detail: 'auto' } : { type: 'input_text', text: p.text }) : text });
   });
   return input;
 }
@@ -460,6 +463,7 @@ async function ollamaAgentStep(cfg, { system, contents, tools, maxTokens, timeou
       const { tool_call_id, ...rest } = message;
       return { ...rest, tool_name: callNames.get(tool_call_id) };
     }
+    if (Array.isArray(message.content)) return { ...message, content: message.content.filter(p => p.type === 'text').map(p => p.text).join(''), images: message.content.filter(p => p.type === 'image_url').map(p => p.image_url.url.split(',')[1]) };
     return message;
   });
   const j = await http(`${base}/api/chat`, { body: {
@@ -540,6 +544,7 @@ function toAnthropicMessages(system, contents, model) {
     }));
     const text = parts.filter((x) => x.text).map((x) => x.text).join('');
     if (text) blocks.push({ type: 'text', text });
+    blocks.push(...anthropicParts(parts));
     if (blocks.length) messages.push({ role: 'user', content: blocks });
   });
   return { system: system || undefined, messages };

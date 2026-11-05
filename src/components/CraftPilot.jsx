@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Zap, Captions, CircleAlert, CircleCheck, Loader2, MessageCircle, MessageSquarePlus, Palette, RectangleVertical, Scissors, Settings, Square, Undo2, X, Shuffle } from 'lucide-react';
 import { runAgent } from '../agent/runAgent.js';
+import { projectRevision } from '../agent/context.js';
 import { EDIT_STYLES, STYLE_NAMES } from '../agent/motionGuide.js';
 import CraftModelPicker from './CraftModelPicker.jsx';
 import Dropdown from './Dropdown.jsx';
@@ -211,15 +212,17 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     if (!isCurrent()) return;
 
     // Everything the assistant did becomes a single Undo step.
+    const ownsUndo = app.getAgentEdit?.()?.token === requestId && app.getAgentEdit?.()?.steps.length > 0 && result.changed;
+    const undoRevision = ownsUndo ? projectRevision(getProject()) : null;
     dispatch({ type: 'endAgentEdit', token: requestId });
     if (result.error) {
       // Drop the incomplete request, including unanswered tool calls, so a retry
       // starts from a valid conversation while any completed edits remain undoable.
       contents.current.splice(conversationStart);
-      updateLast((last) => ({ ...last, pending: false, error: result.error, changed: result.changed }), contents.current);
+      updateLast((last) => ({ ...last, pending: false, error: result.error, changed: !!ownsUndo, undoRevision }), contents.current);
     } else {
       if (result.canceled) contents.current.splice(conversationStart);
-      updateLast((last) => ({ ...last, pending: false, text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: result.changed }), contents.current);
+      updateLast((last) => ({ ...last, pending: false, text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: !!ownsUndo, undoRevision }), contents.current);
     }
     setBusy(false);
     activeRequest.current = null;
@@ -352,7 +355,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                         </div>
                       </div>
                     )}
-                    {m.changed && !m.pending && (
+                    {m.changed && m.undoRevision === projectRevision(getProject()) && !m.pending && (
                       <button className="pilot-undo" onClick={() => dispatch({ type: 'undo' })}><Undo2 size={13} /> Undo these changes</button>
                     )}
                   </div>

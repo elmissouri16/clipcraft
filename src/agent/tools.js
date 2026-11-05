@@ -2,7 +2,7 @@
 // Every editing tool goes through the same reducer actions as the buttons, so Undo, the timeline and the
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.
-import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable, exportDuration, actionLocked, cutRanges } from '../store.js';
+import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable, exportDuration, actionLocked, cutRanges, retimeVideoClip } from '../store.js';
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
@@ -11,6 +11,7 @@ import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from
 import { projectRevision, audioRevision } from './context.js';
 import { regroupSegments } from '../subtitles.js';
 import { validateAgentProject, verifyActionResults } from './validation.js';
+import { projectScenes, filterScenes, storyboardSamples } from './sceneMap.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -34,13 +35,25 @@ const TEXT_LOOK = {
 export const TOOL_DECLARATIONS = [
   {
     name:'inspect_frames',
-    description:'Codex vision: look at 1–6 actual frames. source timeline (default) shows the composition with text/effects; clip shows its raw source. times_sec are timeline seconds; clip_id required for clip. Read-only.',
-    parameters:{type:'OBJECT',properties:{source:S,clip_id:S,times_sec:{type:'ARRAY',items:N}},required:['times_sec']},
+    description:'Look at 1–6 actual frames with the configured vision-capable model. source timeline shows composition; clip shows raw source at timeline times_sec. source media inspects library footage using media_id and source_times_sec before insertion. Clip requires clip_id. Read-only.',
+    parameters:{type:'OBJECT',properties:{source:S,clip_id:S,media_id:S,times_sec:{type:'ARRAY',items:N},source_times_sec:{type:'ARRAY',items:N}}},
+  },
+  {
+    name: 'analyze_scenes', description: 'Detect cached visual shot boundaries, then map source shots onto the LIVE timeline. scope timeline (default) or media library. Query searches previously observed descriptions/tags and current transcript/captions, not inferred filenames. Paginated; boundaries alone do not describe scene meaning.',
+    parameters: { type: 'OBJECT', properties: { scope: S, media_ids: { type: 'ARRAY', items: S }, clip_ids: { type: 'ARRAY', items: S }, threshold: N, min_scene_sec: N, start_sec: N, end_sec: N, query: S, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' } } },
+  },
+  {
+    name: 'get_storyboard', description: 'Inspect bounded actual scene samples. Same filters as analyze_scenes; source timeline (composition), clip (raw at timeline times), media (raw source). Long shots get interval_sec samples, paged with offset/limit (max 6). Returns frame handles attached to next vision turn. Read samples before annotating or selecting footage.',
+    parameters: { type: 'OBJECT', properties: { ...{ scope: S, media_ids: { type: 'ARRAY', items: S }, clip_ids: { type: 'ARRAY', items: S }, threshold: N, min_scene_sec: N, start_sec: N, end_sec: N, query: S, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' } }, source: S, scene_ids: { type: 'ARRAY', items: S }, interval_sec: N } },
+  },
+  {
+    name: 'annotate_scene', description: 'Save a searchable observation of a source shot after its raw frames were presented in THIS request. Requires current analysis/shot/media IDs and frame_ids from inspect_frames or get_storyboard. Describe only observed content; sampled stills do not prove continuous action or audio. Does not change timeline or Undo.',
+    parameters: { type: 'OBJECT', properties: { analysis_id: S, shot_id: S, media_id: S, description: S, tags: { type: 'ARRAY', items: S }, frame_ids: { type: 'ARRAY', items: S } }, required: ['analysis_id', 'shot_id', 'media_id', 'description', 'frame_ids'] },
   },
   {
     name: 'get_project',
-    description: 'Read live project ids/times. Reuse a previous read when its revision matches. scope: all (default), overview, main, overlay, audio, text, captions, effects, media. clip_ids selects exact clips; offset/limit page lists (default 30, max 100). if_revision skips unchanged data. Read affected tracks after cuts or manual edits.',
-    parameters: { type: 'OBJECT', properties: { scope: S, clip_ids: { type: 'ARRAY', items: S }, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' }, if_revision: S } },
+    description: 'Read live project ids/times. Reuse a previous read when its revision matches. scope: all (default), overview, main, overlay, audio, text, captions, effects, media. clip_ids selects exact clips; offset/limit page lists (default 30, max 100). details true returns exact clip fields (also automatic for clip_ids). if_revision skips data only when the caller already has that scope. Read affected tracks after cuts or manual edits.',
+    parameters: { type: 'OBJECT', properties: { scope: S, details: B, clip_ids: { type: 'ARRAY', items: S }, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' }, if_revision: S } },
   },
   {
     name: 'list_options',
@@ -94,7 +107,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'set_speed',
-    description: 'Speed of a main-track clip, 0.25 to 4.',
+    description: 'Speed of a main-track clip, 0.25 to 4. Retime related captions, source-continuous overlay/audio pieces, effects and markers, then shift downstream content together.',
     parameters: { type: 'OBJECT', properties: { clip_id: S, speed: N }, required: ['clip_id', 'speed'] },
   },
   {
@@ -148,8 +161,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_media',
-    description: 'Add library media: main at main_index (default end), overlay/audio at start_sec. New scene pictures always fill the canvas.',
-    parameters: { type: 'OBJECT', properties: { media_name: S, as: S, start_sec: N, main_index: N }, required: ['media_name'] },
+    description: 'Add library media by exact media_id (preferred) or unambiguous media_name: main at main_index (default end), overlay/audio at start_sec. New scene pictures always fill the canvas.',
+    parameters: { type: 'OBJECT', properties: { media_id: S, media_name: S, as: S, start_sec: N, main_index: N } },
   },
   {
     name: 'generate_image',
@@ -253,6 +266,10 @@ export const TOOL_DECLARATIONS = [
   },
 ];
 
+// A retry explicitly identifies the failed operation it replaces. This is
+// orchestration metadata; individual editor functions ignore it.
+for (const tool of TOOL_DECLARATIONS) tool.parameters.properties.retry_of = { ...S, description: 'failed_operation_id being retried, if correcting a failed operation.' };
+
 // Size, place, animations and keyframed properties of a picture clip, only when they differ from the defaults.
 function motionInfo(c, media, project) {
   const t = transformOf(c);
@@ -270,8 +287,8 @@ function motionInfo(c, media, project) {
   if (opacityOf(c) < 1) out.opacity = r2(opacityOf(c));
   const keyed = KEY_PROPS.filter((k) => hasKeys(c, k));
   if (keyed.length) out.keyframed = keyed.map((k) => (k === 'rot' ? 'rotation' : k));
-  if (c.keyframes) out.keyframes = c.keyframes;
-  for (const key of ['adjust', 'grade', 'blend', 'chroma', 'mask', 'audioFx', 'enhance', 'track', 'pin']) if (c[key] !== undefined) out[key] = c[key];
+  if (c.keyframes) { out.keyframes = c.keyframes; out.keyframe_time_basis = 'source_seconds'; }
+  for (const key of ['filter', 'filterIntensity', 'effects', 'adjust', 'grade', 'blend', 'chroma', 'mask', 'audioFx', 'enhance', 'track', 'pin']) if (c[key] !== undefined) out[key] = c[key];
   if (c.anim && (c.anim.in || c.anim.out || c.anim.combo)) {
     out.animation = Object.fromEntries(['in', 'out', 'combo'].filter(k => c.anim[k]).map(k => [k, c.anim[k].type]));
     out.animation_details = c.anim;
@@ -318,9 +335,9 @@ export function summarizeProject(p) {
         transition_in: l.clip.transition ? l.clip.transition.type : null, transition: l.clip.transition || null,
         ...motionInfo(l.clip, mediaById[l.clip.mediaId], p),
       })),
-    overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media_id: c.mediaId, layer: c.layer || 0, disabled: !!c.disabled, link_id: c.linkId || null, source_in: c.in, source_out: c.out, speed: c.speed || 1, muted: !!c.muted, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c, mediaById[c.mediaId], p) })),
+    overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media_id: c.mediaId, layer: c.layer || 0, disabled: !!c.disabled, link_id: c.linkId || null, link_offset_sec: c.linkOff || 0, link_source_offset_sec: c.linkInOff || 0, source_in: c.in, source_out: c.out, speed: c.speed || 1, muted: !!c.muted, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c, mediaById[c.mediaId], p) })),
     audio_track: p.audioClips.map((c) => ({
-      id: c.id, media_id: c.mediaId, layer: c.layer || 0, disabled: !!c.disabled, link_id: c.linkId || null, source_in: c.in, source_out: c.out, speed: c.speed || 1, muted: !!c.muted, media: label(c), start: r2(c.start), end: r2(c.start + (c.out - c.in) / (c.speed || 1)), volume: c.volume ?? 1,
+      id: c.id, media_id: c.mediaId, layer: c.layer || 0, disabled: !!c.disabled, link_id: c.linkId || null, link_offset_sec: c.linkOff || 0, link_source_offset_sec: c.linkInOff || 0, source_in: c.in, source_out: c.out, speed: c.speed || 1, muted: !!c.muted, media: label(c), start: r2(c.start), end: r2(c.start + (c.out - c.in) / (c.speed || 1)), volume: c.volume ?? 1,
       ...(c.fadeIn ? { fade_in: r2(c.fadeIn) } : {}), ...(c.fadeOut ? { fade_out: r2(c.fadeOut) } : {}),
     })),
     // Captions are many: listed by count and time span, their look once.
@@ -631,6 +648,35 @@ export function createToolRunner(ctx) {
     return result;
   };
 
+  const sceneData = async (a = {}) => {
+    const { scope = 'timeline', media_ids, clip_ids, threshold = 10, min_scene_sec = 0.2 } = a;
+    if (!['timeline', 'media'].includes(scope)) throw new Error('Scene scope must be timeline or media.');
+    for (const [name, values] of Object.entries({ media_ids, clip_ids })) if (values !== undefined && (!Array.isArray(values) || !values.length || values.some(v => typeof v !== 'string'))) throw new Error(`${name} must be a nonempty list of IDs.`);
+    if ((a.start_sec !== undefined && (!Number.isFinite(a.start_sec) || a.start_sec < 0)) || (a.end_sec !== undefined && (!Number.isFinite(a.end_sec) || a.end_sec <= (a.start_sec || 0)))) throw new Error('Use valid nonnegative scene timeline bounds.');
+    if (!api.agentAnalyzeScenes) throw new Error('Scene analysis requires an updated ClipCraft.');
+    const p = project(), revision = projectRevision(p);
+    if (clip_ids?.some(id => !findClip(id))) throw new Error('A selected clip no longer exists.');
+    const selected = clip_ids ? new Set(clip_ids) : null;
+    const used = scope === 'media' ? p.media.filter(m => ['video', 'image'].includes(m.type)).map(m => m.id)
+      : [...p.videoClips, ...(p.overlayClips || [])].filter(c => !c.gap && (!selected || selected.has(c.id))).map(c => c.mediaId);
+    const sourceIds = [...new Set(media_ids || used)];
+    if (!sourceIds.length) return { revision, rows: [], analyses: [] };
+    const result = await api.agentAnalyzeScenes({ project: { media: p.media, videoClips: p.videoClips, overlayClips: p.overlayClips, audioClips: p.audioClips, layerState: p.layerState }, audio_selection: latestTranscript ? { source: latestTranscript.source, clip_ids: latestTranscript.clip_ids } : undefined, media_ids: sourceIds, options: { threshold, min_scene_sec }, requestId: ctx.requestId });
+    if (result.error) throw new Error(result.error);
+    if (ctx.isCanceled?.() || result.canceled) throw new Error('Scene analysis stopped.');
+    if (projectRevision(project()) !== revision) throw new Error('The timeline changed during analysis. Cached source analysis is available; read its current mapping again.');
+    let transcript = renderable(p).textClips.filter(c => c.caption).map(c => ({ start: c.start, end: c.start + c.duration, text: c.text }));
+    let speechSource = 'current_captions';
+    if (latestTranscript?.source_audio_key && latestTranscript.source_audio_key === result.audio_key && latestTranscript.audio_fingerprint === audioRevision(renderable(p), { source: latestTranscript.source, clip_ids: latestTranscript.clip_ids })) { transcript = latestTranscript.segments; speechSource = 'current_transcript'; }
+    const rows = filterScenes(projectScenes(p, new Map(result.analyses.map(index => [index.media_id, index])), { scope, media_ids, clip_ids, transcript }), a);
+    return { revision, rows, analyses: result.analyses, speechSource };
+  };
+  const page = (a, max = 100, fallback = 30) => {
+    const offset = a.offset ?? 0, limit = a.limit ?? fallback;
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > max) throw new Error(`offset must be nonnegative and limit from 1 to ${max}.`);
+    return { offset, limit };
+  };
+
   const normalizedRange = (start, end, total) => {
     const a = Number(start), b = Number(end), fps = project().fps || 30;
     const tolerance = Math.max(0.005, 0.5 / fps);
@@ -642,15 +688,44 @@ export function createToolRunner(ctx) {
   };
 
   const tools = {
-    async inspect_frames({source='timeline',clip_id,times_sec}){
-      if(!api.agentInspectFrames)return {error:'Frame inspection requires an updated ClipCraft with Codex SDK.'};
+    async inspect_frames({source='timeline',clip_id,media_id,times_sec,source_times_sec}){
+      if(!api.agentInspectFrames)return {error:'Frame inspection requires an updated ClipCraft.'};
       const p=project(),revision=projectRevision(p);
       const {craftAI,...snapshot}=source==='timeline'?renderable(p):p;
-      const result=await api.agentInspectFrames({project:snapshot,revision,source,clip_id,times_sec,requestId:ctx.requestId});
+      const result=await api.agentInspectFrames({project:snapshot,revision,source,clip_id,media_id,times_sec,source_times_sec,requestId:ctx.requestId});
       if(ctx.isCanceled?.()||result.canceled)return {error:'Frame inspection stopped.'};
       return result;
     },
-    async get_project({ scope = 'all', clip_ids, offset = 0, limit = 30, if_revision } = {}) {
+    async analyze_scenes(a = {}) {
+      const { offset, limit } = page(a), data = await sceneData(a);
+      return { revision: data.revision, scope: a.scope || 'timeline', total_scenes: data.rows.length, offset,
+        next_offset: offset + limit < data.rows.length ? offset + limit : null, scenes: data.rows.slice(offset, offset + limit),
+        sources: data.analyses.map(index => ({ media_id: index.media_id, analysis_id: index.analysis_id, source_fingerprint: index.fingerprint, source_shots: index.shots.length, cached: index.cached })),
+        speech_source: data.speechSource, note: 'These are visual shot candidates. Inspect source/composed storyboard samples before describing content or selecting semantic highlights.' };
+    },
+    async get_storyboard(a = {}) {
+      const { offset, limit } = page(a, 6, 6), data = await sceneData(a);
+      const source = a.source || (a.scope === 'media' ? 'media' : 'timeline');
+      if (a.scope === 'media' && source !== 'media') return { error: 'Library storyboards use source media.' };
+      const samples = storyboardSamples(filterScenes(data.rows, a), { source, interval_sec: a.interval_sec ?? 10, start_sec: a.start_sec, end_sec: a.end_sec });
+      const chosen = samples.slice(offset, offset + limit), frames = [];
+      for (const sample of chosen) {
+        const result = await tools.inspect_frames({ source, clip_id: sample.clip_id, media_id: sample.media_id,
+          ...(source === 'media' ? { source_times_sec: [sample.time_sec] } : { times_sec: [sample.time_sec] }) });
+        if (result.error) return result;
+        const scene = data.rows.find(row => row.scene_id === sample.scene_id);
+        if (result.frames.some(frame => source !== 'timeline' && frame.fingerprint !== scene.source_fingerprint)) return { error: 'Source changed since analysis. Rebuild the storyboard.' };
+        frames.push(...result.frames.map(frame => ({ ...frame, scene_id: sample.scene_id, shot_id: sample.shot_id })));
+      }
+      if (projectRevision(project()) !== data.revision) return { error: 'The timeline changed during storyboard capture. Inspect the new mapping.' };
+      return { revision: data.revision, frames, total_samples: samples.length, offset, next_offset: offset + limit < samples.length ? offset + limit : null,
+        note: 'Actual image samples are attached to the next turn. Page remaining samples for long shots; source views omit composition edits.' };
+    },
+    async annotate_scene(a) {
+      if (!api.agentAnnotateScene) return { error: 'Scene observations require an updated ClipCraft.' };
+      return api.agentAnnotateScene({ ...a, project: { media: project().media }, requestId: ctx.requestId });
+    },
+    async get_project({ scope = 'all', details = false, clip_ids, offset = 0, limit = 30, if_revision } = {}) {
       const p = project();
       const revision = projectRevision(p);
       if (if_revision === revision) return { revision, unchanged: true, ...(ctx.getEditorState ? { editor: ctx.getEditorState() } : {}) };
@@ -673,6 +748,16 @@ export function createToolRunner(ctx) {
         const lines = p.textClips.filter((c) => c.caption && (!selected || selected.has(c.id)));
         out.caption_lines = lines.slice(start, start + count).map((c) => ({ id: c.id, text: c.text, start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) }));
         out.pages.captions = { total: lines.length, offset: start, next_offset: start + count < lines.length ? start + count : null };
+      }
+      if (details || selected) {
+        out.clip_details = [];
+        const tracks = { main: ['video','videoClips'], overlay: ['overlay','overlayClips'], audio: ['audio','audioClips'], text: ['text','textClips'], effects: ['effect','effectClips'] };
+        const safe = value => JSON.parse(JSON.stringify(value, (_key, item) => typeof item === 'string' && /^data:[^;]+;base64,/.test(item) ? '[image data omitted]' : item));
+        for (const [name,[track,key]] of Object.entries(tracks)) {
+          const shown = name === 'text' ? [...(out.text_track || []), ...(out.caption_lines || [])] : out[fields[name]] || [];
+          const ids = new Set(shown.map(c => c.id));
+          for (const clip of p[key] || []) if (ids.has(clip.id)) out.clip_details.push({ track, id: clip.id, fields: safe(clip), keyframe_time_basis: 'source_seconds' });
+        }
       }
       return out;
     },
@@ -777,8 +862,13 @@ export function createToolRunner(ctx) {
       if (f.error) return f;
       const sp = Number(speed);
       if (!(sp >= 0.25 && sp <= 4)) return { error: 'speed must be between 0.25 and 4.' };
-      dispatch({ type: 'update', track: 'video', id: clip_id, patch: { speed: sp } });
-      return after({ clip_length_sec: r2(clipLen({ ...f.clip, speed: sp })) });
+      const plan = retimeVideoClip(project(), clip_id, sp);
+      if (plan.error) return { error: plan.error };
+      if (plan.project === project()) return after({ clip_length_sec: r2(clipLen(f.clip)), note: 'The clip already has this speed.' });
+      dispatch({ type: 'retimeVideo', id: clip_id, speed: sp });
+      await ctx.settle();
+      if (projectRevision(project()) !== projectRevision(plan.project)) return { error: 'The speed edit did not reach its planned timeline mapping.' };
+      return after({ clip_length_sec: r2(clipLen({ ...f.clip, speed: sp })), time_map: plan.time_map });
     },
 
     async set_volume({ clip_id, volume, fade_in_sec, fade_out_sec }) {
@@ -946,11 +1036,15 @@ export function createToolRunner(ctx) {
       return after({ animation: Object.fromEntries(Object.entries(anim).map(([k, v]) => [k, v.type])) });
     },
 
-    async add_media({ media_name, as = 'main', start_sec = 0, main_index }) {
+    async add_media({ media_id, media_name, as = 'main', start_sec = 0, main_index }) {
       const p = project();
+      if (!media_id && !String(media_name || '').trim()) return { error: 'Provide media_id or an unambiguous media_name.' };
       const q = String(media_name || '').toLowerCase();
-      const m = p.media.find((x) => x.name.toLowerCase() === q) || p.media.find((x) => x.name.toLowerCase().includes(q));
-      if (!m) return { error: `No media named "${media_name}". Library: ${p.media.map((x) => x.name).join(', ') || 'empty'}.` };
+      const exact = p.media.filter(m => m.name.toLowerCase() === q);
+      const matches = media_id ? p.media.filter(m => m.id === media_id) : exact.length ? exact : p.media.filter(m => m.name.toLowerCase().includes(q));
+      if (matches.length !== 1) return { error: matches.length ? `Media name is ambiguous. Use media_id: ${matches.map(m => `${m.id} (${m.name})`).join(', ')}.` : 'No matching library media. Read get_project scope media for exact IDs.' };
+      const m = matches[0];
+      if (!['main','overlay','audio'].includes(as) || (as === 'audio' && m.type !== 'audio')) return { error: 'Use main/overlay for pictures, or audio for audio sources.' };
       return place(m, { as, start_sec, main_index, name: m.name });
     },
 
@@ -1289,7 +1383,7 @@ export function createToolRunner(ctx) {
       const fn = Object.hasOwn(tools, name) ? tools[name] : null;
       if (!fn) return { error: `Unknown tool "${name}".` };
       const before = project(), revision = projectRevision(before);
-      const edits = !['inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name);
+      const edits = !['analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name);
       const active = { revision, actions: [], wrote: false };
       operation = edits ? active : null;
       let result;
@@ -1315,6 +1409,6 @@ export function createToolRunner(ctx) {
         ...(changed ? { validation: validateAgentProject(now) } : {}) };
     },
     // True for tools that change the project (used to decide whether there is anything to undo).
-    mutates: (name) => !['inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name),
+    mutates: (name) => !['analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name),
   };
 }

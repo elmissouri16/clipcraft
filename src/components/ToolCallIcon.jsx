@@ -1,11 +1,12 @@
 import React from 'react';
-import { ClipboardList, ListFilter, AudioLines, Scissors, ListChecks, Speech, Captions, Type,
+import { ClipboardList, ListFilter, ScanSearch, GalleryHorizontalEnd, NotebookPen, AudioLines, Scissors, ListChecks, Speech, Captions, Type,
   TextCursorInput, Trash2, Split, Gauge, Volume2, SlidersHorizontal, Layers, Blend,
   RectangleHorizontal, ZoomIn, Move, Diamond, Clapperboard, FolderPlus, Search, Music,
   Users, Mic, Telescope, Film, Sparkles, ArrowLeftRight, Crop, Wrench, Palette, Pipette,
   Settings2, BookOpen, WandSparkles, ImagePlus, Image as ImageIcon, ScanEye, Globe, Undo2, Download, Library, History, PlugZap, Shuffle } from 'lucide-react';
 
 export const TOOL_ICONS = {
+  analyze_scenes: ScanSearch, get_storyboard: GalleryHorizontalEnd, annotate_scene: NotebookPen,
   get_project: ClipboardList, list_options: ListFilter, remove_silences: AudioLines,
   cut_range: Scissors, keep_ranges: ListChecks, transcribe: Speech, add_captions: Captions,
   add_text: Type, edit_text: TextCursorInput, delete_clip: Trash2, split_at: Split,

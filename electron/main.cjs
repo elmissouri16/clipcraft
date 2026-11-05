@@ -1379,13 +1379,43 @@ app.on('before-quit', () => { for (const controller of agentRequests.values()) c
 ipcMain.handle('agent:inspectFrames',async(event,req)=>{
   const key=agentRequestKey(event,req?.requestId);
   if(agentRequests.has(key))return {error:'This assistant request is already running.'};
-  if(settings.getActive().provider!=='codex-sdk')return {error:'Frame inspection is available with Codex SDK selected.'};
   const controller=new AbortController();agentRequests.set(key,controller);
   const onDestroyed=()=>{controller.abort();agentFrames.clearOwner(event.sender.id);};
   event.sender.once('destroyed',onDestroyed);
   try{return await agentFrames.inspect(event.sender.id,req,controller.signal);}
   catch(error){return {error:error.message,...(controller.signal.aborted?{canceled:true}:{})};}
   finally{agentRequests.delete(key);if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',onDestroyed);}
+});
+const { MediaAnalysis, fileFingerprint } = require('./mediaAnalysis.cjs');
+const sceneAnalysis = new MediaAnalysis(path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'scene-analysis'));
+ipcMain.handle('agent:analyzeScenes', async(event,req)=>{
+  const key=agentRequestKey(event,req?.requestId);
+  if(agentRequests.has(key))return {error:'This assistant request is already running.'};
+  const controller=new AbortController();agentRequests.set(key,controller);
+  const destroyed=()=>controller.abort();event.sender.once('destroyed',destroyed);
+  try{
+    if(!Array.isArray(req?.project?.media)||!Array.isArray(req.media_ids)||!req.media_ids.length||req.media_ids.length>100)throw new Error('Select one to 100 media IDs for scene analysis.');
+    const analyses=[];
+    for(const id of [...new Set(req.media_ids)]){
+      const media=req.project.media.find(m=>m.id===id);if(!media)throw new Error('Scene source no longer exists.');
+      const index=await sceneAnalysis.analyze(media,req.options,controller.signal);analyses.push({media_id:id,...index});
+    }
+    let audio_key;
+    if(req.audio_selection)try{audio_key=require('./ffmpeg.cjs').audioAnalysisKey(req.project,req.audio_selection);}catch{}
+    return {analyses,audio_key};
+  }catch(error){return {error:error.message,...(controller.signal.aborted?{canceled:true}:{})};}
+  finally{agentRequests.delete(key);if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',destroyed);}
+});
+ipcMain.handle('agent:annotateScene',async(event,req)=>{
+  try{
+    const media=req?.project?.media?.find(m=>m.id===req.media_id);if(!media)throw new Error('Unknown media source.');
+    const index=sceneAnalysis.read(req.analysis_id),shot=index?.shots.find(s=>s.id===req.shot_id);
+    if(!shot||index.fingerprint!==fileFingerprint(media.path))throw new Error('The source analysis is stale. Analyse the current source again.');
+    const frames=agentFrames.evidence(event.sender.id,req.frame_ids,req.requestId);
+    if(frames.some(f=>f.source==='timeline'||f.media_id!==media.id||f.fingerprint!==index.fingerprint||f.source_time_sec<shot.start_sec||(!(['image'].includes(media.type))&&f.source_time_sec>=shot.end_sec)))throw new Error('Evidence must show the same source shot and current source file.');
+    const active=settings.getActive();
+    return {shot:sceneAnalysis.annotate(req.analysis_id,req.shot_id,{description:req.description,tags:req.tags,evidence:frames.map(f=>({source_time_sec:f.source_time_sec,image_hash:f.image_hash,source_fingerprint:f.fingerprint})),provider:frames[0].presentedProvider||active.provider,model:frames[0].presentedModel||active.model})};
+  }catch(error){return {error:error.message};}
 });
 ipcMain.handle('agent:step', async (event, req) => {
   const key = agentRequestKey(event, req?.requestId);
@@ -1403,11 +1433,11 @@ ipcMain.handle('agent:step', async (event, req) => {
     // SDK choices are explicit: never silently send their conversations to an API
     // provider (or launch a local SDK as an API provider's fallback).
     const images=agentFrames.images(event.sender.id,req.frameIds||[]);
-    if(images.length&&first!=='codex-sdk')throw new Error('Inspected frames require Codex SDK.');
     const onSearch = search => {
       if (!event.sender.isDestroyed()) event.sender.send('agent:search', { ...search, requestId: req.requestId });
     };
     const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, images, onSearch, signal: controller.signal }));
+    agentFrames.markPresented(event.sender.id,req.frameIds,req.requestId,provider,settings.getActive(provider).model);
     return {
       ok: true, ...result, provider, model: settings.getActive(provider).model,
       fellBack: failed.map((f) => ({ provider: f.provider, name: fb.NAMES[f.provider], reason: f.reason })),

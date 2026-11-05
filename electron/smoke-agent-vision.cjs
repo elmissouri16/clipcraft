@@ -75,7 +75,7 @@ module.exports=async(win,app,dir)=>{
     check('Stop closes the capture window and leaves the project unchanged',require('electron').BrowserWindow.getAllWindows().length===1&&(await q('window.__fve.exportData().project.media.length'))===2);
     settings.save({provider:'ollama'});
     const unavailable=await q('window.api.agentInspectFrames({times_sec:[0],project:{}})');
-    check('non-Codex providers cannot launch hidden visual reads',/Codex SDK/.test(unavailable.error));
+    check('non-Codex providers validate frame requests instead of hiding vision support',!!unavailable.error&&!/Codex SDK/.test(unavailable.error));
     check('no main renderer errors',result.errors.length===0);result.ok=true;
   }catch(error){result.ok=false;result.error=error.stack;result.body=await q('document.body.textContent').catch(()=>null);fs.writeFileSync(path.join(dir,'failure.png'),(await win.capturePage()).toPNG());}
   finally{ai.agentStep=original;}

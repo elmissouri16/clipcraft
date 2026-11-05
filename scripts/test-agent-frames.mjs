@@ -38,7 +38,7 @@ try{
   const result=await runAgent({ctx,contents:[{role:'user',parts:[{text:'Look at this scene'}]}],onEvent:()=>{},isCanceled:()=>false,requestId:'vision'});
   assert.equal(result.changed,false);assert.deepEqual(requests[2].frameIds,['frame-handle']);
   assert.equal(requests[0].frameIds,undefined);
-  const apiContext={...ctx,provider:'ollama',api:{agentStep:async req=>{assert.ok(!req.tools.some(t=>t.name==='inspect_frames'));return {ok:true,calls:[],text:'Done',content:{role:'model',parts:[]}};}}};
+  const apiContext={...ctx,provider:'ollama',api:{agentStep:async req=>{assert.ok(req.tools.some(t=>t.name==='load_tools'));return {ok:true,calls:[],text:'Done',content:{role:'model',parts:[]}};}}};
   await runAgent({ctx:apiContext,contents:[],onEvent:()=>{},isCanceled:()=>false});
   console.log('agent frames ok (real decoding, source time mapping, limits, owner boundaries, cleanup, read-only tools, image handoff, provider gating)');
 }finally{store.dispose();fs.rmSync(dir,{recursive:true,force:true});}

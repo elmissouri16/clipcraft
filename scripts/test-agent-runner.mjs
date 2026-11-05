@@ -44,3 +44,49 @@ for (const response of [{ ok: false, canceled: true }, toolTurn]) {
   assert.equal(cancel.state().present.name, 'Untitled', 'a canceled response cannot apply a tool');
 }
 console.log('agent runner ok (shared tool results, provider continuity, Undo, partial errors, cancellation)');
+
+// Final replies after visual edits require fresh composed images, not only a
+// successful reducer dispatch. The images remain outside saved conversation.
+{
+  let stage = 0, captures = 0;
+  const visual = makeContext((_n, req) => {
+    const calls = stage++ === 0 ? [{name:'load_tools',args:{groups:['text']}}] : stage === 2 ? [{name:'add_text',args:{text:'Check me',duration_sec:2}}] : [];
+    if(stage===4) assert.deepEqual(req.frameIds,['verified-frame']);
+    return {ok:true,provider:'openai',text:calls.length?'':'Done.',calls,content:{role:'model',parts:calls.map(functionCall=>({functionCall}))}};
+  });
+  visual.ctx.api.agentInspectFrames=async req=>{captures++;assert.ok(req.times_sec.length>0);return {frames:[{id:'verified-frame',source:'timeline'}],revision:req.revision};};
+  const result=await runAgent({contents:conversation(),ctx:visual.ctx,onEvent:()=>{},isCanceled:()=>false});
+  assert.equal(captures,1);assert.equal(result.verification.visual_samples_checked,true);assert.equal(result.changed,true);assert.ok(!JSON.stringify(visual.calls).includes('base64'));
+}
+{
+  let stage=0;
+  const failed=makeContext(()=>{const calls=stage++===0?[{name:'load_tools',args:{groups:['text']}}]:stage===2?[{name:'add_text',args:{text:'Visible'}}]:[];return {ok:true,calls,text:'Done.',content:{role:'model',parts:calls.map(functionCall=>({functionCall}))}};});
+  failed.ctx.api.agentInspectFrames=async()=>({error:'Source decode failed'});
+  const result=await runAgent({contents:conversation(),ctx:failed.ctx,onEvent:()=>{},isCanceled:()=>false});assert.match(result.error.error,/Visual verification failed/);
+}
+
+{
+  let stage=0;
+  const f=makeContext(()=>{const calls=stage++===0?[{name:'load_tools',args:{groups:['audio']}}]:stage===2?[{name:'set_volume',args:{clip_id:'missing',volume:0}},{name:'set_volume',args:{clip_id:'a',volume:0}}]:[];return {ok:true,calls,text:'Muted both clips.',content:{role:'model',parts:calls.map(functionCall=>({functionCall}))}};});
+  f.state().present.media=[{id:'m',type:'audio',duration:1}];f.state().present.audioClips=[{id:'a',mediaId:'m',start:0,in:0,out:1,volume:1}];
+  const r=await runAgent({contents:[],ctx:f.ctx,onEvent:()=>{},isCanceled:()=>false});assert.ok(r.error,'unrelated target success cannot erase a failed operation');assert.equal(r.changed,true);
+}
+
+{
+  let stage=0;
+  const f=makeContext(()=>{const calls=stage++===0?[{name:'load_tools',args:{groups:['timeline']}}]:stage===2?[{name:'split_at',args:{time_sec:1000}},{name:'split_at',args:{time_sec:2}}]:[];return {ok:true,calls,text:'Split both moments.',content:{role:'model',parts:calls.map(functionCall=>({functionCall}))}};});
+  f.state().present.media=[{id:'m',type:'video',duration:10}];f.state().present.videoClips=[{id:'v',mediaId:'m',in:0,out:10,speed:1}];
+  const r=await runAgent({contents:[],ctx:f.ctx,onEvent:()=>{},isCanceled:()=>false});assert.ok(r.error,'different split timestamp cannot resolve a failed split');
+}
+{
+  let stage=0;
+  const f=makeContext((_n,req)=>{
+    let calls=[];
+    if(stage++===0)calls=[{name:'load_tools',args:{groups:['audio']}}];
+    else if(stage===2)calls=[{name:'set_volume',args:{clip_id:'a',volume:3}}];
+    else if(stage===3){const failure=req.contents.at(-1).parts[0].functionResponse.response.result;calls=[{name:'set_volume',args:{clip_id:'a',volume:0,retry_of:failure.failed_operation_id}}];}
+    return {ok:true,calls,text:'Muted the clip.',content:{role:'model',parts:calls.map(functionCall=>({functionCall}))}};
+  });
+  f.state().present.media=[{id:'m',type:'audio',duration:1}];f.state().present.audioClips=[{id:'a',mediaId:'m',start:0,in:0,out:1,volume:1}];
+  const r=await runAgent({contents:[],ctx:f.ctx,onEvent:()=>{},isCanceled:()=>false});assert.ok(!r.error,'an explicit matching retry resolves a corrected operation');assert.equal(f.state().present.audioClips[0].volume,0);
+}

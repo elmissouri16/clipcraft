@@ -1,7 +1,8 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
+const { fileFingerprint } = require('./mediaAnalysis.cjs');
 const { spawn } = require('node:child_process');
 const { ffmpegPath } = require('./ffmpeg.cjs');
 const stopped = () => Object.assign(new Error('Frame inspection stopped.'), { name: 'AbortError' });
@@ -11,7 +12,7 @@ const frameSize = (width, height) => {
   const scale = Math.min(1,1024/Math.max(width,height));
   return {width:Math.max(1,Math.round(width*scale)),height:Math.max(1,Math.round(height*scale))};
 };
-async function planFrames(project, source, clipId, times) {
+async function planFrames(project, source, clipId, times, mediaId) {
   if(!project||!Array.isArray(project.media)||!Array.isArray(project.videoClips))throw new Error('Invalid editor project.');
   const p=project,clipLen=c=>(c.out-c.in)/(c.speed||1);
   let end=0;
@@ -20,7 +21,7 @@ async function planFrames(project, source, clipId, times) {
     const overlap=index&&transition&&transition.type!=='none'?Math.max(0,Number.isFinite(transition.timelineOverlap)?Math.min(transition.timelineOverlap,clipLen(clip),clipLen(p.videoClips[index-1])):Math.min(transition.duration,clipLen(clip)/2,clipLen(p.videoClips[index-1])/2)):0;
     const start=Math.max(0,end-overlap);end=start+clipLen(clip);return {clip,start,end};
   });
-  if (!['timeline','clip'].includes(source)) throw new Error('source must be timeline or clip.');
+  if (!['timeline','clip','media'].includes(source)) throw new Error('source must be timeline, clip or media.');
   if (!Array.isArray(times) || !times.length || times.length > 6 || times.some(t => typeof t !== 'number' || !Number.isFinite(t) || t < 0)) throw new Error('Provide 1–6 nonnegative times_sec.');
   const size=frameSize(p.width,p.height);
   if (source === 'timeline') {
@@ -29,13 +30,19 @@ async function planFrames(project, source, clipId, times) {
     if (times.some(t => t >= duration)) throw new Error('Frame times must be inside the timeline duration.');
     return times.map(time => ({source,time_sec:time,project:p,...size}));
   }
+  if (source === 'media') {
+    const media=p.media.find(m=>m.id===mediaId&&['image','video'].includes(m.type));
+    if(!media?.path)throw new Error('media_id must name an existing picture source.');
+    if(times.some(t=>media.type==='image'?t!==0:t>=media.duration))throw new Error('Source times must be inside the media duration; static images use zero.');
+    return times.map(time=>({source,source_time_sec:time,media_id:media.id,media,...frameSize(media.width,media.height)}));
+  }
   const main=layout.find(l=>l.clip.id===clipId && !l.clip.gap);
   const overlay=(p.overlayClips||[]).find(c=>c.id===clipId);
   const clip=main?.clip||overlay, start=main?.start??overlay?.start;
   const media=clip && p.media.find(m=>m.id===clip.mediaId && ['image','video'].includes(m.type));
   if (!media?.path) throw new Error('clip_id must name an existing picture clip.');
   if (times.some(t=>t<start || t>=start+clipLen(clip))) throw new Error('Frame times must be inside the selected clip on the timeline.');
-  return times.map(time=>({source,time_sec:time,source_time_sec:clip.in+(time-start)*(clip.speed||1),clip_id:clipId,media,...frameSize(media.width,media.height)}));
+  return times.map(time=>({source,time_sec:time,source_time_sec:clip.in+(time-start)*(clip.speed||1),clip_id:clipId,media_id:media.id,media,...frameSize(media.width,media.height)}));
 }
 async function sourceFrame(plan, signal) {
   checkStop(signal);
@@ -58,25 +65,27 @@ async function sourceFrame(plan, signal) {
 }
 class AgentFrames {
   constructor(captureTimeline) {this.captureTimeline=captureTimeline;this.records=new Map();this.dir=null;}
-  async inspect(owner,{project,source='timeline',clip_id,times_sec,revision},signal) {
-    const plans=await planFrames(project,source,clip_id,times_sec);checkStop(signal);
+  async inspect(owner,{project,source='timeline',clip_id,media_id,times_sec,source_times_sec,revision},signal) {
+    const plans=await planFrames(project,source,clip_id,source==='media'?source_times_sec:times_sec,media_id);checkStop(signal);
     const pending=[];
     try {
       for(const plan of plans){
         checkStop(signal);
-        const bytes=plan.source==='clip'?await sourceFrame(plan,signal):await this.captureTimeline(plan,signal);
+        const fingerprint=plan.media?fileFingerprint(plan.media.path):undefined;
+        const bytes=plan.source!=='timeline'?await sourceFrame(plan,signal):await this.captureTimeline(plan,signal);
+        if(plan.media&&fileFingerprint(plan.media.path)!==fingerprint)throw new Error('The source changed during frame capture. Inspect it again.');
         checkStop(signal);
         if(!Buffer.isBuffer(bytes)||bytes.length<4||bytes.length>8*1024*1024||bytes[0]!==255||bytes[1]!==216)throw new Error('Frame capture returned no readable JPEG.');
         this.dir ||= fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-vision-'));
         const id=randomUUID(),file=path.join(this.dir,`${id}.jpg`);
         fs.writeFileSync(file,bytes,{flag:'wx'});
         const {media,project:ignored,...meta}=plan;
-        pending.push({owner,path:file,id,...meta,revision});
+        pending.push({owner,path:file,id,...meta,revision,fingerprint,image_hash:createHash('sha256').update(bytes).digest('hex')});
       }
       checkStop(signal);
       for(const frame of pending)this.records.set(frame.id,frame);
       while(this.records.size>48){const [id,frame]=this.records.entries().next().value;fs.rmSync(frame.path,{force:true});this.records.delete(id);}
-      return {frames:pending.map(({owner,path,...meta})=>meta),revision,note:'Actual image captures are attached to the next Codex editing turn. Times are timeline seconds; clip captures show the source before edits.'};
+      return {frames:pending.map(({owner,path,...meta})=>meta),revision,note:'Actual image captures are attached to the next configured vision-model turn. Times are timeline seconds; clip captures show the source before edits.'};
     }catch(error){for(const frame of pending)fs.rmSync(frame.path,{force:true});throw error;}
   }
   images(owner,ids=[]) {
@@ -84,8 +93,14 @@ class AgentFrames {
     return [...new Set(ids)].map(id=>{
       const frame=this.records.get(id);
       if(!frame||frame.owner!==owner||!fs.existsSync(frame.path))throw new Error('Frame capture expired. Run inspect_frames again.');
-      return {path:frame.path,label:`${frame.source} frame at timeline ${frame.time_sec}s${frame.clip_id?` from clip ${frame.clip_id}, source ${frame.source_time_sec}s`:''}; ${frame.width}x${frame.height}; editor revision ${frame.revision}`};
+      return {path:frame.path,label:`${frame.source} frame at ${frame.source==='media'?'source':'timeline'} ${frame.source==='media'?frame.source_time_sec:frame.time_sec}s${frame.clip_id?` from clip ${frame.clip_id}, source ${frame.source_time_sec}s`:''}; ${frame.width}x${frame.height}; editor revision ${frame.revision}`};
     });
+  }
+  markPresented(owner,ids,requestId,provider,model){for(const id of ids||[]){const frame=this.records.get(id);if(frame?.owner===owner){frame.presentedFor=requestId;frame.presentedProvider=provider;frame.presentedModel=model;}}}
+  evidence(owner,ids,requestId){
+    if(typeof requestId!=='string'||!requestId)throw new Error('Scene evidence requires an active agent request.');
+    if(!Array.isArray(ids)||!ids.length||ids.length>6)throw new Error('Use one to six inspected frame IDs.');
+    return ids.map(id=>{const frame=this.records.get(id);if(!frame||frame.owner!==owner||frame.presentedFor!==requestId||!fs.existsSync(frame.path))throw new Error('Inspect and present the evidence frames in this request before describing a scene.');const {owner:ignored,path,...meta}=frame;return meta;});
   }
   clearOwner(owner){for(const [id,frame] of this.records)if(frame.owner===owner){fs.rmSync(frame.path,{force:true});this.records.delete(id);}}
   dispose(){this.records.clear();if(this.dir)fs.rmSync(this.dir,{recursive:true,force:true});this.dir=null;}

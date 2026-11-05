@@ -72,13 +72,14 @@ export function regroupSegments(segments, n) {
     const words = String(s.text || '').trim().split(/\s+/).filter(Boolean);
     if (words.length <= limit) { out.push(s); continue; }
     const { id, words: originalWords, ...base } = s;
+    const wordIdentity = text => String(text).normalize('NFKC').replace(/[\p{P}\p{S}]/gu, '').toLocaleLowerCase();
     const measured = Array.isArray(originalWords) && originalWords.length === words.length
       && originalWords.every(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start)
-      && originalWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim() === words.join(' ');
+      && originalWords.every((w, i) => wordIdentity(w.text) === wordIdentity(words[i]));
     const span = Math.max(0, (Number(s.end) || 0) - (Number(s.start) || 0));
     for (let i = 0; i < words.length; i += limit) {
       const chunk = words.slice(i, i + limit);
-      const timings = measured ? originalWords.slice(i, i + limit) : null;
+      const timings = measured ? originalWords.slice(i, i + limit).map((word, k) => ({ ...word, text: chunk[k] })) : null;
       out.push({
         ...base,
         start: timings ? timings[0].start : (Number(s.start) || 0) + (span * i) / words.length,

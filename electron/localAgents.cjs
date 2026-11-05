@@ -8,6 +8,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { createRequire } = require('node:module');
 const { filterLevels } = require('./thinking.cjs');
+const { readImages } = require('./agentImages.cjs');
 
 const PROVIDERS = {
   'codex-sdk': { name: 'Codex SDK', cli: 'codex', module: '@openai/codex-sdk', login: 'codex login' },
@@ -261,7 +262,13 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
           for (const search of searches.values()) if (search.status === 'running') onSearch?.({ ...search, status: 'error', detail: session.controller.signal.aborted ? 'Stopped.' : 'Search did not complete.' });
         }
       }
-      const query = session.sdk.query({ prompt, options: {
+      const imageData = readImages(images);
+      const streamedPrompt = imageData.length ? (async function* () {
+        yield { type: 'user', session_id: '', parent_tool_use_id: null, message: { role: 'user', content: [
+          { type: 'text', text: prompt }, ...imageData.flatMap(image => [{ type: 'text', text: image.label }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image.data } }]),
+        ] } };
+      })() : prompt;
+      const query = session.sdk.query({ prompt: streamedPrompt, options: {
         ...claudeOptions(session, cfg, system), ...(schema ? { outputFormat: { type: 'json_schema', schema } } : {}),
       } });
       try {

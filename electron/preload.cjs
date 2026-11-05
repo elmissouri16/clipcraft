@@ -137,6 +137,8 @@ contextBridge.exposeInMainWorld('api', {
   agentStep: (req) => ipcRenderer.invoke('agent:step', req),
   onAgentSearch: (cb) => { const handler = (_e, value) => cb(value); ipcRenderer.on('agent:search', handler); return () => ipcRenderer.removeListener('agent:search', handler); },
   openWebSource: (url) => ipcRenderer.invoke('agent:openSource', url),
+  agentAnalyzeScenes: req => ipcRenderer.invoke('agent:analyzeScenes', req),
+  agentAnnotateScene: req => ipcRenderer.invoke('agent:annotateScene', req),
   agentInspectFrames: (req) => ipcRenderer.invoke('agent:inspectFrames', req),
   agentGenerateImage: (req) => ipcRenderer.invoke('agent:generateImage', req),
   agentGenerateImages: (req) => ipcRenderer.invoke('agent:generateImages', req),

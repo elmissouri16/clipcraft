@@ -32,6 +32,13 @@ module.exports=async(win,app,dir)=>{
   await load(base());await send([async()=>{await q('window.__fve.dispatch({type:"setProject",patch:{name:"manual"}})');return reply([{name:'set_project',args:{name:'stale'}}]);}]);check('manual edits revoke in-flight agent writes',(await q('window.__fve.rawProject().name'))==='manual');
   await load(base());await q('for(let i=0;i<105;i++)window.__fve.dispatch({type:"setProject",patch:{name:"history "+i}})');await until('window.__fve.history().past.length===100');await send([[{name:'set_project',args:{name:'agent first'}}],[{name:'set_project',args:{name:'agent second'}}]]);await q('window.__fve.dispatch({type:"undo"})');await until('window.__fve.rawProject().name==="history 104"');check('one Undo restores request at full history capacity',true);
   const tr=base();tr.videoClips=[{id:'v',mediaId:'m',in:0,out:5,speed:1},{id:'w',mediaId:'m',in:5,out:10,speed:1,transition:{type:'fade',duration:1}}];await load(tr);await send([[{name:'cut_range',args:{start_sec:4,end_sec:4.5}}]]);after=await q('window.__fve.rawProject()');const out=path.join(dir,'transition-cut.mp4');await ff.runExport(after,out,()=>{}).promise;const probed=await ff.probe(out);check('transition range cut exports the measured duration',Math.abs(probed.duration-8.5)<0.15);
+  await load({...p,markers:[{id:'mark',time:7}]});
+  await send([[{name:'set_speed',args:{clip_id:'v',speed:2}}]]);
+  after=await q('window.__fve.rawProject()');
+  check('speed edits retime captions overlays and markers',after.textClips[0].start===3&&after.textClips[0].duration===.5&&after.overlayClips[0].start===3&&after.overlayClips[0].speed===2&&after.markers[0].time===3.5);
+  check('speed edits preserve detached audio synchronization',after.videoClips[0].speed===2&&after.audioClips[0].speed===2&&after.audioClips[0].out===10);
+  await q('window.__fve.dispatch({type:"undo"})');await until('window.__fve.rawProject().videoClips[0].speed===1');
+  check('speed retiming is one Undo checkpoint',(await q('window.__fve.rawProject().textClips[0].start'))===6);
   check('no renderer exceptions',result.errors.length===0);result.ok=true;fs.writeFileSync(path.join(dir,'editor.png'),(await win.capturePage()).toPNG());
  } catch(error){result.ok=false;result.error=error.stack;result.body=await q('document.body.textContent').catch(()=>null);fs.writeFileSync(path.join(dir,'failure.png'),(await win.capturePage()).toPNG());}
  finally{ai.agentStep=original;}

@@ -24,7 +24,7 @@ class TranscriptCache {
         if (entry.version === 2 && entry.key === key && Array.isArray(entry.segments)) {
           stop(signal);
           fs.utimesSync(file, new Date(), new Date());
-          return { ok: true, segments: entry.segments, audio_revision: key, cached: true };
+          return { ok: true, segments: entry.segments, audio_revision: key, source_audio_key: audioAnalysisKey(project, opts), cached: true };
         }
       }
     } catch (error) { if (error.name === 'AbortError') throw error; }
@@ -42,7 +42,7 @@ class TranscriptCache {
       } catch (error) { if (error.name === 'AbortError') throw error; /* Cache I/O must not discard a successful transcript. */ }
       finally { fs.rmSync(temp, { force: true }); }
     }
-    return { ok: true, segments, audio_revision: key, cached: false };
+    return { ok: true, segments, audio_revision: key, source_audio_key: audioAnalysisKey(project, opts), cached: false };
   }
 }
 module.exports = { TranscriptCache };

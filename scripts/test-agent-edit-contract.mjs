@@ -40,4 +40,12 @@ function fixture(p=base(),api={}) {let s={past:[],future:[],present:p};const ctx
 {
  const p=base();p.videoClips[0]={...p.videoClips[0],speed:2,linkId:'legacy'};p.audioClips=[{id:'a',mediaId:'m',in:0,out:10,start:0,speed:1,linkId:'legacy'}];const f=fixture();f.ctx.dispatch({type:'load',project:p});assert.equal(f.state().present.videoClips[0].speed,2);const renamed=await f.runner.run('set_project',{name:'Legacy opened'});assert.ok(!renamed.error);assert.equal(f.state().present.name,'Legacy opened');
 }
+{
+ const f=fixture();f.ctx.dispatch({type:'beginAgentEdit',token:'same'});const original=f.state();f.ctx.dispatch({type:'update',track:'video',id:'v',patch:{speed:1},agentToken:'same'});assert.equal(f.state(),original);f.ctx.dispatch({type:'endAgentEdit',token:'same'});assert.equal(f.state().past.length,0,'unchanged values create no Undo entry');
+}
+{
+ const p=base();p.videoClips[0].keyframes={scale:[{t:1,v:1.3}]};p.videoClips[0].chroma={on:true,color:'#00ff00'};const f=fixture(p);
+ const read=await f.runner.run('get_project',{clip_ids:['v']});assert.deepEqual(read.clip_details[0].fields.keyframes,p.videoClips[0].keyframes);assert.deepEqual(read.clip_details[0].fields.chroma,p.videoClips[0].chroma);
+ p.media.push({...p.media[0],id:'duplicate'});const runner=createToolRunner(f.ctx);assert.match((await runner.run('add_media',{media_name:'talk'})).error,/ambiguous/);
+}
 console.log('agent edit contract ok (blocked/no-op results, range safety, audio speed, stale results, live editor context, structural validation)');
