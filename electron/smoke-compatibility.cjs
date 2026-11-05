@@ -81,6 +81,52 @@ module.exports = async (win, app, dir) => {
       assert.equal(fs.readdirSync(path.dirname(settingsFile)).some(n => n.endsWith('.part')), false);
     } finally { fs.renameSync = originalRename; }
     result.checks.push('Settings saves through IPC; failed atomic writes surface in the UI and retain the previous file');
+
+    await q(`document.querySelector('.settings button[aria-label="Close settings"]').click()`);
+    const updates = require('./updates.cjs');
+    const { net } = require('electron');
+    const { Writable } = require('node:stream');
+    const downloads = path.join(dir, 'downloads');
+    fs.mkdirSync(downloads, { recursive: true });
+    const existing = path.join(downloads, 'ClipCraft-test.dmg');
+    fs.writeFileSync(existing, 'keep the existing installer');
+    const payload = Buffer.from('test installer bytes; never executed');
+    const originalCheck = updates.check;
+    const originalFetch = net.fetch;
+    const originalGetPath = app.getPath;
+    const originalStream = fs.createWriteStream;
+    try {
+      app.getPath = (key) => key === 'downloads' ? downloads : originalGetPath.call(app, key);
+      updates.check = () => originalCheck(async () => ({ ok: true, json: async () => ({
+        version: '99.0.0', download_url: 'https://hamzaabika.com/ClipCraft-test.dmg',
+      }) }));
+      net.fetch = async () => ({ ok: true, body: (async function* () { yield payload; })() });
+      fs.createWriteStream = (file, ...args) => String(file).startsWith(downloads)
+        ? new Writable({ write(_chunk, _enc, done) { done(new Error('Simulated disk full')); } })
+        : originalStream(file, ...args);
+      await q('document.querySelector(".about-btn").click()');
+      await q(`[...document.querySelectorAll('.about button')].find(b => b.textContent.includes('Check for updates')).click()`);
+      await until('!!document.querySelector(".about-update")');
+      await q(`[...document.querySelectorAll('.about button')].find(b => b.textContent.includes('Download & install')).click()`);
+      await until('!!document.querySelector(".about-status.error")');
+      assert.equal(fs.readFileSync(existing, 'utf8'), 'keep the existing installer');
+      assert.equal(updates.lastDownload(), '');
+      fs.createWriteStream = originalStream;
+      await q(`[...document.querySelectorAll('.about button')].find(b => b.textContent.includes('Try again')).click()`);
+      await until('document.querySelector(".about-status.ok")?.textContent.includes("Downloaded")');
+      const installedPath = updates.lastDownload();
+      assert.equal(path.basename(installedPath), 'ClipCraft-test (1).dmg');
+      assert.equal(fs.readFileSync(installedPath).equals(payload), true);
+      assert.equal(fs.readFileSync(existing, 'utf8'), 'keep the existing installer');
+      assert.equal(fs.readdirSync(downloads).some(n => n.startsWith('.clipcraft-update-')), false);
+      assert.match(await q('document.querySelector(".about-status.ok").textContent'), /ClipCraft-test \(1\)\.dmg/);
+    } finally {
+      updates.check = originalCheck;
+      net.fetch = originalFetch;
+      app.getPath = originalGetPath;
+      fs.createWriteStream = originalStream;
+    }
+    result.checks.push('About reports disk errors, retries successfully and preserves existing installers');
     fs.writeFileSync(path.join(dir, 'compatibility.png'), (await win.capturePage()).toPNG());
     result.ok = true;
   } catch (err) {
