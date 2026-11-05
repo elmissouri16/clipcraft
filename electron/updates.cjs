@@ -18,6 +18,8 @@
 let app, net;
 try {
   ({ app, net } = require('electron'));
+  // In plain Node, the installed electron package exports its executable path.
+  if (!app || !net) throw new Error('Not running inside Electron');
 } catch {
   // Plain-Node fallback so the version logic can be unit-tested outside Electron.
   app = { getVersion: () => '1.0.0' };
