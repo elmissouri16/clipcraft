@@ -14,9 +14,10 @@ the MIT license grant and may not be used to brand another product.
 
 ## Working conventions
 
-- **Push after every completed, verified feature.** This repo is synced with
-  text-only snapshot pushes (binaries travel by other routes — ask before
-  adding any binary file).
+- **Never push unless the user explicitly tells you to push.** Completing or
+  verifying a feature does not authorize a push. Keep commits local otherwise.
+  This repo uses text-only snapshot pushes (binaries travel by other routes —
+  ask before adding any binary file).
 - **Never build/package an installer** (`.deb` / `.exe` / `.dmg`) unless Hamza
   explicitly says "build". Public releases are built by GitHub Actions from
   the `release/vX.Y.Z` branch; local packaging is for development checks only.
