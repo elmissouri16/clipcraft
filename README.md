@@ -148,6 +148,12 @@ message without leaving the conversation. The same picker includes **Thinking
 effort** for listed SDK models that report supported levels. Effort preferences
 are saved per provider and model; **CLI default** leaves effort to the agent.
 
+Chat sessions, completed conversation context, and drafts are saved with each
+project and its autosave. Use **New chat** to start another conversation, then
+the **Chat sessions** selector to return to an earlier one. Interrupted requests
+reopen as interrupted and are never run automatically. Older project files open
+with an empty chat history.
+
 These backends support the same CraftAI editing tools and Undo as the existing
 API providers. **Stop** cancels an in-flight SDK request. Selecting an installed
 agent never silently falls back to a different API provider. Authentication,

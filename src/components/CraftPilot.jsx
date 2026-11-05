@@ -3,6 +3,8 @@ import { ArrowUp, Zap, Captions, CircleAlert, CircleCheck, Loader2, MessageCircl
 import { runAgent } from '../agent/runAgent.js';
 import { EDIT_STYLES, STYLE_NAMES } from '../agent/motionGuide.js';
 import CraftModelPicker from './CraftModelPicker.jsx';
+import Dropdown from './Dropdown.jsx';
+import { newChatSession, normalizeChatSessions, snapshotChatSessions } from '../agent/chatSessions.js';
 
 // Quick actions on the empty state, grouped by what they do; each sends its text as-is.
 const ACTIONS = [
@@ -55,19 +57,46 @@ function Rich({ text }) {
 
 export default function CraftAI({ getProject, getHistoryLength, dispatch, settle, onOpenSettings, settingsVersion, app = {} }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', text, steps?, error?, changed? }
-  const [input, setInput] = useState('');
+  const projectId = useRef(getProject().id).current;
+  const [chat, setChat] = useState(() => {
+    const saved = normalizeChatSessions(getProject().craftAI);
+    saved.sessions.forEach((s) => { if (!EDIT_STYLES[s.style]) s.style = null; });
+    if (!saved.sessions.length) {
+      const session = newChatSession();
+      saved.sessions.push(session); saved.activeSessionId = session.id;
+    }
+    return structuredClone(saved);
+  });
+  const chatRef = useRef(chat);
+  const session = chat.sessions.find((s) => s.id === chat.activeSessionId);
+  const { messages, draft: input, style } = session;
   const [busy, setBusy] = useState(false);
   const [modelSaving, setModelSaving] = useState(false);
   const [config, setConfig] = useState(null); // { ready, provider, model }
-  const [style, setStyle] = useState(null); // picked editing style id, sent with the next message
   const [showStyles, setShowStyles] = useState(false); // the style cards once the chat has started
-  const contents = useRef([]); // the model conversation, kept between messages
+  const contents = useRef(null);
+  if (contents.current === null) contents.current = structuredClone(session.contents);
+  const mounted = useRef(true);
   const canceled = useRef(false);
   const activeRequest = useRef(null);
   const configRequest = useRef(0);
   const listRef = useRef(null);
   const inputRef = useRef(null);
+  const isCurrent = () => mounted.current && getProject().id === projectId;
+  const saveChat = (next) => {
+    if (!isCurrent()) return;
+    chatRef.current = next;
+    setChat(next);
+    dispatch({ type: 'craftChat', projectId, chat: snapshotChatSessions(next) });
+  };
+  const updateSession = (patch) => {
+    const current = chatRef.current;
+    saveChat({ ...current, sessions: current.sessions.map((s) => s.id === current.activeSessionId
+      ? { ...s, ...(typeof patch === 'function' ? patch(s) : patch) } : s) });
+  };
+  const setMessages = (value) => updateSession((s) => ({ messages: typeof value === 'function' ? value(s.messages) : value }));
+  const setInput = (draft) => updateSession({ draft });
+  const setStyle = (value) => updateSession({ style: value });
 
   const refreshConfig = useCallback(async () => {
     const generation = ++configRequest.current;
@@ -84,10 +113,14 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   useEffect(() => {
     refreshConfig();
   }, [refreshConfig, settingsVersion, open]);
-  useEffect(() => () => {
-    canceled.current = true;
-    configRequest.current++;
-    if (activeRequest.current) window.api.agentCancel?.(activeRequest.current).catch(() => {});
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      canceled.current = true;
+      configRequest.current++;
+      if (activeRequest.current) window.api.agentCancel?.(activeRequest.current).catch(() => {});
+    };
   }, []);
 
   useEffect(() => {
@@ -98,7 +131,10 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
   }, [open]);
 
-  const updateLast = (fn) => setMessages((m) => m.map((x, i) => (i === m.length - 1 ? fn(x) : x)));
+  const updateLast = (fn, completedContents) => updateSession((s) => ({
+    messages: s.messages.map((x, i) => (i === s.messages.length - 1 ? fn(x) : x)),
+    ...(completedContents ? { contents: structuredClone(completedContents) } : {}),
+  }));
 
   const pickStyle = (id) => {
     setStyle(id);
@@ -115,6 +151,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     canceled.current = false;
     const requestId = crypto.randomUUID();
     activeRequest.current = requestId;
+    updateSession((s) => ({ title: s.messages.length ? s.title : msg.replace(/\s+/g, ' ').slice(0, 60) }));
     setMessages((m) => [...m, { role: 'user', text: msg }, { role: 'assistant', text: '', steps: [], pending: true }]);
     const conversationStart = contents.current.length;
     contents.current.push({ role: 'user', parts: [{ text: msg }] });
@@ -124,15 +161,23 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       requestId,
       contents: contents.current,
       ctx: {
-        getProject, dispatch, api: window.api, settle, ...app,
+        ...app,
+        getProject: () => {
+          if (!isCurrent()) throw new Error('The project changed.');
+          return getProject();
+        },
+        dispatch: (action) => { if (isCurrent() && !canceled.current) dispatch(action); },
+        addProbed: (...args) => isCurrent() && !canceled.current ? app.addProbed?.(...args) : null,
+        startExport: (...args) => isCurrent() && !canceled.current ? app.startExport?.(...args) : undefined,
+        api: window.api, settle,
         // Undo only what this request did: the user's earlier edits stay.
         undoOwn: () => {
-          if (getHistoryLength() <= startLen) return false;
+          if (!isCurrent() || canceled.current || getHistoryLength() <= startLen) return false;
           dispatch({ type: 'undo' });
           return true;
         },
       },
-      isCanceled: () => canceled.current,
+      isCanceled: () => canceled.current || !isCurrent(),
       onEvent: (ev) => updateLast((last) => {
         const steps = [...last.steps];
         const i = steps.findIndex((s) => s.id === ev.id);
@@ -142,16 +187,18 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       }),
     }).catch((e) => ({ error: { error: e.message } }));
 
+    if (!isCurrent()) return;
+
     // Everything the assistant did becomes a single Undo step.
     if (result.changed) dispatch({ type: 'collapseHistory', from: startLen });
     if (result.error) {
       // Drop the incomplete request, including unanswered tool calls, so a retry
       // starts from a valid conversation while any completed edits remain undoable.
       contents.current.splice(conversationStart);
-      updateLast((last) => ({ ...last, pending: false, error: result.error, changed: result.changed }));
+      updateLast((last) => ({ ...last, pending: false, error: result.error, changed: result.changed }), contents.current);
     } else {
       if (result.canceled) contents.current.splice(conversationStart);
-      updateLast((last) => ({ ...last, pending: false, text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: result.changed }));
+      updateLast((last) => ({ ...last, pending: false, text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: result.changed }), contents.current);
     }
     setBusy(false);
     activeRequest.current = null;
@@ -159,8 +206,22 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
 
   const newChat = () => {
     if (busy) return;
+    const current = chatRef.current;
+    const active = current.sessions.find((s) => s.id === current.activeSessionId);
+    if (!active.messages.length && !active.draft.trim()) return;
+    const next = newChatSession();
+    saveChat({ ...current, activeSessionId: next.id, sessions: [...current.sessions, next] });
     contents.current = [];
-    setMessages([]);
+    setShowStyles(false);
+  };
+
+  const selectSession = (id) => {
+    if (busy) return;
+    const selected = chatRef.current.sessions.find((s) => s.id === id);
+    if (!selected) return;
+    contents.current = structuredClone(selected.contents);
+    saveChat({ ...chatRef.current, activeSessionId: id });
+    setShowStyles(false);
   };
 
   const onKeyDown = (e) => {
@@ -186,10 +247,16 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
             }} />
             <button className={`icon-btn ${showStyles ? 'active' : ''}`} onClick={() => setShowStyles((v) => !v)} aria-pressed={showStyles}
               aria-label="Editing styles" title="Editing styles"><Palette size={16} /></button>
-            <button className="icon-btn" onClick={newChat} disabled={busy || !messages.length} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
+            <button className="icon-btn" onClick={newChat} disabled={busy || (!messages.length && !input.trim())} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
             <button className="icon-btn" onClick={onOpenSettings} aria-label="AI settings" title="AI settings"><Settings size={16} /></button>
             <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close assistant"><X size={16} /></button>
           </header>
+
+          <div className="pilot-session-picker">
+            <Dropdown ariaLabel="Chat sessions" value={chat.activeSessionId} disabled={busy}
+              options={[...chat.sessions].reverse().map((s) => ({ value: s.id, label: s.title }))}
+              onChange={selectSession} />
+          </div>
 
           <div className="pilot-list" ref={listRef}>
             {config && !config.ready && (

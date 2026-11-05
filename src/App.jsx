@@ -37,6 +37,7 @@ import WelcomeCard from './components/WelcomeCard.jsx';
 import ScreenRecordDialog from './components/ScreenRecordDialog.jsx';
 import { useScreenRecorder } from './useScreenRecorder.js';
 import CraftAI from './components/CraftPilot.jsx';
+import { hasChatContent } from './agent/chatSessions.js';
 import { isFiles, isInternal } from './dnd.js';
 import { renderTextFrames } from './exportText.js';
 import { fxWork, renderFxPass } from './fxExport.js';
@@ -47,7 +48,14 @@ import { allFonts } from './fonts.js';
 // in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
 
 export default function App() {
-  const [state, dispatch] = useReducer(historyReducer, { past: [], present: emptyProject(), future: [] });
+  const [state, reduceDispatch] = useReducer(historyReducer, { past: [], present: emptyProject(), future: [] });
+  const [projectLoadVersion, setProjectLoadVersion] = useState(0);
+  const dispatch = useCallback((action) => {
+    // Opening a saved file can replace the same project id. Remount its chat too,
+    // so the file's conversations win over the previous in-memory copy.
+    if (action.type === 'load') setProjectLoadVersion((n) => n + 1);
+    reduceDispatch(action);
+  }, []);
   const project = state.present;
   const [time, setTime] = useState(0);
   // Shared playback clock: Preview (writer) publishes { time, stamp, playing, rate } every
@@ -166,7 +174,7 @@ export default function App() {
   const recentOf = (p, path) => recentEntryFor(p, path, toFileUrl);
   const removeRecent = (path) => storeRecents(recents.filter((r) => r.path !== path));
   const hasContent = (p) => !!(p.media.length || p.videoClips.length || p.textClips.length || p.audioClips.length
-    || (p.overlayClips || []).length);
+    || (p.overlayClips || []).length || hasChatContent(p));
   const keepRecovery = (unsaved) => {
     try {
       localStorage.setItem('clipcraft.recovery', JSON.stringify({
@@ -1478,7 +1486,7 @@ export default function App() {
   useEffect(() => window.api.onCloseRequest(async () => {
     const a = autosave.current;
     if (a.file) {
-      await writeFile();
+      await flushAutosave(); // Home restores the slot too, including the latest chat.
       keepRecovery(false);
       return window.api.closeNow();
     }
@@ -1864,7 +1872,7 @@ export default function App() {
             if (JSON.stringify(proxies) !== JSON.stringify(m.proxies)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { proxies } });
           }
         })} />}
-      <CraftAI getProject={() => projectRef.current} getHistoryLength={() => historyRef.current.past.length}
+      <CraftAI key={`${project.id}:${projectLoadVersion}`} getProject={() => projectRef.current} getHistoryLength={() => historyRef.current.past.length}
         dispatch={dispatch} settle={settle} onOpenSettings={() => setSettingsOpen(true)} settingsVersion={settingsVersion}
         app={pilotApp} />
       {dragOver && <div className="drop-overlay"><div>Drop files to import them</div></div>}

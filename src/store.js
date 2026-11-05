@@ -8,6 +8,7 @@
 
 import { RATIOS, sizeFor } from './effects.js';
 import { cleanPins } from './track.js';
+import { normalizeChatSessions } from './agent/chatSessions.js';
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 export const MIN_CLIP = 0.1;
@@ -90,6 +91,7 @@ export function normalizeProject(p) {
     magnet: { ...base.magnet, ...(p.magnet || {}) },
     markers: p.markers || [],
     snapping: p.snapping ?? true,
+    craftAI: normalizeChatSessions(p.craftAI),
   };
 }
 
@@ -1112,6 +1114,14 @@ function patchVisuals(p, a) {
 }
 
 export function historyReducer(state, a) {
+  if (a.type === 'craftChat') {
+    if (a.projectId !== state.present.id) return state;
+    // Chat is saved with the project but never creates timeline Undo steps.
+    // Carry it across every snapshot, including an in-progress drag gesture.
+    const patch = (p) => p && ({ ...p, craftAI: a.chat });
+    return { ...state, present: patch(state.present), past: state.past.map(patch),
+      future: state.future.map(patch), gestureStart: patch(state.gestureStart) };
+  }
   // File/slot callers validate synchronously to show an error before dispatch.
   // Keep direct load callers (templates, recovery and the test harness) safe too.
   if (a.type === 'load') {
