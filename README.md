@@ -91,6 +91,10 @@ ClipCraft is a free, open-source desktop video editor and covers what people act
 
 **A timeline you already know.** Drag media in, trim on the track, stack text and overlays above the picture. Per-clip keyframes, masks, chroma key, background removal, a custom removal brush, stabilization, motion tracking and speed control are all there, and the player previews the real render pipeline — transitions, effects and text included.
 
+The speaker button in the player opens preview volume and mute controls, shared
+with media previews. Clip volumes, export audio and the mix meter stay unchanged;
+your listening level is remembered on this computer.
+
 - **Color grading** — curves, HSL, wheels and .cube LUTs.
 - **Subtitles as clips** — import an SRT, restyle one caption or all of them, timing untouched.
 - **Sequence guard** — if your footage doesn't match the project, ClipCraft asks before changing anything.

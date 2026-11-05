@@ -13,6 +13,7 @@ import { isInternal, readPayload } from '../dnd.js';
 import { applyChromaKey, blendOf, chromaOf, cropOf, customMaskCanvas, decoStyle, hasCrop, hasCustomMask, layerStyle, transformOf } from '../visual.js';
 import TransformBox from './TransformBox.jsx';
 import MediaPeek from './MediaPeek.jsx';
+import PreviewVolume from './PreviewVolume.jsx';
 import { fxTransition } from '../fx/catalog.js';
 import { easeValue } from '../fx/easing.js';
 import { fxGL } from '../fx/gl.js';
@@ -754,6 +755,7 @@ export default function Preview({
           <button className="icon-btn" aria-label="Go to end" title="Go to end" onClick={() => onSeek(duration)}><SkipForward size={16} /></button>
         </div>
         <span className="tc-spacer">
+          <PreviewVolume onOpen={() => setMenu(null)} />
           {onQualityChange && (
             <span className="transport-menu-wrap">
               <button className={`proxy-btn quality-btn ${quality !== 'full' ? 'on' : ''}`} onClick={() => setMenu(menu === 'quality' ? null : 'quality')}

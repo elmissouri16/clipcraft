@@ -5,10 +5,11 @@
 // ONE AudioContext with a unity master gain: every sounding element is routed through it once
 // (createMediaElementSource, guarded — an element can only ever be sourced once), and a stereo
 // analyser tap hangs off the master. Playback behaviour is unchanged: an element's own
-// volume/mute/speed shape the signal its source node emits, and the master adds nothing.
+// volume/mute/speed shape the signal its source node emits. A separate monitor gain
+// controls listening volume AFTER the meter tap, without changing the project's mix.
 //
-// The tap therefore meters exactly what the user hears in the preview, summed — post per-clip
-// gain and muting as the player applies them. It does not touch export audio in any way.
+// The tap meters the summed project mix, post per-clip gain and muting. Turning down
+// monitoring leaves these levels visible. Neither node touches export audio.
 //
 // One staging correction lives here: clip volume runs 0..2 in the project, but a media
 // element's own volume clamps at 1 — so a clip set louder than unity used to sound (and
@@ -19,6 +20,26 @@
 let graph = null;
 const wired = new WeakSet();
 const gains = new WeakMap();
+const listeners = new Set();
+let previewAudio = { volume: 1, muted: false };
+try {
+  const saved = JSON.parse(localStorage.getItem('clipcraft.previewAudio') || 'null');
+  if (typeof saved?.volume === 'number' && Number.isFinite(saved.volume)) previewAudio.volume = Math.max(0, Math.min(1, saved.volume));
+  if (typeof saved?.muted === 'boolean') previewAudio.muted = saved.muted;
+} catch { /* unavailable storage uses full listening volume */ }
+const monitorLevel = () => previewAudio.muted ? 0 : previewAudio.volume;
+export const getPreviewAudio = () => previewAudio;
+export const subscribePreviewAudio = (listener) => { listeners.add(listener); return () => listeners.delete(listener); };
+export function setPreviewAudio(patch) {
+  const volume = typeof patch.volume === 'number' && Number.isFinite(patch.volume)
+    ? Math.max(0, Math.min(1, patch.volume)) : previewAudio.volume;
+  const muted = typeof patch.muted === 'boolean' ? patch.muted : previewAudio.muted;
+  if (volume === previewAudio.volume && muted === previewAudio.muted) return;
+  previewAudio = { volume, muted };
+  if (graph) graph.monitor.gain.value = monitorLevel();
+  try { localStorage.setItem('clipcraft.previewAudio', JSON.stringify(previewAudio)); } catch { /* in-memory preference still works */ }
+  for (const listener of listeners) listener();
+}
 
 export function ensureAudioGraph() {
   if (graph) return graph;
@@ -26,7 +47,10 @@ export function ensureAudioGraph() {
     const ctx = new AudioContext();
     const master = ctx.createGain();
     master.gain.value = 1;
-    master.connect(ctx.destination);
+    const monitor = ctx.createGain();
+    monitor.gain.value = monitorLevel();
+    master.connect(monitor);
+    monitor.connect(ctx.destination);
     const splitter = ctx.createChannelSplitter(2);
     const left = ctx.createAnalyser();
     const right = ctx.createAnalyser();
@@ -35,7 +59,7 @@ export function ensureAudioGraph() {
     master.connect(splitter);
     splitter.connect(left, 0);
     splitter.connect(right, 1);
-    graph = { ctx, master, left, right };
+    graph = { ctx, master, monitor, left, right };
   } catch {
     graph = null; // no WebAudio (or a second context refused) — the meter rests at floor
   }
@@ -63,13 +87,13 @@ export function wireElement(el) {
 // Apply a clip's effective gain (0..2, fades and muting already folded in by the player) to
 // one element. Wired elements: the element's own volume takes the <= 1 part (it shapes the
 // source node's signal) and the gain node takes any part above unity, so the product the
-// analysers (and the speakers) see is the requested gain at every setting. Unwired elements
-// keep the native clamped behaviour.
+// analysers see is the requested gain at every setting. The monitor gain then sets
+// listening volume. Unwired elements apply monitoring directly with native clamping.
 export function applyElementVolume(el, volume) {
   if (!el) return;
   const g = Math.max(0, volume || 0);
   const node = gains.get(el);
-  el.volume = Math.min(1, g);
+  el.volume = Math.min(1, g * (node ? 1 : monitorLevel()));
   if (node) node.gain.value = g > 1 ? g : 1;
 }
 

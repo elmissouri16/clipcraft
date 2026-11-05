@@ -1173,6 +1173,11 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
   background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-menu);
 }
 .transport-menu.zoom-menu { min-width: 150px; }
+.preview-volume-menu { min-width: 190px; padding: 12px; }
+.preview-volume-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+.preview-volume-heading output { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.preview-volume-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.preview-volume-row input { width: 130px; min-width: 0; accent-color: var(--primary); }
 .transport-menu-item {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px;
   background: transparent; color: var(--text-2); cursor: pointer; text-align: left;

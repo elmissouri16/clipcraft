@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Music, Pause, Play, Plus, X } from 'lucide-react';
 import { formatTime, previewPath, toFileUrl } from '../store.js';
+import { applyElementVolume, resumeAudioGraph, subscribePreviewAudio, wireElement } from '../audioTap.js';
+import PreviewVolume from './PreviewVolume.jsx';
 
 // Watches a media item from the Media panel before it is on the timeline: click a card and it
 // plays in the player at its own shape (tall stays tall, wide stays wide). Space plays / pauses, ← / → step a
@@ -21,9 +23,12 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
   useEffect(() => {
     const v = el.current;
     if (!v || still) return;
-    if (playing) v.play().catch(() => setPlaying(false));
+    wireElement(v);
+    applyElementVolume(v, 1);
+    if (playing) { resumeAudioGraph(); v.play().catch(() => setPlaying(false)); }
     else v.pause();
   }, [playing, m.id]);
+  useEffect(() => subscribePreviewAudio(() => applyElementVolume(el.current, 1)), []);
 
   // Smooth progress: while playing, a rAF loop paints the scrub fill and the clock straight
   // from the media element (the element is the clock here) — timeupdate alone fires ~4×/s
@@ -57,6 +62,8 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
     // Capture phase, so the project's own shortcuts (Space plays the timeline) don't also run.
     const onKey = (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable) return;
+      const volumeControl = e.target.closest('.preview-volume');
+      if (volumeControl && (e.key !== 'Escape' || volumeControl.querySelector('[role=dialog]'))) return;
       const k = keys.current;
       if (e.code === 'Space') setPlaying((p) => !p);
       else if (e.key === 'Escape') k.onClose();
@@ -105,6 +112,7 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
           )}
         </div>
         <span className="tc-spacer peek-actions">
+          {!still && <PreviewVolume />}
           <button className="btn btn-primary btn-sm" onClick={() => onAdd(m)} title="Add to the timeline at the playhead"><Plus size={14} /> Add</button>
           <button className="icon-btn" onClick={onClose} aria-label="Back to the project (Esc)" title="Back to the project (Esc)"><X size={16} /></button>
         </span>
