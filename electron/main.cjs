@@ -1347,11 +1347,63 @@ ipcMain.handle('lut:import', async () => {
 // If the provider fails, the step goes to the next one with a saved key (Gemini, Groq, OpenAI-compatible).
 // req.provider: the provider that answered the previous step of this request, so a run stays on it.
 const agentRequests = new Map();
+const frameRenderJobs = new Map();
+ipcMain.handle('agent:frameJob',event=>{
+  const job=frameRenderJobs.get(event.sender.id);
+  if(!job)throw new Error('Unknown frame inspection renderer.');
+  return job.plan;
+});
+ipcMain.handle('agent:frameReady',(event,error)=>{
+  const job=frameRenderJobs.get(event.sender.id);
+  if(!job)throw new Error('Unknown frame inspection renderer.');
+  error?job.reject(new Error(String(error).slice(0,1000))):job.resolve();
+});
+async function captureTimelineFrame(plan,signal){
+  if(signal?.aborted)throw Object.assign(new Error('Frame inspection stopped.'),{name:'AbortError'});
+  const renderer=new BrowserWindow({width:plan.width,height:plan.height,useContentSize:true,show:false,frame:false,
+    webPreferences:{preload:path.join(__dirname,'framePreload.cjs'),contextIsolation:true,nodeIntegration:false,
+      webSecurity:!process.env.VITE_DEV_SERVER_URL,offscreen:true,backgroundThrottling:false}});
+  const id=renderer.webContents.id;
+  let timer,abort;
+  try{
+    const ready=new Promise((resolve,reject)=>{
+      frameRenderJobs.set(id,{plan,resolve,reject});
+      timer=setTimeout(()=>reject(new Error('Frame inspection renderer timed out.')),25000);
+      abort=()=>reject(Object.assign(new Error('Frame inspection stopped.'),{name:'AbortError'}));
+      signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+      renderer.webContents.once('render-process-gone',()=>reject(new Error('Frame inspection renderer stopped.')));
+    });
+    // Start loading without leaving an unhandled rejection while the ready job waits.
+    const loading=process.env.VITE_DEV_SERVER_URL?renderer.loadURL(process.env.VITE_DEV_SERVER_URL):renderer.loadFile(path.join(__dirname,'..','dist','index.html'));
+    loading.catch(error=>frameRenderJobs.get(id)?.reject(error));
+    await ready;
+    const image=await renderer.webContents.capturePage(undefined,{stayHidden:true,stayAwake:true});
+    if(signal?.aborted)throw Object.assign(new Error('Frame inspection stopped.'),{name:'AbortError'});
+    if(image.isEmpty())throw new Error('The preview frame was empty.');
+    return image.resize({width:plan.width,height:plan.height,quality:'best'}).toJPEG(88);
+  }finally{
+    clearTimeout(timer);signal?.removeEventListener('abort',abort);frameRenderJobs.delete(id);
+    if(!renderer.isDestroyed())renderer.destroy();
+  }
+}
+const {AgentFrames}=require('./agentFrames.cjs');
+const agentFrames=new AgentFrames(captureTimelineFrame);
 const agentRequestKey = (event, id) => `${event.sender.id}:${String(id || 'legacy').slice(0, 100)}`;
 ipcMain.handle('agent:cancel', (event, requestId) => {
   agentRequests.get(agentRequestKey(event, requestId))?.abort();
 });
-app.on('before-quit', () => { for (const controller of agentRequests.values()) controller.abort(); });
+app.on('before-quit', () => { for (const controller of agentRequests.values()) controller.abort(); agentFrames.dispose(); });
+ipcMain.handle('agent:inspectFrames',async(event,req)=>{
+  const key=agentRequestKey(event,req?.requestId);
+  if(agentRequests.has(key))return {error:'This assistant request is already running.'};
+  if(settings.getActive().provider!=='codex-sdk')return {error:'Frame inspection is available with Codex SDK selected.'};
+  const controller=new AbortController();agentRequests.set(key,controller);
+  const onDestroyed=()=>{controller.abort();agentFrames.clearOwner(event.sender.id);};
+  event.sender.once('destroyed',onDestroyed);
+  try{return await agentFrames.inspect(event.sender.id,req,controller.signal);}
+  catch(error){return {error:error.message,...(controller.signal.aborted?{canceled:true}:{})};}
+  finally{agentRequests.delete(key);if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',onDestroyed);}
+});
 ipcMain.handle('agent:step', async (event, req) => {
   const key = agentRequestKey(event, req?.requestId);
   if (agentRequests.has(key)) return { ok: false, error: 'This assistant request is already running.' };
@@ -1367,7 +1419,9 @@ ipcMain.handle('agent:step', async (event, req) => {
     const order = fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
     // SDK choices are explicit: never silently send their conversations to an API
     // provider (or launch a local SDK as an API provider's fallback).
-    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, signal: controller.signal }));
+    const images=agentFrames.images(event.sender.id,req.frameIds||[]);
+    if(images.length&&first!=='codex-sdk')throw new Error('Inspected frames require Codex SDK.');
+    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, images, signal: controller.signal }));
     return {
       ok: true, ...result, provider, model: settings.getActive(provider).model,
       fellBack: failed.map((f) => ({ provider: f.provider, name: fb.NAMES[f.provider], reason: f.reason })),

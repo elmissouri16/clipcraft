@@ -217,9 +217,16 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
     maxTurns: 4,
   });
 
-  async function complete(cfg, { system = '', prompt, schema, ...options }) {
+  async function complete(cfg, { system = '', prompt, schema, images = [], ...options }) {
     return withSession(cfg, options, async (session) => {
       if (cfg.provider === 'codex-sdk') {
+        if(!Array.isArray(images)||images.length>6)throw new Error('Use at most six inspected frames.');
+        const attachments=images.map((image,index)=>{
+          const bytes=fs.readFileSync(image.path);
+          if(bytes.length>8*1024*1024||bytes[0]!==255||bytes[1]!==216)throw new Error('The inspected frame is not a readable JPEG.');
+          const file=path.join(session.cwd,`frame-${index+1}.jpg`);fs.writeFileSync(file,bytes,{flag:'wx'});
+          return {file,label:String(image.label||`Frame ${index+1}`).slice(0,600)};
+        });
         const codex = new session.sdk.Codex({ codexPathOverride: session.executablePath, env: session.env,
           config: { features: { shell_tool: false, unified_exec: false, image_generation: false, apps: false, plugins: false, skip_host_skill_discovery: true },
             skills: { include_instructions: false }, mcp_servers: {},
@@ -230,7 +237,9 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
           ...(cfg.reasoningEffort ? { modelReasoningEffort: cfg.reasoningEffort } : {}),
           skipGitRepoCheck: true, sandboxMode: 'read-only', approvalPolicy: 'never', webSearchMode: 'disabled',
         });
-        const result = await thread.run(`${system}\n\n${prompt}`, { outputSchema: schema, signal: session.controller.signal });
+        const text=`${system}\n\n${prompt}${attachments.length?'\n\nAttached images are actual video frame captures, in this order:\n'+attachments.map((image,i)=>`${i+1}. ${image.label}`).join('\n'):''}`;
+        const input=attachments.length?[{type:'text',text},...attachments.map(image=>({type:'local_image',path:image.file}))]:text;
+        const result = await thread.run(input, { outputSchema: schema, signal: session.controller.signal });
         return result.finalResponse;
       }
       const query = session.sdk.query({ prompt, options: {

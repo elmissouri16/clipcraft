@@ -236,6 +236,34 @@ Parallel checks: `node scripts/test-image-jobs.cjs`,
 Frame checks: `node scripts/test-scene-frame.mjs` and
 `FVE_SMOKE_MODE=codex-images-portrait` (same live opt-in).
 
+### Codex visual inspection
+
+With **Codex SDK** selected, CraftAI can use `inspect_frames` in the media tool
+group to look at video moments. It can inspect uncropped source pictures or
+the composed preview, including crops, overlays, titles, keyframes and effects.
+The selected model must support image input.
+
+Ask, for example: “Look at the first scene, check whether the face and title
+fit the vertical frame, adjust them if needed, then check again.” Frames use
+timeline seconds; source inspection also reports the corresponding source
+time after trims and speed changes. Up to six recent captures are attached
+as actual images to Codex's subsequent editing turns, with timestamp and
+project-revision labels. This samples still images; it does not watch continuous
+playback or listen to audio.
+
+Composed captures use an isolated instance of ClipCraft's preview renderer.
+Inspection does not move the playhead, change project media, or create Undo
+entries. Temporary frame files stay outside project media and are removed when
+the app exits; saved chat history stores frame handles and metadata. A later
+chat request must inspect again to obtain fresh visual evidence. **Stop** cancels
+capture and closes its renderer.
+
+Checks: `node scripts/test-agent-frames.mjs` and
+`FVE_SMOKE_MODE=agent-vision` in an isolated Electron smoke profile. The default
+smoke verifies real frame captures with a simulated model response. Set
+`FVE_CODEX_VISION_LIVE=1` to also test actual Codex image understanding using
+the installed CLI login.
+
 ### Gemini speech generation
 
 Open **Settings → Speech generation**, paste a Google AI Studio API key, and

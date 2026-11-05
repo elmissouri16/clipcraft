@@ -91,6 +91,13 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
         assert.equal(client.options.config.features.shell_tool, false);
         assert.equal(client.options.config.features.image_generation, false, 'normal editor decisions cannot generate untracked images');
         assert.equal(client.options.env.ELECTRON_RUN_AS_NODE, undefined);
+        const frame=path.join(root,'frame.jpg');fs.writeFileSync(frame,Buffer.from([255,216,255,217]));
+        await agents.agentStep({provider},{...req,images:[{path:frame,label:'timeline frame at 1.5s; revision r1'}]});
+        const vision=captured.findLast(entry=>entry.kind==='run');
+        assert.equal(vision.prompt[0].type,'text');assert.ok(vision.prompt[0].text.includes('timeline frame at 1.5s'));
+        assert.equal(vision.prompt[1].type,'local_image');
+        assert.notEqual(vision.prompt[1].path,frame,'attachments are copied into the isolated SDK workspace');
+        assert.equal(fs.existsSync(vision.prompt[1].path),false,'inspection copies are removed after the SDK turn');
       } else {
         assert.deepEqual(session.options.tools, []);
         assert.equal(session.options.strictMcpConfig, true);

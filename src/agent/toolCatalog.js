@@ -6,7 +6,7 @@ export const TOOL_GROUPS = {
   audio: ['set_volume', 'search_sounds', 'add_sound', 'list_voices', 'add_voiceover'],
   visual: ['set_filter', 'set_effects', 'add_transition', 'add_effect', 'set_color', 'set_compositing'],
   motion: ['zoom', 'set_transform', 'add_keyframes', 'set_animation', 'motion_guide'],
-  media: ['add_media', 'generate_image', 'search_stock', 'add_stock', 'add_scene'],
+  media: ['add_media', 'generate_image', 'inspect_frames', 'search_stock', 'add_stock', 'add_scene'],
   style: ['edit_style'],
   export: ['export_video'],
 };

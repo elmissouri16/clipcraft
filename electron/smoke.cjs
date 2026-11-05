@@ -14,6 +14,7 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'agent-vision') return require('./smoke-agent-vision.cjs')(win, app, dir);
   if (['codex-images','codex-images-parallel','codex-images-portrait'].includes(process.env.FVE_SMOKE_MODE)) {
     return require('./smoke-codex-images.cjs')(win, app, dir);
   }

@@ -2,7 +2,7 @@
 // Every editing tool goes through the same reducer actions as the buttons, so Undo, the timeline and the
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.
-import { clipLen, projectDuration, videoLayout, uid, isLayerLocked } from '../store.js';
+import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable } from '../store.js';
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
@@ -28,6 +28,11 @@ const TEXT_LOOK = {
 };
 
 export const TOOL_DECLARATIONS = [
+  {
+    name:'inspect_frames',
+    description:'Codex vision: look at 1–6 actual frames. source timeline (default) shows the composition with text/effects; clip shows its raw source. times_sec are timeline seconds; clip_id required for clip. Read-only.',
+    parameters:{type:'OBJECT',properties:{source:S,clip_id:S,times_sec:{type:'ARRAY',items:N}},required:['times_sec']},
+  },
   {
     name: 'get_project',
     description: 'Read live project ids/times. Reuse a previous read when its revision matches. scope: all (default), overview, main, overlay, audio, text, captions, effects, media. clip_ids selects exact clips; offset/limit page lists (default 30, max 100). if_revision skips unchanged data. Read affected tracks after cuts or manual edits.',
@@ -551,6 +556,14 @@ export function createToolRunner(ctx) {
   };
 
   const tools = {
+    async inspect_frames({source='timeline',clip_id,times_sec}){
+      if(!api.agentInspectFrames)return {error:'Frame inspection requires an updated ClipCraft with Codex SDK.'};
+      const p=project(),revision=projectRevision(p);
+      const {craftAI,...snapshot}=source==='timeline'?renderable(p):p;
+      const result=await api.agentInspectFrames({project:snapshot,revision,source,clip_id,times_sec,requestId:ctx.requestId});
+      if(ctx.isCanceled?.()||result.canceled)return {error:'Frame inspection stopped.'};
+      return result;
+    },
     async get_project({ scope = 'all', clip_ids, offset = 0, limit = 30, if_revision } = {}) {
       const p = project();
       const revision = projectRevision(p);
@@ -1176,6 +1189,6 @@ export function createToolRunner(ctx) {
       }
     },
     // True for tools that change the project (used to decide whether there is anything to undo).
-    mutates: (name) => !['get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name),
+    mutates: (name) => !['inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name),
   };
 }
