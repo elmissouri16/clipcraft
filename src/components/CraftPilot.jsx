@@ -83,6 +83,11 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const configRequest = useRef(0);
   const listRef = useRef(null);
   const inputRef = useRef(null);
+  const launcherRef = useRef(null);
+  const closePanel = () => {
+    setOpen(false);
+    requestAnimationFrame(() => launcherRef.current?.focus({ preventScroll: true }));
+  };
   const isCurrent = () => mounted.current && getProject().id === projectId;
   const saveChat = (next) => {
     if (!isCurrent()) return;
@@ -130,7 +135,9 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   }, [messages, busy]);
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50);
+    if (!open) return;
+    const timer = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100);
+    return () => clearTimeout(timer);
   }, [open]);
 
   const updateLast = (fn, completedContents) => updateSession((s) => ({
@@ -237,9 +244,9 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   };
 
   return (
-    <>
+    <div className={`pilot-shell ${open ? 'is-open' : ''}`}>
       {open && (
-        <section className="pilot-panel pilot2" aria-label="CraftAI assistant">
+        <section id="craft-ai-panel" className="pilot-panel pilot2" aria-label="CraftAI assistant">
           <header className="pilot-head">
             <span className="pilot-title"><Zap size={16} /> <span className="pilot-wordmark">Craft<span className="grad">AI</span></span></span>
             <CraftModelPicker config={config} disabled={busy} onSavingChange={setModelSaving} onSaved={(s) => {
@@ -254,7 +261,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
               aria-label="Editing styles" title="Editing styles"><Palette size={16} /></button>
             <button className="icon-btn" onClick={newChat} disabled={busy || (!messages.length && !input.trim())} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
             <button className="icon-btn" onClick={onOpenSettings} aria-label="AI settings" title="AI settings"><Settings size={16} /></button>
-            <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close assistant"><X size={16} /></button>
+            <button className="icon-btn" onClick={closePanel} aria-label="Close assistant"><X size={16} /></button>
           </header>
 
           <div className="pilot-session-picker">
@@ -370,10 +377,11 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         </section>
       )}
 
-      <button className={`pilot-fab ${open ? 'open' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="CraftAI assistant">
+      <button ref={launcherRef} className="pilot-fab" onClick={() => setOpen(true)} aria-expanded={open}
+        aria-controls={open ? 'craft-ai-panel' : undefined} aria-hidden={open || undefined} tabIndex={open ? -1 : 0} aria-label="CraftAI assistant">
         <span className="pilot-fab-icon"><Zap size={17} /></span>
         <span>CraftAI</span>
       </button>
-    </>
+    </div>
   );
 }

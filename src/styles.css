@@ -685,18 +685,39 @@ kbd {
 .settings-model-picker.open .dropdown-list { position: static; margin-top: 4px; max-height: 200px; }
 
 /* ---------- CraftAI (AI assistant) ---------- */
-.pilot-fab {
-  position: fixed; right: 18px; bottom: 18px; z-index: 35; display: flex; align-items: center; gap: 9px; height: 44px; padding: 0 18px 0 8px;
-  border-radius: 22px; border: 1px solid var(--border-strong); background: rgba(28, 32, 43, 0.92); backdrop-filter: blur(8px);
-  color: var(--text); font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); transition: transform var(--t-fast), border-color var(--t-fast);
+/* One bottom-right surface grows from the launcher into the assistant. The
+   content keeps its final size while the shell reveals it, avoiding text reflow. */
+.pilot-shell {
+  --pilot-width: min(400px, calc(100vw - 36px));
+  --pilot-height: min(620px, calc(100vh - 90px));
+  position: fixed; right: 18px; bottom: 18px; z-index: 35; width: 112px; height: 44px;
+  border-radius: 22px; border: 1px solid var(--border-strong); overflow: hidden;
+  background: linear-gradient(175deg, #14141f 0%, #101018 55%, #0d0d14 100%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: width 280ms var(--ease), height 280ms var(--ease), border-radius 280ms var(--ease),
+    border-color 180ms var(--ease), box-shadow 280ms var(--ease);
 }
-.pilot-fab:hover { transform: translateY(-1px); border-color: var(--primary); }
-.pilot-fab.open { border-color: var(--primary); }
+.pilot-shell:not(.is-open):hover { border-color: var(--primary); }
+.pilot-shell.is-open { width: var(--pilot-width); height: var(--pilot-height); border-radius: 20px;
+  border-color: rgba(130, 92, 251, 0.35);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 44px rgba(109, 40, 224, 0.14); }
+.pilot-fab {
+  position: absolute; right: 0; bottom: 0; display: flex; align-items: center; gap: 9px; width: 110px; height: 42px; padding: 0 16px 0 6px;
+  border-radius: 22px; border: 0; background: transparent; color: var(--text); font-weight: 600;
+  opacity: 1; visibility: visible; transition: opacity 140ms 120ms;
+}
+.pilot-fab:focus-visible { outline-offset: -3px; }
+.pilot-shell.is-open .pilot-fab { opacity: 0; visibility: hidden; pointer-events: none; transition-delay: 0ms; }
 .pilot-fab-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, var(--primary) 50%, #a855f7); color: #fff; }
 .pilot-panel {
-  position: fixed; right: 18px; bottom: 74px; z-index: 34; width: 400px; max-width: calc(100vw - 36px); height: min(620px, calc(100vh - 110px));
-  display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; background: var(--surface-1);
-  border: 1px solid var(--border-strong); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  position: absolute; right: 0; bottom: 0; width: calc(var(--pilot-width) - 2px); height: calc(var(--pilot-height) - 2px);
+  display: flex; flex-direction: column; border-radius: inherit; overflow: hidden;
+  animation: pilot-reveal 180ms 80ms both;
+}
+@keyframes pilot-reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .pilot-shell, .pilot-fab { transition: none; }
+  .pilot-panel { animation: none; }
 }
 .pilot-head { display: flex; align-items: center; gap: 4px; height: 46px; padding: 0 8px 0 14px; flex: none; border-bottom: 1px solid var(--border); }
 .pilot-title { display: flex; align-items: center; gap: 8px; font-weight: 650; margin-right: auto; }
@@ -1229,12 +1250,7 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 
 /* CraftAI redesign (pilot2): a ClipCraft command deck — gradient wordmark, model pill,
    grouped quick-action cards, visual style tiles, card messages, floating pill composer.
-   Scoped under .pilot2; panel position/size and all behaviour are unchanged. */
-.pilot-panel.pilot2 {
-  background: linear-gradient(175deg, #14141f 0%, #101018 55%, #0d0d14 100%);
-  border: 1px solid rgba(130, 92, 251, 0.35); border-radius: 20px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 44px rgba(109, 40, 224, 0.14);
-}
+   Scoped under .pilot2; the shared shell owns the outer surface. */
 .pilot2 .pilot-head { height: 52px; padding: 0 10px 0 16px; border-bottom: 1px solid rgba(130, 92, 251, 0.22); background: rgba(130, 92, 251, 0.05); }
 .pilot2 .pilot-title { font-size: 15px; font-weight: 700; letter-spacing: 0.1px; }
 .pilot2 .pilot-wordmark .grad { background: linear-gradient(92deg, #a78bfa, #825cfb 60%, #7c3aed); -webkit-background-clip: text; background-clip: text; color: transparent; }
