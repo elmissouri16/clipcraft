@@ -684,6 +684,7 @@ kbd {
 
 .field > span .btn { margin: -4px 0; }
 .field small { line-height: 1.4; }
+.settings-model-picker.open .dropdown-list { position: static; margin-top: 4px; max-height: 200px; }
 
 /* ---------- CraftAI (AI assistant) ---------- */
 .pilot-fab {

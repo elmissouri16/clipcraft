@@ -20,6 +20,9 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'local-agents') {
     return require('./smoke-local-agents.cjs')(win, app, dir);
   }
+  if (process.env.FVE_SMOKE_MODE === 'model-picker') {
+    return require('./smoke-model-picker.cjs')(win, app, dir);
+  }
   if (process.env.FVE_SMOKE_MODE === 'templates-pack' || process.env.FVE_SMOKE_MODE === 'templates-use') {
     // Templates. "pack": build a small project from generated clips, mark two clips replaceable and write the
     // package (plus preview.mp4) into <dir>/packages. "use": with FVE_TEMPLATES_URL pointing at a local copy of the

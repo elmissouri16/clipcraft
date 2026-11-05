@@ -136,8 +136,11 @@ for these choices.
 Install and sign in using the provider's own instructions:
 [Codex CLI](https://developers.openai.com/codex/cli) or
 [Claude](https://code.claude.com/docs/en/quickstart). Leave **Model** blank to
-use the installed CLI's configured default, or enter a model id. **Load models**
-uses Claude's SDK catalog or Codex's cached CLI catalog when it is available.
+use the installed CLI's configured default, or choose a specific model from the
+**Model** dropdown. Choices load automatically from Claude's SDK catalog or
+Codex's cached CLI catalog. **Refresh models** reloads the list; **Custom model
+ID…** lets you enter an ID that is not listed. Click **Save** to use the selected
+model in CraftAI.
 
 These backends support the same CraftAI editing tools and Undo as the existing
 API providers. **Stop** cancels an in-flight SDK request. Selecting an installed

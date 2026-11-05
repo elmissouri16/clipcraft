@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import Dropdown from './Dropdown.jsx';
 import { AudioLines, CircleAlert, CircleCheck, ExternalLink, Eye, EyeOff, Film, Gauge, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 
 const PROVIDERS = [
@@ -181,6 +182,10 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(null); // 'save' | 'test' | 'models'
   const [models, setModels] = useState([]); // model ids offered by the provider
+  const [customModel, setCustomModel] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsNote, setModelsNote] = useState('');
+  const catalogGeneration = useRef(0);
   const [result, setResult] = useState(null); // { ok, text }
 
   const load = (s, p = s.provider) => {
@@ -191,7 +196,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
     setApiKey('');
     setExecutablePath(s.executablePaths?.[p] || '');
     setResult(null);
-    setModels([]);
+    setCustomModel(false);
   };
   useEffect(() => {
     window.api.settingsGet().then((s) => load(s));
@@ -199,14 +204,31 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
 
   useEffect(() => {
     let alive = true;
+    catalogGeneration.current++;
     setSdkStatus(null);
+    setModels([]);
+    setModelsNote('');
+    setModelsLoading(false);
     if (!PROVIDERS.find((p) => p.id === provider)?.sdk) return;
     const timer = setTimeout(() => {
-      window.api.aiSdkStatus({ provider, executablePath }).then((status) => {
-        if (alive) setSdkStatus(status);
+      window.api.aiSdkStatus({ provider, executablePath }).then(async (status) => {
+        if (!alive) return;
+        setSdkStatus(status);
+        if (!status.ok || status.authenticated === false) return;
+        setModelsLoading(true);
+        try {
+          const catalog = await window.api.aiModels({ provider, executablePath, model: '' });
+          if (!alive) return;
+          if (catalog.ok) {
+            setModels(catalog.models);
+            setModelsNote(catalog.fromCache ? 'Models from the CLI’s cached catalog.' : 'Models reported by the installed agent.');
+          } else setModelsNote(catalog.error || 'Could not load models. You can enter a custom model ID.');
+        } catch (error) {
+          if (alive) setModelsNote(error.message || 'Could not load models. You can enter a custom model ID.');
+        } finally { if (alive) setModelsLoading(false); }
       }).catch((error) => { if (alive) setSdkStatus({ ok: false, error: error.message }); });
     }, 250);
-    return () => { alive = false; clearTimeout(timer); };
+    return () => { alive = false; catalogGeneration.current++; clearTimeout(timer); };
   }, [provider, executablePath]);
 
   useEffect(() => {
@@ -221,6 +243,8 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
   const draft = { provider, model, baseUrl, apiKey, executablePath };
 
   const switchProvider = (p) => {
+    catalogGeneration.current++;
+    setBusy(null);
     setProvider(p);
     setModel(saved.models[p] || saved.defaultModels[p]);
     setBaseUrl(saved.baseUrls[p] || '');
@@ -228,6 +252,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
     setExecutablePath(saved.executablePaths?.[p] || '');
     setResult(null);
     setModels([]);
+    setCustomModel(false);
   };
 
   const save = async () => {
@@ -248,12 +273,17 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
   };
 
   const loadModels = async () => {
+    const generation = ++catalogGeneration.current;
     setBusy('models');
     setResult(null);
-    const r = await window.api.aiModels(draft);
+    let r;
+    try { r = await window.api.aiModels(draft); }
+    catch (error) { r = { ok: false, error: error.message }; }
+    if (generation !== catalogGeneration.current) return;
     setBusy(null);
     if (!r.ok) return setResult({ ok: false, text: r.error, link: r.link, linkLabel: r.linkLabel });
     setModels(r.models);
+    setModelsNote(r.fromCache ? 'Models from the CLI’s cached catalog.' : 'Models reported by the installed agent.');
     setResult({ ok: true, text: r.useCliDefault
       ? 'Leave Model blank to use the installed CLI default, or enter a model id.'
       : r.fromCache ? `${r.models.length} models in the CLI’s cached catalog. Choose one your account can use.`
@@ -348,13 +378,34 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
             <span>
               Model
               <button className="btn btn-ghost btn-sm" type="button" onClick={loadModels}
-                disabled={!!busy || (info.needsKey && !apiKey.trim() && !hint) || (info.sdk && !sdkStatus?.ok)}>
-                {busy === 'models' ? <Loader2 size={13} className="spin" /> : null} Load models
+                disabled={!!busy || modelsLoading || (info.needsKey && !apiKey.trim() && !hint) || (info.sdk && !sdkStatus?.ok)}>
+                {busy === 'models' || modelsLoading ? <Loader2 size={13} className="spin" /> : null} {info.sdk ? 'Refresh models' : 'Load models'}
               </button>
             </span>
-            <input type="text" list="model-ids" value={model} spellCheck={false} placeholder={info.sdk ? 'Default from installed CLI' : undefined} onChange={(e) => setModel(e.target.value)} />
-            <datalist id="model-ids">{models.map((m) => <option key={m} value={m} />)}</datalist>
-            <small className="muted">{info.sdk ? 'Leave blank to use your installed CLI’s configured model, or enter a model id.' : 'Use the model id (for example gemini-3.8-flash), not the display name. “Load models” lists the real ones.'}</small>
+            {info.sdk ? (
+              <>
+                <Dropdown ariaLabel="AI model" className="settings-model-picker" value={customModel ? '__custom__' : model} disabled={!!busy}
+                  options={[
+                    { value: '', label: 'Default from installed CLI' },
+                    ...[...new Set([...models, ...(model ? [model] : [])])].map((id) => ({ value: id, label: id })),
+                    { value: '__custom__', label: 'Custom model ID…' },
+                  ]}
+                  onChange={(id) => {
+                    setCustomModel(id === '__custom__');
+                    if (id !== '__custom__') setModel(id);
+                    setResult(null);
+                  }} />
+                {customModel && <input type="text" value={model} aria-label="Custom model ID" spellCheck={false}
+                  placeholder="Enter the exact model ID" onChange={(e) => setModel(e.target.value)} />}
+                <small className="muted">{modelsLoading ? 'Loading models…' : modelsNote || 'Choose a model, use the CLI default, or enter a custom ID.'} Click Save to use this model in CraftAI.</small>
+              </>
+            ) : (
+              <>
+                <input type="text" list="model-ids" value={model} aria-label="AI model ID" spellCheck={false} onChange={(e) => setModel(e.target.value)} />
+                <datalist id="model-ids">{models.map((m) => <option key={m} value={m} />)}</datalist>
+                <small className="muted">Use the model id (for example gemini-3.8-flash), not the display name. “Load models” lists the real ones.</small>
+              </>
+            )}
           </label>
 
           {(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && (

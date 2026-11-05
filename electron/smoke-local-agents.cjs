@@ -39,7 +39,8 @@ module.exports = async (win, app, dir) => {
       await until(`${statusElement}?.textContent.includes("Signed in")`, 30000);
       evidence.detected = await q(`${statusElement}.textContent`);
       assert.equal(await q('document.querySelectorAll(".settings input[type=password]").length'), 0, 'SDK does not ask for an API key');
-      await clickText('.settings button', 'Load models');
+      await until(`![...document.querySelectorAll('.settings button')].find(b => b.textContent.trim() === 'Refresh models')?.disabled`, 30000);
+      await clickText('.settings button', 'Refresh models');
       await until('!!document.querySelector(".settings .result.ok:not([aria-label])") || !!document.querySelector(".settings .result.bad:not([aria-label])")', 30000);
       evidence.models = await q('document.querySelector(".settings .result:not([aria-label])").textContent');
       assert.equal(await q('!!document.querySelector(".settings .result.bad:not([aria-label])")'), false, 'model listing succeeds');
