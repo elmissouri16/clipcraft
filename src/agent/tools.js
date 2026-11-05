@@ -8,7 +8,8 @@ import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_T
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
 import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from '../visual.js';
 import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from './motionGuide.js';
-import { projectRevision } from './context.js';
+import { projectRevision, audioRevision } from './context.js';
+import { regroupSegments } from '../subtitles.js';
 import { validateAgentProject, verifyActionResults } from './validation.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -19,6 +20,8 @@ const CAPTION_STYLES = TEXT_TEMPLATES.filter((t) => t.caption);
 const S = { type: 'STRING' };
 const N = { type: 'NUMBER' };
 const B = { type: 'BOOLEAN' };
+const SPEECH = { language: { ...S, description: 'en, ar, fr, es...; default auto' }, source: { ...S, enum: ['all', 'video', 'overlay', 'audio'], description: 'Audible mix by default. Select a track family or clip_ids to isolate speech from music.' },
+  clip_ids: { type: 'ARRAY', items: S }, engine: { ...S, enum: ['local', 'cloud'] }, provider: { ...S, description: 'Cloud transcription: groq, openai, deepgram, elevenlabs' }, model: S };
 
 // Look of a text (edit_text). Ids come from list_options, so the declarations stay short: every step sends them,
 // and some free plans (Groq: 8K tokens a minute) count every token.
@@ -46,8 +49,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'remove_silences',
-    description: 'Cut silent stretches out of the main track (related captions, overlays and audio ripple together).',
-    parameters: { type: 'OBJECT', properties: { min_silence_sec: { ...N, description: 'default 0.6' }, threshold_db: { ...N, description: 'default -35; -30 noisy, -45 quiet' }, keep_padding_sec: { ...N, description: 'default 0.12' } } },
+    description: 'Cut silent stretches from the audible mix; related captions, overlays and audio ripple together. Default all includes detached/overlay audio. source selects all, video, overlay or audio; clip_ids selects speech clips to exclude music.',
+    parameters: { type: 'OBJECT', properties: { min_silence_sec: { ...N, description: 'default 0.6' }, threshold_db: { ...N, description: 'default -35; -30 noisy, -45 quiet' }, keep_padding_sec: { ...N, description: 'default 0.12' }, source: SPEECH.source, clip_ids: SPEECH.clip_ids } },
   },
   {
     name: 'cut_range',
@@ -61,13 +64,13 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'transcribe',
-    description: 'Speech of the project with timeline timestamps. Slow on long videos: once per request.',
-    parameters: { type: 'OBJECT', properties: { language: { ...S, description: 'en, ar, fr, es... (auto is unreliable)' } } },
+    description: 'Read cached speech with exact timeline and available word timestamps. Same audible content is transcribed once and reused for captions. Query and bounds filter overlapping segments; offset/limit page all results. Word timing precision is reported, never inferred as measured.',
+    parameters: { type: 'OBJECT', properties: { ...SPEECH, query: S, start_sec: N, end_sec: N, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' } } },
   },
   {
     name: 'add_captions',
     description: 'Automatic captions from the speech (replaces earlier ones). Restyle them with edit_text clip_id "captions".',
-    parameters: { type: 'OBJECT', properties: { language: S, style_id: { ...S, description: 'caption style id, default cap-classic' } } },
+    parameters: { type: 'OBJECT', properties: { ...SPEECH, words_per_caption: { type: 'INTEGER', description: '1–20, default 6. Uses measured word boundaries when available.' }, style_id: { ...S, description: 'caption style id, default cap-classic' } } },
   },
   {
     name: 'add_text',
@@ -363,7 +366,7 @@ export function createToolRunner(ctx) {
   const project = () => ctx.getProject();
   const after = async (extra = {}) => {
     await ctx.settle();
-    return { ok: true, duration_sec: r2(projectDuration(project())), revision: projectRevision(project()), ...extra };
+    return { ok: true, duration_sec: r2(exportDuration(project())), timeline_extent_sec: r2(projectDuration(project())), revision: projectRevision(project()), ...extra };
   };
   const findClip = (id) => {
     const p = project();
@@ -596,6 +599,48 @@ export function createToolRunner(ctx) {
     return { patch };
   };
 
+  const transcriptReads = new Map();
+  let latestTranscript = null;
+  const validateSpeechSelection = ({ source = 'all', clip_ids, engine = 'local' }) => {
+    if (!['all', 'video', 'overlay', 'audio'].includes(source)) throw new Error('source must be all, video, overlay or audio.');
+    if (!['local', 'cloud'].includes(engine)) throw new Error('engine must be local or cloud.');
+    if (clip_ids !== undefined && (!Array.isArray(clip_ids) || !clip_ids.length || clip_ids.some(id => typeof id !== 'string' || !findClip(id)))) throw new Error('clip_ids must name existing clips.');
+  };
+  const speech = async ({ language = 'auto', source = 'all', clip_ids, engine = 'local', provider, model } = {}) => {
+    validateSpeechSelection({ source, clip_ids, engine });
+    if (ctx.isCanceled?.()) return { error: 'Transcription stopped.' };
+    const p = renderable(project()), selected = { source, clip_ids }, revision = audioRevision(p, selected);
+    const options = { language, source, clip_ids, engine, provider, model, maxLen: 0, requestId: ctx.requestId };
+    const key = JSON.stringify([revision, language, engine, provider, model]);
+    const cached = transcriptReads.get(key);
+    if (cached) { latestTranscript = { ...cached, source, clip_ids, audio_fingerprint: revision }; return { ...structuredClone(cached), cached: true }; }
+    const method = engine === 'cloud' ? api.runCaptionsCloud : api.runCaptions;
+    if (!method) return { error: 'The selected speech engine is unavailable.' };
+    const res = await method(p, options);
+    if (ctx.isCanceled?.() || res.canceled) return { error: 'Transcription stopped.' };
+    if (!res.ok) return { error: String(res.error || 'Transcription failed.').split('\n')[0] };
+    if (audioRevision(renderable(project()), selected) !== revision) return { error: 'The audible timeline changed during transcription. Retry with the current audio.' };
+    const result = { ...res, audio_revision: res.audio_revision || revision };
+    latestTranscript = { ...result, source, clip_ids, audio_fingerprint: revision };
+    // The main service checks source-file mtimes on every invocation. Only cache
+    // legacy/injected API results here; durable responses have audio_revision.
+    if (!res.audio_revision) {
+      if (transcriptReads.size >= 8) transcriptReads.delete(transcriptReads.keys().next().value);
+      transcriptReads.set(key, structuredClone(result));
+    }
+    return result;
+  };
+
+  const normalizedRange = (start, end, total) => {
+    const a = Number(start), b = Number(end), fps = project().fps || 30;
+    const tolerance = Math.max(0.005, 0.5 / fps);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b <= a || b > total + tolerance || a >= total) return { error: `Use 0 <= start_sec < end_sec <= ${r2(total)}.` };
+    const snap = t => Math.abs(total - t) <= tolerance ? total : Math.round(t * fps) / fps;
+    const from = Math.max(0, snap(a)), to = Math.min(total, snap(b));
+    if (to - from < 1 / fps - 1e-7) return { error: 'The range must contain at least one output frame.' };
+    return { start: from, end: to };
+  };
+
   const tools = {
     async inspect_frames({source='timeline',clip_id,times_sec}){
       if(!api.agentInspectFrames)return {error:'Frame inspection requires an updated ClipCraft with Codex SDK.'};
@@ -632,33 +677,29 @@ export function createToolRunner(ctx) {
       return out;
     },
 
-    async remove_silences({ min_silence_sec = 0.6, threshold_db = -35, keep_padding_sec = 0.12 } = {}) {
-      const p = project();
-      if (!p.videoClips.length) return { error: 'The main track is empty.' };
-      const res = await api.agentSilences(p, { minDur: Number(min_silence_sec), noiseDb: Number(threshold_db) });
+    async remove_silences({ min_silence_sec = 0.6, threshold_db = -35, keep_padding_sec = 0.12, source = 'all', clip_ids } = {}) {
+      const p = project(), total = exportDuration(p);
+      if (!total) return { error: 'The main track is empty.' };
+      const minDur = Number(min_silence_sec), noiseDb = Number(threshold_db), pad = Number(keep_padding_sec);
+      if (!Number.isFinite(minDur) || minDur < 0.05 || minDur > 60 || !Number.isFinite(noiseDb) || noiseDb < -100 || noiseDb > 0 || !Number.isFinite(pad) || pad < 0 || pad > 10) return { error: 'Use min_silence_sec 0.05–60, threshold_db -100–0 and keep_padding_sec 0–10.' };
+      validateSpeechSelection({ source, clip_ids });
+      const res = await api.agentSilences(renderable(p), { minDur, noiseDb, source, clip_ids, requestId: ctx.requestId });
+      if (ctx.isCanceled?.() || res.canceled) return { error: 'Silence analysis stopped.' };
       if (!res.ok) return { error: res.error };
-      const total = exportDuration(p);
-      const pad = Math.max(0, Number(keep_padding_sec));
-      const ranges = res.silences
-        .map((s) => ({ start: s.start + pad, end: Math.min(s.end, total) - pad }))
-        .filter((s) => s.end - s.start > 0.05);
+      const fps = p.fps || 30;
+      const ranges = res.silences.map(s => ({ start: Math.max(0, Math.round((s.start + pad) * fps) / fps), end: Math.min(total, Math.round((s.end - pad) * fps) / fps) }))
+        .filter(s => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end - s.start >= 1 / fps - 1e-7);
       if (!ranges.length) return { ok: true, removed_count: 0, removed_sec: 0, note: 'No silence long enough was found.' };
-      const removed = ranges.reduce((n, r) => n + (r.end - r.start), 0);
       if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or has no editable footage.' };
       dispatch({ type: 'cutRanges', ranges, ripple: true });
-      return after({ removed_count: ranges.length, removed_sec: r2(removed) });
+      await ctx.settle();
+      return after({ removed_count: ranges.length, removed_sec: r2(total - exportDuration(project())), source });
     },
 
     async cut_range({ start_sec, end_sec }) {
-      let a = num(start_sec, 'start_sec');
-      let b = num(end_sec, 'end_sec');
-      if (a.error || b.error) return a.error ? a : b;
-      const fps = project().fps || 30;
-      a = Math.round(a * fps) / fps; b = Math.round(b * fps) / fps;
-      if (b <= a) return { error: 'end_sec must be greater than start_sec.' };
-      const total = exportDuration(project());
-      if (a < 0 || b > total + 0.001) return { error: `The cut must be inside the main timeline (0–${r2(total)}s).` };
-      const ranges = [{ start: a, end: Math.min(total, b) }];
+      const total = exportDuration(project()), range = normalizedRange(start_sec, end_sec, total);
+      if (range.error) return range;
+      const ranges = [range];
       if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track.' };
       dispatch({ type: 'cutRanges', ranges, ripple: true });
       await ctx.settle();
@@ -668,9 +709,8 @@ export function createToolRunner(ctx) {
     async keep_ranges({ ranges }) {
       const total = exportDuration(project());
       if (!Array.isArray(ranges) || !ranges.length) return { error: 'Give at least one valid range.' };
-      const fps = project().fps || 30;
-      const list = ranges.map(r => ({ start: Math.round(Number(r.start_sec) * fps) / fps, end: Math.round(Number(r.end_sec) * fps) / fps }));
-      if (list.some(r => !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.start < 0 || r.end <= r.start || r.end > total + 0.001)) return { error: `Every retained range must satisfy 0 <= start_sec < end_sec <= ${r2(total)}.` };
+      const list = ranges.map(r => normalizedRange(r.start_sec, r.end_sec, total));
+      const invalid = list.find(r => r.error); if (invalid) return invalid;
       const cuts = complementRanges(list, total);
       if (cuts.length) {
         if (cutRanges(project(), cuts, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track.' };
@@ -679,22 +719,30 @@ export function createToolRunner(ctx) {
       return after({ kept_ranges: list.length });
     },
 
-    async transcribe({ language } = {}) {
-      const p = project();
-      const res = await api.runCaptions(p, { language: language || 'auto', maxLen: 80, source: 'all' });
-      if (!res.ok) return { error: res.error.split('\n')[0] };
-      const segments = res.segments.slice(0, 400).map((s) => ({ start: r2(s.start), end: r2(s.end), text: s.text }));
-      return { segments, truncated: res.segments.length > 400 };
+    async transcribe(a = {}) {
+      const start = a.start_sec === undefined ? 0 : Number(a.start_sec), end = a.end_sec === undefined ? Infinity : Number(a.end_sec);
+      if (!Number.isFinite(start) || start < 0 || !(end > start) || (a.end_sec !== undefined && !Number.isFinite(end))) return { error: 'Use 0 <= start_sec < end_sec.' };
+      const offset = a.offset ?? 0, limit = a.limit ?? 30;
+      if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) return { error: 'offset must be nonnegative and limit from 1 to 100.' };
+      const res = await speech(a);
+      if (res.error) return res;
+      const query = String(a.query || '').toLocaleLowerCase();
+      const segments = res.segments.filter(s => s.end > start && s.start < end && (!query || s.text.toLocaleLowerCase().includes(query)));
+      return { audio_revision: res.audio_revision, source: a.source || 'all', cached: res.cached, total_segments: res.segments.length,
+        matched_segments: segments.length, offset, next_offset: offset + limit < segments.length ? offset + limit : null,
+        segments: segments.slice(offset, offset + limit), word_timing: res.segments.some(s => s.words?.length) ? 'See words timing fields; estimated timings are marked.' : 'unavailable' };
     },
 
-    async add_captions({ language, style_id = 'cap-classic' } = {}) {
-      const p = project();
-      const tpl = CAPTION_STYLES.find((t) => t.id === style_id);
+    async add_captions(a = {}) {
+      const { style_id = 'cap-classic', words_per_caption = 6 } = a;
+      const tpl = CAPTION_STYLES.find(t => t.id === style_id);
       if (!tpl) return { error: `Unknown style_id "${style_id}". Use one of: ${ids(CAPTION_STYLES)}.` };
-      const res = await api.runCaptions(p, { language: language || 'auto', maxLen: 42, source: 'all' });
-      if (!res.ok) return { error: res.error.split('\n')[0] };
-      dispatch({ type: 'setCaptions', style: { ...tpl.patch, template: tpl.id }, segments: res.segments.map((s) => ({ ...s, id: uid() })) });
-      return after({ captions: res.segments.length, style: tpl.id });
+      if (!Number.isInteger(words_per_caption) || words_per_caption < 1 || words_per_caption > 20) return { error: 'words_per_caption must be from 1 to 20.' };
+      const res = await speech(a);
+      if (res.error) return res;
+      const segments = regroupSegments(res.segments, words_per_caption);
+      dispatch({ type: 'setCaptions', style: { ...tpl.patch, template: tpl.id }, segments: segments.map(s => ({ ...s, id: uid() })) });
+      return after({ captions: segments.length, style: tpl.id, audio_revision: res.audio_revision, cached_transcript: res.cached });
     },
 
     async add_text(a) {
@@ -1057,7 +1105,7 @@ export function createToolRunner(ctx) {
       const end = start + (f.track === 'video' || f.track === 'overlay' || f.track === 'audio' ? clipLen(c) : c.duration);
       const ns = start_sec === undefined ? start : Number(start_sec);
       const ne = end_sec === undefined ? end : Number(end_sec);
-      if (!Number.isFinite(ns) || !Number.isFinite(ne) || ne - ns < 0.1) return { error: 'The new end must be at least 0.1 s after the new start.' };
+      if (!Number.isFinite(ns) || !Number.isFinite(ne) || ns < 0 || ne - ns < 0.1) return { error: 'The new end must be at least 0.1 s after the new start.' };
       let patch;
       if (f.track === 'text' || f.track === 'effect') patch = { start: Math.max(0, ns), duration: ne - Math.max(0, ns) };
       else {
@@ -1234,7 +1282,7 @@ export function createToolRunner(ctx) {
   };
 
   const readCache = new Map();
-  const cachedTools = new Set(['list_options', 'motion_guide', 'edit_style', 'transcribe']);
+  const cachedTools = new Set(['list_options', 'motion_guide', 'edit_style']);
   return {
     runImages,
     async run(name, args) {
@@ -1256,6 +1304,7 @@ export function createToolRunner(ctx) {
       } catch (e) { result = { error: e.message || String(e) }; }
       finally { operation = null; }
       if (!edits) return result;
+      if (name === 'undo' && !result.error) active.wrote = true;
       await ctx.settle();
       const now = project(), nextRevision = projectRevision(now), changed = active.wrote && revision !== nextRevision;
       if (!result.error) {

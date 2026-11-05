@@ -529,8 +529,9 @@ function reduceProjectInner(p, a) {
         id: s.id,
         text: s.text,
         start: s.start,
-        duration: Math.max(0.2, s.end - s.start),
-        words: (s.words || []).map((w) => ({ text: w.text, start: Math.max(0, w.start - s.start), end: Math.max(0, w.end - s.start) })),
+        duration: Math.max(0.001, s.end - s.start),
+        words: (s.words || []).map(w => ({ ...w, start: Math.max(0, w.start - s.start), end: Math.max(0, w.end - s.start) })),
+        ...(s.word_timing ? { word_timing: s.word_timing } : {}),
         caption: true,
       }));
       // Imported .srt subtitles (source: 'srt') are the user's own files: regenerating the
@@ -827,9 +828,10 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
         next.out = clip.gap ? b - a : clip.in + (b - start) * speed;
       } else {
         next.duration = b - a;
-        if (clip.words?.length) {
+        if (clip.words?.length && (a > start || b < end)) {
           next.words = clip.words.filter(w => w.start < b - start && w.end > a - start)
             .map(w => ({ ...w, start: Math.max(0, w.start - (a - start)), end: Math.min(b - a, w.end - (a - start)) }));
+          if (clip.caption && !next.words.length) return null;
           next.text = next.words.map(w => w.text).join(' ');
         }
       }
@@ -845,8 +847,9 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
       // Source-time keyframes are deliberately retained without retiming.
       return { clip: next, start: at, end: shouldRipple ? mapped(b) : b, originalStart: a, originalEnd: b };
     });
-    records.set(clip.id, parts);
-    return parts;
+    const kept = parts.filter(Boolean);
+    records.set(clip.id, kept);
+    return kept;
   };
   const main = videoLayout(p.videoClips).flatMap(l => sliceClip('video', l.clip, l.start, l.end, true));
   let previous;
@@ -1304,13 +1307,20 @@ export function historyReducer(state, a) {
   if (next !== state.present && placementBlocked(state.present, next, a)) return state;
   if (next !== state.present) {
     next = syncLinked(state.present, next);
-    // A locked partner cannot silently leave a linked pair out of sync.
-    for (const pair of linkPairs(next).values()) {
-      if (!pair.pic || !pair.aud) continue;
-      const pic = pair.pic.clip, aud = pair.aud.clip;
-      if (Math.abs(aud.start - picStart(next, pair.pic.track, pic) - (aud.linkOff || 0)) > 1e-6 ||
-          Math.abs(aud.in - pic.in - (aud.linkInOff || 0)) > 1e-6 || Math.abs(aud.out - pic.out - (aud.linkInOff || 0)) > 1e-6 ||
-          Math.abs((aud.speed || 1) - (pic.speed || 1)) > 1e-6) return state;
+    // Older projects can contain drift. Loading or unrelated edits must not
+    // freeze them; reject only a newly introduced or worsened mismatch.
+    if (a.type !== 'load') {
+      const prior = linkPairs(state.present);
+      const drift = (p, pair) => {
+        if (!pair?.pic || !pair?.aud) return [0, 0, 0, 0];
+        const pic = pair.pic.clip, aud = pair.aud.clip;
+        return [aud.start - picStart(p, pair.pic.track, pic) - (aud.linkOff || 0), aud.in - pic.in - (aud.linkInOff || 0),
+          aud.out - pic.out - (aud.linkInOff || 0), (aud.speed || 1) - (pic.speed || 1)].map(Math.abs);
+      };
+      for (const [id, pair] of linkPairs(next)) {
+        const was = drift(state.present, prior.get(id));
+        if (drift(next, pair).some((value, i) => value > 1e-6 && value > was[i] + 1e-6)) return state;
+      }
     }
   }
   if (next === state.present) return state;

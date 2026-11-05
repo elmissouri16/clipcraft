@@ -71,15 +71,20 @@ export function regroupSegments(segments, n) {
   for (const s of segments || []) {
     const words = String(s.text || '').trim().split(/\s+/).filter(Boolean);
     if (words.length <= limit) { out.push(s); continue; }
-    const { id, ...base } = s;
+    const { id, words: originalWords, ...base } = s;
+    const measured = Array.isArray(originalWords) && originalWords.length === words.length
+      && originalWords.every(w => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start)
+      && originalWords.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim() === words.join(' ');
     const span = Math.max(0, (Number(s.end) || 0) - (Number(s.start) || 0));
     for (let i = 0; i < words.length; i += limit) {
       const chunk = words.slice(i, i + limit);
+      const timings = measured ? originalWords.slice(i, i + limit) : null;
       out.push({
         ...base,
-        start: (Number(s.start) || 0) + (span * i) / words.length,
-        end: (Number(s.start) || 0) + (span * (i + chunk.length)) / words.length,
+        start: timings ? timings[0].start : (Number(s.start) || 0) + (span * i) / words.length,
+        end: timings ? timings.at(-1).end : (Number(s.start) || 0) + (span * (i + chunk.length)) / words.length,
         text: chunk.join(' '),
+        ...(timings ? { words: timings } : { word_timing: 'estimated' }),
       });
     }
   }

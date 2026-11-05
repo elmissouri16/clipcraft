@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { historyReducer, normalizeProject, videoLayout } from '../src/store.js';
 import { createToolRunner, summarizeProject, TOOL_DECLARATIONS } from '../src/agent/tools.js';
+import { createToolCatalog, TOOL_GROUPS } from '../src/agent/toolCatalog.js';
 import geminiTts from '../electron/geminiTts.cjs';
 
 let state = {
@@ -291,9 +292,12 @@ assert.ok(o.text_animations.anim_in.includes('pop') && o.text_animations.anim_lo
 o = await run('list_options', { what: 'caption_styles' });
 assert.ok(o.caption_styles.some((x) => x.startsWith('cap-classic')));
 err(await run('list_options', { what: 'colors' }), /what must be one of/, 'unknown list');
-// Bound the full catalog; requests send only the lazily loaded groups. The
-// Codex image tool is offered only to the installed Codex provider.
-assert.ok(JSON.stringify(TOOL_DECLARATIONS).length < 16000, `declarations are ${JSON.stringify(TOOL_DECLARATIONS).length} chars`);
+// Bound the schemas actually sent: feature growth must not load every group.
+assert.ok(JSON.stringify(createToolCatalog(TOOL_DECLARATIONS).tools()).length < 5000);
+for (const group of Object.keys(TOOL_GROUPS)) {
+  const catalog = createToolCatalog(TOOL_DECLARATIONS); catalog.load([group]);
+  assert.ok(JSON.stringify(catalog.tools()).length < 10000, `${group} schema exceeds its request budget`);
+}
 
 // Export opens the save window (the app's own flow).
 ok(await run('export_video'), 'export_video');

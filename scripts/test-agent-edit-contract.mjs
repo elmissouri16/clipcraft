@@ -34,4 +34,10 @@ function fixture(p=base(),api={}) {let s={past:[],future:[],present:p};const ctx
  const p=base();p.videoClips[0]={...p.videoClips[0],muted:true,linkId:'pair'};p.audioClips=[{id:'a',mediaId:'m',in:0,out:10,start:0,speed:1,linkId:'pair',linkOff:0,linkInOff:0}];p.layerState={'audio:0':{locked:true}};
  const f=fixture(p);const r=await f.runner.run('set_speed',{clip_id:'v',speed:2});assert.ok(r.error);assert.equal(f.state().present.videoClips[0].speed,1);assert.equal(f.state().present.audioClips[0].speed,1);
 }
+{
+ const f=fixture({...base(),videoClips:[{...base().videoClips[0],speed:1.3}]});const read=await f.runner.run('get_project',{});const kept=await f.runner.run('keep_ranges',{ranges:[{start_sec:3,end_sec:read.duration_sec}]});assert.ok(!kept.error,JSON.stringify(kept));
+}
+{
+ const p=base();p.videoClips[0]={...p.videoClips[0],speed:2,linkId:'legacy'};p.audioClips=[{id:'a',mediaId:'m',in:0,out:10,start:0,speed:1,linkId:'legacy'}];const f=fixture();f.ctx.dispatch({type:'load',project:p});assert.equal(f.state().present.videoClips[0].speed,2);const renamed=await f.runner.run('set_project',{name:'Legacy opened'});assert.ok(!renamed.error);assert.equal(f.state().present.name,'Legacy opened');
+}
 console.log('agent edit contract ok (blocked/no-op results, range safety, audio speed, stale results, live editor context, structural validation)');

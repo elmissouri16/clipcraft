@@ -1470,83 +1470,44 @@ function registerImageHandler(channel, batch = false) {
 }
 registerImageHandler('agent:generateImage');
 registerImageHandler('agent:generateImages', true);
-ipcMain.handle('agent:silences', async (_e, project, opts) => {
-  try {
-    return { ok: true, silences: await detectSilences(project, opts) };
-  } catch (e) {
-    return { ok: false, error: e.message };
+// All editor analysis jobs share the request's cancellation owner, including
+// FFmpeg decoding, downloads, Whisper inference and cloud transcription.
+async function withAudioAnalysis(event, requestId, run) {
+  const key = agentRequestKey(event, requestId || `audio-${require('crypto').randomUUID()}`);
+  if (agentRequests.has(key)) return { ok: false, error: 'This assistant request is already running.' };
+  const controller = new AbortController(); agentRequests.set(key, controller);
+  const destroyed = () => controller.abort(); event.sender.once('destroyed', destroyed);
+  try { return await run(controller.signal); }
+  catch (error) {
+    return { ok: false, error: controller.signal.aborted ? 'Audio analysis stopped.' : error.message,
+      ...(controller.signal.aborted || error.name === 'AbortError' ? { canceled: true } : {}) };
+  } finally {
+    agentRequests.delete(key);
+    if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', destroyed);
   }
-});
+}
+ipcMain.handle('agent:silences', (event, project, opts = {}) => withAudioAnalysis(event, opts.requestId,
+  async signal => ({ ok: true, silences: await detectSilences(project, { ...opts, signal }) })));
 
 ipcMain.handle('captions:status', () => whisper.status(whisperDir()));
-
-// Auto captions: install whisper.cpp on first use, mix the main-track audio, transcribe.
-ipcMain.handle('captions:run', async (_e, project, opts = {}) => {
-  const send = (stage, progress) => win.webContents.send('captions:progress', { stage, progress });
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-cap-'));
-  try {
-    const dir = whisperDir();
-    const install = () => whisper.install(dir, (what, f) => send(`Downloading ${what}`, f), opts.model);
-    send('Preparing', 0);
-    await install();
-    send('Extracting audio', 0);
-    const wav = await renderTimelineAudio(project, path.join(tmp, 'audio.wav'), opts.source || 'all');
-    const run = () => whisper.transcribe(dir, wav, opts, (f) => send('Transcribing', f));
-    send('Transcribing', 0);
-    let segments;
-    try {
-      segments = await run();
-    } catch (e) {
-      if (e.code !== 'MODEL_DAMAGED') throw e;
-      // The model was corrupt and has been removed: download it again and retry once.
-      await install();
-      send('Transcribing', 0);
-      segments = await run();
-    }
-    if (!segments.length) {
-      throw new Error('No speech was detected in the selected audio. Check the "Transcribe" source and the language, and make sure the clip is not muted.');
-    }
-    return { ok: true, segments };
-  } catch (e) {
-    const log = path.join(whisperDir(), 'last-run.log');
-    return { ok: false, error: e.message.includes('Full log:') ? e.message : `${e.message}\n\nFull log: ${log}` };
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
+let transcriptService;
+const getTranscriptService = () => transcriptService ||= require('./audioAnalysis.cjs').createTranscriptService({
+  cacheDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'transcript-cache'), whisperDir: whisperDir(),
+  whisper, cloud: cloudCaptions, fetchImpl: net.fetch, getKey: service => settings.getServiceKey(service),
 });
+function runCaptionAnalysis(event, project, opts) {
+  return withAudioAnalysis(event, opts.requestId, signal => getTranscriptService().run(project, opts, { signal,
+    onProgress: (stage, progress) => { if (!event.sender.isDestroyed()) event.sender.send('captions:progress', { stage, progress }); },
+  }));
+}
+// Both UI captions and agent speech reads reuse source-fingerprinted transcripts.
+ipcMain.handle('captions:run', (event, project, opts = {}) => runCaptionAnalysis(event, project, { ...opts, engine: 'local' }));
 
 ipcMain.handle('shell:show', (_e, file) => shell.showItemInFolder(file));
 ipcMain.handle('shell:open', (_e, file) => shell.openPath(file));
 
-// Cloud captions (item O): the same timeline audio, transcribed by the provider the user
-// picked with their own saved key. Segments come back in the local flow's exact shape.
-ipcMain.handle('captions:runCloud', async (_e, project, opts = {}) => {
-  const send = (stage, progress) => { if (win && !win.isDestroyed()) win.webContents.send('captions:progress', { stage, progress }); };
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-capc-'));
-  try {
-    const provider = opts.provider || 'groq';
-    const meta = cloudCaptions.PROVIDERS[provider];
-    if (!meta) return { ok: false, error: `Unknown caption provider: ${provider}` };
-    const key = settings.getServiceKey(meta.service);
-    if (!key) return { ok: false, error: `No ${meta.name} API key saved. Add it in the Captions panel first.` };
-    send('Extracting audio', 0);
-    const wav = await renderTimelineAudio(project, path.join(tmp, 'audio.wav'), opts.source || 'all');
-    send('Transcribing', 0.05);
-    const segments = await cloudCaptions.transcribePrepared({
-      provider, key, model: opts.model || undefined, language: opts.language,
-      wavPath: wav, dir: tmp, ffmpegPath: require('./ffmpeg.cjs').ffmpegPath, probe,
-      fetchImpl: net.fetch, onProgress: (f) => send('Transcribing', 0.05 + f * 0.95),
-    });
-    if (!segments.length) {
-      throw new Error('No speech was detected in the selected audio. Check the "Transcribe" source and the language, and make sure the clip is not muted.');
-    }
-    return { ok: true, segments };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-});
+// Cloud results retain the same measured-word shape as local transcripts.
+ipcMain.handle('captions:runCloud', (event, project, opts = {}) => runCaptionAnalysis(event, project, { ...opts, engine: 'cloud' }));
 
 // Test a cloud caption key: the typed key when given, otherwise the saved one.
 ipcMain.handle('captions:testCloud', async (_e, provider, keyOverride) => {

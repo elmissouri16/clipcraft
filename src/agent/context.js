@@ -10,6 +10,30 @@ export function projectRevision(project) {
   return `${project.id || 'project'}:${(hash >>> 0).toString(16)}`;
 }
 
+// A cheap renderer cache identity for legacy/injected caption APIs. The main
+// process independently fingerprints source files before using its durable cache.
+export function audioRevision(project, { source = 'all', clip_ids } = {}) {
+  const selected = clip_ids ? new Set(clip_ids) : null;
+  const media = new Map((project.media || []).map(m => [m.id, m]));
+  const clip = c => {
+    const m = media.get(c.mediaId);
+    return { id: c.id, in: c.in, out: c.out, start: c.start, speed: c.speed || 1, gap: c.gap, muted: c.muted,
+      volume: c.volume ?? 1, fadeIn: c.fadeIn, fadeOut: c.fadeOut, transition: c.transition,
+      enhance: c.enhance, audioFx: c.audioFx,
+      media: m && { path: m.path, duration: m.duration, hasAudio: m.hasAudio, channels: m.channels } };
+  };
+  const include = list => (list || []).filter(c => !selected || selected.has(c.id)).map(clip);
+  const json = JSON.stringify({ source, clip_ids,
+    // Excluded main clips still define the absolute placement of a selected clip.
+    main: source === 'all' || source === 'video' ? (project.videoClips || []).map(c => selected && !selected.has(c.id)
+      ? { in: c.in, out: c.out, speed: c.speed || 1, transition: c.transition, muted: true } : clip(c)) : [],
+    overlay: source === 'all' || source === 'overlay' ? include(project.overlayClips) : [],
+    audio: source === 'all' || source === 'audio' ? include(project.audioClips) : [] });
+  let hash = 2166136261;
+  for (let i = 0; i < json.length; i++) hash = Math.imul(hash ^ json.charCodeAt(i), 16777619);
+  return `audio:${(hash >>> 0).toString(16)}`;
+}
+
 export const contextRef = (turn, part) => `tool:${turn}:${part}`;
 export function recallContext(contents, { ref, offset = 0, max_chars = 3000, query } = {}) {
   const match = /^tool:(\d+):(\d+)$/.exec(String(ref || ''));

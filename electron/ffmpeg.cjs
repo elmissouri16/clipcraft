@@ -164,89 +164,119 @@ function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false) {
     `apad=whole_dur=${num(len)}`, `atrim=duration=${num(len)}`].join(',') + `[a${i}]`;
 }
 
-// Main-track audio only (no music), as 16 kHz mono WAV — the input for auto captions.
-// Audio to transcribe, as 16 kHz mono WAV. source: 'all' (video clips + audio track), 'video' or 'audio'.
-// Every piece is placed at its timeline position, so caption times match the timeline.
-function buildTimelineAudioArgs(project, outWav, source = 'all') {
-  const mediaById = Object.fromEntries(project.media.map((m) => [m.id, m]));
-  const inputs = [];
-  const filters = [];
-  const mix = [];
-  let n = 0;
+// Analysis uses the same audible sources as playback, while preserving main-track
+// positions even when a source/layer is excluded. No picture data enters the key.
+function analysisAudioPlan(project, selection = 'all') {
+  const options = typeof selection === 'string' ? { source: selection } : (selection || {});
+  const source = options.source || 'all';
+  if (!['all', 'video', 'overlay', 'audio'].includes(source)) throw new Error('Audio source must be all, video, overlay or audio.');
+  if (options.clip_ids !== undefined && (!Array.isArray(options.clip_ids) || !options.clip_ids.length || options.clip_ids.some(id => typeof id !== 'string'))) throw new Error('clip_ids must be a nonempty list of clip IDs.');
+  const selected = options.clip_ids ? new Set(options.clip_ids) : null;
+  const media = new Map((project.media || []).map(m => [m.id, m]));
+  const lists = { video: project.videoClips || [], overlay: project.overlayClips || [], audio: project.audioClips || [] };
+  if (selected && [...selected].some(id => !Object.values(lists).some(list => list.some(c => c.id === id)))) throw new Error('An audio clip ID no longer exists. Refresh the project.');
+  const states = project.layerState || {};
+  const solo = Object.entries(states).some(([key, state]) => ['video', 'overlay', 'audio'].includes(key.split(':')[0]) && state?.solo);
+  const audible = (c, track) => {
+    const state = states[`${track}:${track === 'video' ? 0 : c.layer || 0}`] || {};
+    const m = media.get(c.mediaId);
+    return !c.gap && !c.disabled && !c.muted && !state.hidden && !state.muted && (!solo || state.solo)
+      && (!selected || selected.has(c.id)) && (c.volume ?? 1) > 0 && m && m.type !== 'image' && (m.hasAudio || m.type === 'audio');
+  };
+  const main = (source === 'all' || source === 'video') ? lists.video.map(c => ({ ...c, muted: !audible(c, 'video') })) : [];
+  const extras = [];
+  for (const track of ['overlay', 'audio']) if (source === 'all' || source === track) {
+    for (const c of lists[track]) if (audible(c, track)) extras.push({ clip: c, media: media.get(c.mediaId), track });
+  }
+  const sounding = [...main.filter(c => !c.muted).map(c => ({ clip: c, media: media.get(c.mediaId), track: 'video' })), ...extras];
+  if (!sounding.length) throw new Error(`No audible clips in the selected ${source} source. Check mute, solo, hidden layers and clip selection.`);
+  return { source, main, extras, sounding, media };
+}
 
-  const clips = source === 'audio' ? [] : project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]);
-  if (clips.length) {
-    clips.forEach((clip, i) => {
-      const m = mediaById[clip.mediaId];
-      let idx = -1;
-      if (m && m.type !== 'image' && m.hasAudio && !clip.muted) {
-        inputs.push('-ss', num(clip.in), '-i', m.path); // B1: input seeking, as in exports
-        idx = n++;
-      }
-      filters.push(clipAudioFilter(clip, m, idx, i, -1, idx >= 0));
-    });
-    let ca = 'a0';
-    for (let i = 1; i < clips.length; i++) {
-      const td = transitionDur(clips, i);
-      filters.push(td > 0 ? `[${ca}][a${i}]acrossfade=d=${num(td)}[ja${i}]` : `[${ca}][a${i}]concat=n=2:v=0:a=1[ja${i}]`);
-      ca = `ja${i}`;
+function audioAnalysisKey(project, selection = 'all') {
+  const plan = analysisAudioPlan(project, selection);
+  const fileInfo = file => {
+    const st = fs.statSync(file);
+    return { path: file, size: st.size, mtime: st.mtimeMs, ctime: st.ctimeMs, ino: st.ino };
+  };
+  const shape = (c, m) => ({ in: c.in, out: c.out, speed: c.speed || 1, start: c.start || 0, muted: !!c.muted,
+    volume: c.volume ?? 1, transition: c.transition, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0,
+    audioFx: c.audioFx, media: c.muted ? undefined : { file: fileInfo(m.path), channels: m.channels,
+      enhanced: enhancePathOf(c) ? fileInfo(enhancePathOf(c)) : undefined } });
+  return require('crypto').createHash('sha256').update(JSON.stringify({ version: 2, source: plan.source,
+    main: plan.main.map(c => shape(c, plan.media.get(c.mediaId))),
+    extras: plan.extras.map(({ clip, media, track }) => ({ track, ...shape(clip, media) })) })).digest('hex');
+}
+
+// Render analysis audio as 16 kHz mono WAV. A selection object can additionally
+// name clip_ids and a cancellation signal; string source callers stay compatible.
+function buildTimelineAudioArgs(project, outWav, selection = 'all') {
+  const plan = analysisAudioPlan(project, selection);
+  const inputs = [], filters = [], mix = [];
+  let n = 0;
+  const input = (c, m) => {
+    const enhanced = enhancePathOf(c), index = n++;
+    inputs.push(...(enhanced ? ['-i', enhanced] : ['-ss', num(c.in), '-i', m.path]));
+    return { index, enhanced };
+  };
+  plan.main.forEach((clip, i) => {
+    const m = plan.media.get(clip.mediaId);
+    const src = !clip.muted ? input(clip, m) : { index: -1 };
+    filters.push(clipAudioFilter(clip, m, src.index, i, src.enhanced ? src.index : -1, true));
+  });
+  if (plan.main.length) {
+    let label = 'a0';
+    for (let i = 1; i < plan.main.length; i++) {
+      const td = transitionDur(plan.main, i);
+      filters.push(td > 0 ? `[${label}][a${i}]acrossfade=d=${num(td)}[ja${i}]` : `[${label}][a${i}]concat=n=2:v=0:a=1[ja${i}]`);
+      label = `ja${i}`;
     }
-    filters.push(`[${ca}]aresample=16000,aformat=sample_fmts=fltp:channel_layouts=mono[main]`);
+    filters.push(`[${label}]aresample=16000,aformat=sample_fmts=fltp:channel_layouts=mono[main]`);
     mix.push('[main]');
   }
-
-  const extra = source === 'video' ? [] : project.audioClips.filter((c) => mediaById[c.mediaId] && mediaById[c.mediaId].hasAudio);
-  extra.forEach((c, j) => {
-    inputs.push('-ss', num(c.in), '-i', mediaById[c.mediaId].path);
-    const idx = n++;
-    const ms = Math.round(c.start * 1000);
-    filters.push(
-      `[${idx}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...atempo(c.speed || 1), `volume=${c.volume ?? 1}`].join(',')},` +
-        `aresample=16000,aformat=sample_fmts=fltp:channel_layouts=mono,adelay=${ms}:all=1[x${j}]`
-    );
+  plan.extras.forEach(({ clip: c, media: m }, j) => {
+    const { index, enhanced } = input(c, m), len = clipLen(c);
+    const up = monoUp(m, !!enhanced);
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    if (c.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${num(Math.min(c.fadeIn, len))}`);
+    if (c.fadeOut > 0) chain.push(`afade=t=out:st=${num(Math.max(0, len - c.fadeOut))}:d=${num(Math.min(c.fadeOut, len))}`);
+    chain.push(...audioFxFilters(c.audioFx), 'aresample=16000', 'aformat=sample_fmts=fltp:channel_layouts=mono', `adelay=${Math.round(Math.max(0, c.start || 0) * 1000)}:all=1`);
+    filters.push(`[${index}:a]${chain.join(',')}[x${j}]`);
     mix.push(`[x${j}]`);
   });
-
-  if (!mix.length) {
-    throw new Error(source === 'audio'
-      ? 'The Audio track is empty. Add an audio clip first.'
-      : 'Nothing to transcribe: no clip with sound on the timeline.');
-  }
   if (mix.length === 1) filters.push(`${mix[0]}aformat=sample_fmts=s16:channel_layouts=mono[out]`);
   else filters.push(`${mix.join('')}amix=inputs=${mix.length}:duration=longest:normalize=0,aformat=sample_fmts=s16:channel_layouts=mono[out]`);
   return ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'), '-map', '[out]', '-ar', '16000', outWav];
 }
 
-function renderTimelineAudio(project, outWav, source) {
+function renderTimelineAudio(project, outWav, source = 'all') {
   return new Promise((resolve, reject) => {
     let args;
-    try {
-      args = buildTimelineAudioArgs(project, outWav, source);
-    } catch (e) {
-      return reject(e);
-    }
-    const p = spawn(ffmpegPath, args, { windowsHide: true });
+    try { args = buildTimelineAudioArgs(project, outWav, source); } catch (e) { return reject(e); }
+    const signal = typeof source === 'object' ? source?.signal : undefined;
+    if (signal?.aborted) return reject(Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' }));
+    const p = spawn(ffmpegPath, args, { windowsHide: true, ...(signal ? { signal } : {}) });
     let err = '';
-    p.stderr.on('data', (d) => (err += d));
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve(outWav) : reject(new Error(err.slice(-3000)))));
+    p.stderr.on('data', d => { err = (err + d).slice(-3000); });
+    p.on('error', error => { if (error.name !== 'AbortError') reject(error); });
+    p.on('close', code => code === 0 ? resolve(outWav) : reject(signal?.aborted ? Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' }) : new Error(err)));
   });
 }
-
 const renderMainAudio = (project, outWav) => renderTimelineAudio(project, outWav, 'video');
 
 // Silent stretches of the main track's sound, as [{ start, end }] in timeline seconds.
 // minDur: shortest silence to report; noiseDb: level below which sound counts as silence.
-async function detectSilences(project, { minDur = 0.6, noiseDb = -35, source = 'video' } = {}) {
+async function detectSilences(project, { minDur = 0.6, noiseDb = -35, source = 'all', clip_ids, signal } = {}) {
+  if (!Number.isFinite(minDur) || minDur < 0.05 || minDur > 60 || !Number.isFinite(noiseDb) || noiseDb < -100 || noiseDb > 0) throw new Error('Use minDur from 0.05 to 60 seconds and noiseDb from -100 to 0.');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-sil-'));
   try {
-    const wav = await renderTimelineAudio(project, path.join(tmp, 'a.wav'), source);
+    const wav = await renderTimelineAudio(project, path.join(tmp, 'a.wav'), { source, clip_ids, signal });
     const log = await new Promise((resolve, reject) => {
-      const p = spawn(ffmpegPath, ['-hide_banner', '-nostats', '-i', wav, '-af', `silencedetect=noise=${noiseDb}dB:d=${minDur}`, '-f', 'null', '-'], { windowsHide: true });
+      const p = spawn(ffmpegPath, ['-hide_banner', '-nostats', '-i', wav, '-af', `silencedetect=noise=${noiseDb}dB:d=${minDur}`, '-f', 'null', '-'], { windowsHide: true, ...(signal ? { signal } : {}) });
       let err = '';
       p.stderr.on('data', (d) => (err += d));
-      p.on('error', reject);
-      p.on('close', (code) => (code === 0 ? resolve(err) : reject(new Error(err.slice(-1500)))));
+      p.on('error', error => { if (error.name !== 'AbortError') reject(error); });
+      p.on('close', code => signal?.aborted ? reject(Object.assign(new Error('Silence analysis stopped.'), { name: 'AbortError' })) : code === 0 ? resolve(err) : reject(new Error(err.slice(-1500))));
     });
     const total = (() => {
       const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(log);
@@ -1011,5 +1041,5 @@ async function sampleFrames(item, from, to, count = 8) {
 }
 
 module.exports = {
-  sampleFrames,
+  sampleFrames, analysisAudioPlan, audioAnalysisKey, buildTimelineAudioArgs,
   toSdr, stillInput, graphFile, pickEncoder, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeLightProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, makeVisuals };

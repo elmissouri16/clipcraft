@@ -14,6 +14,7 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'agent-audio') return require('./smoke-agent-audio.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-editing') return require('./smoke-agent-editing.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'scene-framing') return require('./smoke-scene-framing.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-web-search') return require('./smoke-agent-web-search.cjs')(win, app, dir);

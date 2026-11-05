@@ -84,7 +84,10 @@ assert.equal(transcriptions, 1, 'repeated read-only work is cached within a run'
 ctx.dispatch({ type: 'setProject', patch: { name: 'Manual change' } });
 assert.notEqual(projectRevision(state.present), revision);
 await runner.run('transcribe', { language: 'en' });
-assert.equal(transcriptions, 2, 'edits invalidate cached reads');
+assert.equal(transcriptions, 1, 'visual/name edits preserve the audible-content cache');
+ctx.dispatch({ type: 'update', track: 'video', id: 'v0', patch: { speed: 2 } });
+await runner.run('transcribe', { language: 'en' });
+assert.equal(transcriptions, 2, 'audio timing edits invalidate cached speech');
 assert.equal(latestEditorRevision([{ role: 'user', parts: [{ functionResponse: { name: 'get_project', response: { result: read } } }] }]), revision);
 
 const requests = [], events = [];

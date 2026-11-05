@@ -70,10 +70,12 @@ const stub = (payload, status = 200) => {
     ];
     const { calls, fetchImpl } = stub({ words });
     const { segments } = await cc.transcribeCloud({ provider: 'elevenlabs', key: 'el', audioPath: mp3, fetchImpl });
-    assert.deepEqual(segments, [
+    assert.deepEqual(segments.map(({ words, word_timing, ...s }) => s), [
       { start: 0, end: 0.9, text: 'Hello world.' },
       { start: 2.5, end: 3.1, text: 'Next one' },
     ]);
+    assert.deepEqual(segments[0].words.map(w => [w.text, w.start, w.end]), [['Hello', 0, 0.4], ['world.', 0.45, 0.9]]);
+    assert.equal(segments[0].word_timing, 'measured');
     assert.equal(calls[0].init.headers['xi-api-key'], 'el');
     assert.equal(calls[0].init.body.get('model_id'), 'scribe_v1');
   }

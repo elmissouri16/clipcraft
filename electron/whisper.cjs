@@ -112,9 +112,10 @@ function sha256File(file) {
   });
 }
 
-async function download(dir, url, dest, onProgress, expected) {
+async function download(dir, url, dest, onProgress, expected, signal) {
+  signal?.throwIfAborted();
   logLine(dir, `download ${url}`);
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await fetch(url, { redirect: 'follow', ...(signal ? { signal } : {}) });
   logLine(dir, `  -> HTTP ${res.status}, ${res.headers.get('content-type')}, ${res.headers.get('content-length')} bytes`);
   if (!res.ok) throw new Error(`Download failed (HTTP ${res.status}). Check your internet connection and try again.`);
   const total = Number(res.headers.get('content-length')) || 0;
@@ -128,10 +129,11 @@ async function download(dir, url, dest, onProgress, expected) {
   });
   const tmp = `${dest}.${crypto.randomUUID()}.part`;
   try {
-    await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(tmp));
+    await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(tmp), ...(signal ? [{ signal }] : []));
     logLine(dir, `  -> wrote ${done} bytes`);
     if (expected && done !== expected.size) throw new Error(`The speech model download was incomplete (${done} of ${expected.size} bytes). Check your internet connection and try again.`);
     if (expected?.sha256 && await sha256File(tmp) !== expected.sha256) throw new Error('The speech model download failed its checksum. Please try again.');
+    signal?.throwIfAborted();
     fs.renameSync(tmp, dest);
     return done;
   } finally {
@@ -140,7 +142,8 @@ async function download(dir, url, dest, onProgress, expected) {
 }
 
 // Downloads whisper-cli and the model (base or turbo) if they are missing. onProgress(stage, fraction).
-async function install(dir, onProgress, modelId = 'base') {
+async function install(dir, onProgress, modelId = 'base', signal) {
+  signal?.throwIfAborted();
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(paths(dir).log, '', 'utf8');
   logLine(dir, `install: dir=${dir} model=${modelId}`);
@@ -152,16 +155,16 @@ async function install(dir, onProgress, modelId = 'base') {
       ? 'Local captions need whisper-cli. Install whisper.cpp with Homebrew (brew install whisper-cpp), then try again. For a custom location, set CLIPCRAFT_WHISPER_CLI to the full executable path.'
       : `No caption engine is available for ${process.platform}-${process.arch}.`);
     const pack = path.join(dir, spec.file);
-    await download(dir, RELEASE_BASE + spec.file, pack, (f) => onProgress?.('engine', f));
+    await download(dir, RELEASE_BASE + spec.file, pack, (f) => onProgress?.('engine', f), undefined, signal);
     fs.mkdirSync(p.binDir, { recursive: true });
     if (process.platform === 'win32') {
       // Windows 10+ ships bsdtar, which extracts .zip files.
       await new Promise((resolve, reject) =>
-        execFile(path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe'), ['-xf', pack, '-C', p.binDir], { windowsHide: true }, (e) => (e ? reject(e) : resolve()))
+        execFile(path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe'), ['-xf', pack, '-C', p.binDir], { windowsHide: true, ...(signal ? { signal } : {}) }, (e) => (e ? reject(e) : resolve()))
       );
     } else {
       await new Promise((resolve, reject) =>
-        execFile('tar', ['-xzf', pack, '-C', p.binDir], (e) => (e ? reject(new Error(`Could not extract the caption engine (${e.message}).`)) : resolve()))
+        execFile('tar', ['-xzf', pack, '-C', p.binDir], { ...(signal ? { signal } : {}) }, (e) => (e ? reject(new Error(`Could not extract the caption engine (${e.message}).`)) : resolve()))
       );
     }
     fs.rmSync(pack, { force: true });
@@ -171,7 +174,7 @@ async function install(dir, onProgress, modelId = 'base') {
   if (size !== M.size) {
     if (size >= 0) fs.rmSync(p.model, { force: true });
     if (M.url === null) throw new Error('This speech model is not available for download yet.');
-    await download(dir, modelUrl(M), p.model, (f) => onProgress?.('model', f), M);
+    await download(dir, modelUrl(M), p.model, (f) => onProgress?.('model', f), M, signal);
   }
   if (!paths(dir).cli) throw new Error(`${binSpec()?.exe || 'whisper-cli'} not found after extraction.`);
   logLine(dir, `install ok: cli=${paths(dir).cli}`);
@@ -179,9 +182,9 @@ async function install(dir, onProgress, modelId = 'base') {
 
 // Runs whisper-cli once. Resolves { code, log }.
 // onFile(n) is called as whisper-cli starts its n-th input file (0-based).
-function runCli(cli, args, onProgress, onFile) {
+function runCli(cli, args, onProgress, onFile, signal) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cli, args, { windowsHide: true, cwd: path.dirname(cli) });
+    const proc = spawn(cli, args, { windowsHide: true, cwd: path.dirname(cli), ...(signal ? { signal } : {}) });
     let log = '';
     const onData = (d) => {
       const s = d.toString();
@@ -195,8 +198,8 @@ function runCli(cli, args, onProgress, onFile) {
     let files = 0;
     proc.stdout.on('data', onData);
     proc.stderr.on('data', onData);
-    proc.on('error', reject);
-    proc.on('close', (code) => resolve({ code, log }));
+    proc.on('error', error => { if (error.name !== 'AbortError') reject(error); });
+    proc.on('close', code => signal?.aborted ? reject(Object.assign(new Error('Transcription stopped.'), { name: 'AbortError' })) : resolve({ code, log }));
   });
 }
 
@@ -218,12 +221,12 @@ function segmentWords(s, seg) {
   }
   const real = words.filter((w) => w.text);
   const textWords = seg.text.split(/\s+/).filter(Boolean);
-  if (real.length === textWords.length) return real.map((w, i) => ({ ...w, text: textWords[i] }));
+  if (real.length === textWords.length) return real.map((w, i) => ({ ...w, text: textWords[i], timing: 'measured' }));
   const total = textWords.reduce((n, w) => n + w.length, 0) || 1;
   let t = seg.start;
   return textWords.map((w) => {
     const d = ((seg.end - seg.start) * w.length) / total;
-    const out = { text: w, start: t, end: t + d };
+    const out = { text: w, start: t, end: t + d, timing: 'estimated' };
     t += d;
     return out;
   });
@@ -231,14 +234,15 @@ function segmentWords(s, seg) {
 
 // Pieces of a WAV cut in the middle of pauses, at most PIECE_MAX seconds each: [{ file, at, from, to }] (seconds:
 // where the piece starts, and where its speech starts and ends, i.e. without the pauses at its edges).
-async function cutAtPauses(wav) {
+async function cutAtPauses(wav, signal) {
+  signal?.throwIfAborted();
   const { ffmpegPath } = require('./ffmpeg.cjs');
   const log = await new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath, ['-hide_banner', '-i', wav, '-af', 'silencedetect=noise=-35dB:d=0.25', '-f', 'null', '-'], { windowsHide: true });
+    const p = spawn(ffmpegPath, ['-hide_banner', '-i', wav, '-af', 'silencedetect=noise=-35dB:d=0.25', '-f', 'null', '-'], { windowsHide: true, ...(signal ? { signal } : {}) });
     let err = '';
     p.stderr.on('data', (d) => { err += d; });
-    p.on('error', reject);
-    p.on('close', () => resolve(err));
+    p.on('error', error => { if (error.name !== 'AbortError') reject(error); });
+    p.on('close', () => signal?.aborted ? reject(Object.assign(new Error('Transcription stopped.'), { name: 'AbortError' })) : resolve(err));
   });
   const dm = /Duration: (\d+):(\d+):([\d.]+)/.exec(log);
   const dur = dm ? Number(dm[1]) * 3600 + Number(dm[2]) * 60 + Number(dm[3]) : 0;
@@ -260,7 +264,7 @@ async function cutAtPauses(wav) {
   for (let i = 0; i + 1 < cuts.length; i++) {
     const file = path.join(dir, `${String(i).padStart(4, '0')}.wav`);
     await new Promise((resolve, reject) => execFile(ffmpegPath, ['-v', 'error', '-y', '-ss', String(cuts[i]), '-t', String(cuts[i + 1] - cuts[i]),
-      '-i', wav, '-c:a', 'pcm_s16le', file], { windowsHide: true }, (e) => (e ? reject(e) : resolve())));
+      '-i', wav, '-c:a', 'pcm_s16le', file], { windowsHide: true, ...(signal ? { signal } : {}) }, (e) => (e ? reject(e) : resolve())));
     const from = Math.max(cuts[i], pauseAt(cuts[i])?.[1] ?? cuts[i]);
     const to = Math.min(cuts[i + 1], pauseAt(cuts[i + 1])?.[0] ?? cuts[i + 1]);
     pieces.push({ file, at: cuts[i], ...(to - from > 0.2 ? { from, to } : { from: cuts[i], to: cuts[i + 1] }) });
@@ -276,6 +280,7 @@ function readSegments(json) {
     .map((s) => {
       const seg = { start: s.offsets.from / 1000, end: s.offsets.to / 1000, text: s.text.trim() };
       seg.words = segmentWords(s, seg);
+      seg.word_timing = seg.words.every(w => w.timing === 'measured') ? 'measured' : 'estimated';
       // A segment can include leading silence (e.g. an audio clip that starts later on the timeline).
       if (seg.words.length && seg.words[0].start - seg.start > 0.3) seg.start = Math.max(0, seg.words[0].start - 0.1);
       return seg;
@@ -299,8 +304,8 @@ function readPiece(json, piece) {
   }
   return segs
     .map((text, i) => {
-      const ws = words.filter((w) => w.seg === i).map(({ text: x, start, end }) => ({ text: x, start, end }));
-      return ws.length ? { start: ws[0].start, end: ws[ws.length - 1].end, text, words: ws } : null;
+      const ws = words.filter((w) => w.seg === i).map(({ text: x, start, end }) => ({ text: x, start, end, timing: 'estimated' }));
+      return ws.length ? { start: ws[0].start, end: ws[ws.length - 1].end, text, words: ws, word_timing: 'estimated' } : null;
     })
     .filter(Boolean);
 }
@@ -316,12 +321,13 @@ function failureReason(log) {
 // (CPU only, no flash attention, fewer threads, greedy decoding). If the model itself is corrupt
 // (hash mismatch), it is deleted and an error with code MODEL_DAMAGED is thrown so the caller
 // can download it again and retry.
-async function transcribe(dir, wav, { language = 'auto', maxLen = 42, model = 'base' } = {}, onProgress) {
+async function transcribe(dir, wav, { language = 'auto', maxLen = 42, model = 'base', signal } = {}, onProgress) {
+  signal?.throwIfAborted();
   const p = paths(dir, model);
   const outBase = wav.replace(/\.wav$/i, '');
   const threads = Math.max(1, Math.min(8, os.cpus().length - 1));
   // One whisper-cli run for all the pieces (the model loads once); each writes <piece>.json.
-  const pieces = modelOf(model).pieces ? await cutAtPauses(wav) : null;
+  const pieces = modelOf(model).pieces ? await cutAtPauses(wav, signal) : null;
   const inputs = pieces ? pieces.flatMap((x) => ['-f', x.file]) : ['-f', wav, '-of', outBase];
   const base = ['-m', p.model, ...inputs, '-l', language, '-ojf', '-pp'];
   // Pieces are short: an audio window of PIECE_MAX (not Whisper's 30 s) cuts the encoder's work about 3.5x.
@@ -339,7 +345,8 @@ async function transcribe(dir, wav, { language = 'auto', maxLen = 42, model = 'b
   for (let i = 0; i < attempts.length; i++) {
     const args = [...base, ...attempts[i]];
     done = 0;
-    const { code, log } = await runCli(p.cli, args, progress, onFile);
+    const { code, log } = await runCli(p.cli, args, progress, onFile, signal);
+    signal?.throwIfAborted();
     full += log;
     logLine(dir, `attempt ${i + 1}: whisper-cli ${args.join(' ')}\n${log}\n--- exit code ${code}`);
     if (code === 0) {
@@ -361,4 +368,4 @@ async function transcribe(dir, wav, { language = 'auto', maxLen = 42, model = 'b
   throw new Error(`Auto captions failed.\n${failureReason(full)}\n\nFull log: ${p.log}`);
 }
 
-module.exports = { status, install, transcribe, MODELS, cutAtPauses, readPiece, resolveCli };
+module.exports = { status, install, transcribe, MODELS, cutAtPauses, readPiece, readSegments, resolveCli };
