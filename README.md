@@ -205,6 +205,13 @@ tools. It can reuse existing project images as character references for later
 scenes. Each call generates one image; use separate calls for separate scenes.
 On an empty or shorter timeline, background is extended to cover the new scene.
 
+For multiple independent scenes, CraftAI requests image calls together. Up to
+three native image jobs run at once; additional scenes queue automatically.
+Images are imported in prompt order, with their requested timing, after the
+batch finishes. A failed scene leaves the other results usable. Generate a new
+character reference first, then generate its later scenes together using that
+reference. Other editor tools run in order between image batches.
+
 Completed images are copied into ClipCraft's media storage before the temporary
 Codex workspace is removed. They support the usual Undo, Redo and export.
 **Stop** cancels an in-flight image request. Failed or unavailable generation
@@ -215,6 +222,9 @@ Contributor checks: `node scripts/test-codex-images.cjs` and the default
 `FVE_SMOKE_MODE=codex-images` Electron smoke are offline. Opt into a real native
 generation with `FVE_CODEX_IMAGES_LIVE=1`; optionally supply an existing character
 image through `FVE_CODEX_IMAGE_REFERENCE`. Use an isolated `FVE_SMOKE` directory.
+Parallel checks: `node scripts/test-image-jobs.cjs`,
+`node scripts/test-parallel-images.mjs`, and
+`FVE_SMOKE_MODE=codex-images-parallel` (same live opt-in).
 
 ### Gemini speech generation
 

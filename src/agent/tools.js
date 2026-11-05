@@ -144,7 +144,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'generate_image',
-    description: 'Codex only: generate a real scene/character with imagegen. Defaults to overlay at start_sec; main uses main_index. Use reference_media_ids for consistent characters.',
+    description: 'Codex only: generate a real scene/character with imagegen. Request independent scenes together for parallel generation. Defaults to overlay at start_sec; main uses main_index. Use existing reference_media_ids for consistent characters.',
     parameters: { type: 'OBJECT', properties: { prompt: S, reference_media_ids: { type: 'ARRAY', items: S },
       as: S, start_sec: N, duration_sec: N, main_index: N, transparent_background: B }, required: ['prompt'] },
   },
@@ -399,6 +399,62 @@ export function createToolRunner(ctx) {
     if (!findClip(clipId)) return { error: `Could not put "${name || m.name}" on the timeline.` };
     return { clip_id: clipId, track, added: name || m.name };
   };
+
+  // Prepare all native jobs from the same project snapshot. Only the import and
+  // reducer actions run serially, so completion order cannot rearrange scenes.
+  const mainImageEnd = () => videoLayout(project().videoClips).at(-1)?.end || 0;
+  function prepareImageScene({ prompt, reference_media_ids = [], as = 'overlay', start_sec = 0, duration_sec = 5, main_index, transparent_background = false }) {
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000) return { error: 'Provide an image prompt of 1–16000 characters.' };
+    if (!['overlay', 'main', 'library'].includes(as)) return { error: 'as must be overlay, main or library.' };
+    const at = Number(start_sec), length = Number(duration_sec);
+    if (!Number.isFinite(at) || at < 0 || !Number.isFinite(length) || length < 0.2 || length > 3600) return { error: 'Use a nonnegative start_sec and duration_sec between 0.2 and 3600.' };
+    if (main_index !== undefined && (!Number.isInteger(Number(main_index)) || Number(main_index) < 0)) return { error: 'main_index must be a nonnegative integer.' };
+    if (as === 'main' && at !== 0 && main_index === undefined) return { error: 'Use main_index for main-track insertion, or overlay for placement at an exact start_sec.' };
+    if (!Array.isArray(reference_media_ids) || reference_media_ids.length > 3) return { error: 'Use at most three reference_media_ids.' };
+    const p = project(), references = reference_media_ids.map(id => p.media.find(m => m.id === id && m.type === 'image'));
+    if (references.some(m => !m?.path)) return { error: 'Reference IDs must name existing images in the project media library.' };
+    if ((as === 'main' || (as === 'overlay' && at + length > mainImageEnd())) && isLayerLocked(p, 'video', 0)) return { error: 'Unlock the main track before adding this generated scene.' };
+    return { request: { prompt: prompt.trim(), ratio: p.ratio || `${p.width}:${p.height}`,
+      referencePaths: references.map(m => m.path), transparentBackground: transparent_background === true }, as, at, length, main_index };
+  }
+  async function insertImageScene({ as, at, length, main_index }, res) {
+    if (res.error) return { error: res.error };
+    if (res.canceled || ctx.isCanceled?.()) return { error: 'Image generation stopped.' };
+    if (res.type !== 'image' || !res.path) return { error: 'No readable generated image was returned.' };
+    const m = ctx.addProbed?.(res);
+    if (!m) return { error: 'Could not add the generated image to the project.' };
+    if (as === 'library') return after({ media_id: m.id, added: m.name });
+    const added = await place(m, { as, start_sec: at, main_index, name: m.name, fullFrame: as === 'overlay' });
+    if (added.error) return added;
+    dispatch({ type: 'update', track: added.track, id: added.clip_id, patch: { in: 0, out: length } });
+    if (as === 'overlay' && at + length > mainImageEnd()) {
+      dispatch({ type: 'extendVideoTo', end: at + length, gapId: uid() });
+      await ctx.settle();
+      if (mainImageEnd() + 0.001 < at + length) return { error: 'The image was added, but the main track is locked and could not extend to cover its scene.' };
+    }
+    return after({ ...added, media_id: m.id, length_sec: length, width: res.width, height: res.height });
+  }
+  async function runImages(scenes) {
+    if (!Array.isArray(scenes) || !scenes.length || scenes.length > 12) throw new Error('Use 1–12 image scenes per batch.');
+    const prepared = scenes.map(args => {
+      try { return prepareImageScene(args || {}); } catch (e) { return { error: e.message }; }
+    });
+    const jobs = prepared.filter(scene => !scene.error);
+    let images;
+    try {
+      const response = jobs.length ? await api.agentGenerateImages?.({ requestId: ctx.requestId, scenes: jobs.map(scene => scene.request) }) : { results: [] };
+      images = response?.results;
+      if (!Array.isArray(images) || images.length !== jobs.length) images = jobs.map(() => ({ error: response?.error || 'Parallel image generation requires an updated ClipCraft.' }));
+    } catch (e) { images = jobs.map(() => ({ error: e.message })); }
+    let next = 0;
+    const results = [];
+    for (const scene of prepared) {
+      if (scene.error) { results.push({ error: scene.error }); continue; }
+      try { results.push(await insertImageScene(scene, images[next++])); }
+      catch (e) { results.push({ error: e.message }); }
+    }
+    return results;
+  }
 
   // Volume, fades and length of a new audio clip.
   const shapeAudio = async (id, { duration_sec, volume = 1, fade_in_sec = 0, fade_out_sec = 0 }, extra) => {
@@ -817,36 +873,12 @@ export function createToolRunner(ctx) {
       return shapeAudio(added.clip_id, { volume }, added);
     },
 
-    async generate_image({ prompt, reference_media_ids = [], as = 'overlay', start_sec = 0, duration_sec = 5, main_index, transparent_background = false }) {
+    async generate_image(args) {
       if (!api.agentGenerateImage) return { error: 'Image generation requires an updated ClipCraft with Codex SDK selected.' };
-      if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000) return { error: 'Provide an image prompt of 1–16000 characters.' };
-      if (!['overlay', 'main', 'library'].includes(as)) return { error: 'as must be overlay, main or library.' };
-      const at = Number(start_sec), length = Number(duration_sec);
-      if (!Number.isFinite(at) || at < 0 || !Number.isFinite(length) || length < 0.2 || length > 3600) return { error: 'Use a nonnegative start_sec and duration_sec between 0.2 and 3600.' };
-      if (main_index !== undefined && (!Number.isInteger(Number(main_index)) || Number(main_index) < 0)) return { error: 'main_index must be a nonnegative integer.' };
-      if (as === 'main' && at !== 0 && main_index === undefined) return { error: 'Use main_index for main-track insertion, or overlay for placement at an exact start_sec.' };
-      if (!Array.isArray(reference_media_ids) || reference_media_ids.length > 3) return { error: 'Use at most three reference_media_ids.' };
-      const p = project(), references = reference_media_ids.map(id => p.media.find(m => m.id === id && m.type === 'image'));
-      if (references.some(m => !m?.path)) return { error: 'Reference IDs must name existing images in the project media library.' };
-      const mainEnd = () => videoLayout(project().videoClips).at(-1)?.end || 0;
-      if ((as === 'main' || (as === 'overlay' && at + length > mainEnd())) && isLayerLocked(p, 'video', 0)) return { error: 'Unlock the main track before adding this generated scene.' };
-      const res = await api.agentGenerateImage({ requestId: ctx.requestId, prompt: prompt.trim(), ratio: p.ratio || `${p.width}:${p.height}`,
-        referencePaths: references.map(m => m.path), transparentBackground: transparent_background === true });
-      if (res.error) return { error: res.error };
-      if (res.canceled || ctx.isCanceled?.()) return { error: 'Image generation stopped.' };
-      if (res.type !== 'image' || !res.path) return { error: 'No readable generated image was returned.' };
-      const m = ctx.addProbed?.(res);
-      if (!m) return { error: 'Could not add the generated image to the project.' };
-      if (as === 'library') return after({ media_id: m.id, added: m.name });
-      const added = await place(m, { as, start_sec: at, main_index, name: m.name, fullFrame: as === 'overlay' });
-      if (added.error) return added;
-      dispatch({ type: 'update', track: added.track, id: added.clip_id, patch: { in: 0, out: length } });
-      if (as === 'overlay' && at + length > mainEnd()) {
-        dispatch({ type: 'extendVideoTo', end: at + length, gapId: uid() });
-        await ctx.settle();
-        if (mainEnd() + 0.001 < at + length) return { error: 'The image was added, but the main track is locked and could not extend to cover its scene.' };
-      }
-      return after({ ...added, media_id: m.id, length_sec: length, width: res.width, height: res.height });
+      const scene = prepareImageScene(args);
+      if (scene.error) return scene;
+      const res = await api.agentGenerateImage({ requestId: ctx.requestId, ...scene.request });
+      return insertImageScene(scene, res);
     },
 
     async search_stock({ kind = 'video', query }) {
@@ -1121,6 +1153,7 @@ export function createToolRunner(ctx) {
   const readCache = new Map();
   const cachedTools = new Set(['get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe']);
   return {
+    runImages,
     async run(name, args) {
       const fn = Object.hasOwn(tools, name) ? tools[name] : null;
       if (!fn) return { error: `Unknown tool "${name}".` };

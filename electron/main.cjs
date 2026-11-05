@@ -1380,34 +1380,43 @@ ipcMain.handle('agent:step', async (event, req) => {
     if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
   }
 });
-ipcMain.handle('agent:generateImage', async (event, req) => {
-  const key = agentRequestKey(event, req?.requestId);
-  if (agentRequests.has(key)) return { error: 'This assistant request is already running.' };
-  const controller = new AbortController();
-  agentRequests.set(key, controller);
-  const onDestroyed = () => controller.abort();
-  event.sender.once('destroyed', onDestroyed);
-  try {
-    const cfg = settings.getActive();
-    if (cfg.provider !== 'codex-sdk') return { error: 'Choose Codex SDK in Settings to generate images with its installed imagegen skill.' };
-    if (!req || !/^\d{1,4}:\d{1,4}$/.test(req.ratio || '')) return { error: 'Provide the project aspect ratio for the scene image.' };
-    const image = await localAgents.generateImage(cfg, { prompt: req.prompt, ratio: req.ratio,
-      referencePaths: req.referencePaths || [], transparentBackground: req.transparentBackground === true,
-      outputDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'codex-images'), signal: controller.signal });
-    if (controller.signal.aborted) return { canceled: true, error: 'Image generation stopped.' };
-    const [media] = await probeAll([image.path]);
-    if (!media || media.error || media.type !== 'image') return { error: 'Codex produced an image that ClipCraft could not read.' };
-    const title = String(req.prompt).trim().split(/\s+/).slice(0, 7).join(' ').replace(/[\\/:*?"<>|]+/g, '');
-    return { ...media, name: `${title || 'Generated scene'}.png`, origin: 'codex-image',
-      generation: { provider: 'codex-sdk', skill: 'imagegen', prompt: image.prompt } };
-  } catch (e) {
-    if (controller.signal.aborted || e.name === 'AbortError') return { canceled: true, error: 'Image generation stopped.' };
-    return { error: e.message };
-  } finally {
-    agentRequests.delete(key);
-    if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
-  }
-});
+const { runImageJobs } = require('./imageJobs.cjs');
+async function generateSceneImage(cfg, req, signal) {
+  if (!req || !/^\d{1,4}:\d{1,4}$/.test(req.ratio || '')) return { error: 'Provide the project aspect ratio for the scene image.' };
+  const image = await localAgents.generateImage(cfg, { prompt: req.prompt, ratio: req.ratio,
+    referencePaths: req.referencePaths || [], transparentBackground: req.transparentBackground === true,
+    outputDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'codex-images'), signal });
+  if (signal.aborted) return { canceled: true, error: 'Image generation stopped.' };
+  const [media] = await probeAll([image.path]);
+  if (!media || media.error || media.type !== 'image') return { error: 'Codex produced an image that ClipCraft could not read.' };
+  const title = String(req.prompt).trim().split(/\s+/).slice(0, 7).join(' ').replace(/[\\/:*?"<>|]+/g, '');
+  return { ...media, name: `${title || 'Generated scene'}.png`, origin: 'codex-image',
+    generation: { provider: 'codex-sdk', skill: 'imagegen', prompt: image.prompt } };
+}
+function registerImageHandler(channel, batch = false) {
+  ipcMain.handle(channel, async (event, req) => {
+    const key = agentRequestKey(event, req?.requestId);
+    if (agentRequests.has(key)) return { error: 'This assistant request is already running.' };
+    const controller = new AbortController();
+    agentRequests.set(key, controller);
+    const onDestroyed = () => controller.abort();
+    event.sender.once('destroyed', onDestroyed);
+    try {
+      const cfg = settings.getActive();
+      if (cfg.provider !== 'codex-sdk') return { error: 'Choose Codex SDK in Settings to generate images with its installed imagegen skill.' };
+      if (batch) return { results: await runImageJobs(req?.scenes, scene => generateSceneImage(cfg, scene, controller.signal), controller.signal) };
+      return await generateSceneImage(cfg, req, controller.signal);
+    } catch (e) {
+      if (controller.signal.aborted || e.name === 'AbortError') return { canceled: true, error: 'Image generation stopped.' };
+      return { error: e.message };
+    } finally {
+      agentRequests.delete(key);
+      if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
+    }
+  });
+}
+registerImageHandler('agent:generateImage');
+registerImageHandler('agent:generateImages', true);
 ipcMain.handle('agent:silences', async (_e, project, opts) => {
   try {
     return { ok: true, silences: await detectSilences(project, opts) };
