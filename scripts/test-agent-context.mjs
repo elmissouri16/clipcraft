@@ -18,6 +18,9 @@ assert.ok(!catalog.tools().some((t) => t.name === 'export_video'));
 const grouped = [...CORE_TOOLS, ...Object.values(TOOL_GROUPS).flat()];
 assert.equal(new Set(grouped).size, TOOL_DECLARATIONS.length);
 assert.deepEqual([...grouped].sort(), TOOL_DECLARATIONS.map((t) => t.name).sort());
+const withoutImages = createToolCatalog(TOOL_DECLARATIONS.filter(t => t.name !== 'generate_image'));
+assert.ok(!withoutImages.load(['media']).tools.includes('generate_image'), 'unavailable provider tools are excluded from the loaded-tool result');
+assert.ok(!withoutImages.tools().some(t => t.name === 'generate_image'));
 
 const iconSource = fs.readFileSync(new URL('../src/components/ToolCallIcon.jsx', import.meta.url), 'utf8');
 const iconMap = new Map([...iconSource.matchAll(/(\w+): (\w+)/g)].map((m) => [m[1], m[2]]));

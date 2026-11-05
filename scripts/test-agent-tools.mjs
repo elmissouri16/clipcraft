@@ -31,6 +31,7 @@ const api = {
   ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' } : probed('Voice - hello.wav', 'audio', 2.5); },
   stockSearch: async (o) => ({ results: [{ id: '77', kind: o.kind, tags: 'city, night', duration: 12, width: 1920, height: 1080, url: 'https://cdn.pixabay.com/x' }] }),
   stockAdd: async (item) => probed(`city ${item.id}.mp4`, 'video', 12),
+  agentGenerateImage: async (req) => { calls.push(['agentGenerateImage', req]); return { ...probed('Generated character.png', 'image'), origin: 'codex-image' }; },
 };
 let exported = 0;
 const ctx = {
@@ -104,6 +105,41 @@ err(await run('add_voiceover', { engine: 'unknown', text: 'Hello' }), /engine/, 
 err(await run('add_voiceover', { engine: 'gemini', voice_id: 'bad', text: 'Hello' }), /Unknown voice/, 'generation failure does not insert audio');
 assert.equal(p().audioClips.length, audioCount);
 geminiConfigured = false;
+
+// Generated images enter the same media/clip store and accept scene timing.
+r = await run('generate_image', { prompt: 'A new scene with the same logo character', reference_media_ids: ['pic'], start_sec: 12, duration_sec: 4.5, transparent_background: true });
+ok(r, 'generated character scene');
+let generated = p().overlayClips.find(c => c.id === r.clip_id);
+assert.deepEqual([generated.start, generated.in, generated.out], [12, 0, 4.5]);
+assert.equal(p().media.find(m => m.id === r.media_id).origin, 'codex-image');
+assert.equal(calls.at(-1)[0], 'agentGenerateImage');
+assert.deepEqual(calls.at(-1)[1].referencePaths, ['C:/logo.png']);
+assert.equal(calls.at(-1)[1].transparentBackground, true);
+const overlayCount = p().overlayClips.length, generatedCalls = calls.length;
+err(await run('generate_image', { prompt: 'x', reference_media_ids: ['missing'] }), /Reference IDs/, 'reject invented character reference');
+err(await run('generate_image', { prompt: 'x', duration_sec: 0 }), /duration_sec/, 'reject invalid scene duration before generation');
+err(await run('generate_image', { prompt: 'x', as: 'main', start_sec: 12 }), /main_index/, 'do not silently append a scene requested at a time');
+assert.equal(calls.length, generatedCalls);
+r = await run('generate_image', { prompt: 'Character library', as: 'library' });
+ok(r, 'generate for reuse without a timeline clip');
+assert.equal(p().overlayClips.length, overlayCount);
+
+const imageState = state;
+dispatch({ type: 'load', project: normalizeProject({ media: p().media }) });
+r = await run('generate_image', { prompt: 'First scene', start_sec: 2, duration_sec: 4 });
+ok(r, 'generated image starts an exportable project');
+assert.ok(p().videoClips[0].gap);
+assert.equal(videoLayout(p().videoClips).at(-1).end, 6);
+dispatch({ type: 'extendVideoTo', end: 8, gapId: 'extended-gap' });
+assert.equal(p().videoClips.length, 1, 'later generated scenes reuse the existing background');
+assert.equal(videoLayout(p().videoClips).at(-1).end, 8);
+dispatch({ type: 'setLayerState', track: 'video', layer: 0, patch: { locked: true } });
+const beforeLockedGeneration = calls.length;
+err(await run('generate_image', { prompt: 'Beyond the locked track', start_sec: 7, duration_sec: 3 }), /Unlock the main track/, 'avoid generation when its required background cannot extend');
+assert.equal(calls.length, beforeLockedGeneration);
+dispatch({ type: 'extendVideoTo', end: 10, gapId: 'locked-gap' });
+assert.equal(videoLayout(p().videoClips).at(-1).end, 8, 'background padding respects a locked main track');
+state = imageState;
 
 // Stock b-roll: full-frame overlay for 3 s; and on the main track.
 r = await run('search_stock', { kind: 'video', query: 'city' });
@@ -255,8 +291,9 @@ assert.ok(o.text_animations.anim_in.includes('pop') && o.text_animations.anim_lo
 o = await run('list_options', { what: 'caption_styles' });
 assert.ok(o.caption_styles.some((x) => x.startsWith('cap-classic')));
 err(await run('list_options', { what: 'colors' }), /what must be one of/, 'unknown list');
-// The declarations stay small: every step sends them (Groq's free plan: 8K tokens a minute).
-assert.ok(JSON.stringify(TOOL_DECLARATIONS).length < 15000, `declarations are ${JSON.stringify(TOOL_DECLARATIONS).length} chars`);
+// Bound the full catalog; requests send only the lazily loaded groups. The
+// Codex image tool is offered only to the installed Codex provider.
+assert.ok(JSON.stringify(TOOL_DECLARATIONS).length < 16000, `declarations are ${JSON.stringify(TOOL_DECLARATIONS).length} chars`);
 
 // Export opens the save window (the app's own flow).
 ok(await run('export_video'), 'export_video');

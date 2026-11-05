@@ -14,6 +14,9 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'codex-images') {
+    return require('./smoke-codex-images.cjs')(win, app, dir);
+  }
   if (process.env.FVE_SMOKE_MODE === 'gemini-tts') {
     return require('./smoke-gemini-tts.cjs')(win, app, dir);
   }

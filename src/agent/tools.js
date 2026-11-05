@@ -2,7 +2,7 @@
 // Every editing tool goes through the same reducer actions as the buttons, so Undo, the timeline and the
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.
-import { clipLen, projectDuration, videoLayout, uid } from '../store.js';
+import { clipLen, projectDuration, videoLayout, uid, isLayerLocked } from '../store.js';
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
@@ -141,6 +141,12 @@ export const TOOL_DECLARATIONS = [
     name: 'add_media',
     description: 'Put a library file on the timeline by name: video / photo on the main track (end, or main_index) or as "overlay" at start_sec; audio on the audio track at start_sec.',
     parameters: { type: 'OBJECT', properties: { media_name: S, as: S, start_sec: N, main_index: N }, required: ['media_name'] },
+  },
+  {
+    name: 'generate_image',
+    description: 'Codex only: generate a real scene/character with imagegen. Defaults to overlay at start_sec; main uses main_index. Use reference_media_ids for consistent characters.',
+    parameters: { type: 'OBJECT', properties: { prompt: S, reference_media_ids: { type: 'ARRAY', items: S },
+      as: S, start_sec: N, duration_sec: N, main_index: N, transparent_background: B }, required: ['prompt'] },
   },
   {
     name: 'search_sounds',
@@ -809,6 +815,38 @@ export function createToolRunner(ctx) {
       const added = await place(ctx.addProbed?.({ ...res, origin: 'tts' }), { start_sec, name: res.name });
       if (added.error) return added;
       return shapeAudio(added.clip_id, { volume }, added);
+    },
+
+    async generate_image({ prompt, reference_media_ids = [], as = 'overlay', start_sec = 0, duration_sec = 5, main_index, transparent_background = false }) {
+      if (!api.agentGenerateImage) return { error: 'Image generation requires an updated ClipCraft with Codex SDK selected.' };
+      if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000) return { error: 'Provide an image prompt of 1–16000 characters.' };
+      if (!['overlay', 'main', 'library'].includes(as)) return { error: 'as must be overlay, main or library.' };
+      const at = Number(start_sec), length = Number(duration_sec);
+      if (!Number.isFinite(at) || at < 0 || !Number.isFinite(length) || length < 0.2 || length > 3600) return { error: 'Use a nonnegative start_sec and duration_sec between 0.2 and 3600.' };
+      if (main_index !== undefined && (!Number.isInteger(Number(main_index)) || Number(main_index) < 0)) return { error: 'main_index must be a nonnegative integer.' };
+      if (as === 'main' && at !== 0 && main_index === undefined) return { error: 'Use main_index for main-track insertion, or overlay for placement at an exact start_sec.' };
+      if (!Array.isArray(reference_media_ids) || reference_media_ids.length > 3) return { error: 'Use at most three reference_media_ids.' };
+      const p = project(), references = reference_media_ids.map(id => p.media.find(m => m.id === id && m.type === 'image'));
+      if (references.some(m => !m?.path)) return { error: 'Reference IDs must name existing images in the project media library.' };
+      const mainEnd = () => videoLayout(project().videoClips).at(-1)?.end || 0;
+      if ((as === 'main' || (as === 'overlay' && at + length > mainEnd())) && isLayerLocked(p, 'video', 0)) return { error: 'Unlock the main track before adding this generated scene.' };
+      const res = await api.agentGenerateImage({ requestId: ctx.requestId, prompt: prompt.trim(), ratio: p.ratio || `${p.width}:${p.height}`,
+        referencePaths: references.map(m => m.path), transparentBackground: transparent_background === true });
+      if (res.error) return { error: res.error };
+      if (res.canceled || ctx.isCanceled?.()) return { error: 'Image generation stopped.' };
+      if (res.type !== 'image' || !res.path) return { error: 'No readable generated image was returned.' };
+      const m = ctx.addProbed?.(res);
+      if (!m) return { error: 'Could not add the generated image to the project.' };
+      if (as === 'library') return after({ media_id: m.id, added: m.name });
+      const added = await place(m, { as, start_sec: at, main_index, name: m.name, fullFrame: as === 'overlay' });
+      if (added.error) return added;
+      dispatch({ type: 'update', track: added.track, id: added.clip_id, patch: { in: 0, out: length } });
+      if (as === 'overlay' && at + length > mainEnd()) {
+        dispatch({ type: 'extendVideoTo', end: at + length, gapId: uid() });
+        await ctx.settle();
+        if (mainEnd() + 0.001 < at + length) return { error: 'The image was added, but the main track is locked and could not extend to cover its scene.' };
+      }
+      return after({ ...added, media_id: m.id, length_sec: length, width: res.width, height: res.height });
     },
 
     async search_stock({ kind = 'video', query }) {

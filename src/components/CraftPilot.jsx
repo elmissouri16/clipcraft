@@ -171,6 +171,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       contents: contents.current,
       ctx: {
         ...app,
+        provider: config?.provider,
         getProject: () => {
           if (!isCurrent()) throw new Error('The project changed.');
           return getProject();

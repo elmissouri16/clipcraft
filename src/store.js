@@ -336,6 +336,16 @@ function reduceProjectInner(p, a) {
       const clip = { ...newVideoClip(a.clipId, m), start: Math.max(0, a.at), transform: { scale: 0.5, x: 0, y: 0 }, ...(a.layer != null && { layer: a.layer }) };
       return { ...p, overlayClips: [...p.overlayClips, clip] };
     }
+    case 'extendVideoTo': {
+      // A generated scene may start on an empty timeline or outlast its footage.
+      // Pad the main track with background so preview and export cover the scene.
+      const end = videoLayout(p.videoClips).at(-1)?.end || 0;
+      if (!Number.isFinite(a.end) || a.end <= end) return p;
+      const list = [...p.videoClips], last = list.at(-1);
+      if (last?.gap) list[list.length - 1] = { ...last, out: last.out + a.end - end };
+      else list.push(newGap(a.gapId, a.end - end));
+      return { ...p, videoClips: list };
+    }
     case 'addEffectClip':
       // A free effect on the Effects track (3 s by default).
       return { ...p, effectClips: [...p.effectClips, { id: a.clipId, fx: a.fx, start: Math.max(0, a.at), duration: a.duration || 3 }] };
@@ -941,6 +951,7 @@ function actionLocked(p, a) {
       if (a.track === 'video') return isLayerLocked(p, 'video', 0);
       return isLayerLocked(p, a.track, layerOf(a.clip || {}));
     }
+    case 'extendVideoTo':
     case 'moveVideo': return isLayerLocked(p, 'video', 0);
     case 'moveToOverlay': return isLayerLocked(p, 'video', 0);
     case 'moveToMain': return clipLocked(p, 'overlay', clipOf('overlay', a.id));

@@ -6,7 +6,7 @@ export const TOOL_GROUPS = {
   audio: ['set_volume', 'search_sounds', 'add_sound', 'list_voices', 'add_voiceover'],
   visual: ['set_filter', 'set_effects', 'add_transition', 'add_effect', 'set_color', 'set_compositing'],
   motion: ['zoom', 'set_transform', 'add_keyframes', 'set_animation', 'motion_guide'],
-  media: ['add_media', 'search_stock', 'add_stock', 'add_scene'],
+  media: ['add_media', 'generate_image', 'search_stock', 'add_stock', 'add_scene'],
   style: ['edit_style'],
   export: ['export_video'],
 };
@@ -30,7 +30,8 @@ export function createToolCatalog(declarations, external = []) {
         return { error: `groups must contain: ${[...Object.keys(TOOL_GROUPS), 'external'].join(', ')}.` };
       }
       for (const name of names) { groups.add(name); for (const tool of TOOL_GROUPS[name] || []) active.add(tool); }
-      return { ok: true, loaded: names, tools: [...new Set(names.flatMap((name) => name === 'external' ? external.map((t) => t.name) : TOOL_GROUPS[name]))] };
+      const available = new Set([...declarations, ...external].map(t => t.name));
+      return { ok: true, loaded: names, tools: [...new Set(names.flatMap((name) => name === 'external' ? external.map((t) => t.name) : TOOL_GROUPS[name]))].filter(name => available.has(name)) };
     },
   };
 }

@@ -1,6 +1,7 @@
 // Installed agent backends for CraftAI. Credentials remain owned by each CLI.
 // Both SDKs return editor tool requests; the existing renderer executes them and
-// owns history/Undo. No shell or filesystem tools are needed by these sessions.
+// owns history/Undo. Image generation runs separately with the installed skill;
+// ordinary editing turns never execute native tools.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -220,7 +221,7 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
     return withSession(cfg, options, async (session) => {
       if (cfg.provider === 'codex-sdk') {
         const codex = new session.sdk.Codex({ codexPathOverride: session.executablePath, env: session.env,
-          config: { features: { shell_tool: false, unified_exec: false, apps: false, plugins: false, skip_host_skill_discovery: true },
+          config: { features: { shell_tool: false, unified_exec: false, image_generation: false, apps: false, plugins: false, skip_host_skill_discovery: true },
             skills: { include_instructions: false }, mcp_servers: {},
           },
         });
@@ -263,6 +264,78 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
     return parseStep(result, tools);
   }
 
+  async function generateImage(cfg, { prompt, outputDir, referencePaths = [], ratio = '16:9', transparentBackground = false, ...options }) {
+    if (cfg.provider !== 'codex-sdk') throw new Error('Image generation with the installed imagegen skill requires Codex SDK in Settings.');
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000) throw new Error('Provide an image prompt of 1–16000 characters.');
+    if (!Array.isArray(referencePaths) || referencePaths.length > 3) throw new Error('Use at most three reference images.');
+    const codexHome = path.resolve(env.CODEX_HOME || path.join(home, '.codex'));
+    const skillPath = path.join(codexHome, 'skills', '.system', 'imagegen', 'SKILL.md');
+    let skill;
+    try { skill = fs.readFileSync(skillPath, 'utf8'); }
+    catch { throw new Error('The installed Codex imagegen skill was not found. Update Codex to install its bundled imagegen skill.'); }
+    return withSession(cfg, { timeoutMs: 600000, ...options }, async (session) => {
+      const references = referencePaths.map((source, i) => {
+        const ext = path.extname(source).toLowerCase();
+        if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) throw new Error('Character references must be PNG, JPEG or WebP images.');
+        const stat = fs.statSync(source);
+        if (!stat.isFile() || stat.size > 50 * 1024 * 1024) throw new Error('Reference images must be files under 50 MB.');
+        const dest = path.join(session.cwd, `reference-${i + 1}${ext}`);
+        fs.copyFileSync(source, dest);
+        return dest;
+      });
+      const codex = new session.sdk.Codex({ codexPathOverride: session.executablePath, env: session.env,
+        config: { features: { image_generation: true, shell_tool: false, unified_exec: false, apps: false, plugins: false,
+          multi_agent: false, memories: false, skip_host_skill_discovery: true },
+          skills: { include_instructions: false }, mcp_servers: {},
+        },
+      });
+      const thread = codex.startThread({ ...(cfg.model ? { model: cfg.model } : {}),
+        ...(cfg.reasoningEffort ? { modelReasoningEffort: cfg.reasoningEffort } : {}),
+        workingDirectory: session.cwd, skipGitRepoCheck: true, sandboxMode: 'workspace-write',
+        approvalPolicy: 'never', networkAccessEnabled: false, webSearchMode: 'disabled',
+      });
+      const instruction = `You are generating one original image for a ClipCraft video scene. Use the installed $imagegen skill supplied below and its native image_gen tool.
+Generate exactly one still PNG image from the scene request. Use native image generation only; do not use shell commands, code, SVG placeholders, other providers, API-key fallbacks, or copy a reference as the output.
+References, when attached, are existing project images. Preserve the requested character identity, construction and visual style across scenes. Reference file paths: ${JSON.stringify(references)}.
+Compose for project aspect ratio ${String(ratio).slice(0, 16)}. Transparent background requested: ${transparentBackground === true}.
+The host will copy the native artifact into persistent project media storage. Leave the generated native file in its original location; do not move or rename it. If native image generation is unavailable, say so honestly and generate nothing.
+Installed imagegen skill (${skillPath}):
+${skill}
+
+Scene request:
+${prompt.trim()}`;
+      await thread.run([{ type: 'text', text: instruction }, ...references.map((file) => ({ type: 'local_image', path: file }))],
+        { signal: session.controller.signal });
+      if (session.controller.signal.aborted) throw abortError();
+      // codex exec/SDK does not expose the app-server savedPath event. Its native
+      // outputs live under this new thread's generated_images folder instead.
+      const id = thread.id;
+      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) throw new Error('Codex did not return an image-generation thread.');
+      const roots = [path.join(codexHome, 'generated_images', id), path.join(session.cwd, 'generated_images', id)];
+      const files = [];
+      for (const root of roots) {
+        if (!fs.existsSync(root)) continue;
+        if (fs.lstatSync(root).isSymbolicLink() || fs.realpathSync(root) !== path.join(fs.realpathSync(path.dirname(root)), id)) throw new Error('Codex returned an unsafe image artifact directory.');
+        for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+          if (!/\.png$/i.test(entry.name)) continue;
+          const file = path.join(root, entry.name), stat = fs.lstatSync(file);
+          if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 128 * 1024 * 1024) throw new Error('Codex returned an invalid image artifact.');
+          files.push(file);
+        }
+      }
+      if (files.length !== 1) throw new Error(files.length
+        ? 'Codex generated multiple images for one scene. Request one image per scene and try again.'
+        : 'Codex produced no native image. Check that your installed Codex version, account and selected model support image generation. No image was added.');
+      const bytes = fs.readFileSync(files[0]);
+      if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Codex returned an invalid PNG image.');
+      if (session.controller.signal.aborted) throw abortError();
+      fs.mkdirSync(outputDir, { recursive: true });
+      const dest = path.join(outputDir, `codex-${require('node:crypto').randomUUID()}.png`);
+      fs.writeFileSync(dest, bytes, { flag: 'wx' });
+      return { path: dest, source: 'codex-imagegen', prompt: prompt.trim() };
+    });
+  }
+
   async function listModels(cfg, { signal } = {}) {
     if (cfg.provider === 'codex-sdk') {
       // Codex has no SDK model-list method. Reuse its own cached catalog when
@@ -292,7 +365,7 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
       return { ok: true, models: entries.map((model) => model.value), modelCapabilities };
     } catch (error) { return { ok: false, error: error.message }; }
   }
-  return { status, chat, agentStep, listModels };
+  return { status, chat, agentStep, listModels, generateImage };
 }
 
 module.exports = { ...createLocalAgents(), createLocalAgents, findExecutable, searchDirectories, unwrapShim,

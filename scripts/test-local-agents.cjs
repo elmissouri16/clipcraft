@@ -89,6 +89,7 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
         assert.equal(session.options.sandboxMode, 'read-only');
         const client = captured.findLast((entry) => entry.kind === 'codex');
         assert.equal(client.options.config.features.shell_tool, false);
+        assert.equal(client.options.config.features.image_generation, false, 'normal editor decisions cannot generate untracked images');
         assert.equal(client.options.env.ELECTRON_RUN_AS_NODE, undefined);
       } else {
         assert.deepEqual(session.options.tools, []);

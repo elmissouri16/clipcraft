@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld('api', {
   openFile: (file) => ipcRenderer.invoke('shell:open', file),
   openHelp: (url) => ipcRenderer.invoke('app:openHelp', url),
   agentStep: (req) => ipcRenderer.invoke('agent:step', req),
+  agentGenerateImage: (req) => ipcRenderer.invoke('agent:generateImage', req),
   agentCancel: (requestId) => ipcRenderer.invoke('agent:cancel', requestId),
   agentSilences: (project, opts) => ipcRenderer.invoke('agent:silences', project, opts),
   settingsGet: () => ipcRenderer.invoke('settings:get'),

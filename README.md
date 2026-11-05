@@ -189,6 +189,33 @@ it uses the installed CLI logins for small connection/edit prompts and keeps
 project/settings test data separate from the normal profile.
 
 
+### Codex images for scenes and characters
+
+When **Codex SDK** is selected, CraftAI can use the installed Codex `imagegen`
+skill and native image-generation tool. It uses the CLI's existing login; it
+does not ask for a separate image API key or switch to another provider.
+Your installed Codex version, account and selected model must support native
+image generation, and its bundled `imagegen` skill must be present.
+
+Ask for the scene and timing, for example: “Generate an original paper robot
+character for a four-second scene starting at two seconds, then add a slow
+zoom.” CraftAI's `generate_image` tool imports the image into project media,
+places it on the timeline, and returns its clip ID for motion and placement
+tools. It can reuse existing project images as character references for later
+scenes. Each call generates one image; use separate calls for separate scenes.
+On an empty or shorter timeline, background is extended to cover the new scene.
+
+Completed images are copied into ClipCraft's media storage before the temporary
+Codex workspace is removed. They support the usual Undo, Redo and export.
+**Stop** cancels an in-flight image request. Failed or unavailable generation
+does not insert placeholder art. Ordinary editing turns still use only the
+editor's structured tools; native image generation runs in a separate session.
+
+Contributor checks: `node scripts/test-codex-images.cjs` and the default
+`FVE_SMOKE_MODE=codex-images` Electron smoke are offline. Opt into a real native
+generation with `FVE_CODEX_IMAGES_LIVE=1`; optionally supply an existing character
+image through `FVE_CODEX_IMAGE_REFERENCE`. Use an isolated `FVE_SMOKE` directory.
+
 ### Gemini speech generation
 
 Open **Settings → Speech generation**, paste a Google AI Studio API key, and
