@@ -264,10 +264,11 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
     return parseStep(result, tools);
   }
 
-  async function generateImage(cfg, { prompt, outputDir, referencePaths = [], ratio = '16:9', transparentBackground = false, ...options }) {
+  async function generateImage(cfg, { prompt, outputDir, referencePaths = [], ratio = '16:9', width, height, transparentBackground = false, ...options }) {
     if (cfg.provider !== 'codex-sdk') throw new Error('Image generation with the installed imagegen skill requires Codex SDK in Settings.');
     if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 16000) throw new Error('Provide an image prompt of 1–16000 characters.');
     if (!Array.isArray(referencePaths) || referencePaths.length > 3) throw new Error('Use at most three reference images.');
+    if (width !== undefined || height !== undefined) require('./imageFrame.cjs').validateImageFrame(width, height);
     const codexHome = path.resolve(env.CODEX_HOME || path.join(home, '.codex'));
     const skillPath = path.join(codexHome, 'skills', '.system', 'imagegen', 'SKILL.md');
     let skill;
@@ -298,13 +299,14 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
 Generate exactly one still PNG image from the scene request. Use native image generation only; do not use shell commands, code, SVG placeholders, other providers, API-key fallbacks, or copy a reference as the output.
 References, when attached, are existing project images. Preserve the requested character identity, construction and visual style across scenes. Reference file paths: ${JSON.stringify(references)}.
 Compose for project aspect ratio ${String(ratio).slice(0, 16)}. Transparent background requested: ${transparentBackground === true}.
+${width && height ? `The video template canvas is ${width}x${height} pixels. Generate at these dimensions when supported; otherwise use the nearest supported dimensions with the same ${String(ratio).slice(0, 16)} aspect ratio. Compose edge to edge in this orientation, without borders or letterboxing. Keep the subject inside the canvas; ClipCraft will proportionally crop and resize the imported copy to the exact template dimensions if necessary.` : ''}
 The host will copy the native artifact into persistent project media storage. Leave the generated native file in its original location; do not move or rename it. If native image generation is unavailable, say so honestly and generate nothing.
 Installed imagegen skill (${skillPath}):
 ${skill}
 
 Scene request:
 ${prompt.trim()}`;
-      await thread.run([{ type: 'text', text: instruction }, ...references.map((file) => ({ type: 'local_image', path: file }))],
+      const result = await thread.run([{ type: 'text', text: instruction }, ...references.map((file) => ({ type: 'local_image', path: file }))],
         { signal: session.controller.signal });
       if (session.controller.signal.aborted) throw abortError();
       // codex exec/SDK does not expose the app-server savedPath event. Its native
@@ -325,7 +327,7 @@ ${prompt.trim()}`;
       }
       if (files.length !== 1) throw new Error(files.length
         ? 'Codex generated multiple images for one scene. Request one image per scene and try again.'
-        : 'Codex produced no native image. Check that your installed Codex version, account and selected model support image generation. No image was added.');
+        : `Codex produced no native image. No image was added. ${String(result.finalResponse || 'Check that your installed Codex version, account and selected model support image generation.').slice(0, 600)}`);
       const bytes = fs.readFileSync(files[0]);
       if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Codex returned an invalid PNG image.');
       if (session.controller.signal.aborted) throw abortError();

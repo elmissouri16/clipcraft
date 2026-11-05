@@ -204,6 +204,14 @@ places it on the timeline, and returns its clip ID for motion and placement
 tools. It can reuse existing project images as character references for later
 scenes. Each call generates one image; use separate calls for separate scenes.
 On an empty or shorter timeline, background is extended to cover the new scene.
+Codex receives the current template's pixel width, height and aspect ratio.
+If its native output size differs, the imported PNG is proportionally cropped
+and resized to the exact canvas dimensions; transparency is preserved.
+
+AI-added library and stock footage fills the current canvas by default,
+including landscape sources in a portrait video. This uses a centered source
+crop, so subsequent zooms still fill the frame. Ask to keep the whole picture
+to use `fit: "fit"` instead. The first added source preserves the template size.
 
 For multiple independent scenes, CraftAI requests image calls together. Up to
 three native image jobs run at once; additional scenes queue automatically.
@@ -225,6 +233,8 @@ image through `FVE_CODEX_IMAGE_REFERENCE`. Use an isolated `FVE_SMOKE` directory
 Parallel checks: `node scripts/test-image-jobs.cjs`,
 `node scripts/test-parallel-images.mjs`, and
 `FVE_SMOKE_MODE=codex-images-parallel` (same live opt-in).
+Frame checks: `node scripts/test-scene-frame.mjs` and
+`FVE_SMOKE_MODE=codex-images-portrait` (same live opt-in).
 
 ### Gemini speech generation
 

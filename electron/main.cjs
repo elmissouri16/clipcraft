@@ -1381,17 +1381,23 @@ ipcMain.handle('agent:step', async (event, req) => {
   }
 });
 const { runImageJobs } = require('./imageJobs.cjs');
+const { fitImageFrame, validateImageFrame } = require('./imageFrame.cjs');
 async function generateSceneImage(cfg, req, signal) {
   if (!req || !/^\d{1,4}:\d{1,4}$/.test(req.ratio || '')) return { error: 'Provide the project aspect ratio for the scene image.' };
-  const image = await localAgents.generateImage(cfg, { prompt: req.prompt, ratio: req.ratio,
+  validateImageFrame(req.width, req.height);
+  const image = await localAgents.generateImage(cfg, { prompt: req.prompt, ratio: req.ratio, width: req.width, height: req.height,
     referencePaths: req.referencePaths || [], transparentBackground: req.transparentBackground === true,
     outputDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'codex-images'), signal });
   if (signal.aborted) return { canceled: true, error: 'Image generation stopped.' };
-  const [media] = await probeAll([image.path]);
+  const framed = await fitImageFrame(image.path, { width: req.width, height: req.height, signal });
+  if (signal.aborted) return { canceled: true, error: 'Image generation stopped.' };
+  const [media] = await probeAll([framed.path]);
   if (!media || media.error || media.type !== 'image') return { error: 'Codex produced an image that ClipCraft could not read.' };
+  if (media.width !== req.width || media.height !== req.height) return { error: 'The generated image does not match the project dimensions.' };
   const title = String(req.prompt).trim().split(/\s+/).slice(0, 7).join(' ').replace(/[\\/:*?"<>|]+/g, '');
   return { ...media, name: `${title || 'Generated scene'}.png`, origin: 'codex-image',
-    generation: { provider: 'codex-sdk', skill: 'imagegen', prompt: image.prompt } };
+    generation: { provider: 'codex-sdk', skill: 'imagegen', prompt: image.prompt,
+      width: req.width, height: req.height, nativeWidth: framed.nativeWidth, nativeHeight: framed.nativeHeight } };
 }
 function registerImageHandler(channel, batch = false) {
   ipcMain.handle(channel, async (event, req) => {

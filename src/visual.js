@@ -8,6 +8,15 @@ export const DEFAULT_CHROMA = { on: false, color: '#00ff00', intensity: 20, feat
 // Crop: the fraction of the SOURCE picture cut away at each edge (0..0.9), applied before the
 // fit / transform, in the preview and the export alike. A static per-clip property (no keyframes).
 export const DEFAULT_CROP = { l: 0, t: 0, r: 0, b: 0 };
+// Fill a canvas without stretching. Crop the source before its contain fit so
+// scale 1 and later zoom keyframes still cover the whole frame.
+export function frameCrop(media, width, height) {
+  const source = media?.width / media?.height, target = width / height;
+  if (!(source > 0) || !(target > 0) || !Number.isFinite(source) || !Number.isFinite(target)) return { ...DEFAULT_CROP };
+  if (source > target) { const edge = (1 - target / source) / 2; return { l: edge, r: edge, t: 0, b: 0 }; }
+  const edge = (1 - source / target) / 2;
+  return { l: 0, r: 0, t: edge, b: edge };
+}
 export const DEFAULT_MASK = {
   type: 'none', x: 0, y: 0, rot: 0, w: 0.5, h: 0.5, feather: 0, invert: false, round: 0, text: 'CLIPCRAFT',
   // Outline of the shape and a glow around it (sizes in pixels of a 720p frame, 0 = off).

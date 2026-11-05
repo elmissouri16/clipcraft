@@ -39,7 +39,7 @@ async function main() {
   const agents = createLocalAgents({ home: root, env: { CODEX_HOME: home, PATH: '/usr/bin', OPENAI_API_KEY: 'secret-test-key', ELECTRON_RUN_AS_NODE: '1' },
     resolveExecutable: () => '/installed/codex', loadSdk: async () => sdk });
   const cfg = { provider: 'codex-sdk', model: 'chosen-model', reasoningEffort: 'high' };
-  const req = { prompt: 'The same character waves in a new scene.', referencePaths: [reference], ratio: '9:16', transparentBackground: true, outputDir };
+  const req = { prompt: 'The same character waves in a new scene.', referencePaths: [reference], ratio: '9:16', width: 1080, height: 1920, transparentBackground: true, outputDir };
   try {
     const image = await agents.generateImage(cfg, req);
     assert.deepEqual(fs.readFileSync(image.path), PNG);
@@ -56,6 +56,7 @@ async function main() {
     assert.equal(run.options.networkAccessEnabled, false);
     assert.ok(run.input[0].text.includes('TEST INSTALLED IMAGEGEN SKILL'));
     assert.ok(run.input[0].text.includes('9:16'));
+    assert.ok(run.input[0].text.includes('1080x1920 pixels'));
     assert.ok(run.input[0].text.includes('Transparent background requested: true'));
     assert.equal(run.input[1].type, 'local_image');
     assert.equal(fs.existsSync(run.options.workingDirectory), false, 'scratch references are removed after completion');

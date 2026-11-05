@@ -6,7 +6,7 @@ import { clipLen, projectDuration, videoLayout, uid, isLayerLocked } from '../st
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
-import { BLEND_MODES, cropOf, transformOf, opacityOf } from '../visual.js';
+import { BLEND_MODES, cropOf, frameCrop, transformOf, opacityOf } from '../visual.js';
 import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from './motionGuide.js';
 import { projectRevision } from './context.js';
 
@@ -139,8 +139,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_media',
-    description: 'Put a library file on the timeline by name: video / photo on the main track (end, or main_index) or as "overlay" at start_sec; audio on the audio track at start_sec.',
-    parameters: { type: 'OBJECT', properties: { media_name: S, as: S, start_sec: N, main_index: N }, required: ['media_name'] },
+    description: 'Put a library file on main (end or main_index), overlay at start_sec, or audio at start_sec. Pictures fill the canvas by default; fit "fit" keeps the whole picture.',
+    parameters: { type: 'OBJECT', properties: { media_name: S, as: S, start_sec: N, main_index: N, fit: S }, required: ['media_name'] },
   },
   {
     name: 'generate_image',
@@ -179,8 +179,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_stock',
-    description: 'Add a found stock file: as "overlay" (default, full frame over the video at start_sec, for duration_sec) or "main" (main track at main_index, default the end).',
-    parameters: { type: 'OBJECT', properties: { stock_id: S, as: S, start_sec: N, duration_sec: N, main_index: N }, required: ['stock_id'] },
+    description: 'Add stock as "overlay" at start_sec for duration_sec (default) or "main" at main_index. Fills the canvas; fit "fit" keeps the whole picture.',
+    parameters: { type: 'OBJECT', properties: { stock_id: S, as: S, start_sec: N, duration_sec: N, main_index: N, fit: S }, required: ['stock_id'] },
   },
   {
     name: 'add_effect',
@@ -376,10 +376,12 @@ export function createToolRunner(ctx) {
   };
 
   // Puts a media item on the timeline: audio on the audio track at start_sec; a video / photo on the main track
-  // (at main_index, default the end) or as an overlay at start_sec (fullFrame: covering the frame, for b-roll).
+  // (at main_index, default the end) or as an overlay at start_sec. Visuals fill
+  // the current canvas unless the caller explicitly asks to keep the whole picture.
   // Returns { clip_id, track } or { error }.
-  const place = async (m, { as = 'main', start_sec = 0, main_index, name, fullFrame } = {}) => {
+  const place = async (m, { as = 'main', start_sec = 0, main_index, name, fit = 'fill' } = {}) => {
     if (!m) return { error: 'Could not add the file to the project.' };
+    if (!['fill', 'fit'].includes(fit)) return { error: 'fit must be fill or fit.' };
     const clipId = uid();
     const at = Math.max(0, Number(start_sec) || 0);
     let track;
@@ -389,12 +391,15 @@ export function createToolRunner(ctx) {
     } else if (as === 'overlay') {
       track = 'overlay';
       dispatch({ type: 'addOverlayClip', mediaId: m.id, clipId, at });
-      if (fullFrame) dispatch({ type: 'update', track, id: clipId, patch: { transform: { ...transformOf({}), scale: 1, x: 0, y: 0 } } });
     } else {
       track = 'video';
       const n = Number(main_index);
-      dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, ...(Number.isInteger(n) && n >= 0 ? { index: n } : {}) });
+      dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, preserveCanvas: true, ...(Number.isInteger(n) && n >= 0 ? { index: n } : {}) });
     }
+    if (m.type !== 'audio') dispatch({ type: 'update', track, id: clipId, patch: {
+      crop: fit === 'fill' ? frameCrop(m, project().width, project().height) : { l: 0, t: 0, r: 0, b: 0 },
+      transform: transformOf({}),
+    } });
     await ctx.settle();
     if (!findClip(clipId)) return { error: `Could not put "${name || m.name}" on the timeline.` };
     return { clip_id: clipId, track, added: name || m.name };
@@ -414,7 +419,7 @@ export function createToolRunner(ctx) {
     const p = project(), references = reference_media_ids.map(id => p.media.find(m => m.id === id && m.type === 'image'));
     if (references.some(m => !m?.path)) return { error: 'Reference IDs must name existing images in the project media library.' };
     if ((as === 'main' || (as === 'overlay' && at + length > mainImageEnd())) && isLayerLocked(p, 'video', 0)) return { error: 'Unlock the main track before adding this generated scene.' };
-    return { request: { prompt: prompt.trim(), ratio: p.ratio || `${p.width}:${p.height}`,
+    return { request: { prompt: prompt.trim(), ratio: p.ratio || `${p.width}:${p.height}`, width: p.width, height: p.height,
       referencePaths: references.map(m => m.path), transparentBackground: transparent_background === true }, as, at, length, main_index };
   }
   async function insertImageScene({ as, at, length, main_index }, res) {
@@ -424,7 +429,7 @@ export function createToolRunner(ctx) {
     const m = ctx.addProbed?.(res);
     if (!m) return { error: 'Could not add the generated image to the project.' };
     if (as === 'library') return after({ media_id: m.id, added: m.name });
-    const added = await place(m, { as, start_sec: at, main_index, name: m.name, fullFrame: as === 'overlay' });
+    const added = await place(m, { as, start_sec: at, main_index, name: m.name });
     if (added.error) return added;
     dispatch({ type: 'update', track: added.track, id: added.clip_id, patch: { in: 0, out: length } });
     if (as === 'overlay' && at + length > mainImageEnd()) {
@@ -815,12 +820,12 @@ export function createToolRunner(ctx) {
       return after({ animation: Object.fromEntries(Object.entries(anim).map(([k, v]) => [k, v.type])) });
     },
 
-    async add_media({ media_name, as = 'main', start_sec = 0, main_index }) {
+    async add_media({ media_name, as = 'main', start_sec = 0, main_index, fit = 'fill' }) {
       const p = project();
       const q = String(media_name || '').toLowerCase();
       const m = p.media.find((x) => x.name.toLowerCase() === q) || p.media.find((x) => x.name.toLowerCase().includes(q));
       if (!m) return { error: `No media named "${media_name}". Library: ${p.media.map((x) => x.name).join(', ') || 'empty'}.` };
-      return place(m, { as, start_sec, main_index, name: m.name });
+      return place(m, { as, start_sec, main_index, name: m.name, fit });
     },
 
     async search_sounds({ kind, query }) {
@@ -891,12 +896,12 @@ export function createToolRunner(ctx) {
       return items.length ? { items } : { items, note: 'Nothing found; try other English words.' };
     },
 
-    async add_stock({ stock_id, as = 'overlay', start_sec = 0, duration_sec, main_index }) {
+    async add_stock({ stock_id, as = 'overlay', start_sec = 0, duration_sec, main_index, fit = 'fill' }) {
       const item = found.get(stock_id);
       if (!item || !/^[vp]/.test(String(stock_id))) return { error: `Unknown stock_id "${stock_id}". Use an id from search_stock.` };
       const res = await api.stockAdd(item);
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.(res), { as, start_sec, main_index, name: res.name, fullFrame: true });
+      const added = await place(ctx.addProbed?.(res), { as, start_sec, main_index, name: res.name, fit });
       if (added.error) return added;
       if (added.track === 'overlay' && Number(duration_sec) > 0) {
         const c = findClip(added.clip_id).clip;

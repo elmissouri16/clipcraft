@@ -320,7 +320,7 @@ function reduceProjectInner(p, a) {
       if (m.type === 'video' || m.type === 'image') {
         const list = [...p.videoClips];
         list.splice(a.index ?? list.length, 0, newVideoClip(a.clipId, m));
-        return { ...p, videoClips: list, ...canvasFor(p, m) };
+        return { ...p, videoClips: list, ...(a.preserveCanvas ? {} : canvasFor(p, m)) };
       }
       return {
         ...p,
