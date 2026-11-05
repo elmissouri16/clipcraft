@@ -34,6 +34,7 @@ if (process.env.CLIPCRAFT_UPDATE_URL) LINK_HOSTS.push('127.0.0.1', 'localhost');
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pipeline } = require('node:stream/promises');
 
 let lastDownloadPath = '';
 
@@ -57,33 +58,43 @@ async function downloadInstaller(url, { fetchImpl = net.fetch, destDir, onProgre
     const res = await fetchImpl(safe, { signal: ctrl.signal, credentials: 'omit', cache: 'no-store' });
     if (!res.ok) return { error: `The download server answered ${res.status}.` };
     const total = Number(res.headers?.get?.('content-length') || 0) || 0;
-    const out = fs.createWriteStream(dest);
     let received = 0;
-    if (res.body && typeof res.body.getReader === 'function') {
-      const reader = res.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value.byteLength;
-        if (!out.write(Buffer.from(value))) await new Promise((r) => out.once('drain', r));
-        onProgress?.({ received, total });
+    async function* chunks() {
+      if (res.body && typeof res.body.getReader === 'function') {
+        const reader = res.body.getReader();
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            received += value.byteLength;
+            onProgress?.({ received, total });
+            yield Buffer.from(value);
+          }
+        } finally {
+          // A disk failure must also stop the network reader.
+          await reader.cancel?.().catch(() => {});
+          reader.releaseLock?.();
+        }
+      } else if (res.body) {
+        for await (const chunk of res.body) {
+          received += chunk.length;
+          onProgress?.({ received, total });
+          yield chunk;
+        }
+      } else {
+        const buf = Buffer.from(await res.arrayBuffer());
+        received = buf.length;
+        onProgress?.({ received, total: total || received });
+        yield buf;
       }
-    } else if (res.body) {
-      for await (const chunk of res.body) {
-        received += chunk.length;
-        if (!out.write(chunk)) await new Promise((r) => out.once('drain', r));
-        onProgress?.({ received, total });
-      }
-    } else {
-      const buf = Buffer.from(await res.arrayBuffer());
-      received = buf.length;
-      out.write(buf);
-      onProgress?.({ received, total: total || received });
     }
-    await new Promise((resolve, reject) => { out.end(resolve); out.on('error', reject); });
+    // pipeline observes write errors immediately, including open/ENOSPC errors,
+    // and tears down both sides instead of hanging while waiting for drain.
+    await pipeline(chunks(), fs.createWriteStream(dest), { signal: ctrl.signal });
     lastDownloadPath = dest;
     return { path: dest, fileName: base, size: received };
   } catch (err) {
+    ctrl.abort();
     try { fs.rmSync(dest, { force: true }); } catch { /* best effort */ }
     return { error: err?.name === 'AbortError' ? 'The download timed out.' : 'The download failed — check your connection and try again.' };
   } finally {

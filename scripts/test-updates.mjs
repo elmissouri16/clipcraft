@@ -119,6 +119,33 @@ eq(ir.unsupported, true, 'mac reports unsupported so the caller opens the file')
 ir = await installDownloaded({ destDir: `${destDir}-elsewhere`, spawnImpl: stubSpawn(0), platform: 'linux' });
 eq(/no longer there/.test(ir.error || ''), true, 'a file outside the downloads folder is refused');
 
+// An asynchronous stream-open failure must return an error, never crash the process.
+d = await downloadInstaller('https://hamzaabika.com/no-folder.deb', {
+  fetchImpl: streamFetch([payload]), destDir: path.join(destDir, 'missing'),
+});
+eq(!!d.error, true, 'disk-open failure is returned');
+eq(lastDownload(), dl2.path, 'failed download does not replace last successful installer');
+
+// Cover write failure after backpressure (ENOSPC), with an abortable real web stream.
+const { Writable } = await import('node:stream');
+const createWriteStream = fs.createWriteStream;
+let sourceCanceled = false;
+try {
+  fs.createWriteStream = () => new Writable({
+    highWaterMark: 1,
+    write(_chunk, _enc, cb) { cb(Object.assign(new Error('disk full'), { code: 'ENOSPC' })); },
+  });
+  d = await downloadInstaller('https://hamzaabika.com/full.deb', {
+    destDir,
+    fetchImpl: async () => ({ ok: true, body: new ReadableStream({
+      pull(controller) { controller.enqueue(payload); },
+      cancel() { sourceCanceled = true; },
+    }) }),
+  });
+} finally { fs.createWriteStream = createWriteStream; }
+eq(!!d.error, true, 'disk-full failure is returned without hanging');
+eq(sourceCanceled, true, 'write failure cancels the response body');
+
 fs.rmSync(destDir, { recursive: true, force: true });
 
 if (fails) { console.error(`test-updates: ${fails} failure(s)`); process.exit(1); }
