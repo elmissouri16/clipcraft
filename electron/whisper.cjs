@@ -10,9 +10,8 @@ const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const RELEASE_BASE = 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/';
-// Engine builds published with whisper.cpp b5130, per platform: a Windows zip (whisper-cli.exe)
-// and Ubuntu tarballs (whisper-cli, runs on Debian-likes too). Other platforms have no CLI
-// build in this release, so install() says so instead of downloading the wrong archive.
+// Downloadable engines for Windows and Linux. macOS uses a native whisper-cli
+// installation; the CLI and its dynamic libraries must stay together.
 const BINARIES = {
   'win32-x64': { file: 'whisper-bin-x64.zip', exe: 'whisper-cli.exe' },
   'linux-x64': { file: 'whisper-bin-ubuntu-x64.tar.gz', exe: 'whisper-cli' },
@@ -50,11 +49,34 @@ function findFile(dir, name) {
   return null;
 }
 
+function resolveCli(dir, { platform = process.platform, env = process.env } = {}) {
+  const exe = platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
+  const binDir = path.join(dir, 'bin');
+  const managed = fs.existsSync(binDir) ? findFile(binDir, exe) : null;
+  const runnable = (file) => {
+    try {
+      if (!fs.statSync(file).isFile()) return false;
+      fs.accessSync(file, platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
+      return true;
+    } catch { return false; }
+  };
+  if (managed && runnable(managed)) return managed;
+  if (platform !== 'darwin') return null;
+  // Finder-launched apps often have only /usr/bin:/bin on PATH. Check both
+  // Homebrew prefixes explicitly, for Apple Silicon and Intel installations.
+  const candidates = [
+    env.CLIPCRAFT_WHISPER_CLI,
+    ...(env.PATH || '').split(path.delimiter).filter(Boolean).map((p) => path.join(p, exe)),
+    '/opt/homebrew/bin/whisper-cli', '/usr/local/bin/whisper-cli',
+  ];
+  return candidates.find((file) => file && path.isAbsolute(file) && runnable(file)) || null;
+}
+
 function paths(dir, modelId) {
   const binDir = path.join(dir, 'bin');
   return {
     binDir,
-    cli: fs.existsSync(binDir) ? findFile(binDir, binSpec()?.exe || 'whisper-cli.exe') : null,
+    cli: resolveCli(dir),
     model: path.join(dir, modelOf(modelId).file),
     log: path.join(dir, 'last-run.log'),
   };
@@ -90,7 +112,7 @@ function sha256File(file) {
   });
 }
 
-async function download(dir, url, dest, onProgress) {
+async function download(dir, url, dest, onProgress, expected) {
   logLine(dir, `download ${url}`);
   const res = await fetch(url, { redirect: 'follow' });
   logLine(dir, `  -> HTTP ${res.status}, ${res.headers.get('content-type')}, ${res.headers.get('content-length')} bytes`);
@@ -104,11 +126,17 @@ async function download(dir, url, dest, onProgress) {
       cb(null, chunk);
     },
   });
-  const tmp = dest + '.part';
-  await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(tmp));
-  logLine(dir, `  -> wrote ${done} bytes`);
-  fs.renameSync(tmp, dest);
-  return done;
+  const tmp = `${dest}.${crypto.randomUUID()}.part`;
+  try {
+    await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(tmp));
+    logLine(dir, `  -> wrote ${done} bytes`);
+    if (expected && done !== expected.size) throw new Error(`The speech model download was incomplete (${done} of ${expected.size} bytes). Check your internet connection and try again.`);
+    if (expected?.sha256 && await sha256File(tmp) !== expected.sha256) throw new Error('The speech model download failed its checksum. Please try again.');
+    fs.renameSync(tmp, dest);
+    return done;
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 
 // Downloads whisper-cli and the model (base or turbo) if they are missing. onProgress(stage, fraction).
@@ -120,7 +148,9 @@ async function install(dir, onProgress, modelId = 'base') {
   const M = modelOf(modelId);
   if (!p.cli) {
     const spec = binSpec();
-    if (!spec) throw new Error(`Auto captions are not available on ${process.platform} yet — the whisper.cpp release has no engine build for it.`);
+    if (!spec) throw new Error(process.platform === 'darwin'
+      ? 'Local captions need whisper-cli. Install whisper.cpp with Homebrew (brew install whisper-cpp), then try again. For a custom location, set CLIPCRAFT_WHISPER_CLI to the full executable path.'
+      : `No caption engine is available for ${process.platform}-${process.arch}.`);
     const pack = path.join(dir, spec.file);
     await download(dir, RELEASE_BASE + spec.file, pack, (f) => onProgress?.('engine', f));
     fs.mkdirSync(p.binDir, { recursive: true });
@@ -141,11 +171,7 @@ async function install(dir, onProgress, modelId = 'base') {
   if (size !== M.size) {
     if (size >= 0) fs.rmSync(p.model, { force: true });
     if (M.url === null) throw new Error('This speech model is not available for download yet.');
-    const got = await download(dir, modelUrl(M), p.model, (f) => onProgress?.('model', f));
-    if (got !== M.size) {
-      fs.rmSync(p.model, { force: true });
-      throw new Error(`The speech model download was incomplete (${got} of ${M.size} bytes). Check your internet connection and try again.`);
-    }
+    await download(dir, modelUrl(M), p.model, (f) => onProgress?.('model', f), M);
   }
   if (!paths(dir).cli) throw new Error(`${binSpec()?.exe || 'whisper-cli'} not found after extraction.`);
   logLine(dir, `install ok: cli=${paths(dir).cli}`);
@@ -335,4 +361,4 @@ async function transcribe(dir, wav, { language = 'auto', maxLen = 42, model = 'b
   throw new Error(`Auto captions failed.\n${failureReason(full)}\n\nFull log: ${p.log}`);
 }
 
-module.exports = { status, install, transcribe, MODELS, cutAtPauses, readPiece };
+module.exports = { status, install, transcribe, MODELS, cutAtPauses, readPiece, resolveCli };

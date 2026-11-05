@@ -99,6 +99,13 @@ your listening level is remembered on this computer.
 - **Subtitles as clips** — import an SRT, restyle one caption or all of them, timing untouched.
 - **Sequence guard** — if your footage doesn't match the project, ClipCraft asks before changing anything.
 
+Local captions on macOS use an installed [whisper.cpp CLI](https://github.com/ggml-org/whisper.cpp).
+Install it once with `brew install whisper-cpp` if needed. ClipCraft detects both
+Homebrew locations, including when opened from Finder, and downloads the selected
+speech model on first use. Custom installations can set `CLIPCRAFT_WHISPER_CLI`
+to the full `whisper-cli` path. The engine stays in its installation directory so
+its native libraries remain available.
+
 <p align="center">
   <img src="https://clipcrafts.pages.dev/assets/crop.png" alt="Crop mode: the frame hugs the rendered picture with edge and centre handles, a thirds grid, alignment guides and a rotation slider" width="100%">
 </p>

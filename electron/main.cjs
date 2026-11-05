@@ -22,6 +22,7 @@ const cloudCaptions = require('./cloudCaptions.cjs');
 
 // Whisper lived under the old app name; move it instead of downloading ~150 MB again.
 const whisperDir = () => {
+  if (process.env.FVE_SMOKE) return path.join(process.env.FVE_SMOKE, 'whisper-test');
   const dir = path.join(app.getPath('userData'), 'whisper');
   const old = path.join(app.getPath('appData'), 'free-video-editor', 'whisper');
   if (!fs.existsSync(dir) && fs.existsSync(old)) {
