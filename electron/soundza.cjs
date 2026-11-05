@@ -30,9 +30,8 @@ const GOOD_FOR = ['transition', 'reveal', 'build_up', 'impact_on_beat', 'title_o
 const TYPES = ['sound_effect', 'music', 'ambience'];
 const STYLES = ['retro', 'cartoon'];
 
-// Bounded retry on the transient answers (429 rate limit, 503 busy), honouring Retry-After —
-// the same policy as the Forge fix: a capacity blip must not become a user-visible failure,
-// but the wait stays short enough for an interactive picker.
+// Bounded retry on transient answers (429 rate limit, 503 busy), honouring Retry-After.
+// Capacity blips get another chance, with a short wait for the interactive picker.
 const MAX_ATTEMPTS = 3;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

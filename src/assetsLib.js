@@ -5,8 +5,7 @@
 // Assets-tab groups, in order. The pack's AUDIO is deliberately NOT here (Hamza,
 // 2026-11-01): Music lives in the Audio tab's Music place and Sound FX in the Audio
 // tab's Sound FX place, with the music — Assets holds the visual/other groups only.
-// Generated is not a manifest group either — it is the Forge shelf, read through
-// window.api.forgeList in the panel. Characters, Icons and 3D arrived with pack 2.
+// Characters, Icons and 3D arrived with pack 2.
 export const ASSET_GROUPS = ['Transitions', 'Overlays', 'Characters', 'Icons', '3D'];
 
 // Where a pack item goes when clicked in a library panel, as the `where` argument of

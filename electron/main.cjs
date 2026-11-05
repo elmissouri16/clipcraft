@@ -971,24 +971,6 @@ ipcMain.handle('gen:run', async (_e, jobId, kind, opts = {}) => {
 });
 ipcMain.handle('gen:stop', (_e, jobId) => genJobs.get(jobId)?.abort());
 
-// ---- Forge: ClipCraft's own AI generation (photos + short videos). Pollinations (free, no key)
-// for photos; Gemini — the AI assistant's existing key, no second key field — for Gemini photos
-// and Veo videos. Jobs live in the forge module, so they survive panel switches. ----
-const forge = require('./forge.cjs');
-const forgeDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'forge-test') : path.join(app.getPath('userData'), 'forge'));
-const forgeDeps = () => ({ fetchImpl: net.fetch, dir: forgeDir(), getKey: () => settings.getActive('gemini').apiKey });
-ipcMain.handle('forge:status', () => ({ hasGeminiKey: !!settings.getActive('gemini').apiKey }));
-ipcMain.handle('forge:catalog', () => forge.catalog());
-ipcMain.handle('forge:list', () => forge.list(forgeDir()).map((e) => ({ ...e, path: path.join(forgeDir(), e.file) })));
-ipcMain.handle('forge:start', (_e, opts) => { try { return forge.start(forgeDeps(), opts || {}); } catch (e) { return { error: e.message }; } });
-ipcMain.handle('forge:jobs', () => forge.listJobs());
-ipcMain.handle('forge:cancel', (_e, id) => forge.cancel(id));
-ipcMain.handle('forge:remove', (_e, id) => forge.remove(forgeDir(), id));
-ipcMain.handle('forge:reveal', (_e, id) => {
-  const entry = forge.list(forgeDir()).find((e) => e.id === id);
-  if (entry) shell.showItemInFolder(path.join(forgeDir(), entry.file));
-  return !!entry;
-});
 // ---- Asset pack library: folder-backed (electron/assets.cjs). The folder is created on
 // first read so the panels can name a real path in their empty state. ----
 const assets = require('./assets.cjs');

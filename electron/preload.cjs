@@ -199,14 +199,6 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('gen:progress', h);
     return () => ipcRenderer.removeListener('gen:progress', h);
   },
-  forgeStatus: () => ipcRenderer.invoke('forge:status'),
-  forgeCatalog: () => ipcRenderer.invoke('forge:catalog'),
-  forgeList: () => ipcRenderer.invoke('forge:list'),
-  forgeStart: (opts) => ipcRenderer.invoke('forge:start', opts),
-  forgeJobs: () => ipcRenderer.invoke('forge:jobs'),
-  forgeCancel: (id) => ipcRenderer.invoke('forge:cancel', id),
-  forgeRemove: (id) => ipcRenderer.invoke('forge:remove', id),
-  forgeReveal: (id) => ipcRenderer.invoke('forge:reveal', id),
   assetsList: () => ipcRenderer.invoke('assets:list'),
   firstRunGet: () => ipcRenderer.invoke('firstrun:get'),
   firstRunSet: (patch) => ipcRenderer.invoke('firstrun:set', patch),

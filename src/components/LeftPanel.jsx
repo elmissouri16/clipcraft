@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Anvil, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Music, Plus, SlidersHorizontal,
+  Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Music, Plus, SlidersHorizontal,
   Sparkles, Trash2, Type, Upload, WandSparkles, X, Layers, ChevronDown, ChevronRight, ChevronUp, MonitorUp, LayoutTemplate,
 } from 'lucide-react';
 import AssetsTab from './AssetsPanel.jsx';
 import { useAssets } from '../useAssets.js';
 import { mediaTreeCounts, mediaTreeFilter } from '../assetsLib.js';
-import ForgePanel from './ForgePanel.jsx';
 import GradePanel from './GradePanel.jsx';
 import { LookThumb } from './FilterThumbs.jsx';
 import { FILTER_CATS, filterName } from '../fx/filters.js';
@@ -39,7 +38,6 @@ export const TABS = [
   { id: 'captions', icon: CaptionsIcon, name: 'Captions' },
   { id: 'filters', icon: Contrast, name: 'Filters' },
   { id: 'adjust', icon: SlidersHorizontal, name: 'Adjust' },
-  { id: 'forge', icon: Anvil, name: 'Forge' },
 ];
 
 // Default category of each tab (the side column remembers the last one per tab).
@@ -92,7 +90,6 @@ export default function LeftPanel(props) {
         {activeTab === 'captions' && <TabFrame><CaptionsTab {...p} /></TabFrame>}
         {activeTab === 'filters' && <TabFrame><FiltersTab {...p} /></TabFrame>}
         {activeTab === 'adjust' && <TabFrame><AdjustTab {...p} /></TabFrame>}
-        {activeTab === 'forge' && <TabFrame><ForgePanel {...p} /></TabFrame>}
       </div>
     </aside>
   );
