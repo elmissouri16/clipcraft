@@ -10,3 +10,11 @@ Source: Unsplash photographs, fetched via picsum.photos (Lorem Picsum) with fixe
 
 Unsplash photos are free to use under the Unsplash License. They are only used as
 in-app preview material so tiles can show effects/transitions on real photography.
+
+Restoring this text-only checkout:
+  npm run assets:preview
+
+Dev/start/build commands also fetch missing photos automatically. Existing local
+JPEGs are reused without a network request. Downloaded photos stay untracked;
+the build copies them into dist/preview/. If the source is unavailable, the app
+uses its own drawn preview fallback and can continue offline.

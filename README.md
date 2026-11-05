@@ -224,6 +224,11 @@ npm start               # build + launch the app
 npm run package:linux   # build the Linux .deb (with the bundled content pack, for local use)
 ```
 
+Dev, start and build commands restore the credited preview photos into
+`public/preview/` when missing. They are cached locally and bundled into renderer
+builds; the running app loads them from disk. Use `npm run assets:preview` to retry
+the download. Offline startup uses drawn previews when photos are unavailable.
+
 Public release builds are produced by GitHub Actions (`.github/workflows/release.yml`) without the bundled pack.
 
 | Layer | Tech |

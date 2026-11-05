@@ -1,5 +1,7 @@
 node_modules/
 dist/
+public/preview/*.jpg
+public/preview/*.part
 release/
 .pkg-tmp/
 *.deb

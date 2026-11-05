@@ -1,4 +1,5 @@
 import { spritePosterStyle } from '../recents.js';
+import { samplePictureUrl } from '../fx/previews.jsx';
 import React, { useEffect, useState } from 'react';
 import { Clock3, Film, FolderOpen, Import, Instagram, Monitor, Play, Plus, Search, X } from 'lucide-react';
 
@@ -57,12 +58,14 @@ const greeting = () => {
 // the stage floor. Tall/narrow frames are height-driven; the ultrawide frame is width-driven
 // so its ratio stays true.
 function StageFrame({ preset }) {
+  const [failed, setFailed] = useState(false);
   const [a, b] = preset.ratio.split(':').map(Number);
   const wide = a / b >= 2;
   const style = { aspectRatio: `${a} / ${b}`, ...(wide ? { width: '100%' } : { height: 66 }) };
   return (
     <span className="home-frame" style={style} aria-hidden="true">
-      <img className="home-frame-img" src={preset.img} alt="" draggable={false} />
+      <img className="home-frame-img" src={failed ? samplePictureUrl() : preset.img} alt="" draggable={false}
+        onError={failed ? undefined : () => setFailed(true)} />
       <span className="home-frame-scrim" />
       <span className="home-frame-grid" />
       <span className="home-frame-chip"><Play size={10} fill="currentColor" /></span>

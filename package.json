@@ -85,6 +85,11 @@
     "vite": "^6.0.7"
   },
   "scripts": {
+    "assets:preview": "node scripts/fetch-preview-photos.cjs --required",
+    "predev": "node scripts/fetch-preview-photos.cjs",
+    "predev:renderer": "node scripts/fetch-preview-photos.cjs",
+    "prebuild": "node scripts/fetch-preview-photos.cjs",
+    "prestart": "node scripts/fetch-preview-photos.cjs",
     "dev": "node scripts/dev.cjs",
     "dev:renderer": "vite",
     "build": "vite build",
