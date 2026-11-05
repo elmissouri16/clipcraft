@@ -17,7 +17,7 @@ async function planFrames(project, source, clipId, times) {
   let end=0;
   const layout=p.videoClips.map((clip,index)=>{
     const transition=clip.transition;
-    const overlap=index&&transition&&transition.type!=='none'?Math.max(0,Math.min(transition.duration,clipLen(clip)/2,clipLen(p.videoClips[index-1])/2)):0;
+    const overlap=index&&transition&&transition.type!=='none'?Math.max(0,Number.isFinite(transition.timelineOverlap)?Math.min(transition.timelineOverlap,clipLen(clip),clipLen(p.videoClips[index-1])):Math.min(transition.duration,clipLen(clip)/2,clipLen(p.videoClips[index-1])/2)):0;
     const start=Math.max(0,end-overlap);end=start+clipLen(clip);return {clip,start,end};
   });
   if (!['timeline','clip'].includes(source)) throw new Error('source must be timeline or clip.');

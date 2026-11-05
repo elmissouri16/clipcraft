@@ -2,13 +2,14 @@
 // Every editing tool goes through the same reducer actions as the buttons, so Undo, the timeline and the
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.
-import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable } from '../store.js';
+import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable, exportDuration, actionLocked, cutRanges } from '../store.js';
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from '../effects.js';
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from '../anim.js';
 import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from '../visual.js';
 import { EDIT_STYLES, MOTION_GUIDE, MOTION_TOPICS, STYLE_NAMES, findStyle } from './motionGuide.js';
 import { projectRevision } from './context.js';
+import { validateAgentProject, verifyActionResults } from './validation.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -45,17 +46,17 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'remove_silences',
-    description: 'Cut silent stretches out of the main track (only the main track moves).',
+    description: 'Cut silent stretches out of the main track (related captions, overlays and audio ripple together).',
     parameters: { type: 'OBJECT', properties: { min_silence_sec: { ...N, description: 'default 0.6' }, threshold_db: { ...N, description: 'default -35; -30 noisy, -45 quiet' }, keep_padding_sec: { ...N, description: 'default 0.12' } } },
   },
   {
     name: 'cut_range',
-    description: 'Remove a timeline range from the main track and close the gap. Several cuts: start from the end, or use keep_ranges.',
+    description: 'Remove a timeline range, close the gap and ripple related tracks. Several cuts: start from the end, or use keep_ranges.',
     parameters: { type: 'OBJECT', properties: { start_sec: N, end_sec: N }, required: ['start_sec', 'end_sec'] },
   },
   {
     name: 'keep_ranges',
-    description: 'Keep only these timeline ranges of the main track, joined in order (highlights, shortening).',
+    description: 'Keep these valid timeline ranges in chronological order, rippling all tracks (highlights, shortening).',
     parameters: { type: 'OBJECT', properties: { ranges: { type: 'ARRAY', items: { type: 'OBJECT', properties: { start_sec: N, end_sec: N }, required: ['start_sec', 'end_sec'] } } }, required: ['ranges'] },
   },
   {
@@ -266,8 +267,11 @@ function motionInfo(c, media, project) {
   if (opacityOf(c) < 1) out.opacity = r2(opacityOf(c));
   const keyed = KEY_PROPS.filter((k) => hasKeys(c, k));
   if (keyed.length) out.keyframed = keyed.map((k) => (k === 'rot' ? 'rotation' : k));
+  if (c.keyframes) out.keyframes = c.keyframes;
+  for (const key of ['adjust', 'grade', 'blend', 'chroma', 'mask', 'audioFx', 'enhance', 'track', 'pin']) if (c[key] !== undefined) out[key] = c[key];
   if (c.anim && (c.anim.in || c.anim.out || c.anim.combo)) {
-    out.animation = Object.fromEntries(['in', 'out', 'combo'].filter((k) => c.anim[k]).map((k) => [k, c.anim[k].type]));
+    out.animation = Object.fromEntries(['in', 'out', 'combo'].filter(k => c.anim[k]).map(k => [k, c.anim[k].type]));
+    out.animation_details = c.anim;
   }
   return out;
 }
@@ -298,26 +302,29 @@ export function summarizeProject(p) {
     name: p.name,
     format: `${p.ratio} ${p.width}x${p.height} @ ${p.fps}fps`,
     background: p.background || '#000000',
-    duration_sec: r2(projectDuration(p)),
+    duration_sec: r2(exportDuration(p)),
+    timeline_extent_sec: r2(projectDuration(p)),
+    layer_state: p.layerState || {}, layer_names: p.layerNames || {}, layers: p.layers || {},
+    markers: p.markers || [], magnet: p.magnet || {},
     main_track: layout.map((l) => (l.clip.gap
       ? { id: l.clip.id, type: 'gap', start: r2(l.start), end: r2(l.end) }
       : {
-        id: l.clip.id, media: label(l.clip), type: mediaById[l.clip.mediaId]?.type, start: r2(l.start), end: r2(l.end),
+        id: l.clip.id, media_id: l.clip.mediaId, layer: 0, disabled: !!l.clip.disabled, link_id: l.clip.linkId || null, media: label(l.clip), type: mediaById[l.clip.mediaId]?.type, start: r2(l.start), end: r2(l.end),
         source_in: r2(l.clip.in), source_out: r2(l.clip.out), speed: l.clip.speed || 1, volume: l.clip.volume ?? 1,
         muted: !!l.clip.muted, filter: l.clip.filter || 'none', effects: l.clip.effects || [],
-        transition_in: l.clip.transition ? l.clip.transition.type : null,
+        transition_in: l.clip.transition ? l.clip.transition.type : null, transition: l.clip.transition || null,
         ...motionInfo(l.clip, mediaById[l.clip.mediaId], p),
       })),
-    overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c, mediaById[c.mediaId], p) })),
+    overlay_track: (p.overlayClips || []).map((c) => ({ id: c.id, media_id: c.mediaId, layer: c.layer || 0, disabled: !!c.disabled, link_id: c.linkId || null, source_in: c.in, source_out: c.out, speed: c.speed || 1, muted: !!c.muted, media: label(c), start: r2(c.start), end: r2(c.start + clipLen(c)), ...motionInfo(c, mediaById[c.mediaId], p) })),
     audio_track: p.audioClips.map((c) => ({
-      id: c.id, media: label(c), start: r2(c.start), end: r2(c.start + (c.out - c.in) / (c.speed || 1)), volume: c.volume ?? 1,
+      id: c.id, media_id: c.mediaId, layer: c.layer || 0, disabled: !!c.disabled, link_id: c.linkId || null, source_in: c.in, source_out: c.out, speed: c.speed || 1, muted: !!c.muted, media: label(c), start: r2(c.start), end: r2(c.start + (c.out - c.in) / (c.speed || 1)), volume: c.volume ?? 1,
       ...(c.fadeIn ? { fade_in: r2(c.fadeIn) } : {}), ...(c.fadeOut ? { fade_out: r2(c.fadeOut) } : {}),
     })),
     // Captions are many: listed by count and time span, their look once.
-    text_track: p.textClips.filter((c) => !c.caption).map((c) => ({ id: c.id, text: c.text.slice(0, 80), start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) })),
+    text_track: p.textClips.filter((c) => !c.caption).map((c) => ({ id: c.id, layer: c.layer || 0, disabled: !!c.disabled, text: c.text, start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) })),
     captions: captionInfo(p.textClips.filter((c) => c.caption)),
-    effects_track: (p.effectClips || []).map((c) => ({ id: c.id, effect: c.fx, start: r2(c.start), end: r2(c.start + c.duration) })),
-    media_library: p.media.map((m) => ({ id: m.id, name: m.name, type: m.type, duration_sec: r2(m.duration || 0) })),
+    effects_track: (p.effectClips || []).map((c) => ({ id: c.id, layer: c.layer || 0, disabled: !!c.disabled, effect: c.fx, start: r2(c.start), end: r2(c.start + c.duration) })),
+    media_library: p.media.map((m) => ({ id: m.id, name: m.name, type: m.type, width: m.width, height: m.height, has_audio: !!m.hasAudio, duration_sec: r2(m.duration || 0) })),
   };
 }
 
@@ -336,7 +343,23 @@ export function complementRanges(keep, total) {
 
 // ctx: { getProject(), dispatch(action), api, settle() }. settle() waits for the UI state to catch up after dispatches.
 export function createToolRunner(ctx) {
-  const { dispatch, api } = ctx;
+  const { api } = ctx;
+  let operation = null;
+  const dispatch = action => {
+    if (ctx.isCanceled?.()) throw new Error('Editing stopped.');
+    if (ctx.editActive && !ctx.editActive()) throw new Error('The project changed outside this request. Refresh before editing again.');
+    if (operation && !operation.wrote && projectRevision(ctx.getProject()) !== operation.revision) throw new Error('The project changed while this operation was running. Its stale result was not applied.');
+    if (actionLocked(ctx.getProject(), action)) throw new Error('The requested edit is blocked by a locked layer. Unlock it first.');
+    operation?.actions.push(action);
+    if (operation) operation.wrote = true;
+    ctx.dispatch(action);
+  };
+  const addProbed = result => {
+    if (operation && !operation.wrote && projectRevision(ctx.getProject()) !== operation.revision) throw new Error('The project changed while media was being prepared. Its stale result was not applied.');
+    if (ctx.editActive && !ctx.editActive()) throw new Error('The editor request no longer owns this edit.');
+    if (operation) operation.wrote = true;
+    return ctx.addProbed?.(result);
+  };
   const project = () => ctx.getProject();
   const after = async (extra = {}) => {
     await ctx.settle();
@@ -438,7 +461,7 @@ export function createToolRunner(ctx) {
     if (res.error) return { error: res.error };
     if (res.canceled || ctx.isCanceled?.()) return { error: 'Image generation stopped.' };
     if (res.type !== 'image' || !res.path) return { error: 'No readable generated image was returned.' };
-    const m = ctx.addProbed?.(res);
+    const m = addProbed(res);
     if (!m) return { error: 'Could not add the generated image to the project.' };
     if (as === 'library') return after({ media_id: m.id, added: m.name });
     const added = await place(m, { as, start_sec: at, main_index, name: m.name });
@@ -453,6 +476,7 @@ export function createToolRunner(ctx) {
   }
   async function runImages(scenes) {
     if (!Array.isArray(scenes) || !scenes.length || scenes.length > 12) throw new Error('Use 1–12 image scenes per batch.');
+    const revision = projectRevision(project());
     const prepared = scenes.map(args => {
       try { return prepareImageScene(args || {}); } catch (e) { return { error: e.message }; }
     });
@@ -463,12 +487,22 @@ export function createToolRunner(ctx) {
       images = response?.results;
       if (!Array.isArray(images) || images.length !== jobs.length) images = jobs.map(() => ({ error: response?.error || 'Parallel image generation requires an updated ClipCraft.' }));
     } catch (e) { images = jobs.map(() => ({ error: e.message })); }
+    if (projectRevision(project()) !== revision || (ctx.editActive && !ctx.editActive())) return scenes.map(() => ({ error: 'The project changed while images were generating. Stale scene insertions were not applied.', changed: false }));
     let next = 0;
     const results = [];
     for (const scene of prepared) {
       if (scene.error) { results.push({ error: scene.error }); continue; }
-      try { results.push(await insertImageScene(scene, images[next++])); }
-      catch (e) { results.push({ error: e.message }); }
+      const before = project(), active = { revision: projectRevision(before), actions: [], wrote: false };
+      operation = active;
+      let result;
+      try { result = await insertImageScene(scene, images[next++]); }
+      catch (e) { result = { error: e.message }; }
+      await ctx.settle();
+      operation = null;
+      const errors = verifyActionResults(project(), active.actions, before);
+      if (errors.length && !result.error) result = { ...result, error: errors.join(' ') };
+      const changed = active.wrote && projectRevision(project()) !== active.revision;
+      results.push({ ...result, ok: !result.error, changed, status: result.error ? 'blocked' : changed ? 'applied' : 'unchanged', revision: projectRevision(project()) });
     }
     return results;
   }
@@ -574,11 +608,11 @@ export function createToolRunner(ctx) {
     async get_project({ scope = 'all', clip_ids, offset = 0, limit = 30, if_revision } = {}) {
       const p = project();
       const revision = projectRevision(p);
-      if (if_revision === revision) return { revision, unchanged: true };
+      if (if_revision === revision) return { revision, unchanged: true, ...(ctx.getEditorState ? { editor: ctx.getEditorState() } : {}) };
       const summary = summarizeProject(p);
       const fields = { main: 'main_track', overlay: 'overlay_track', audio: 'audio_track', text: 'text_track', effects: 'effects_track', media: 'media_library' };
       if (!['all', 'overview', 'captions', ...Object.keys(fields)].includes(scope)) return { error: `Unknown scope "${scope}".` };
-      const out = { revision, name: summary.name, format: summary.format, background: summary.background, duration_sec: summary.duration_sec,
+      const out = { revision, timeline_extent_sec: summary.timeline_extent_sec, layer_state: summary.layer_state, layer_names: summary.layer_names, layers: summary.layers, markers: summary.markers, magnet: summary.magnet, ...(ctx.getEditorState ? { editor: ctx.getEditorState() } : {}), name: summary.name, format: summary.format, background: summary.background, duration_sec: summary.duration_sec,
         counts: Object.fromEntries(Object.entries(fields).map(([name, key]) => [name, summary[key].length])), captions: summary.captions };
       const start = Math.max(0, Math.floor(Number(offset)) || 0);
       const count = Math.max(1, Math.min(100, Math.floor(Number(limit)) || 30));
@@ -603,32 +637,45 @@ export function createToolRunner(ctx) {
       if (!p.videoClips.length) return { error: 'The main track is empty.' };
       const res = await api.agentSilences(p, { minDur: Number(min_silence_sec), noiseDb: Number(threshold_db) });
       if (!res.ok) return { error: res.error };
-      const total = projectDuration(p);
+      const total = exportDuration(p);
       const pad = Math.max(0, Number(keep_padding_sec));
       const ranges = res.silences
         .map((s) => ({ start: s.start + pad, end: Math.min(s.end, total) - pad }))
         .filter((s) => s.end - s.start > 0.05);
       if (!ranges.length) return { ok: true, removed_count: 0, removed_sec: 0, note: 'No silence long enough was found.' };
       const removed = ranges.reduce((n, r) => n + (r.end - r.start), 0);
-      dispatch({ type: 'cutRanges', ranges });
+      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or has no editable footage.' };
+      dispatch({ type: 'cutRanges', ranges, ripple: true });
       return after({ removed_count: ranges.length, removed_sec: r2(removed) });
     },
 
     async cut_range({ start_sec, end_sec }) {
-      const a = num(start_sec, 'start_sec');
-      const b = num(end_sec, 'end_sec');
+      let a = num(start_sec, 'start_sec');
+      let b = num(end_sec, 'end_sec');
       if (a.error || b.error) return a.error ? a : b;
+      const fps = project().fps || 30;
+      a = Math.round(a * fps) / fps; b = Math.round(b * fps) / fps;
       if (b <= a) return { error: 'end_sec must be greater than start_sec.' };
-      dispatch({ type: 'cutRanges', ranges: [{ start: a, end: b }] });
-      return after({ removed_sec: r2(b - a) });
+      const total = exportDuration(project());
+      if (a < 0 || b > total + 0.001) return { error: `The cut must be inside the main timeline (0–${r2(total)}s).` };
+      const ranges = [{ start: a, end: Math.min(total, b) }];
+      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track.' };
+      dispatch({ type: 'cutRanges', ranges, ripple: true });
+      await ctx.settle();
+      return after({ removed_sec: r2(total - exportDuration(project())) });
     },
 
     async keep_ranges({ ranges }) {
-      const total = projectDuration(project());
-      const list = (ranges || []).map((r) => ({ start: Number(r.start_sec), end: Number(r.end_sec) })).filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end));
-      if (!list.length) return { error: 'Give at least one range.' };
+      const total = exportDuration(project());
+      if (!Array.isArray(ranges) || !ranges.length) return { error: 'Give at least one valid range.' };
+      const fps = project().fps || 30;
+      const list = ranges.map(r => ({ start: Math.round(Number(r.start_sec) * fps) / fps, end: Math.round(Number(r.end_sec) * fps) / fps }));
+      if (list.some(r => !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.start < 0 || r.end <= r.start || r.end > total + 0.001)) return { error: `Every retained range must satisfy 0 <= start_sec < end_sec <= ${r2(total)}.` };
       const cuts = complementRanges(list, total);
-      if (cuts.length) dispatch({ type: 'cutRanges', ranges: cuts });
+      if (cuts.length) {
+        if (cutRanges(project(), cuts, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track.' };
+        dispatch({ type: 'cutRanges', ranges: cuts, ripple: true });
+      }
       return after({ kept_ranges: list.length });
     },
 
@@ -876,7 +923,7 @@ export function createToolRunner(ctx) {
       if (!item || !String(sound_id).startsWith('s')) return { error: `Unknown sound_id "${sound_id}". Use an id from search_sounds.` };
       const res = await api.libraryAdd(item);
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.(res), { start_sec, name: item.title });
+      const added = await place(addProbed(res), { start_sec, name: item.title });
       if (added.error) return added;
       return shapeAudio(added.clip_id, { duration_sec, volume, fade_in_sec, fade_out_sec }, added);
     },
@@ -904,7 +951,7 @@ export function createToolRunner(ctx) {
       const voiceId = voice_id || (normalized === 'gemini' ? 'Kore' : st?.voices?.[0]?.id);
       const res = await api.ttsSpeak({ engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.({ ...res, origin: 'tts' }), { start_sec, name: res.name });
+      const added = await place(addProbed({ ...res, origin: 'tts' }), { start_sec, name: res.name });
       if (added.error) return added;
       return shapeAudio(added.clip_id, { volume }, added);
     },
@@ -932,7 +979,7 @@ export function createToolRunner(ctx) {
       if (!item || !/^[vp]/.test(String(stock_id))) return { error: `Unknown stock_id "${stock_id}". Use an id from search_stock.` };
       const res = await api.stockAdd(item);
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.(res), { as, start_sec, main_index, name: res.name });
+      const added = await place(addProbed(res), { as, start_sec, main_index, name: res.name });
       if (added.error) return added;
       if (added.track === 'overlay' && Number(duration_sec) > 0) {
         const c = findClip(added.clip_id).clip;
@@ -1007,7 +1054,7 @@ export function createToolRunner(ctx) {
       const p = project();
       const c = f.clip;
       const start = f.track === 'video' ? videoLayout(p.videoClips).find((l) => l.clip.id === clip_id).start : c.start;
-      const end = start + (f.track === 'video' || f.track === 'overlay' || f.track === 'audio' ? (f.track === 'audio' ? c.out - c.in : clipLen(c)) : c.duration);
+      const end = start + (f.track === 'video' || f.track === 'overlay' || f.track === 'audio' ? clipLen(c) : c.duration);
       const ns = start_sec === undefined ? start : Number(start_sec);
       const ne = end_sec === undefined ? end : Number(end_sec);
       if (!Number.isFinite(ns) || !Number.isFinite(ne) || ne - ns < 0.1) return { error: 'The new end must be at least 0.1 s after the new start.' };
@@ -1015,7 +1062,7 @@ export function createToolRunner(ctx) {
       if (f.track === 'text' || f.track === 'effect') patch = { start: Math.max(0, ns), duration: ne - Math.max(0, ns) };
       else {
         // Media: move the source in / out points (speed-scaled for picture clips).
-        const sp = f.track === 'audio' ? 1 : c.speed || 1;
+        const sp = c.speed || 1;
         const m = p.media.find((x) => x.id === c.mediaId);
         const max = m?.type === 'image' ? Infinity : m?.duration ?? c.out;
         const inP = c.in + (ns - start) * sp;
@@ -1163,7 +1210,7 @@ export function createToolRunner(ctx) {
       const p = project();
       const res = await api.makeScene({ color, color2, direction, width: p.width, height: p.height });
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.(res), { main_index, name: res.name });
+      const added = await place(addProbed(res), { main_index, name: res.name });
       if (added.error) return added;
       const c = findClip(added.clip_id).clip;
       dispatch({ type: 'update', track: 'video', id: c.id, patch: { out: (c.in || 0) + clamp(duration_sec, 0.2, 600, 3) } });
@@ -1187,24 +1234,36 @@ export function createToolRunner(ctx) {
   };
 
   const readCache = new Map();
-  const cachedTools = new Set(['get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe']);
+  const cachedTools = new Set(['list_options', 'motion_guide', 'edit_style', 'transcribe']);
   return {
     runImages,
     async run(name, args) {
       const fn = Object.hasOwn(tools, name) ? tools[name] : null;
       if (!fn) return { error: `Unknown tool "${name}".` };
+      const before = project(), revision = projectRevision(before);
+      const edits = !['inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name);
+      const active = { revision, actions: [], wrote: false };
+      operation = edits ? active : null;
+      let result;
       try {
-        const key = cachedTools.has(name) ? JSON.stringify([name, args || {}, projectRevision(project())]) : null;
+        const key = cachedTools.has(name) ? JSON.stringify([name, args || {}, revision]) : null;
         if (key && readCache.has(key)) return structuredClone(readCache.get(key));
-        const result = await fn(args || {});
+        result = await fn(args || {});
         if (key && !result.error) {
           if (readCache.size >= 32) readCache.delete(readCache.keys().next().value);
           readCache.set(key, structuredClone(result));
         }
-        return result;
-      } catch (e) {
-        return { error: e.message || String(e) };
+      } catch (e) { result = { error: e.message || String(e) }; }
+      finally { operation = null; }
+      if (!edits) return result;
+      await ctx.settle();
+      const now = project(), nextRevision = projectRevision(now), changed = active.wrote && revision !== nextRevision;
+      if (!result.error) {
+        const errors = verifyActionResults(now, active.actions, before);
+        if (errors.length) result = { ...result, error: errors.join(' ') };
       }
+      return { ...result, ok: !result.error, changed, status: result.error ? 'blocked' : changed ? 'applied' : 'unchanged', before_revision: revision, revision: nextRevision,
+        ...(changed ? { validation: validateAgentProject(now) } : {}) };
     },
     // True for tools that change the project (used to decide whether there is anything to undo).
     mutates: (name) => !['inspect_frames', 'get_project', 'list_options', 'motion_guide', 'edit_style', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video'].includes(name),

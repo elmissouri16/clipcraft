@@ -73,6 +73,7 @@ const toSdr = (m) => (m && m.hdr ? `,${TONEMAP}` : '');
 function transitionDur(clips, i) {
   const t = clips[i] && clips[i].transition;
   if (!t || i === 0 || t.type === 'none') return 0;
+  if (Number.isFinite(t.timelineOverlap)) return Math.max(0, Math.min(t.timelineOverlap, clipLen(clips[i]), clipLen(clips[i - 1])));
   return Math.max(0, Math.min(t.duration, clipLen(clips[i]) / 2, clipLen(clips[i - 1]) / 2));
 }
 

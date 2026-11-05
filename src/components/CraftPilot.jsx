@@ -171,7 +171,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const conversationStart = contents.current.length;
     contents.current.push({ role: 'user', parts: [{ text: msg }] });
 
-    const startLen = getHistoryLength();
+    dispatch({ type: 'beginAgentEdit', token: requestId });
+    await settle();
     const result = await runAgent({
       requestId,
       contents: contents.current,
@@ -182,14 +183,15 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
           if (!isCurrent()) throw new Error('The project changed.');
           return getProject();
         },
-        dispatch: (action) => { if (isCurrent() && !canceled.current) dispatch(action); },
-        addProbed: (...args) => isCurrent() && !canceled.current ? app.addProbed?.(...args) : null,
+        dispatch: (action) => { if (isCurrent() && !canceled.current) dispatch({ ...action, agentToken: requestId }); },
+        editActive: () => app.getAgentEdit?.()?.token === requestId,
+        addProbed: (...args) => isCurrent() && !canceled.current ? app.addProbed?.(...args, requestId) : null,
         startExport: (...args) => isCurrent() && !canceled.current ? app.startExport?.(...args) : undefined,
         api: window.api, settle,
         // Undo only what this request did: the user's earlier edits stay.
         undoOwn: () => {
-          if (!isCurrent() || canceled.current || getHistoryLength() <= startLen) return false;
-          dispatch({ type: 'undo' });
+          if (!isCurrent() || canceled.current || app.getAgentEdit?.()?.token !== requestId || !app.getAgentEdit?.()?.steps.length) return false;
+          dispatch({ type: 'undoAgentEdit', token: requestId });
           return true;
         },
       },
@@ -209,7 +211,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     if (!isCurrent()) return;
 
     // Everything the assistant did becomes a single Undo step.
-    if (result.changed) dispatch({ type: 'collapseHistory', from: startLen });
+    dispatch({ type: 'endAgentEdit', token: requestId });
     if (result.error) {
       // Drop the incomplete request, including unanswered tool calls, so a retry
       // starts from a valid conversation while any completed edits remain undoable.

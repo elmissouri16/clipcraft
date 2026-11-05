@@ -383,11 +383,11 @@ export default function App() {
     if (duration > 0) setPlaying(true);
   }, [playing, time, duration]);
 
-  const addItems = (items) => {
+  const addItems = (items, agentToken) => {
     const ok = items.filter((i) => !i.error).map((i) => ({ ...i, id: uid() }));
     const bad = items.filter((i) => i.error);
     if (bad.length) alert('Could not import:\n' + bad.map((b) => `${b.name}: ${b.error}`).join('\n'));
-    if (ok.length) dispatch({ type: 'addMedia', items: ok });
+    if (ok.length) dispatch({ type: 'addMedia', items: ok, ...(agentToken ? { agentToken } : {}) });
     return ok;
   };
 
@@ -1666,6 +1666,8 @@ export default function App() {
       select: setSelection,
       tab: setTab,
       dispatch,
+      rawProject: () => projectRef.current,
+      history: () => historyRef.current,
       exportData: () => {
         const p = renderable(projectRef.current);
         return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionDataPinned(p) } };
@@ -1689,11 +1691,15 @@ export default function App() {
   startExportRef.current = startExport;
   // What CraftAI can do beyond project actions: add a file it fetched (library sound, stock clip, voice-over)
   // to the media library, start the export, check font names.
+  const editorRef = useRef(null);
+  editorRef.current = { playhead_sec: time, selection, playing };
   const pilotApp = {
-    addProbed: (res) => {
+    getEditorState: () => editorRef.current,
+    getAgentEdit: () => historyRef.current.agentEdit,
+    addProbed: (res, agentToken) => {
       if (!res?.path) return null;
       const m = projectRef.current.media.find((x) => x.path === res.path);
-      return m || addItems([res])[0] || null;
+      return m || addItems([res], agentToken)[0] || null;
     },
     startExport: () => startExportRef.current(),
     fontIds: () => allFonts().map((f) => f.id),

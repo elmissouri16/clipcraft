@@ -218,7 +218,7 @@ function TransitionPanel({ project, selection, dispatch }) {
         )}
       </div>
       <div className="row-btns">
-        <button className="btn btn-sm" onClick={() => set({ ...tr, duration: Math.min(max, def?.duration || 0.5) })}><RotateCcw size={13} /> Reset</button>
+        <button className="btn btn-sm" onClick={() => set({ ...tr, timelineOverlap: undefined, duration: Math.min(max, def?.duration || 0.5) })}><RotateCcw size={13} /> Reset</button>
         <button className="btn btn-sm" onClick={applyAll} disabled={others.length < 2} title="Use this transition between every pair of clips">Apply to all</button>
       </div>
       <button className="btn btn-danger" onClick={() => set(null)}>Remove transition</button>

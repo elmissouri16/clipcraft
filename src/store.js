@@ -98,7 +98,7 @@ export function normalizeProject(p) {
 export const newGap = (id, len) => ({ id, gap: true, in: 0, out: len, speed: 1 });
 
 // Merges neighbouring gaps, drops empty ones and removes a trailing gap (nothing plays after it).
-function normalizeGaps(list) {
+function normalizeGaps(list, { keepTrailing = false } = {}) {
   const out = [];
   for (const c of list) {
     if (c.gap) {
@@ -112,7 +112,7 @@ function normalizeGaps(list) {
     }
     out.push(c);
   }
-  while (out.length && out[out.length - 1].gap) out.pop();
+  while (!keepTrailing && out.length && out[out.length - 1].gap) out.pop();
   return out;
 }
 
@@ -238,6 +238,9 @@ function placeLayers(p) {
 export function transitionDur(clips, i) {
   const t = clips[i]?.transition;
   if (!t || i === 0 || t.type === 'none') return 0;
+  // Range edits preserve the retained overlap, even when a surviving piece is
+  // shorter than twice that overlap. Ordinary UI transitions retain their cap.
+  if (Number.isFinite(t.timelineOverlap)) return Math.max(0, Math.min(t.timelineOverlap, clipLen(clips[i]), clipLen(clips[i - 1])));
   return Math.max(0, Math.min(t.duration, clipLen(clips[i]) / 2, clipLen(clips[i - 1]) / 2));
 }
 
@@ -626,7 +629,7 @@ function reduceProjectInner(p, a) {
       return { ...p, [key]: [...p[key], { ...a.clip, id: a.newId, start: Math.max(0, a.at) }] };
     }
     case 'cutRanges':
-      return cutRanges(p, a.ranges);
+      return cutRanges(p, a.ranges, { ripple: a.ripple === true });
     case 'addMarker':
       return { ...p, markers: [...p.markers, { id: a.id, time: Math.max(0, a.time), label: a.label || '' }].sort((x, y) => x.time - y.time) };
     case 'removeMarker':
@@ -779,33 +782,118 @@ export function trimActions(p, { track, id, t, side, newId }) {
   return actions;
 }
 
-// Removes time ranges from the main track and closes the space (ripple). ranges: [{ start, end }] in timeline
-// seconds. Only the main track is cut; music and text keep their own time. Cut pieces get ids
-// derived from the clip id so repeated cuts never collide.
-export function cutRanges(p, ranges) {
-  const cuts = [...ranges].filter((r) => r.end - r.start > 0.01).sort((a, b) => a.start - b.start);
-  if (!cuts.length) return p;
-  const out = [];
-  for (const l of videoLayout(p.videoClips)) {
-    const c = l.clip;
-    const sp = c.speed || 1;
-    let pieces = [[l.start, l.end]];
-    for (const r of cuts) {
-      pieces = pieces.flatMap(([a, b]) => {
-        if (r.end <= a || r.start >= b) return [[a, b]];
-        const keep = [];
-        if (r.start > a) keep.push([a, r.start]);
-        if (r.end < b) keep.push([r.end, b]);
-        return keep;
-      });
-    }
-    pieces.filter(([a, b]) => b - a >= 0.03).forEach(([a, b], i) => {
-      const id = i ? `${c.id}-c${i}` : c.id;
-      if (c.gap) out.push({ ...c, id, in: 0, out: b - a });
-      else out.push({ ...c, id, in: c.in + (a - l.start) * sp, out: c.in + (b - l.start) * sp, transition: i ? null : c.transition });
+// Remove timeline intervals with one shared time map. Manual callers keep free
+// tracks fixed by default; the agent opts into ripple for captions, audio,
+// overlays, effects and markers. Linked audio always follows its picture.
+export function cutRanges(p, ranges, { ripple = false } = {}) {
+  const total = exportDuration(p);
+  if (!Array.isArray(ranges) || ranges.some(r => !r || !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.end <= r.start)) return p;
+  const cuts = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const start = Math.max(0, Math.min(total, range.start)), end = Math.max(0, Math.min(total, range.end));
+    if (end - start <= 0.01) continue;
+    const last = cuts.at(-1);
+    if (last && start <= last.end) last.end = Math.max(last.end, end);
+    else cuts.push({ start, end });
+  }
+  if (!cuts.length || isLayerLocked(p, 'video', 0)) return p;
+  const mapped = t => t - cuts.reduce((n, r) => n + Math.max(0, Math.min(t, r.end) - r.start), 0);
+  const piecesOf = (start, end) => {
+    let pieces = [[start, end]];
+    for (const r of cuts) pieces = pieces.flatMap(([a, b]) => {
+      if (r.end <= a || r.start >= b) return [[a, b]];
+      return [...(r.start > a ? [[a, r.start]] : []), ...(r.end < b ? [[r.end, b]] : [])];
+    });
+    return pieces.filter(([a, b]) => b - a > 1e-7);
+  };
+  const used = new Set(Object.values(CLIP_LISTS).flatMap(key => (p[key] || []).flatMap(c => [c.id, c.linkId].filter(Boolean))));
+  const fresh = base => {
+    let id = base, i = 1;
+    while (used.has(id)) id = `${base}-${i++}`;
+    used.add(id);
+    return id;
+  };
+  const records = new Map();
+  const sliceClip = (track, clip, start, end, shouldRipple) => {
+    const spans = shouldRipple ? piecesOf(start, end) : [[start, end]];
+    const parts = spans.map(([a, b], i) => {
+      const at = shouldRipple ? mapped(a) : a;
+      if (spans.length === 1 && a === start && b === end && at === start) return { clip, start, end, originalStart: a, originalEnd: b };
+      const id = i ? fresh(`${clip.id}-c${i}`) : clip.id;
+      let next = { ...clip, id };
+      if (track === 'video' || track === 'overlay' || track === 'audio') {
+        const speed = clip.speed || 1;
+        next.in = clip.gap ? 0 : clip.in + (a - start) * speed;
+        next.out = clip.gap ? b - a : clip.in + (b - start) * speed;
+      } else {
+        next.duration = b - a;
+        if (clip.words?.length) {
+          next.words = clip.words.filter(w => w.start < b - start && w.end > a - start)
+            .map(w => ({ ...w, start: Math.max(0, w.start - (a - start)), end: Math.min(b - a, w.end - (a - start)) }));
+          next.text = next.words.map(w => w.text).join(' ');
+        }
+      }
+      if (track !== 'video') next.start = at;
+      if (next.anim) {
+        const { in: enter, out: leave, ...rest } = next.anim;
+        next.anim = { ...rest, ...(a === start && enter ? { in: enter } : {}), ...(b === end && leave ? { out: leave } : {}) };
+      }
+      if (track === 'audio') {
+        if (a > start) next.fadeIn = 0;
+        if (b < end) next.fadeOut = 0;
+      }
+      // Source-time keyframes are deliberately retained without retiming.
+      return { clip: next, start: at, end: shouldRipple ? mapped(b) : b, originalStart: a, originalEnd: b };
+    });
+    records.set(clip.id, parts);
+    return parts;
+  };
+  const main = videoLayout(p.videoClips).flatMap(l => sliceClip('video', l.clip, l.start, l.end, true));
+  let previous;
+  for (const item of main) {
+    const overlap = previous ? Math.max(0, previous.end - item.start) : 0;
+    item.clip = { ...item.clip, transition: overlap > 1e-7 && item.clip.transition?.type && item.clip.transition.type !== 'none'
+      ? { ...item.clip.transition, duration: overlap, timelineOverlap: overlap } : null };
+    previous = item;
+  }
+  const lists = { video: main };
+  for (const [track, key] of Object.entries(CLIP_LISTS)) {
+    if (track === 'video') continue;
+    lists[track] = (p[key] || []).flatMap(c => sliceClip(track, c, c.start, c.start + freeLen(track, c), ripple));
+  }
+  // A detached pair is sliced from the picture's retained source intervals. Each
+  // resulting pair receives its own link, never several pictures to one sound.
+  for (const [linkId, pair] of linkPairs(p)) {
+    if (!pair.pic || !pair.aud) continue;
+    const pictures = records.get(pair.pic.clip.id) || [];
+    const audio = pair.aud.clip;
+    lists.audio = lists.audio.filter(item => !records.get(audio.id)?.includes(item));
+    pictures.forEach((picture, index) => {
+      const nextLink = index ? fresh(`${linkId}~${picture.clip.id}`) : linkId;
+      picture.clip = { ...picture.clip, linkId: nextLink };
+      const inOffset = audio.linkInOff ?? audio.in - pair.pic.clip.in;
+      const at = picture.start + (audio.linkOff || 0);
+      const sound = { ...audio, id: index ? fresh(`${audio.id}-c${index}`) : audio.id,
+        start: at, in: picture.clip.in + inOffset, out: picture.clip.out + inOffset,
+        speed: picture.clip.speed || 1, linkId: nextLink, linkOff: audio.linkOff || 0, linkInOff: inOffset };
+      lists.audio.push({ clip: sound, start: at, end: at + clipLen(sound) });
     });
   }
-  return { ...p, videoClips: normalizeGaps(out) };
+  const result = { ...p };
+  for (const [track, key] of Object.entries(CLIP_LISTS)) {
+    const next = (lists[track] || []).map(item => item.clip);
+    // Reject atomically if ripple, slicing or link maintenance would touch a
+    // locked clip. Unaffected locked layers do not block an unrelated edit.
+    for (const old of p[key] || []) {
+      if (!clipLocked(p, track, old)) continue;
+      const now = next.find(c => c.id === old.id);
+      if (!now || JSON.stringify(now) !== JSON.stringify(old)) return p;
+    }
+    result[key] = track === 'video' ? normalizeGaps(next, { keepTrailing: ripple }) : next;
+  }
+  if (ripple) result.markers = (p.markers || []).filter(m => !cuts.some(r => m.time >= r.start && m.time < r.end))
+    .map(m => ({ ...m, time: mapped(m.time) }));
+  return result;
 }
 
 // After a split the In animation stays on the left part and the Out animation on the right one.
@@ -937,7 +1025,7 @@ function splitTimed(x, t, newId) {
 // same way, not just the visible buttons. It returns true when the action must not run.
 // Undo / redo are handled before this is consulted: restoring an earlier project always
 // works, locked or not.
-function actionLocked(p, a) {
+export function actionLocked(p, a) {
   const clipOf = (track, id) => findClipIn(p, track, id);
   switch (a.type) {
     case 'update': return clipLocked(p, a.track, clipOf(a.track, a.id));
@@ -1123,14 +1211,34 @@ function patchVisuals(p, a) {
   return { ...p, media: p.media.map((m) => (m.path === a.path ? { ...m, ...a.patch } : m)) };
 }
 
+function finishAgentEdit(state) {
+  const { agentEdit, ...rest } = state;
+  if (!agentEdit) return state;
+  if (!agentEdit.steps.length) return { ...rest, future: agentEdit.future };
+  return { ...rest, past: [...state.past, agentEdit.base].slice(-100), future: [] };
+}
+
 export function historyReducer(state, a) {
+  if (a.type === 'beginAgentEdit') {
+    if (typeof a.token !== 'string' || !a.token || state.agentEdit || state.gestureStart) return state;
+    return { ...state, agentEdit: { token: a.token, base: state.present, steps: [], future: state.future } };
+  }
+  if (a.type === 'endAgentEdit') return state.agentEdit?.token === a.token ? finishAgentEdit(state) : state;
+  if (a.type === 'undoAgentEdit') {
+    const edit = state.agentEdit;
+    if (!edit || edit.token !== a.token || !edit.steps.length) return state;
+    const restored = edit.steps.at(-1), steps = edit.steps.slice(0, -1);
+    return { ...state, present: { ...restored, layerState: followLayerState(state.present, restored) },
+      future: steps.length ? [] : edit.future, agentEdit: { ...edit, steps } };
+  }
   if (a.type === 'craftChat') {
     if (a.projectId !== state.present.id) return state;
     // Chat is saved with the project but never creates timeline Undo steps.
     // Carry it across every snapshot, including an in-progress drag gesture.
     const patch = (p) => p && ({ ...p, craftAI: a.chat });
     return { ...state, present: patch(state.present), past: state.past.map(patch),
-      future: state.future.map(patch), gestureStart: patch(state.gestureStart) };
+      future: state.future.map(patch), gestureStart: patch(state.gestureStart),
+      ...(state.agentEdit ? { agentEdit: { ...state.agentEdit, base: patch(state.agentEdit.base), steps: state.agentEdit.steps.map(patch), future: state.agentEdit.future.map(patch) } } : {}) };
   }
   // File/slot callers validate synchronously to show an error before dispatch.
   // Keep direct load callers (templates, recovery and the test harness) safe too.
@@ -1144,6 +1252,8 @@ export function historyReducer(state, a) {
       present: patchVisuals(state.present, a),
       future: state.future.map((p) => patchVisuals(p, a)),
       gestureStart: state.gestureStart && patchVisuals(state.gestureStart, a),
+      ...(state.agentEdit ? { agentEdit: { ...state.agentEdit, base: patchVisuals(state.agentEdit.base, a),
+        steps: state.agentEdit.steps.map(p => patchVisuals(p, a)), future: state.agentEdit.future.map(p => patchVisuals(p, a)) } } : {}),
     };
   }
   if (a.type === 'setLayerState') {
@@ -1158,6 +1268,11 @@ export function historyReducer(state, a) {
     if (JSON.stringify(layerState) === JSON.stringify(state.present.layerState || {})) return state;
     return { ...state, present: { ...state.present, layerState } };
   }
+  // Only the owner may add to an open agent transaction. A manual document edit
+  // first commits the agent checkpoint, then revokes its token. Later in-flight
+  // agent results cannot overwrite that manual edit or absorb it into Undo.
+  if (a.agentToken && state.agentEdit?.token !== a.agentToken) return state;
+  if (state.agentEdit && !a.agentToken) return historyReducer(finishAgentEdit(state), a);
   if (a.type === 'undo') {
     if (!state.past.length) return state;
     const restored = state.past[state.past.length - 1];
@@ -1183,11 +1298,25 @@ export function historyReducer(state, a) {
   // Locked layers refuse edits before anything is computed (undo / redo returned above,
   // so history navigation is never blocked by a lock).
   if (actionLocked(state.present, a)) return state;
-  let next = placeLayers(a.type === 'trimClip' ? trimClip(state.gestureStart || state.present, a) : reduceProject(state.present, a));
+  const reduced = a.type === 'trimClip' ? trimClip(state.gestureStart || state.present, a) : reduceProject(state.present, a);
+  if (reduced === state.present) return state;
+  let next = placeLayers(reduced);
   if (next !== state.present && placementBlocked(state.present, next, a)) return state;
-  if (next !== state.present) next = syncLinked(state.present, next);
+  if (next !== state.present) {
+    next = syncLinked(state.present, next);
+    // A locked partner cannot silently leave a linked pair out of sync.
+    for (const pair of linkPairs(next).values()) {
+      if (!pair.pic || !pair.aud) continue;
+      const pic = pair.pic.clip, aud = pair.aud.clip;
+      if (Math.abs(aud.start - picStart(next, pair.pic.track, pic) - (aud.linkOff || 0)) > 1e-6 ||
+          Math.abs(aud.in - pic.in - (aud.linkInOff || 0)) > 1e-6 || Math.abs(aud.out - pic.out - (aud.linkInOff || 0)) > 1e-6 ||
+          Math.abs((aud.speed || 1) - (pic.speed || 1)) > 1e-6) return state;
+    }
+  }
   if (next === state.present) return state;
   if (a.type === 'load') return { past: [], present: next, future: [] };
+  if (state.agentEdit && a.agentToken === state.agentEdit.token) return { ...state, present: next, future: [],
+    agentEdit: { ...state.agentEdit, steps: [...state.agentEdit.steps, state.present] } };
   if (a.transient || state.gestureStart) return { ...state, present: next };
   return { past: [...state.past, state.present].slice(-100), present: next, future: [] };
 }

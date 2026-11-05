@@ -602,7 +602,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
               </select>
               {clip.transition && S({
                 label: 'Duration', value: clip.transition.duration, min: 0.2, max: 2, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`,
-                onChange: (d) => set({ transition: { ...clip.transition, duration: d } }),
+                onChange: (d) => set({ transition: { ...clip.transition, timelineOverlap: undefined, duration: d } }),
               })}
               {clip.transition && directionGroupFor(clip.transition.type) && (() => {
                 const { group, dir } = directionGroupFor(clip.transition.type);
