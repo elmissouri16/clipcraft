@@ -20,7 +20,7 @@ export const assetAddWhere = (item) => (item && (item.kind === 'video' || item.k
 // Kinds come from the media registry itself (m.type). Speech and Processed are subsets
 // identified by HOW the item entered the registry:
 // - Speech: text-to-speech output. TTS results carry a credit whose license is 'piper' or
-//   'elevenlabs' (electron tts:speak), and App tags new ones origin: 'tts' as well. Plain
+//   'elevenlabs' or 'gemini' (electron tts:speak), and new ones have origin: 'tts' as well. Plain
 //   voice-over RECORDINGS are the user's own microphone files, not generated speech, so
 //   they stay plain Audio.
 // - Processed: render outputs registered as media — Detach audio, Reverse and Stabilize.
@@ -33,7 +33,7 @@ export const PROCESSED_ORIGINS = ['detach', 'reverse', 'stabilize'];
 const RENDER_NAME = /-(detach|rev|stab)\.[a-z0-9]+$/i;
 
 export const isSpeechMedia = (m) => !!m && m.type === 'audio'
-  && (m.origin === 'tts' || m.credit?.license === 'piper' || m.credit?.license === 'elevenlabs');
+  && (m.origin === 'tts' || ['piper', 'elevenlabs', 'gemini'].includes(m.credit?.license));
 
 export const isProcessedMedia = (m) => {
   if (!m) return false;

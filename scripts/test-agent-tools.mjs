@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { historyReducer, normalizeProject, videoLayout } from '../src/store.js';
 import { createToolRunner, summarizeProject, TOOL_DECLARATIONS } from '../src/agent/tools.js';
+import geminiTts from '../electron/geminiTts.cjs';
 
 let state = {
   past: [], future: [],
@@ -22,11 +23,12 @@ const p = () => state.present;
 // The main process, faked: library / stock / voice files come back "probed" like media:probe does.
 const probed = (name, type, duration) => ({ name, type, duration, path: `C:/fake/${name}`, ...(type === 'audio' ? {} : { width: 1280, height: 720 }) });
 const calls = [];
+let geminiConfigured = false;
 const api = {
   librarySearch: async (o) => { calls.push(['librarySearch', o]); return { results: [{ id: 'freesound-1', title: 'Whoosh fast', duration: 1.2, creator: 'X', license: 'cc0', url: 'https://x' }, { id: 'jam-2', title: 'Happy', duration: 95, creator: 'Y', license: 'by' }] }; },
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
-  ttsStatus: async () => ({ voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male' }], elevenKey: false }),
-  ttsSpeak: async (req) => (req.voiceId === 'bad' ? { error: 'Unknown voice.' } : probed('Voice - hello.wav', 'audio', 2.5)),
+  ttsStatus: async () => ({ voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male' }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog() }),
+  ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' } : probed('Voice - hello.wav', 'audio', 2.5); },
   stockSearch: async (o) => ({ results: [{ id: '77', kind: o.kind, tags: 'city, night', duration: 12, width: 1920, height: 1080, url: 'https://cdn.pixabay.com/x' }] }),
   stockAdd: async (item) => probed(`city ${item.id}.mp4`, 'video', 12),
 };
@@ -86,6 +88,22 @@ r = await run('add_voiceover', { text: 'مرحبا', voice_id: 'ar_JO-kareem-med
 ok(r, 'add_voiceover');
 assert.equal(p().audioClips.find((c) => c.id === r.clip_id).start, 4);
 err(await run('add_voiceover', { text: 'x', voice_id: 'bad' }), /Unknown voice/, 'voice errors come back');
+geminiConfigured = true;
+r = await run('list_voices');
+assert.equal(r.default_engine, 'gemini');
+assert.ok(r.gemini.models.some(m => m.id === 'gemini-3.8-flash-tts'));
+assert.ok(r.gemini.voices.some(v => v.voice_id === 'Kore'));
+r = await run('add_voiceover', { text: 'مرحبا بكم', start_sec: 6, model: 'gemini-3.8-flash-lite-tts', style: 'Warm Moroccan Arabic narration', volume: 0.8 });
+ok(r, 'Gemini narration');
+assert.deepEqual(calls.at(-1)[1], { engine: 'gemini', voiceId: 'Kore', voiceName: 'Kore', text: 'مرحبا بكم', speed: 1,
+  model: 'gemini-3.8-flash-lite-tts', style: 'Warm Moroccan Arabic narration' });
+assert.equal(p().audioClips.find(c => c.id === r.clip_id).start, 6);
+assert.equal(p().audioClips.find(c => c.id === r.clip_id).volume, 0.8);
+const audioCount = p().audioClips.length;
+err(await run('add_voiceover', { engine: 'unknown', text: 'Hello' }), /engine/, 'unknown engines never fall back to Piper');
+err(await run('add_voiceover', { engine: 'gemini', voice_id: 'bad', text: 'Hello' }), /Unknown voice/, 'generation failure does not insert audio');
+assert.equal(p().audioClips.length, audioCount);
+geminiConfigured = false;
 
 // Stock b-roll: full-frame overlay for 3 s; and on the main track.
 r = await run('search_stock', { kind: 'video', query: 'city' });

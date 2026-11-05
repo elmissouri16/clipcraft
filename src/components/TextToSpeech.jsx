@@ -5,13 +5,15 @@ import { toFileUrl } from '../store.js';
 // Sign-up page for new ElevenLabs accounts.
 export const ELEVENLABS_SIGNUP_URL = 'https://elevenlabs.io';
 
-// Audio > Text to speech: a free voice that runs on this PC (Piper) or an ElevenLabs voice (the user's key).
-export default function TextToSpeech({ onAdd, selectedText, onOpenSettings }) {
+// Audio > Text to speech. Online engines use keys stored in Settings.
+export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, settingsVersion }) {
   const [engine, setEngine] = useState('piper');
-  const [status, setStatus] = useState(null); // { voices, installed, elevenKey }
+  const [status, setStatus] = useState(null); // Local voices, online-key presence and Gemini catalog.
   const [eleven, setEleven] = useState({ voices: [], loading: false, error: '' });
   const [usage, setUsage] = useState(null); // ElevenLabs credits: { used, limit, left, resetsAt }
-  const [voice, setVoice] = useState({ piper: 'en_US-joe-medium', eleven: '' });
+  const [voice, setVoice] = useState({ piper: 'en_US-joe-medium', eleven: '', gemini: 'Kore' });
+  const [geminiModel, setGeminiModel] = useState('');
+  const [delivery, setDelivery] = useState('');
   const [text, setText] = useState('');
   const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState(null); // 'preview' | 'add'
@@ -20,9 +22,9 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings }) {
   const [playing, setPlaying] = useState(false);
   const audio = useRef(null);
 
-  const refresh = () => window.api.ttsStatus().then(setStatus);
+  const refresh = () => window.api.ttsStatus().then(setStatus).catch((e) => setError(e.message));
+  useEffect(() => { refresh(); }, [settingsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    refresh();
     audio.current = new Audio();
     audio.current.onended = () => setPlaying(false);
     const off = window.api.onTtsProgress(setProgress);
@@ -42,12 +44,17 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings }) {
   }, [engine, status?.elevenKey]);
 
   const voiceId = voice[engine];
-  const voiceName = engine === 'eleven' ? eleven.voices.find((v) => v.id === voiceId)?.name : status?.voices.find((v) => v.id === voiceId)?.name;
+  const voiceName = engine === 'eleven' ? eleven.voices.find((v) => v.id === voiceId)?.name
+    : engine === 'gemini' ? voiceId : status?.voices.find((v) => v.id === voiceId)?.name;
   const speak = async (mode) => {
     setError('');
     setBusy(mode);
     setProgress(null);
-    const res = await window.api.ttsSpeak({ engine, voiceId, voiceName, text, speed });
+    let res;
+    try {
+      res = await window.api.ttsSpeak({ engine, voiceId, voiceName, text, speed: engine === 'gemini' ? 1 : speed,
+        ...(engine === 'gemini' ? { model: geminiModel || status.gemini.defaultModel, style: delivery } : {}) });
+    } catch (e) { res = { error: e.message }; }
     setBusy(null);
     setProgress(null);
     refresh();
@@ -60,15 +67,15 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings }) {
     } else onAdd(res, !!selectedText && text.trim() === selectedText.text.trim());
   };
 
-  const needKey = engine === 'eleven' && status && !status.elevenKey;
-  const ready = text.trim() && voiceId && !needKey && !busy;
+  const needKey = status && ((engine === 'eleven' && !status.elevenKey) || (engine === 'gemini' && !status.geminiKey));
+  const ready = status && text.trim() && voiceId && !needKey && !busy;
   const selected = status?.voices.find((v) => v.id === voice.piper);
   return (
     <div className="tts">
       <div className="tab-title">Text to speech</div>
       <div className="seg-tabs small" role="tablist" aria-label="Voice engine">
-        {[['piper', 'Free · on this PC'], ['eleven', 'ElevenLabs']].map(([id, name]) => (
-          <button key={id} role="tab" aria-selected={engine === id} className={engine === id ? 'on' : ''} onClick={() => setEngine(id)}>{name}</button>
+        {[['piper', 'Piper · local'], ['gemini', 'Gemini'], ['eleven', 'ElevenLabs']].map(([id, name]) => (
+          <button key={id} role="tab" aria-selected={engine === id} className={engine === id ? 'on' : ''} disabled={!!busy} onClick={() => { setEngine(id); setError(''); }}>{name}</button>
         ))}
       </div>
 
@@ -101,12 +108,37 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings }) {
         <div className="card stock-key">
           <div className="card-row">
             <span className="card-icon"><KeyRound size={18} /></span>
-            <div><b>ElevenLabs key needed</b><p>An ElevenLabs API key is needed to use its voices (Arabic included).</p></div>
+            <div><b>{engine === 'gemini' ? 'Gemini TTS key needed' : 'ElevenLabs key needed'}</b>
+              <p>{engine === 'gemini' ? 'Add your Gemini API key in Settings > Speech generation. Your CraftAI chat provider can stay as it is.' : 'An ElevenLabs API key is needed to use its voices (Arabic included).'}</p></div>
           </div>
           <div className="stock-key-actions">
-            <button className="btn btn-sm" onClick={() => window.api.openHelp(ELEVENLABS_SIGNUP_URL)}><ExternalLink size={13} /> Create a free account</button>
+            <button className="btn btn-sm" onClick={onOpenSettings}>Open Settings</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => window.api.openHelp(engine === 'gemini' ? 'https://aistudio.google.com/app/apikey' : ELEVENLABS_SIGNUP_URL)}>
+              <ExternalLink size={13} /> {engine === 'gemini' ? 'Get a Gemini key' : 'Create a free account'}</button>
           </div>
         </div>
+      ) : engine === 'gemini' ? (
+        <>
+          <label className="field">
+            <span>Speech model</span>
+            <select aria-label="Gemini speech model" value={geminiModel || status?.gemini?.defaultModel || ''} disabled={!!busy}
+              onChange={(e) => setGeminiModel(e.target.value)}>
+              {(status?.gemini?.models || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            <span>Voice</span>
+            <select aria-label="Gemini voice" value={voice.gemini} disabled={!!busy} onChange={(e) => setVoice((v) => ({ ...v, gemini: e.target.value }))}>
+              {(status?.gemini?.voices || []).map((v) => <option key={v.id} value={v.id}>{v.name} · {v.style}</option>)}
+            </select>
+          </label>
+          <label className="field">
+            <span>Delivery (optional)</span>
+            <textarea aria-label="Speech delivery" rows={2} value={delivery} maxLength={1000} disabled={!!busy}
+              placeholder="Calm documentary narrator, warm tone, speaking slowly…" onChange={(e) => setDelivery(e.target.value)} />
+            <small className="muted">Describe tone, accent and pacing here. Only the main text is spoken; its language is detected automatically.</small>
+          </label>
+        </>
       ) : (
         <label className="field">
           <span>Voice {eleven.loading && <Loader2 size={13} className="spin" />}</span>
@@ -125,15 +157,16 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings }) {
         </label>
       )}
 
-      <label className="field">
+      {engine !== 'gemini' && <label className="field">
         <span>Speed <b>{speed.toFixed(2)}×</b></span>
         <input type="range" min={engine === 'eleven' ? 0.7 : 0.5} max={engine === 'eleven' ? 1.2 : 2} step="0.05" value={speed} aria-label="Speed"
           onChange={(e) => setSpeed(Number(e.target.value))} />
-      </label>
+      </label>}
 
       {progress && busy && (
         <div className="lib-loading"><Loader2 size={15} className="spin" />
-          {progress.stage === 'engine' ? `Downloading the voice engine… ${Math.round(progress.fraction * 100)}%`
+          {progress.stage === 'speech' ? 'Generating speech with Gemini…'
+            : progress.stage === 'engine' ? `Downloading the voice engine… ${Math.round(progress.fraction * 100)}%`
             : progress.fraction < 1 ? `Downloading the voice… ${Math.round(progress.fraction * 100)}%` : 'Speaking…'}
         </div>
       )}

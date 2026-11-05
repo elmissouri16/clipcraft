@@ -154,13 +154,17 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'list_voices',
-    description: 'Voices for add_voiceover: free "piper" voices (one Arabic) and "elevenlabs" ones when the user has that key.',
+    description: 'Available speech engines, models and voices for add_voiceover.',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'add_voiceover',
-    description: 'Text to speech onto the audio track.',
-    parameters: { type: 'OBJECT', properties: { text: S, voice_id: S, engine: { ...S, description: 'piper (default) or elevenlabs' }, start_sec: N, speed: N, volume: N }, required: ['text', 'voice_id'] },
+    description: 'Generate speech onto the audio track. First list_voices. text is verbatim (max 5000 characters).',
+    parameters: { type: 'OBJECT', properties: { text: S, voice_id: { ...S, description: 'From list_voices; Gemini default Kore.' },
+      engine: { ...S, description: 'gemini, piper, elevenlabs; prefers configured Gemini.' },
+      model: { ...S, description: 'Gemini model from list_voices.' },
+      style: { ...S, description: 'Gemini tone, accent and pacing directions; not spoken.' },
+      start_sec: N, speed: { ...N, description: 'Piper/ElevenLabs only; Gemini uses style.' }, volume: N }, required: ['text'] },
   },
   {
     name: 'search_stock',
@@ -781,7 +785,11 @@ export function createToolRunner(ctx) {
 
     async list_voices() {
       const st = await api.ttsStatus();
-      const out = { piper: (st.voices || []).map((v) => ({ voice_id: v.id, name: v.name, language: v.lang, gender: v.gender })) };
+      const out = { default_engine: st.geminiKey ? 'gemini' : 'piper', piper: (st.voices || []).map((v) => ({ voice_id: v.id, name: v.name, language: v.lang, gender: v.gender })),
+        gemini: st.geminiKey ? { models: st.gemini?.models || [], default_voice: st.gemini?.defaultVoice || 'Kore',
+          voices: (st.gemini?.voices || []).map((v) => ({ voice_id: v.id, name: v.name, delivery: v.style })),
+          language: 'Detected from the spoken text. Put accent and pacing instructions in style.' }
+          : 'Add a Gemini TTS key in Settings > Speech generation.' };
       if (st.elevenKey) {
         const ev = await api.ttsElevenVoices();
         out.elevenlabs = ev.error ? { error: ev.error } : (ev.voices || []).slice(0, 30).map((v) => ({ voice_id: v.id, name: v.name, ...(v.labels ? { labels: v.labels } : {}) }));
@@ -789,12 +797,16 @@ export function createToolRunner(ctx) {
       return out;
     },
 
-    async add_voiceover({ text, voice_id, engine = 'piper', start_sec = 0, speed = 1, volume = 1 }) {
+    async add_voiceover({ text, voice_id, engine, model, style, start_sec = 0, speed = 1, volume = 1 }) {
       if (!String(text || '').trim()) return { error: 'text is empty.' };
-      const eleven = /eleven/i.test(String(engine));
-      const res = await api.ttsSpeak({ engine: eleven ? 'eleven' : 'piper', voiceId: voice_id, voiceName: voice_id, text: String(text), speed: Number(speed) || 1 });
+      const st = !engine ? await api.ttsStatus() : null;
+      const chosen = engine || (st.geminiKey ? 'gemini' : 'piper');
+      const normalized = chosen === 'elevenlabs' ? 'eleven' : chosen;
+      if (!['gemini', 'eleven', 'piper'].includes(normalized)) return { error: 'engine must be gemini, piper or elevenlabs.' };
+      const voiceId = voice_id || (normalized === 'gemini' ? 'Kore' : st?.voices?.[0]?.id);
+      const res = await api.ttsSpeak({ engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
       if (res.error) return { error: res.error };
-      const added = await place(ctx.addProbed?.(res), { start_sec, name: res.name });
+      const added = await place(ctx.addProbed?.({ ...res, origin: 'tts' }), { start_sec, name: res.name });
       if (added.error) return added;
       return shapeAudio(added.clip_id, { volume }, added);
     },

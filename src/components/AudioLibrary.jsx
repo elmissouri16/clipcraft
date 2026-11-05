@@ -208,7 +208,7 @@ function SoundzaSearch({ fixedTag, preview, onAdd, adding, onOpenSettings }) {
 }
 
 // Audio panel: Music, Sound effects and Yours (imported audio and voice-over).
-export default function AudioLibrary({ media, project, onImport, onAddMedia, onLibraryAdd, onAddFile, onTtsAdd, selectedText, onOpenSettings, recorder, onStartRecord, MediaCard, onRemoveMedia, onPeek, peekId, section = 'music:Vlog' }) {
+export default function AudioLibrary({ media, project, onImport, onAddMedia, onLibraryAdd, onAddFile, onTtsAdd, selectedText, onOpenSettings, settingsVersion, recorder, onStartRecord, MediaCard, onRemoveMedia, onPeek, peekId, section = 'music:Vlog' }) {
   // Split on the FIRST colon only: pack sections carry a second one ('music:pack:Library').
   const [group, sub] = section.includes(':') ? [section.slice(0, section.indexOf(':')), section.slice(section.indexOf(':') + 1)] : [section, ''];
   const view = group === 'yours' && sub === 'favorites' ? 'favorites' : group;
@@ -303,7 +303,7 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
         </>
       )}
 
-      {view === 'tts' && <TextToSpeech onAdd={onTtsAdd} selectedText={selectedText} onOpenSettings={onOpenSettings} />}
+      {view === 'tts' && <TextToSpeech onAdd={onTtsAdd} selectedText={selectedText} onOpenSettings={onOpenSettings} settingsVersion={settingsVersion} />}
 
       {view === 'credits' && (
         <>

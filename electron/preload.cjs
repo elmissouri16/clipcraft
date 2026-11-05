@@ -161,6 +161,7 @@ contextBridge.exposeInMainWorld('api', {
   ttsElevenVoices: () => ipcRenderer.invoke('tts:elevenVoices'),
   ttsElevenUsage: () => ipcRenderer.invoke('tts:elevenUsage'),
   ttsTestKey: (key) => ipcRenderer.invoke('tts:testKey', key),
+  ttsGeminiTestKey: (key) => ipcRenderer.invoke('tts:geminiTestKey', key),
   ttsSpeak: (req) => ipcRenderer.invoke('tts:speak', req),
   onTtsProgress: (fn) => {
     const h = (_e, p) => fn(p);

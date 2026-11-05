@@ -10,6 +10,7 @@ const file = path.join(root, 'settings-test', 'settings.json');
 const sourceFile = path.resolve(__dirname, '../electron/settings.cjs');
 const localRequire = createRequire(sourceFile);
 let fault;
+let encryptionAvailable = false;
 const injectedFs = { ...fs,
   writeFileSync(target, data, encoding) {
     if (fault === 'write' && typeof target === 'number') {
@@ -27,7 +28,9 @@ const moduleStub = { exports: {} };
 vm.runInNewContext(fs.readFileSync(sourceFile, 'utf8'), {
   module: moduleStub, Buffer, process: { env: { FVE_SMOKE: root } },
   require: (id) => id === 'fs' ? injectedFs : id === 'electron'
-    ? { app: {}, safeStorage: { isEncryptionAvailable: () => false } } : localRequire(id),
+    ? { app: {}, safeStorage: { isEncryptionAvailable: () => encryptionAvailable,
+      encryptString: (value) => Buffer.from(`mock-encrypted:${value}`),
+      decryptString: (value) => value.toString().replace(/^mock-encrypted:/, '') } } : localRequire(id),
 }, { filename: sourceFile });
 const settings = moduleStub.exports;
 try {
@@ -115,5 +118,18 @@ try {
   const defaultModel = settings.getActive().model;
   settings.setReasoningEffort('gemini', defaultModel, 'low', ['low']);
   assert.equal(settings.getActive().reasoningEffort, 'low', 'legacy blank API models use their actual default model key');
+  const beforeSpeech = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.throws(() => settings.saveServiceKey('gemini-tts', 'synthetic-speech-key'), /Secure storage/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), beforeSpeech);
+  encryptionAvailable = true;
+  const publicSpeech = settings.saveServiceKey('gemini-tts', 'synthetic-speech-key');
+  assert.equal(publicSpeech.serviceKeys['gemini-tts'], '…-key');
+  assert.equal(settings.getServiceKey('gemini-tts'), 'synthetic-speech-key');
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('synthetic-speech-key'), 'speech key uses the encrypted-key path');
+  assert.ok(!JSON.stringify(publicSpeech).includes('synthetic-speech-key'), 'renderer receives only the key hint');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).ai, beforeSpeech.ai, 'speech key does not change the chat provider or keys');
+  settings.clearServiceKey('gemini-tts');
+  assert.equal(settings.getServiceKey('gemini-tts'), '');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).ai, beforeSpeech.ai);
   console.log('settings ok (write/rename failures preserve keys, compatible JSON, private mode)');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

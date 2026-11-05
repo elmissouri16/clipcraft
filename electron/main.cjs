@@ -855,11 +855,17 @@ const telemetry = require('./telemetry.cjs');
 ipcMain.handle('telemetry:status', () => telemetry.getStatus());
 ipcMain.handle('telemetry:setConsent', (_e, on) => telemetry.setConsent(on === true));
 
-// ---- Text to speech: Piper (free, on this PC) and ElevenLabs (the user's key). ----
+// ---- Text to speech: Piper, ElevenLabs and Gemini. Keys stay in the main process. ----
 const tts = require('./tts.cjs');
-const ttsDir = () => path.join(app.getPath('userData'), 'tts');
-const ttsOut = () => path.join(app.getPath('userData'), 'voiceovers');
-ipcMain.handle('tts:status', () => ({ ...tts.piperStatus(ttsDir()), elevenKey: !!settings.getServiceKey('elevenlabs') }));
+const geminiTts = require('./geminiTts.cjs');
+const ttsDir = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'tts');
+const ttsOut = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'voiceovers');
+ipcMain.handle('tts:status', () => ({ ...tts.piperStatus(ttsDir()), elevenKey: !!settings.getServiceKey('elevenlabs'),
+  geminiKey: !!settings.getServiceKey('gemini-tts'), gemini: geminiTts.catalog() }));
+ipcMain.handle('tts:geminiTestKey', async (_e, key) => {
+  try { return await geminiTts.testKey(net.fetch, String(key || '').trim() || settings.getServiceKey('gemini-tts')); }
+  catch (e) { return { ok: false, text: e.message }; }
+});
 ipcMain.handle('tts:elevenVoices', async () => {
   try {
     return { voices: await tts.elevenVoices(net.fetch, settings.getServiceKey('elevenlabs')) };
@@ -889,9 +895,13 @@ ipcMain.handle('tts:testKey', async (_e, key) => {
 // Speaks the text and returns a media item (the file stays in <userData>/voiceovers).
 ipcMain.handle('tts:speak', async (_e, req) => {
   try {
+    if (!req || !['piper', 'eleven', 'gemini'].includes(req.engine)) return { error: 'Choose a supported speech engine.' };
     const send = (stage, fraction) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction }); };
     let file;
-    if (req.engine === 'eleven') {
+    if (req.engine === 'gemini') {
+      send('speech', 0);
+      file = await geminiTts.speak(net.fetch, settings.getServiceKey('gemini-tts'), ttsOut(), req);
+    } else if (req.engine === 'eleven') {
       send('voice', 0);
       file = await tts.elevenSpeak(net.fetch, settings.getServiceKey('elevenlabs'), ttsOut(), req);
     } else {
@@ -902,10 +912,12 @@ ipcMain.handle('tts:speak', async (_e, req) => {
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
     const words = String(req.text).trim().split(/\s+/).slice(0, 5).join(' ').replace(/[\\/:*?"<>|]+/g, '');
-    const credit = req.engine === 'eleven'
+    const credit = req.engine === 'gemini'
+      ? { license: 'gemini', providerName: 'Google Gemini', creator: req.voiceId || geminiTts.DEFAULT_VOICE, line: 'Speech generated with Google Gemini TTS' }
+      : req.engine === 'eleven'
       ? { license: 'elevenlabs', providerName: 'ElevenLabs', creator: req.voiceName || 'ElevenLabs voice', line: 'Voice generated with ElevenLabs (elevenlabs.io)' }
       : { license: 'piper', providerName: 'Piper', creator: req.voiceName || req.voiceId, line: `Voice: Piper ${req.voiceId}` };
-    return { ...m, name: `Voice - ${words || 'text'}${path.extname(file)}`, credit };
+    return { ...m, origin: 'tts', name: `Voice - ${words || 'text'}${path.extname(file)}`, credit };
   } catch (e) {
     return { error: e.message };
   }

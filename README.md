@@ -189,6 +189,28 @@ it uses the installed CLI logins for small connection/edit prompts and keeps
 project/settings test data separate from the normal profile.
 
 
+### Gemini speech generation
+
+Open **Settings → Speech generation**, paste a Google AI Studio API key, and
+choose **Save key**. The speech key is stored encrypted, independently of the
+CraftAI chat provider. **Test key** checks model access without generating speech.
+
+In **Audio → Text to speech → Gemini**, choose Gemini 3.8 Flash TTS or Flash-Lite
+TTS and a voice. Put the exact words in **Text**, and tone, accent or pacing in
+**Delivery**. Preview the audio, then add it at the playhead (or the selected
+text's start). Matching requests reuse the local WAV cache.
+
+CraftAI can also generate speech: for example, “Add a calm English narration at
+eight seconds using Gemini.” Its `list_voices` and `add_voiceover` tools prefer
+Gemini when the speech key is configured, add real audio clips to the timeline,
+and support the usual Undo and export. Each speech passage is limited to 5000
+characters; use separate clips for longer scripts. API access and usage are
+managed through your Google account. See [Google's TTS documentation](https://ai.google.dev/gemini-api/docs/speech-generation).
+
+Contributor checks: `node scripts/test-gemini-tts.cjs` and the isolated
+`FVE_SMOKE_MODE=gemini-tts` Electron smoke use simulated provider responses, so
+they require no real key or paid generation.
+
 ## Export
 
 <p align="center">

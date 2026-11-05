@@ -166,6 +166,7 @@ function ProxySettings({ onCleared }) {
 const SECTIONS = [
   { id: 'ai', label: 'AI assistant', icon: Sparkles },
   { id: 'mcp', label: 'MCP servers', icon: Server },
+  { id: 'speech', label: 'Speech generation', icon: AudioLines },
   { id: 'quality', label: 'Playback quality', icon: Gauge },
   { id: 'stock', label: 'Stock media', icon: Film },
 ];
@@ -450,6 +451,11 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
         </section>
         )}
         {section === 'mcp' && <McpSettings saved={saved} onSaved={(st) => setSaved(st)} />}
+        {section === 'speech' && (
+          <ServiceKey saved={saved} onSaved={setSaved} service="gemini-tts" title="Gemini speech generation" icon={AudioLines}
+            keyLabel="Gemini TTS API key" text="Generate narration with Gemini 3.8 Flash TTS or Flash-Lite TTS, from Audio > Text to speech or through CraftAI. This key is independent of your chat provider."
+            url="https://aistudio.google.com/app/apikey" urlLabel="Get a Gemini API key" test={(key) => window.api.ttsGeminiTestKey(key)} />
+        )}
         {section === 'quality' && <ProxySettings onCleared={onProxiesCleared} />}
         {section === 'stock' && (
           <>
