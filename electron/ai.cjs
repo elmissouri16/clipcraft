@@ -7,6 +7,9 @@ const GROQ_BASE = 'https://api.groq.com/openai/v1';
 const OPENAI_LIKE = { openai: 'https://api.openai.com/v1', groq: GROQ_BASE, openrouter: 'https://openrouter.ai/api/v1', custom: '' };
 const OLLAMA_DEFAULT = 'http://localhost:11434';
 const localAgents = require('./localAgents.cjs');
+const thinking = require('./thinking.cjs');
+const { createHash } = require('node:crypto');
+const capabilityCache = new Map();
 
 // A deliberately blank SDK model means "use the CLI default", even when a
 // different model was saved before opening Settings. API blank-field behavior
@@ -129,6 +132,80 @@ function explain(status, detail) {
 
 const textOf = (parts) => (parts || []).map((p) => p.text || '').join('');
 
+async function modelCapabilities(cfg, { refresh = false, signal } = {}) {
+  if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+  const model = normalizeModel(cfg.provider, cfg.model);
+  const key = createHash('sha256').update(JSON.stringify([cfg.provider, model, cfg.baseUrl, cfg.executablePath, cfg.apiKey])).digest('hex');
+  const cached = capabilityCache.get(key);
+  if (!refresh && cached && Date.now() - cached.time < 180000) return cached.value;
+  const result = { ok: true, model, reasoningEfforts: [], source: 'unavailable' };
+  if (!model) return { ...result, note: 'Choose a specific model to see its allowed thinking levels.' };
+  try {
+    const base = (cfg.baseUrl || '').replace(/\/+$/, '');
+    if (localAgents.isProvider(cfg.provider)) {
+      const catalog = await localAgents.listModels(cfg, { signal });
+      if (!catalog.ok) return catalog;
+      result.reasoningEfforts = catalog.modelCapabilities?.[model]?.reasoningEfforts || [];
+      result.source = 'installed agent';
+    } else if (cfg.provider === 'ollama') {
+      const root = (base || OLLAMA_DEFAULT).replace(/\/v1$/, '');
+      const entry = await http(`${root}/api/show`, { body: { model }, timeoutMs: 10000, signal });
+      result.values = Object.create(null);
+      for (const value of entry.thinking?.values || []) {
+        if (typeof value === 'boolean') result.values[value ? 'on' : 'off'] = value;
+        else if (typeof value === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(value)) result.values[value] = value;
+      }
+      // A false-only model has no selectable reasoning behavior.
+      result.reasoningEfforts = Object.keys(result.values).some((level) => level !== 'off') ? Object.keys(result.values) : [];
+      result.source = 'model metadata';
+    } else {
+      const documented = thinking.documentedLevels(cfg.provider, model);
+      let entry;
+      if (cfg.apiKey) {
+        if (cfg.provider === 'claude') {
+          entry = await http(`${base || 'https://api.anthropic.com'}/v1/models/${encodeURIComponent(model)}`, {
+            headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' }, timeoutMs: 10000, signal }, cfg.apiKey);
+        } else if (cfg.provider === 'gemini') {
+          entry = await http(`${base || GEMINI_BASE}/v1beta/models/${encodeURIComponent(model)}`, {
+            headers: { 'x-goog-api-key': cfg.apiKey }, timeoutMs: 10000, signal }, cfg.apiKey);
+        } else if (OPENAI_LIKE[cfg.provider] !== undefined) {
+          const catalog = await http(`${openAiBase(cfg)}/models`, { headers: { authorization: `Bearer ${cfg.apiKey}` }, timeoutMs: 10000, signal }, cfg.apiKey);
+          entry = (catalog?.data || []).find((item) => item.id === model);
+        }
+      }
+      const hasMetadata = cfg.provider === 'claude' ? !!entry?.capabilities?.effort
+        : Array.isArray(entry?.reasoning?.supported_efforts) || Array.isArray(entry?.supported_reasoning_efforts) || Array.isArray(entry?.supportedThinkingLevels);
+      const officialBase = { openai: 'https://api.openai.com/v1', groq: GROQ_BASE, gemini: GEMINI_BASE }[cfg.provider];
+      if (hasMetadata) {
+        result.reasoningEfforts = thinking.metadataLevels(cfg.provider, entry);
+        result.source = 'model metadata';
+      } else if (documented.length && (!base || base === officialBase)) {
+        result.reasoningEfforts = documented;
+        result.source = 'documented model capabilities';
+      }
+    }
+    if (!result.reasoningEfforts.length) result.note = 'No supported thinking levels were reported for this model. Default is available.';
+    if (capabilityCache.size >= 100) capabilityCache.delete(capabilityCache.keys().next().value);
+    capabilityCache.set(key, { time: Date.now(), value: result });
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+    return { ok: false, model, error: redact(error.message, cfg.apiKey) };
+  }
+}
+
+async function selectedThinking(cfg, signal) {
+  if (!cfg.reasoningEffort) return null;
+  const capability = await modelCapabilities(cfg, { signal });
+  if (!capability.ok) throw new AiError(`Could not verify the saved thinking level. ${capability.error}`, 0);
+  if (!capability.reasoningEfforts.includes(cfg.reasoningEffort)) throw new AiError('The saved thinking level is not supported by this model. Choose an allowed level or Default in the model picker.', 0);
+  return capability;
+}
+
+const openAiThinking = (cfg) => cfg.reasoningEffort
+  ? cfg.provider === 'openrouter' ? { reasoning: { effort: cfg.reasoningEffort } } : { reasoning_effort: cfg.reasoningEffort }
+  : reasoning(cfg.model);
+
 // One Gemini generateContent call. Tries the endpoint that matches the key type, then the other one.
 // cfg: { apiKey, model (already normalised), baseUrl, vertexBase?, studioBase? }; body: the request JSON.
 async function geminiGenerate(cfg, body, timeoutMs, signal) {
@@ -161,16 +238,24 @@ async function geminiGenerate(cfg, body, timeoutMs, signal) {
 
 // cfg: { provider, model, baseUrl, apiKey }; messages: [{ role: 'user' | 'assistant', content }]; system: string.
 async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs }) {
-  if (localAgents.isProvider(cfg.provider)) return localAgents.chat(cfg, { system, messages, timeoutMs });
+  if (localAgents.isProvider(cfg.provider)) {
+    if (cfg.reasoningEffort) await selectedThinking(cfg);
+    return localAgents.chat(cfg, { system, messages, timeoutMs });
+  }
   const { provider, apiKey } = cfg;
   const model = normalizeModel(provider, cfg.model);
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
   if (provider !== 'ollama' && !apiKey) throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
+  const capability = await selectedThinking(cfg);
+  if (thinking.usesResponses(cfg)) {
+    const result = await responsesAgentStep(cfg, { system, contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), tools: [], maxTokens, timeoutMs });
+    return result.text;
+  }
 
   if (provider === 'gemini') {
     const body = {
       contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      generationConfig: { maxOutputTokens: maxTokens },
+      generationConfig: { maxOutputTokens: maxTokens, ...(capability ? { thinkingConfig: { thinkingLevel: cfg.reasoningEffort.toUpperCase() } } : {}) },
     };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     const j = await geminiGenerate({ ...cfg, model }, body, timeoutMs);
@@ -178,8 +263,8 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
   }
 
   if (provider === 'ollama') {
-    const j = await http(`${base || 'http://localhost:11434'}/api/chat`, {
-      body: { model, stream: false, messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
+    const j = await http(`${(base || OLLAMA_DEFAULT).replace(/\/v1$/, '')}/api/chat`, {
+      body: { model, stream: false, ...(capability ? { think: capability.values[cfg.reasoningEffort] } : {}), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
       timeoutMs: timeoutMs || 120000,
     });
     return j?.message?.content || '';
@@ -188,7 +273,7 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
   if (OPENAI_LIKE[provider] !== undefined) {
     const j = await http(`${openAiBase(cfg)}/chat/completions`, {
       headers: { authorization: `Bearer ${apiKey}`, ...(provider === 'openrouter' ? { 'http-referer': 'https://clipcraft.app', 'x-title': 'ClipCraft' } : {}) },
-      body: { model, max_tokens: maxTokens, ...reasoning(model), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
+      body: { model, max_tokens: maxTokens, ...openAiThinking(cfg), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
       timeoutMs,
     }, apiKey);
     return j?.choices?.[0]?.message?.content || '';
@@ -197,7 +282,7 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
   if (provider === 'claude') {
     const j = await http(`${base || 'https://api.anthropic.com'}/v1/messages`, {
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: { model, max_tokens: maxTokens, ...(system ? { system } : {}), messages },
+      body: { model, max_tokens: capability ? Math.max(maxTokens, 8192) : maxTokens, ...(capability ? { output_config: { effort: cfg.reasoningEffort } } : {}), ...(system ? { system } : {}), messages },
       timeoutMs,
     }, apiKey);
     return textOf(j?.content);
@@ -215,7 +300,11 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
 // 5 then 10 seconds, up to about a minute in all.
 async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
   if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
-  if (localAgents.isProvider(cfg.provider)) return localAgents.agentStep(cfg, opts);
+  if (localAgents.isProvider(cfg.provider)) {
+    if (cfg.reasoningEffort) await selectedThinking(cfg, opts.signal);
+    if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+    return localAgents.agentStep(cfg, opts);
+  }
   let waited = 0;
   for (let attempt = 0; ; attempt++) {
     if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
@@ -239,6 +328,7 @@ async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeou
 }
 
 async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, timeoutMs = 90000, signal }) {
+  if (thinking.usesResponses(cfg)) return responsesAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
   // Groq counts max_tokens in its per-minute budget: ask for what a step needs (a tool call or a short answer).
   if (OPENAI_LIKE[cfg.provider] !== undefined || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: Math.min(maxTokens, 1024), timeoutMs, signal });
   if (cfg.provider === 'claude') return anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
@@ -246,10 +336,11 @@ async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, t
     throw new AiError('Unknown AI provider. Choose one in Settings.', 0);
   }
   if (!cfg.apiKey) throw new AiError('No API key saved for Google Gemini. Add it in Settings.', 0);
+  const capability = await selectedThinking(cfg, signal);
   const body = {
     contents,
     tools: [{ functionDeclarations: tools }],
-    generationConfig: { maxOutputTokens: maxTokens },
+    generationConfig: { maxOutputTokens: maxTokens, ...(capability ? { thinkingConfig: { thinkingLevel: cfg.reasoningEffort.toUpperCase() } } : {}) },
   };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   const j = await geminiGenerate({ ...cfg, model: normalizeModel('gemini', cfg.model) }, body, timeoutMs, signal);
@@ -259,6 +350,7 @@ async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, t
   const parts = content.parts || [];
   const calls = parts.filter((x) => x.functionCall).map((x) => ({ name: x.functionCall.name, args: x.functionCall.args || {} }));
   const text = parts.filter((x) => x.text && !x.thought).map((x) => x.text).join('');
+  if (!text && !calls.length && cand?.finishReason === 'MAX_TOKENS') throw new AiError('The model used its output budget before answering. Choose a lower thinking level or retry a smaller request.', 0);
   if (!parts.length && cand?.finishReason && cand.finishReason !== 'STOP') {
     throw new AiError(`The model stopped without an answer (${cand.finishReason}). Try rephrasing your request.`, 0);
   }
@@ -308,15 +400,94 @@ function toOpenAiMessages(system, contents) {
   return msgs;
 }
 
+// Reasoning models use Responses so effort and function tools can coexist.
+// Replay the provider's opaque reasoning items only with the same model.
+function toResponsesInput(contents, model) {
+  const input = [];
+  let lastIds = [];
+  contents.forEach((turn, index) => {
+    if (turn.role === 'model') {
+      if (turn.openaiModel === model && Array.isArray(turn.openaiResponseItems)) {
+        input.push(...turn.openaiResponseItems);
+        lastIds = turn.openaiResponseItems.filter((item) => item.type === 'function_call').map((item) => item.call_id);
+        return;
+      }
+      const text = (turn.parts || []).filter((part) => part.text && !part.thought).map((part) => part.text).join('');
+      if (text) input.push({ role: 'assistant', content: text });
+      const calls = (turn.parts || []).filter((part) => part.functionCall);
+      lastIds = calls.map((_, k) => `call_${index}_${k}`);
+      calls.forEach((part, k) => input.push({ type: 'function_call', call_id: lastIds[k], name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }));
+      return;
+    }
+    const parts = turn.parts || [];
+    parts.filter((part) => part.functionResponse).forEach((part, k) => input.push({ type: 'function_call_output', call_id: lastIds[k] || `call_${index}_${k}`, output: JSON.stringify(part.functionResponse.response ?? {}) }));
+    const text = parts.filter((part) => part.text).map((part) => part.text).join('');
+    if (text) input.push({ role: 'user', content: text });
+  });
+  return input;
+}
+
+async function responsesAgentStep(cfg, { system, contents, tools, maxTokens = 2048, timeoutMs, signal }) {
+  if (!cfg.apiKey) throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
+  const capability = await selectedThinking(cfg, signal);
+  const j = await http(`${openAiBase(cfg)}/responses`, {
+    headers: { authorization: `Bearer ${cfg.apiKey}` },
+    body: { model: cfg.model, store: false, instructions: system || '', input: toResponsesInput(contents, cfg.model),
+      max_output_tokens: Math.max(8192, maxTokens), include: ['reasoning.encrypted_content'],
+      ...(capability ? { reasoning: { effort: cfg.reasoningEffort } } : {}),
+      ...(tools.length ? { tools: tools.map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: toJsonSchema(tool.parameters), strict: false })) } : {}),
+    }, timeoutMs, signal,
+  }, cfg.apiKey);
+  if (j.error || j.status === 'failed') throw new AiError(j.error?.message || 'The reasoning request failed.', 0);
+  const items = j.output || [];
+  const calls = items.filter((item) => item.type === 'function_call').map((item) => ({ name: item.name, args: JSON.parse(item.arguments || '{}') }));
+  const text = items.filter((item) => item.type === 'message').flatMap((item) => item.content || []).filter((part) => part.type === 'output_text').map((part) => part.text).join('');
+  if (!text && !calls.length && j.status === 'incomplete') throw new AiError('The model used its output budget before answering. Choose a lower thinking level or retry.', 0);
+  if (!text && !calls.length) throw new AiError('The model returned no answer or editor tool calls. Try again or choose another model.', 0);
+  return { text, calls, content: { role: 'model', parts: [...(text ? [{ text }] : []), ...calls.map((call) => ({ functionCall: call }))],
+    openaiModel: cfg.model, openaiResponseItems: items } };
+}
+
+async function ollamaAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }, capability) {
+  const base = (cfg.baseUrl || OLLAMA_DEFAULT).replace(/\/+$/, '').replace(/\/v1$/, '');
+  const callNames = new Map();
+  const messages = toOpenAiMessages(system, contents).map((message) => {
+    if (message.tool_calls) return { ...message, tool_calls: message.tool_calls.map((call) => {
+      callNames.set(call.id, call.function.name);
+      return { function: { ...call.function, arguments: JSON.parse(call.function.arguments || '{}') } };
+    }) };
+    if (message.role === 'tool') {
+      const { tool_call_id, ...rest } = message;
+      return { ...rest, tool_name: callNames.get(tool_call_id) };
+    }
+    return message;
+  });
+  const j = await http(`${base}/api/chat`, { body: {
+    model: cfg.model, stream: false, think: capability.values[cfg.reasoningEffort], options: { num_predict: maxTokens },
+    messages,
+    tools: tools.map((tool) => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: toJsonSchema(tool.parameters) } })),
+  }, timeoutMs, signal });
+  const message = j.message || {};
+  const calls = (message.tool_calls || []).map((call) => ({ name: call.function.name,
+    args: typeof call.function.arguments === 'string' ? JSON.parse(call.function.arguments || '{}') : call.function.arguments || {} }));
+  const text = message.content || '';
+  if (!text && !calls.length) throw new AiError(j.done_reason === 'length'
+    ? 'The model used its output budget before answering. Choose a lower thinking level or retry a smaller request.'
+    : 'The model returned no answer or editor tool calls. Try again or choose another model.', 0);
+  return { text, calls, content: { role: 'model', parts: [...(text ? [{ text }] : []), ...calls.map((call) => ({ functionCall: call }))] } };
+}
+
 async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }) {
   if (!cfg.apiKey && cfg.provider !== 'ollama') throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
   const base = openAiBase(cfg);
+  const capability = await selectedThinking(cfg, signal);
+  if (cfg.provider === 'ollama' && capability) return ollamaAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }, capability);
   const j = await http(`${base}/chat/completions`, {
     headers: { ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
     body: {
       model: normalizeModel(cfg.provider, cfg.model),
       max_tokens: maxTokens,
-      ...reasoning(normalizeModel(cfg.provider, cfg.model)),
+      ...openAiThinking(cfg),
       messages: toOpenAiMessages(system, contents),
       tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: toJsonSchema(t.parameters) } })),
       tool_choice: 'auto',
@@ -335,18 +506,24 @@ async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeou
     return { name: tc.function.name, args: args || {} };
   });
   const text = msg.content || '';
+  if (!text && !calls.length && j?.choices?.[0]?.finish_reason === 'length') throw new AiError('The model used its output budget before answering. Choose a lower thinking level or retry a smaller request.', 0);
   const parts = [...(text ? [{ text }] : []), ...calls.map((c) => ({ functionCall: { name: c.name, args: c.args } }))];
   return { content: { role: 'model', parts: parts.length ? parts : [{ text: '' }] }, text, calls };
 }
 
 // ---- Tool calling through the Anthropic messages API (Claude) ----
 // Same contract as the other adapters: the conversation stays in Gemini format in the caller.
-function toAnthropicMessages(system, contents) {
+function toAnthropicMessages(system, contents, model) {
   const messages = [];
   let lastIds = [];
   contents.forEach((c, i) => {
     const parts = c.parts || [];
     if (c.role === 'model') {
+      if (model && c.anthropicModel === model && Array.isArray(c.anthropicBlocks)) {
+        messages.push({ role: 'assistant', content: c.anthropicBlocks });
+        lastIds = c.anthropicBlocks.filter((block) => block.type === 'tool_use').map((block) => block.id);
+        return;
+      }
       const blocks = [];
       const text = parts.filter((x) => x.text && !x.thought).map((x) => x.text).join('');
       if (text) blocks.push({ type: 'text', text });
@@ -371,12 +548,14 @@ function toAnthropicMessages(system, contents) {
 async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }) {
   if (!cfg.apiKey) throw new AiError('No API key saved for Anthropic Claude. Add it in Settings.', 0);
   const base = (cfg.baseUrl || '').replace(/\/+$/, '') || 'https://api.anthropic.com';
-  const conv = toAnthropicMessages(system, contents);
+  const conv = toAnthropicMessages(system, contents, cfg.model);
+  const capability = await selectedThinking(cfg, signal);
   const j = await http(`${base}/v1/messages`, {
     headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
     body: {
       model: normalizeModel(cfg.provider, cfg.model),
-      max_tokens: maxTokens,
+      max_tokens: capability ? Math.max(maxTokens, 8192) : maxTokens,
+      ...(capability ? { output_config: { effort: cfg.reasoningEffort } } : {}),
       ...(conv.system ? { system: conv.system } : {}),
       messages: conv.messages,
       tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: toJsonSchema(t.parameters) })),
@@ -387,8 +566,9 @@ async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, tim
   const blocks = j?.content || [];
   const calls = blocks.filter((b) => b.type === 'tool_use').map((b) => ({ name: b.name, args: b.input || {} }));
   const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  if (!text && !calls.length && j.stop_reason === 'max_tokens') throw new AiError('The model used its output budget before answering. Choose a lower thinking level or retry a smaller request.', 0);
   const parts = [...(text ? [{ text }] : []), ...calls.map((c) => ({ functionCall: { name: c.name, args: c.args } }))];
-  return { content: { role: 'model', parts: parts.length ? parts : [{ text: '' }] }, text, calls };
+  return { content: { role: 'model', parts: parts.length ? parts : [{ text: '' }], anthropicModel: cfg.model, anthropicBlocks: blocks }, text, calls };
 }
 
 // Sends one tiny prompt and reports whether the provider answered.
@@ -450,4 +630,4 @@ async function listModels(cfg) {
   }
 }
 
-module.exports = { chat, agentStep, testConnection, listModels, normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };
+module.exports = { chat, agentStep, testConnection, listModels, modelCapabilities, normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };

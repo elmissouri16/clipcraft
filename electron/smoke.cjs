@@ -14,6 +14,9 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'thinking') {
+    return require('./smoke-thinking.cjs')(win, app, dir);
+  }
   if (process.env.FVE_SMOKE_MODE === 'agent-context') {
     return require('./smoke-agent-context.cjs')(win, app, dir);
   }

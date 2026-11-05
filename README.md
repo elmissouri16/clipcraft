@@ -149,8 +149,12 @@ model in CraftAI.
 You can also click the model badge directly in the **CraftAI chat header**.
 Pick a model or enter a custom ID; the choice saves immediately for your next
 message without leaving the conversation. The same picker includes **Thinking
-effort** for listed SDK models that report supported levels. Effort preferences
-are saved per provider and model; **CLI default** leaves effort to the agent.
+effort** with the allowed levels for the selected model. Choices come from the
+installed agent or provider metadata, with documented fallbacks for known API
+models. Unsupported or unknown models keep **Default** available. Choose an
+explicit model when using a CLI default to see model-specific levels. Preferences
+are saved separately for each provider/model; clearing a choice restores the
+existing default behavior. See [thinking controls](docs/ai-thinking.md).
 
 Chat sessions, completed conversation context, and drafts are saved with each
 project and its autosave. Use **New chat** to start another conversation, then

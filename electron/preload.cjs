@@ -219,6 +219,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   aiTest: (draft) => ipcRenderer.invoke('ai:test', draft),
   aiModels: (draft) => ipcRenderer.invoke('ai:models', draft),
+  aiModelCapabilities: (draft) => ipcRenderer.invoke('ai:modelCapabilities', draft),
   aiSdkStatus: (draft) => ipcRenderer.invoke('ai:sdkStatus', draft),
   aiPickExecutable: (provider) => ipcRenderer.invoke('ai:pickExecutable', provider),
   captionsStatus: () => ipcRenderer.invoke('captions:status'),

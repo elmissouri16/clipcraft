@@ -785,15 +785,16 @@ ipcMain.handle('settings:setModel', (_e, provider, model) => {
 });
 ipcMain.handle('settings:setReasoningEffort', async (_e, provider, model, effort) => {
   try {
-    if (!localAgents.isProvider(provider)) throw new Error('Thinking effort is available for installed agent providers.');
     const active = settings.getActive();
     if (active.provider !== provider || active.model !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
+    let levels = [];
     if (effort) {
-      const catalog = await localAgents.listModels(active);
-      if (!catalog.ok) throw new Error(catalog.error || 'Could not check supported thinking efforts.');
-      if (!catalog.modelCapabilities?.[model]?.reasoningEfforts?.includes(effort)) throw new Error('This model does not report support for that thinking effort.');
+      const capability = await ai.modelCapabilities(active, { refresh: true });
+      if (!capability.ok) throw new Error(capability.error || 'Could not check supported thinking efforts.');
+      levels = capability.reasoningEfforts;
+      if (!levels.includes(effort)) throw new Error('This model does not report support for that thinking effort.');
     }
-    return { ok: true, settings: settings.setReasoningEffort(provider, model, effort) };
+    return { ok: true, settings: settings.setReasoningEffort(provider, model, effort, levels) };
   } catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('settings:saveServiceKey', (_e, name, key) => {
@@ -1296,6 +1297,7 @@ const draftConfig = (draft = {}) => {
 };
 ipcMain.handle('ai:test', (_e, draft) => ai.testConnection(draftConfig(draft)));
 ipcMain.handle('ai:models', (_e, draft) => ai.listModels(draftConfig(draft)));
+ipcMain.handle('ai:modelCapabilities', (_e, draft) => ai.modelCapabilities(draftConfig(draft), { refresh: !!draft?.refresh }));
 ipcMain.handle('ai:sdkStatus', (_e, draft) => localAgents.status(draftConfig(draft)));
 ipcMain.handle('ai:pickExecutable', async (_e, provider) => {
   if (!localAgents.isProvider(provider)) return null;

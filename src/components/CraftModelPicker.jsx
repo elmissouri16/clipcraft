@@ -2,14 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import Dropdown from './Dropdown.jsx';
 
-const EFFORT_LABELS = { minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra', persistent: 'Persistent' };
+const EFFORT_LABELS = Object.assign(Object.create(null), { none: 'None', off: 'Off', on: 'On', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra', persistent: 'Persistent' });
 
 // The model badge is also the quick picker. Changes apply to the next message;
 // only the active provider's model preference is written by the main process.
 export default function CraftModelPicker({ config, disabled, onSaved, onSavingChange }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState([]);
-  const [capabilities, setCapabilities] = useState({});
+  const [capability, setCapability] = useState(null);
+  const [effortLoading, setEffortLoading] = useState(false);
+  const [effortError, setEffortError] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +29,6 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     let alive = true;
     setLoading(true);
     setModels([]);
-    setCapabilities({});
     setCached(false);
     setError('');
     setCustom('');
@@ -35,12 +36,24 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
       if (!alive) return;
       if (!catalog.ok) { setError(catalog.error || 'Could not load models. Enter a model ID below.'); return; }
       setModels(catalog.models || []);
-      setCapabilities(catalog.modelCapabilities || {});
       setCached(!!catalog.fromCache);
     }).catch((err) => { if (alive) setError(err.message); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [open, provider, executablePath, refresh]);
+
+  useEffect(() => {
+    if (!open || !provider) return;
+    let alive = true;
+    setCapability(null); setEffortError(''); setEffortLoading(true);
+    window.api.aiModelCapabilities({ provider, model: config.modelId, executablePath, refresh: refresh > 0 }).then((result) => {
+      if (!alive) return;
+      if (result.ok) setCapability(result);
+      else setEffortError(result.error || 'Could not check thinking levels.');
+    }).catch((err) => { if (alive) setEffortError(err.message); })
+      .finally(() => { if (alive) setEffortLoading(false); });
+    return () => { alive = false; };
+  }, [open, provider, config?.modelId, executablePath, refresh]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +72,7 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     setError('');
     try {
       const result = await write();
-      if (!result.ok) { setError(result.error || 'Could not change the model.'); return; }
+      if (!result.ok) { setError(result.error || 'Could not save this selection.'); return; }
       onSaved(result.settings);
       if (close) { setOpen(false); badge.current?.focus(); }
     } catch (err) { setError(err.message); }
@@ -85,11 +98,11 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     if (next !== null) { event.preventDefault(); options[next]?.focus(); }
   };
   const choices = [...new Set([...(config?.modelId ? [config.modelId] : []), ...models])];
-  const efforts = capabilities[config?.modelId]?.reasoningEfforts || [];
+  const efforts = capability?.reasoningEfforts || [];
   return (
     <div ref={root} className="pilot-model-wrap" onKeyDown={onKeyDown}>
       <button ref={badge} className="pilot-model" type="button" disabled={disabled || saving || !config}
-        title={config ? `${config.provider} · ${config.model} — choose model` : 'Loading AI settings'}
+        title={config ? `${config.provider} · ${config.model}${config.reasoningEffort ? ` · ${EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort} thinking` : ''} — choose model and thinking level` : 'Loading AI settings'}
         aria-label="Choose AI model" aria-haspopup="dialog" aria-expanded={open}
         onClick={() => setOpen((value) => !value)}>
         <span>{config?.model || 'Choose model'}</span><ChevronDown size={12} />
@@ -114,18 +127,21 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
           </div>
           {loading && <small className="muted">Loading models…</small>}
           {!loading && cached && <small className="muted">Choices from the CLI’s cached catalog.</small>}
-          {config.sdk && (
+          {(
             <div className="pilot-effort-control">
               <label>Thinking effort</label>
               <Dropdown ariaLabel="Thinking effort" value={config.reasoningEffort || ''}
-                disabled={saving || loading || (!efforts.length && !config.reasoningEffort)}
+                disabled={saving || (effortLoading && !config.reasoningEffort) || (!efforts.length && !config.reasoningEffort)}
                 options={[
-                  { value: '', label: 'CLI default' },
+                  { value: '', label: config.sdk ? 'CLI default' : 'Default' },
                   ...efforts.map((effort) => ({ value: effort, label: EFFORT_LABELS[effort] || effort })),
                   ...(config.reasoningEffort && !efforts.includes(config.reasoningEffort)
                     ? [{ value: config.reasoningEffort, label: `${EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort} (unavailable)`, disabled: true }] : []),
                 ]} onChange={chooseEffort} />
-              {!loading && !efforts.length && <small className="muted">{config.modelId ? 'This model has no reported effort options.' : 'Choose a specific model to set its thinking effort.'}</small>}
+              {effortLoading && <small className="muted">Checking allowed thinking levels…</small>}
+              {effortError && <small className="pilot-model-error" role="alert">{effortError}</small>}
+              {!effortLoading && !effortError && !efforts.length && <small className="muted">{capability?.note || 'This model has no reported thinking options.'}</small>}
+              {!effortLoading && efforts.length > 0 && <small className="muted">Allowed for this model · saved separately for each provider and model.</small>}
             </div>
           )}
           {error && <p className="pilot-model-error" role="alert">{error}</p>}

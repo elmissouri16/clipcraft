@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { createRequire } = require('node:module');
+const { filterLevels } = require('./thinking.cjs');
 
 const PROVIDERS = {
   'codex-sdk': { name: 'Codex SDK', cli: 'codex', module: '@openai/codex-sdk', login: 'codex login' },
@@ -257,12 +258,12 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
   async function agentStep(cfg, { system = '', contents, tools = [], ...options }) {
     const result = await complete(cfg, {
       ...options, system: `${STEP_INSTRUCTIONS}\n\n${system}`, schema: stepSchema(tools),
-      prompt: JSON.stringify({ available_tools: tools, conversation: contents }),
+      prompt: JSON.stringify({ available_tools: tools, conversation: contents.map(({ role, parts }) => ({ role, parts })) }),
     });
     return parseStep(result, tools);
   }
 
-  async function listModels(cfg) {
+  async function listModels(cfg, { signal } = {}) {
     if (cfg.provider === 'codex-sdk') {
       // Codex has no SDK model-list method. Reuse its own cached catalog when
       // present, and always allow the CLI default or a manually entered model.
@@ -270,21 +271,24 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
         const cached = JSON.parse(fs.readFileSync(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'models_cache.json'), 'utf8'));
         const models = (cached.models || []).map((m) => m.slug).filter((id) => typeof id === 'string');
         const modelCapabilities = Object.fromEntries((cached.models || []).filter((m) => typeof m.slug === 'string').map((m) => [m.slug, {
-          reasoningEfforts: (m.supported_reasoning_levels || []).map((level) => level.effort).filter((level) => typeof level === 'string'),
+          reasoningEfforts: filterLevels(cfg.provider, (m.supported_reasoning_levels || []).map((level) => level.effort)),
         }]));
         if (models.length) return { ok: true, models: [...new Set(models)].sort(), modelCapabilities, fromCache: true };
       } catch { /* A fresh installation may not have a catalog yet. */ }
       return { ok: true, models: [], useCliDefault: true };
     }
     try {
-      const entries = await withSession(cfg, { timeoutMs: 20000 }, async (session) => {
+      const entries = await withSession(cfg, { timeoutMs: 20000, signal }, async (session) => {
         const query = session.sdk.query({ prompt: (async function* () {})(), options: claudeOptions(session, { ...cfg, model: '', reasoningEffort: '' }, '') });
         try { return await query.supportedModels(); }
         finally { query.close(); }
       });
-      const modelCapabilities = Object.fromEntries(entries.map((model) => [model.value, {
-        reasoningEfforts: model.supportsEffort === false ? [] : model.supportedEffortLevels || [],
-      }]));
+      const modelCapabilities = Object.create(null);
+      for (const model of entries) {
+        const capability = { reasoningEfforts: model.supportsEffort === false ? [] : filterLevels(cfg.provider, model.supportedEffortLevels) };
+        modelCapabilities[model.value] = capability;
+        if (model.resolvedModel) modelCapabilities[model.resolvedModel] = capability;
+      }
       return { ok: true, models: entries.map((model) => model.value), modelCapabilities };
     } catch (error) { return { ok: false, error: error.message }; }
   }

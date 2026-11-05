@@ -103,12 +103,13 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const generation = ++configRequest.current;
     const s = await window.api.settingsGet();
     const sdk = ['codex-sdk', 'claude-agent-sdk'].includes(s.provider);
+    const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
     const status = sdk ? await window.api.aiSdkStatus({ provider: s.provider, executablePath: s.executablePaths?.[s.provider] || '' }) : null;
     if (generation !== configRequest.current) return;
     setConfig({ ready: sdk ? status.ok && status.authenticated !== false : s.provider === 'ollama' || !!s.keys[s.provider],
-      provider: s.provider, model: s.models[s.provider] || (sdk ? `${s.provider === 'codex-sdk' ? 'Codex' : 'Claude'} · CLI default` : ''),
-      modelId: s.models[s.provider] || '', executablePath: s.executablePaths?.[s.provider] || '',
-      reasoningEffort: s.reasoningEfforts?.[s.provider]?.[s.models[s.provider] || ''] || '',
+      provider: s.provider, model: modelId || (sdk ? `${s.provider === 'codex-sdk' ? 'Codex' : 'Claude'} · CLI default` : ''),
+      modelId, executablePath: s.executablePaths?.[s.provider] || '',
+      reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
       error: sdk ? status.error || (status.authenticated === false ? `Sign in with ${status.loginCommand}.` : '') : '', sdk });
   }, []);
   useEffect(() => {
@@ -243,7 +244,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
             <span className="pilot-title"><Zap size={16} /> <span className="pilot-wordmark">Craft<span className="grad">AI</span></span></span>
             <CraftModelPicker config={config} disabled={busy} onSavingChange={setModelSaving} onSaved={(s) => {
               configRequest.current++;
-              const modelId = s.models[s.provider] || '';
+              const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
               setConfig((previous) => ({ ...previous, modelId,
                 model: modelId || (s.provider === 'codex-sdk' ? 'Codex · CLI default' : s.provider === 'claude-agent-sdk' ? 'Claude · CLI default' : ''),
                 reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',

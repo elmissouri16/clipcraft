@@ -36,7 +36,7 @@ const fakeSdk = {
         if (failure) throw failure;
         yield { type: 'result', subtype: 'success', structured_output: response, result: 'OK' };
       },
-      supportedModels: async () => [{ value: 'sonnet', displayName: 'Sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] }],
+      supportedModels: async () => [{ value: 'sonnet', resolvedModel: 'claude-sonnet-5', displayName: 'Sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] }],
       close() { closed++; },
     };
   },
@@ -124,6 +124,7 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
     }
     assert.deepEqual((await agents.listModels({ provider: 'claude-agent-sdk' })).models, ['sonnet']);
     assert.deepEqual((await agents.listModels({ provider: 'claude-agent-sdk' })).modelCapabilities.sonnet.reasoningEfforts, ['low', 'medium', 'high']);
+    assert.deepEqual((await agents.listModels({ provider: 'claude-agent-sdk' })).modelCapabilities['claude-sonnet-5'].reasoningEfforts, ['low', 'medium', 'high']);
     assert.equal((await agents.listModels({ provider: 'codex-sdk' })).useCliDefault, true);
     fs.mkdirSync(path.join(root, '.codex'), { recursive: true });
     fs.writeFileSync(path.join(root, '.codex', 'models_cache.json'), JSON.stringify({ models: [{ slug: 'codex-model', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }] }] }));

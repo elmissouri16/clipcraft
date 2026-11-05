@@ -80,6 +80,7 @@ module.exports = async (win, app, dir) => {
       await set('.pilot-input textarea', 'Keep this unsent draft');
       await headerOpen();
       await until(`!document.querySelector('.pilot-model-menu .spin') && document.querySelectorAll('.pilot-model-options [role=option]').length > 2`);
+      await until(`!document.querySelector('button[aria-label="Thinking effort"]').disabled`);
       await q(`document.querySelector('button[aria-label="Thinking effort"]').click()`);
       await until(`!!document.querySelector('.pilot-effort-control [role=option]')`);
       await q(`[...document.querySelectorAll('.pilot-effort-control [role=option]')].find(b => b.textContent.trim() === 'Medium').click()`);

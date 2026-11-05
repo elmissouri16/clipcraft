@@ -97,5 +97,23 @@ try {
     settings.setReasoningEffort(provider, 'model-a', '');
     assert.equal(settings.getActive().reasoningEffort, '', 'CLI default clears the explicit override');
   }
+  for (const provider of ['openai', 'groq', 'openrouter', 'custom', 'claude', 'gemini', 'ollama']) {
+    settings.save({ provider, model: 'model-a' });
+    settings.setReasoningEffort(provider, 'model-a', 'high', ['low', 'high']);
+    settings.setModel(provider, 'model-b');
+    assert.equal(settings.getActive().reasoningEffort, '');
+    settings.setReasoningEffort(provider, 'model-b', 'low', ['low']);
+    settings.setModel(provider, 'model-a');
+    assert.equal(settings.getActive().reasoningEffort, 'high');
+    assert.throws(() => settings.setReasoningEffort(provider, 'model-a', 'max', ['low', 'high']), /Invalid thinking effort/);
+    settings.setReasoningEffort(provider, 'model-a', '', []);
+    assert.equal(settings.getActive().reasoningEffort, '');
+  }
+  const legacy = JSON.parse(fs.readFileSync(file, 'utf8'));
+  legacy.ai.provider = 'gemini'; legacy.ai.models.gemini = '';
+  fs.writeFileSync(file, JSON.stringify(legacy));
+  const defaultModel = settings.getActive().model;
+  settings.setReasoningEffort('gemini', defaultModel, 'low', ['low']);
+  assert.equal(settings.getActive().reasoningEffort, 'low', 'legacy blank API models use their actual default model key');
   console.log('settings ok (write/rename failures preserve keys, compatible JSON, private mode)');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

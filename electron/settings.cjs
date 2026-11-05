@@ -198,13 +198,12 @@ function setModel(provider, model) {
   return getPublic();
 }
 
-function setReasoningEffort(provider, model, effort) {
-  const levels = provider === 'codex-sdk' ? ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'persistent']
-    : provider === 'claude-agent-sdk' ? ['low', 'medium', 'high', 'xhigh', 'max'] : null;
-  if (!levels || typeof model !== 'string' || typeof effort !== 'string' || (effort && !levels.includes(effort))) throw new Error('Invalid thinking effort.');
+function setReasoningEffort(provider, model, effort, allowedLevels) {
+  const levels = allowedLevels || require('./thinking.cjs').SDK_LEVELS[provider] || [];
+  if (!PROVIDERS.includes(provider) || typeof model !== 'string' || typeof effort !== 'string' || (effort && (!model || !levels.includes(effort)))) throw new Error('Invalid thinking effort.');
   const data = read();
   const ai = data.ai || {};
-  if (ai.provider !== provider || (ai.models?.[provider] || '') !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
+  if (ai.provider !== provider || (ai.models?.[provider] || DEFAULT_MODELS[provider]) !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
   ai.reasoningEfforts = { ...(ai.reasoningEfforts || {}),
     [provider]: { ...(ai.reasoningEfforts?.[provider] || {}), [model]: effort },
   };
