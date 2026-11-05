@@ -613,7 +613,9 @@ export default function Timeline({
       el.style.transform = `translateX(${x}px)`;
       if (c?.playing && sc) {
         const target = followScrollTarget(x, sc.scrollLeft, sc.clientWidth, HEADER);
-        if (target !== null && Math.abs(target - sc.scrollLeft) > 2) sc.scrollTo({ left: target, behavior: 'smooth' });
+        // This loop already runs at display rate. Starting a new smooth-scroll
+        // animation each frame makes follow lag and continue moving after Pause.
+        if (target !== null && Math.abs(target - sc.scrollLeft) > 2) sc.scrollLeft = target;
       }
     };
     raf = requestAnimationFrame(loop);

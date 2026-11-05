@@ -547,6 +547,11 @@ export default function Preview({
     }
   });
 
+  // Read live edits without canceling the next playback frame. Chat persistence
+  // also replaces the project object, often several times between two frames.
+  const playbackFrame = useRef(null);
+  playbackFrame.current = { apply, duration, onTime, onEnd };
+
   // Playing: a media-anchored clock. The position interpolates from the last anchor at
   // display rate; whenever the lead video element disagrees by more than 50 ms the anchor
   // is corrected — snapped forward if the media is ahead, HELD (never rewound) if the
@@ -559,6 +564,7 @@ export default function Preview({
     const master = { time, stamp: performance.now() };
     let raf;
     const tick = () => {
+      const frame = playbackFrame.current;
       let t = interpolateTime(master.time, master.stamp, performance.now(), 1);
       const lead = leadRef.current;
       if (lead?.el && lead.el.readyState >= 2 && !lead.el.paused && t >= lead.item.start && t < lead.item.end) {
@@ -566,23 +572,23 @@ export default function Preview({
         const fix = Number.isFinite(mt) ? anchorCorrection(mt, t) : null;
         if (fix) { master.time = fix.time; master.stamp = performance.now(); t = fix.time; }
       }
-      if (t >= duration) {
-        onTime(duration);
-        onEnd();
-        apply(duration, false);
-        if (clockRef) clockRef.current = { time: duration, stamp: performance.now(), playing: false, rate: 1 };
+      if (t >= frame.duration) {
+        frame.onTime(frame.duration);
+        frame.onEnd();
+        frame.apply(frame.duration, false);
+        if (clockRef) clockRef.current = { time: frame.duration, stamp: performance.now(), playing: false, rate: 1 };
         return;
       }
-      apply(t, true);
-      onTime(t);
+      frame.apply(t, true);
+      frame.onTime(t);
       if (clockRef) clockRef.current = { time: t, stamp: performance.now(), playing: true, rate: 1 };
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // Restart the loop when play state toggles, the user seeks (seekVer bumps) or the project changes.
+    // Only playback controls re-anchor the clock; edits are read on the next frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, seekVer, project, duration]);
+  }, [playing, seekVer]);
 
   // Scale overlays from project pixels (e.g. 1280x720) to the on-screen stage.
   useEffect(() => {

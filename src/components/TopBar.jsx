@@ -17,6 +17,7 @@ export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 
   const [menu, setMenu] = useState(null);
   const set = (patch) => dispatch({ type: 'setProject', patch, transient: true });
   return (
+    <>
     <header className="topbar">
       <div className="brand">
         <img src="./logo.png" alt="" className="brand-logo" draggable={false} />
@@ -59,7 +60,8 @@ export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 
           </button>
         </div>
       </div>
-      {/* Outside .top-actions: that is a size container, which would shift this fixed-position menu. */}
+    </header>
+      {/* Fixed-position menus stay outside the header's size container. */}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} label="Export" onClose={() => setMenu(null)} items={[
           { label: 'Video (MP4)', icon: Film, onClick: onExport },
@@ -69,6 +71,6 @@ export default function TopBar({ project, dispatch, onOpen, onSave, saveState = 
           { label: 'Audio only (M4A)', icon: AudioLines, onClick: () => onExportAudio('m4a') },
         ]} />
       )}
-    </header>
+    </>
   );
 }
