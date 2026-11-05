@@ -64,5 +64,38 @@ try {
   assert.equal(settings.getActive().model, 'api-model');
   assert.equal(settings.getPublic().executablePaths['codex-sdk'], '/custom/codex-sdk');
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).ai.keys, existing.ai.keys);
+  for (const provider of ['codex-sdk', 'claude-agent-sdk', 'custom', 'openai']) {
+    settings.save({ provider, model: 'original-model', baseUrl: 'https://keep.example/v1', executablePath: '/keep/agent' });
+    const beforeModel = JSON.parse(fs.readFileSync(file, 'utf8'));
+    settings.setModel(provider, '  selected-model  ');
+    assert.equal(settings.getActive().model, 'selected-model');
+    const afterModel = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const expected = structuredClone(beforeModel);
+    expected.ai.models[provider] = 'selected-model';
+    assert.deepEqual(afterModel, expected, 'quick model selection changes only that model, preserving credentials, endpoints and paths');
+    const stable = fs.readFileSync(file, 'utf8');
+    assert.throws(() => settings.setModel(provider === 'openai' ? 'custom' : 'openai', 'bad'), /provider changed/);
+    assert.equal(fs.readFileSync(file, 'utf8'), stable);
+    fault = 'rename';
+    assert.throws(() => settings.setModel(provider, 'unsaved-model'), /rename blocked/);
+    fault = null;
+    assert.equal(fs.readFileSync(file, 'utf8'), stable, 'failed quick selections preserve the saved model');
+  }
+  for (const provider of ['codex-sdk', 'claude-agent-sdk']) {
+    settings.save({ provider, model: 'model-a', baseUrl: 'https://keep.example/v1', executablePath: '/keep/agent' });
+    settings.setReasoningEffort(provider, 'model-a', 'high');
+    assert.equal(settings.getActive().reasoningEffort, 'high');
+    settings.setModel(provider, 'model-b');
+    assert.equal(settings.getActive().reasoningEffort, '', 'effort overrides do not leak to a different model');
+    settings.setReasoningEffort(provider, 'model-b', 'low');
+    settings.setModel(provider, 'model-a');
+    assert.equal(settings.getActive().reasoningEffort, 'high', 'each model retains its own effort choice');
+    assert.equal(settings.getActive().baseUrl, 'https://keep.example/v1');
+    assert.equal(settings.getActive().executablePath, '/keep/agent');
+    assert.throws(() => settings.setReasoningEffort(provider, 'model-b', 'high'), /model changed/);
+    assert.throws(() => settings.setReasoningEffort(provider, 'model-a', 'unknown'), /Invalid thinking effort/);
+    settings.setReasoningEffort(provider, 'model-a', '');
+    assert.equal(settings.getActive().reasoningEffort, '', 'CLI default clears the explicit override');
+  }
   console.log('settings ok (write/rename failures preserve keys, compatible JSON, private mode)');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

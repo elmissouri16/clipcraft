@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Zap, Captions, CircleAlert, CircleCheck, Loader2, MessageCircle, MessageSquarePlus, Palette, RectangleVertical, Scissors, Settings, Square, Undo2, X, Shuffle } from 'lucide-react';
 import { runAgent } from '../agent/runAgent.js';
 import { EDIT_STYLES, STYLE_NAMES } from '../agent/motionGuide.js';
+import CraftModelPicker from './CraftModelPicker.jsx';
 
 // Quick actions on the empty state, grouped by what they do; each sends its text as-is.
 const ACTIONS = [
@@ -57,6 +58,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', text, steps?, error?, changed? }
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [modelSaving, setModelSaving] = useState(false);
   const [config, setConfig] = useState(null); // { ready, provider, model }
   const [style, setStyle] = useState(null); // picked editing style id, sent with the next message
   const [showStyles, setShowStyles] = useState(false); // the style cards once the chat has started
@@ -75,6 +77,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     if (generation !== configRequest.current) return;
     setConfig({ ready: sdk ? status.ok && status.authenticated !== false : s.provider === 'ollama' || !!s.keys[s.provider],
       provider: s.provider, model: s.models[s.provider] || (sdk ? `${s.provider === 'codex-sdk' ? 'Codex' : 'Claude'} · CLI default` : ''),
+      modelId: s.models[s.provider] || '', executablePath: s.executablePaths?.[s.provider] || '',
+      reasoningEffort: s.reasoningEfforts?.[s.provider]?.[s.models[s.provider] || ''] || '',
       error: sdk ? status.error || (status.authenticated === false ? `Sign in with ${status.loginCommand}.` : '') : '', sdk });
   }, []);
   useEffect(() => {
@@ -104,7 +108,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
 
   const send = async (text) => {
     const msg = styledMessage(text, style);
-    if (!msg || busy) return;
+    if (!msg || busy || modelSaving) return;
     setInput('');
     setStyle(null);
     setBusy(true);
@@ -172,7 +176,14 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         <section className="pilot-panel pilot2" aria-label="CraftAI assistant">
           <header className="pilot-head">
             <span className="pilot-title"><Zap size={16} /> <span className="pilot-wordmark">Craft<span className="grad">AI</span></span></span>
-            <span className="pilot-model" title={config ? `${config.provider} · ${config.model}` : ''}>{config ? config.model : ''}</span>
+            <CraftModelPicker config={config} disabled={busy} onSavingChange={setModelSaving} onSaved={(s) => {
+              configRequest.current++;
+              const modelId = s.models[s.provider] || '';
+              setConfig((previous) => ({ ...previous, modelId,
+                model: modelId || (s.provider === 'codex-sdk' ? 'Codex · CLI default' : s.provider === 'claude-agent-sdk' ? 'Claude · CLI default' : ''),
+                reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
+              }));
+            }} />
             <button className={`icon-btn ${showStyles ? 'active' : ''}`} onClick={() => setShowStyles((v) => !v)} aria-pressed={showStyles}
               aria-label="Editing styles" title="Editing styles"><Palette size={16} /></button>
             <button className="icon-btn" onClick={newChat} disabled={busy || !messages.length} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
@@ -197,7 +208,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                   {ACTIONS.map((a) => {
                     const Icon = a.icon;
                     return (
-                      <button key={a.text} className="pilot-action" disabled={busy || !config?.ready} onClick={() => send(a.text)}>
+                      <button key={a.text} className="pilot-action" disabled={busy || modelSaving || !config?.ready} onClick={() => send(a.text)}>
                         <span className="pa-icon"><Icon size={15} /></span>
                         <span className="pa-text"><b>{a.group}</b><small>{a.text}</small></span>
                       </button>
@@ -205,13 +216,13 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                   })}
                 </div>
                 <div className="pilot-styles-head">Or pick a style for a whole reel</div>
-                <StyleGrid value={style} onPick={pickStyle} disabled={busy || !config?.ready} />
+                <StyleGrid value={style} onPick={pickStyle} disabled={busy || modelSaving || !config?.ready} />
               </div>
             )}
             {messages.length > 0 && showStyles && (
               <div className="pilot-styles-box">
                 <div className="pilot-styles-head">Pick a style, then say what you want</div>
-                <StyleGrid value={style} onPick={pickStyle} disabled={busy || !config?.ready} />
+                <StyleGrid value={style} onPick={pickStyle} disabled={busy || modelSaving || !config?.ready} />
               </div>
             )}
 
@@ -273,7 +284,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                 window.api.agentCancel?.(activeRequest.current).catch(() => {});
               }} aria-label="Stop"><Square size={14} fill="currentColor" /></button>
             ) : (
-              <button className="send" onClick={() => send(input)} disabled={(!input.trim() && !style) || !config?.ready} aria-label="Send"><ArrowUp size={16} /></button>
+              <button className="send" onClick={() => send(input)} disabled={modelSaving || (!input.trim() && !style) || !config?.ready} aria-label="Send"><ArrowUp size={16} /></button>
             )}
           </div>
         </section>

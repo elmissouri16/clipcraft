@@ -208,6 +208,7 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
     env: { ...session.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', ENABLE_CLAUDEAI_MCP_SERVERS: 'false' },
     abortController: session.controller, systemPrompt: system,
     ...(cfg.model ? { model: cfg.model } : {}),
+    ...(cfg.reasoningEffort ? { effort: cfg.reasoningEffort } : {}),
     tools: [], allowedTools: [], mcpServers: {}, strictMcpConfig: true,
     settingSources: [], permissionMode: 'dontAsk', persistSession: false,
     canUseTool: async () => ({ behavior: 'deny', message: 'Use CraftAI editor tools in the structured response.' }),
@@ -224,6 +225,7 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
         });
         const thread = codex.startThread({
           ...(cfg.model ? { model: cfg.model } : {}), workingDirectory: session.cwd,
+          ...(cfg.reasoningEffort ? { modelReasoningEffort: cfg.reasoningEffort } : {}),
           skipGitRepoCheck: true, sandboxMode: 'read-only', approvalPolicy: 'never', webSearchMode: 'disabled',
         });
         const result = await thread.run(`${system}\n\n${prompt}`, { outputSchema: schema, signal: session.controller.signal });
@@ -267,17 +269,23 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
       try {
         const cached = JSON.parse(fs.readFileSync(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'models_cache.json'), 'utf8'));
         const models = (cached.models || []).map((m) => m.slug).filter((id) => typeof id === 'string');
-        if (models.length) return { ok: true, models: [...new Set(models)].sort(), fromCache: true };
+        const modelCapabilities = Object.fromEntries((cached.models || []).filter((m) => typeof m.slug === 'string').map((m) => [m.slug, {
+          reasoningEfforts: (m.supported_reasoning_levels || []).map((level) => level.effort).filter((level) => typeof level === 'string'),
+        }]));
+        if (models.length) return { ok: true, models: [...new Set(models)].sort(), modelCapabilities, fromCache: true };
       } catch { /* A fresh installation may not have a catalog yet. */ }
       return { ok: true, models: [], useCliDefault: true };
     }
     try {
-      const models = await withSession(cfg, { timeoutMs: 20000 }, async (session) => {
-        const query = session.sdk.query({ prompt: (async function* () {})(), options: claudeOptions(session, cfg, '') });
-        try { return (await query.supportedModels()).map((model) => model.value); }
+      const entries = await withSession(cfg, { timeoutMs: 20000 }, async (session) => {
+        const query = session.sdk.query({ prompt: (async function* () {})(), options: claudeOptions(session, { ...cfg, model: '', reasoningEffort: '' }, '') });
+        try { return await query.supportedModels(); }
         finally { query.close(); }
       });
-      return { ok: true, models };
+      const modelCapabilities = Object.fromEntries(entries.map((model) => [model.value, {
+        reasoningEfforts: model.supportsEffort === false ? [] : model.supportedEffortLevels || [],
+      }]));
+      return { ok: true, models: entries.map((model) => model.value), modelCapabilities };
     } catch (error) { return { ok: false, error: error.message }; }
   }
   return { status, chat, agentStep, listModels };

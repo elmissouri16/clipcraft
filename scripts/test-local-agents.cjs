@@ -36,7 +36,7 @@ const fakeSdk = {
         if (failure) throw failure;
         yield { type: 'result', subtype: 'success', structured_output: response, result: 'OK' };
       },
-      supportedModels: async () => [{ value: 'sonnet', displayName: 'Sonnet' }],
+      supportedModels: async () => [{ value: 'sonnet', displayName: 'Sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] }],
       close() { closed++; },
     };
   },
@@ -98,6 +98,9 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
       }
       await agents.agentStep({ provider, model: 'explicit-model' }, req);
       assert.equal(captured.findLast((entry) => entry.kind === (provider === 'codex-sdk' ? 'thread' : 'query')).options.model, 'explicit-model');
+      await agents.agentStep({ provider, model: 'explicit-model', reasoningEffort: 'high' }, req);
+      const effortOptions = captured.findLast((entry) => entry.kind === (provider === 'codex-sdk' ? 'thread' : 'query')).options;
+      assert.equal(effortOptions[provider === 'codex-sdk' ? 'modelReasoningEffort' : 'effort'], 'high', 'saved effort reaches the official SDK option');
       const controller = new AbortController();
       pending = true;
       const canceled = agents.agentStep({ provider }, { ...req, signal: controller.signal });
@@ -112,13 +115,19 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
     }
     assert.ok(closed > 0, 'Claude query resources are closed');
     assert.equal(resolveDraft({ provider: 'openai', model: 'saved-api-model' }, { model: '' }).model, 'saved-api-model');
+    assert.equal(resolveDraft({ provider: 'codex-sdk', model: 'a', reasoningEffort: 'high', reasoningEfforts: { b: 'low' } }, { model: 'b' }).reasoningEffort, 'low');
+    assert.equal(resolveDraft({ provider: 'claude-agent-sdk', model: 'a', reasoningEffort: 'high' }, { model: 'b' }).reasoningEffort, '', 'a draft model does not inherit another model’s effort');
     for (const bad of [{ text: '', calls: [{ name: 'run_shell', arguments: '{}' }] },
       { text: '', calls: [{ name: 'set_project', arguments: 'null' }] },
       { text: '', calls: [{ name: 'set_project', arguments: '[]' }] }, { text: '', calls: 'bad' }]) {
       assert.throws(() => parseStep(bad, tools));
     }
     assert.deepEqual((await agents.listModels({ provider: 'claude-agent-sdk' })).models, ['sonnet']);
+    assert.deepEqual((await agents.listModels({ provider: 'claude-agent-sdk' })).modelCapabilities.sonnet.reasoningEfforts, ['low', 'medium', 'high']);
     assert.equal((await agents.listModels({ provider: 'codex-sdk' })).useCliDefault, true);
+    fs.mkdirSync(path.join(root, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.codex', 'models_cache.json'), JSON.stringify({ models: [{ slug: 'codex-model', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }] }] }));
+    assert.deepEqual((await agents.listModels({ provider: 'codex-sdk' })).modelCapabilities['codex-model'].reasoningEfforts, ['low', 'high']);
     console.log('local agents ok (SDK tool bridge, discovery, auth privacy, defaults, cancellation, timeout, cleanup)');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

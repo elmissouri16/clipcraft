@@ -66,6 +66,7 @@ function getPublic() {
     models: { ...DEFAULT_MODELS, ...(ai.models || {}) },
     baseUrls: ai.baseUrls || {},
     executablePaths: ai.executablePaths || {},
+    reasoningEfforts: ai.reasoningEfforts || {},
     keys, // provider -> "…abcd" for providers that have a saved key
     defaultModels: DEFAULT_MODELS,
     encryption: safeStorage.isEncryptionAvailable(),
@@ -128,6 +129,8 @@ function clearServiceKey(name) {
 function getActive(providerOverride) {
   const ai = read().ai || {};
   const provider = providerOverride || (PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini');
+  const model = (ai.models && ai.models[provider]) || DEFAULT_MODELS[provider];
+  const effort = ai.reasoningEfforts?.[provider]?.[model];
   let apiKey = '';
   const entry = ai.keys && ai.keys[provider];
   if (entry && safeStorage.isEncryptionAvailable()) {
@@ -139,10 +142,12 @@ function getActive(providerOverride) {
   }
   return {
     provider,
-    model: (ai.models && ai.models[provider]) || DEFAULT_MODELS[provider],
+    model,
     baseUrl: (ai.baseUrls && ai.baseUrls[provider]) || '',
     apiKey,
     executablePath: (ai.executablePaths && ai.executablePaths[provider]) || '',
+    reasoningEffort: typeof effort === 'string' ? effort : '',
+    reasoningEfforts: ai.reasoningEfforts?.[provider] || {},
   };
 }
 
@@ -175,6 +180,35 @@ function save(patch) {
 function clearKey(provider) {
   const data = read();
   if (data.ai && data.ai.keys) delete data.ai.keys[provider];
+  write(data);
+  return getPublic();
+}
+
+// Quick model changes from CraftAI must not rewrite provider credentials,
+// endpoints, executable paths, or other preferences from a stale UI snapshot.
+function setModel(provider, model) {
+  if (!PROVIDERS.includes(provider) || typeof model !== 'string') throw new Error('Invalid AI model selection.');
+  const data = read();
+  const ai = data.ai || {};
+  const active = PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini';
+  if (active !== provider) throw new Error('The AI provider changed. Reopen the model picker and try again.');
+  ai.models = { ...(ai.models || {}), [provider]: model.trim() || DEFAULT_MODELS[provider] };
+  data.ai = ai;
+  write(data);
+  return getPublic();
+}
+
+function setReasoningEffort(provider, model, effort) {
+  const levels = provider === 'codex-sdk' ? ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'persistent']
+    : provider === 'claude-agent-sdk' ? ['low', 'medium', 'high', 'xhigh', 'max'] : null;
+  if (!levels || typeof model !== 'string' || typeof effort !== 'string' || (effort && !levels.includes(effort))) throw new Error('Invalid thinking effort.');
+  const data = read();
+  const ai = data.ai || {};
+  if (ai.provider !== provider || (ai.models?.[provider] || '') !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
+  ai.reasoningEfforts = { ...(ai.reasoningEfforts || {}),
+    [provider]: { ...(ai.reasoningEfforts?.[provider] || {}), [model]: effort },
+  };
+  data.ai = ai;
   write(data);
   return getPublic();
 }
@@ -224,4 +258,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };

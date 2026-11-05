@@ -143,6 +143,8 @@ contextBridge.exposeInMainWorld('api', {
   mcpCall: (req) => ipcRenderer.invoke('mcp:call', req),
   mcpTest: (server) => ipcRenderer.invoke('mcp:test', server),
   settingsSave: (patch) => ipcRenderer.invoke('settings:save', patch),
+  settingsSetModel: (provider, model) => ipcRenderer.invoke('settings:setModel', provider, model),
+  settingsSetReasoningEffort: (provider, model, effort) => ipcRenderer.invoke('settings:setReasoningEffort', provider, model, effort),
   settingsClearKey: (provider) => ipcRenderer.invoke('settings:clearKey', provider),
   settingsSaveServiceKey: (name, key) => ipcRenderer.invoke('settings:saveServiceKey', name, key),
   settingsClearServiceKey: (name) => ipcRenderer.invoke('settings:clearServiceKey', name),

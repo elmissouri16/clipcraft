@@ -779,6 +779,23 @@ ipcMain.handle('settings:save', (_e, patch) => {
   }
 });
 ipcMain.handle('settings:clearKey', (_e, provider) => settings.clearKey(provider));
+ipcMain.handle('settings:setModel', (_e, provider, model) => {
+  try { return { ok: true, settings: settings.setModel(provider, model) }; }
+  catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle('settings:setReasoningEffort', async (_e, provider, model, effort) => {
+  try {
+    if (!localAgents.isProvider(provider)) throw new Error('Thinking effort is available for installed agent providers.');
+    const active = settings.getActive();
+    if (active.provider !== provider || active.model !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
+    if (effort) {
+      const catalog = await localAgents.listModels(active);
+      if (!catalog.ok) throw new Error(catalog.error || 'Could not check supported thinking efforts.');
+      if (!catalog.modelCapabilities?.[model]?.reasoningEfforts?.includes(effort)) throw new Error('This model does not report support for that thinking effort.');
+    }
+    return { ok: true, settings: settings.setReasoningEffort(provider, model, effort) };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
 ipcMain.handle('settings:saveServiceKey', (_e, name, key) => {
   try {
     return { ok: true, settings: settings.saveServiceKey(name, key) };

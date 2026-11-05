@@ -1239,6 +1239,27 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
   padding: 3px 9px; border-radius: 999px; background: rgba(130, 92, 251, 0.14);
   border: 1px solid rgba(130, 92, 251, 0.4); color: #c4b5fd; font-weight: 600;
 }
+.pilot-model-wrap { min-width: 0; display: flex; }
+.pilot2 button.pilot-model { display: flex; align-items: center; gap: 5px; cursor: pointer; font-family: inherit; overflow: visible; }
+.pilot2 button.pilot-model > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pilot2 button.pilot-model svg { flex: none; }
+.pilot2 button.pilot-model:hover:not(:disabled), .pilot2 button.pilot-model[aria-expanded=true] { border-color: #a78bfa; background: rgba(130, 92, 251, 0.25); }
+.pilot2 button.pilot-model:disabled { cursor: default; opacity: 0.55; }
+.pilot-model-menu { position: absolute; top: 58px; left: 12px; right: 12px; z-index: 5; display: flex; flex-direction: column; gap: 9px; padding: 12px; max-height: calc(100% - 74px); overflow: auto; background: #1b1b2b; border: 1px solid rgba(130, 92, 251, 0.5); border-radius: 12px; box-shadow: var(--shadow-menu); }
+.pilot-model-menu-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.pilot-model-options { display: flex; flex-direction: column; min-height: 32px; max-height: 220px; overflow-y: auto; flex-shrink: 1; }
+.pilot-model-options button { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; color: var(--text-2); border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.pilot-model-options button:hover:not(:disabled), .pilot-model-options button:focus-visible, .pilot-model-options button[aria-selected=true] { background: rgba(130, 92, 251, 0.2); color: #e9e4ff; }
+.pilot-model-options button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilot-model-options button svg { flex: none; }
+.pilot-model-options button:disabled { opacity: 0.5; cursor: default; }
+.pilot-model-menu small { font-size: 11px; line-height: 1.4; }
+.pilot-model-custom { display: flex; gap: 6px; }
+.pilot-model-custom input { flex: 1; min-width: 0; padding: 7px 9px; font: inherit; font-size: 12px; color: var(--text); background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 7px; }
+.pilot-model-error { margin: 0; color: #fca5a5; font-size: 12px; line-height: 1.4; }
+.pilot-effort-control { display: flex; flex-direction: column; gap: 5px; }
+.pilot-effort-control > label { font-size: 12px; color: var(--text-2); }
+.pilot-effort-control .dropdown-list { position: static; margin-top: 4px; max-height: 160px; }
 .pilot2 .pilot-list { padding: 16px 14px; gap: 10px; }
 .pilot2 .pilot-logo {
   width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; color: #fff;

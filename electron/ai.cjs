@@ -12,10 +12,13 @@ const localAgents = require('./localAgents.cjs');
 // different model was saved before opening Settings. API blank-field behavior
 // continues to use the saved/default model.
 function resolveDraft(saved, draft = {}) {
+  const model = localAgents.isProvider(saved.provider) && draft.model !== undefined
+    ? String(draft.model || '').trim() : (draft.model || '').trim() || saved.model;
   return {
     provider: saved.provider,
-    model: localAgents.isProvider(saved.provider) && draft.model !== undefined
-      ? String(draft.model || '').trim() : (draft.model || '').trim() || saved.model,
+    model,
+    reasoningEffort: model === saved.model ? saved.reasoningEffort || ''
+      : typeof saved.reasoningEfforts?.[model] === 'string' ? saved.reasoningEfforts[model] : '',
     baseUrl: draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
     apiKey: (draft.apiKey || '').trim() || saved.apiKey,
     executablePath: draft.executablePath !== undefined ? String(draft.executablePath).trim() : saved.executablePath,
