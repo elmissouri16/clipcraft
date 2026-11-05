@@ -83,7 +83,8 @@
     "vite": "^6.0.7"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.cjs",
+    "dev:renderer": "vite",
     "build": "vite build",
     "start": "vite build && electron .",
     "package:linux": "vite build && electron-builder --linux deb --x64"

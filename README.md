@@ -152,7 +152,8 @@ SHA-256 checksums for every installer are printed in the release notes.
 
 ```bash
 npm install
-npm run dev             # development
+npm run dev             # Vite + Electron, with automatic main-process restart
+npm run dev:renderer    # Vite only (for an existing Electron dev session)
 npm start               # build + launch the app
 npm run package:linux   # build the Linux .deb (with the bundled content pack, for local use)
 ```
