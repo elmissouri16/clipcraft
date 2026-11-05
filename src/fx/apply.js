@@ -51,7 +51,7 @@ const fnum = (n) => {
   return Object.is(v, -0) ? '0' : String(v);
 };
 export function regionMaskExpr(region) {
-  const x = fnum(region.x), y = fnum(region.y), w = fnum(Math.max(0.01, region.w)), h = fnum(Math.max(0.01, region.h));
+  const x = fnum(region.x), y = fnum(region.y);
   const fPx = `max(${fnum(Math.max(0, region.feather || 0))}*H, 1)`;
   let dOut;
   if (region.shape === 'ellipse') {

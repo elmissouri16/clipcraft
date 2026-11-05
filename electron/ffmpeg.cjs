@@ -346,7 +346,6 @@ function buildExportArgs(project, outFile, opts = {}) {
   clips.forEach((clip, i) => {
     const m = mediaById[clip.mediaId];
     const len = clipLen(clip);
-    const speed = clip.speed || 1;
     if (clip.gap) {
       // A gap on the main track: the project background, in silence.
       filters.push(`color=c=${hex(bg, '#000000')}:s=${W}x${H}:r=${fps}:d=${num(len)},format=yuv420p[v${i}]`);

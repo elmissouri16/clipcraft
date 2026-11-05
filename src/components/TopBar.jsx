@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
-import { AudioLines, Check, ChevronDown, CircleAlert, Coffee, Download, Film, FolderOpen, Home, Info, Instagram, Save, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { AudioLines, Check, ChevronDown, CircleAlert, Download, Film, FolderOpen, Home, Info, Save, Settings } from 'lucide-react';
 import ContextMenu from './ContextMenu.jsx';
 import { RATIOS, sizeFor } from '../effects.js';
 import { SUPPORT_URL } from './HomeScreen.jsx';
-
 
 // Next to Save: where the project stands (it saves itself once it has a file).
 const SAVE_STATES = {

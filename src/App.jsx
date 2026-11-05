@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { recentEntryFor } from './recents.js';
 import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from './store.js';
 import HomeScreen from './components/HomeScreen.jsx';
@@ -7,15 +7,13 @@ import { mismatchFor, sequencePatchFor } from './sequence.js';
 import { sizeFor } from './effects.js';
 import ContextMenu from './components/ContextMenu.jsx';
 import {
-  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, LayoutTemplate, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Pipette, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
+  AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Pipette, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
 } from 'lucide-react';
-import { fillSlot, slotList, templateMeta } from './templates.js';
+import { fillSlot, slotList } from './templates.js';
 import SlotStrip from './components/SlotStrip.jsx';
-import ConfirmDialog from './components/ConfirmDialog.jsx';
 import { useRecorder } from './useRecorder.js';
 import { useLayout } from './useLayout.js';
 import { customMaskImages, decoImages, maskImages } from './visual.js';
-import { motionData } from './anim.js';
 import { clipStartTl, motionDataPinned, trackedClips } from './track.js';
 import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from './cropMath.js';
 import { chromaOf, cropOf, transformOf } from './visual.js';
@@ -897,7 +895,6 @@ export default function App() {
   // Move the selected clip(s) of one layered lane to another layer of that lane (one undo
   // step). Targets that would overlap are disabled in the menu, so this always fits.
   const moveSelectionToLayer = useCallback((sel, layer) => {
-    const p = projectRef.current;
     const items = (selection?.items && selection.items.some((it) => it.track === sel.track && it.id === sel.id))
       ? selection.items.filter((it) => it.track === sel.track)
       : [sel];
@@ -1513,29 +1510,7 @@ export default function App() {
     return window.api.closeCancel();
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Template projects: the Templates section is gone (the dock entry is Assets now),
-  // but projects made from templates still carry replaceable "slot" clips — the SlotStrip
-  // that fills them and the package export below are project functionality and stay. ----
-  // W1 (2026-11-01, Hamza's order): the "Template package…" entry is REMOVED from the
-  // Export menu. The package writer itself (packTemplate + the templates:pack IPC) is
-  // retained — it is the same engine the bundled-template system verifies end-to-end in
-  // the smoke harness — but it is no longer offered in the menu.
-  const [tplNote, setTplNote] = useState(null); // { title, text, dir? }
-  const packTemplate = async () => {
-    const p = projectRef.current;
-    const meta = templateMeta(p);
-    if (!meta.slots) {
-      return setTplNote({ title: 'No replaceable clip yet', text: 'Right-click the clips people should swap for their own videos and choose “Make replaceable (template)”, then export the template package again.' });
-    }
-    const res = await window.api.templatesPack(JSON.stringify(p), meta);
-    if (!res) return;
-    if (res.error) return setTplNote({ title: 'Could not write the package', text: res.error });
-    setTplNote({
-      title: 'Template package ready',
-      text: 'Last step: export this video into the same folder with the name “preview.mp4” (Export > Video). The folder is the finished template package — keep it or share it as files; anyone can open it from their own copy of ClipCraft. (Online template publishing is not part of ClipCraft 1.0.)',
-      dir: res.dir,
-    });
-  };
+  // Legacy template projects retain replaceable clips through the slot strip.
   const slots = slotList(project);
   const pickSlot = (s) => {
     setSelection({ track: s.track, id: s.clip.id });
@@ -1788,7 +1763,7 @@ export default function App() {
 
       <div className="workspace" style={{ gridTemplateColumns: `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch} settingsVersion={settingsVersion}
-          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText} onOpenSettings={() => setSettingsOpen(true)}
+          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText}
           onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
           recorder={recorder} onStartRecord={() => recorder.start(time)} onAddText={addText} onAddTextOver={addTextOver}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
@@ -1859,11 +1834,6 @@ export default function App() {
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
-      {tplNote && (
-        <ConfirmDialog icon={LayoutTemplate} title={tplNote.title} text={tplNote.text} onConfirm={() => setTplNote(null)}
-          extra={tplNote.dir && <p className="muted path">{tplNote.dir}</p>}
-          cancelLabel="Show folder" onCancel={tplNote.dir ? () => { window.api.openFolder(tplNote.dir); setTplNote(null); } : undefined} />
-      )}
       {settingsOpen && <SettingsDialog onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
         onProxiesCleared={(deleted) => projectRef.current.media.forEach((m) => {
           if (m.lightProxy && deleted.includes(m.lightProxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { lightProxy: null } });

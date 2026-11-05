@@ -37,7 +37,6 @@ export const GRADE_GROUPS = [
 ];
 export const GRADE_KEYS = GRADE_GROUPS.flatMap((g) => g.items.map((i) => i.id));
 export const DEFAULT_GRADE = Object.fromEntries(GRADE_KEYS.map((k) => [k, 0]));
-export const gradeOf = (clip) => ({ ...DEFAULT_GRADE, ...(clip.grade || {}) });
 
 // HSL: eight color ranges (hue centers in degrees), each with hue / saturation / lightness from -100 to 100.
 export const HSL_COLORS = [

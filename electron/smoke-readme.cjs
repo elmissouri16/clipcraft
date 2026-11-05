@@ -29,7 +29,6 @@ module.exports = async function readmeShots(win, dir, result) {
     }
     result[name] = { frames: n, realSeconds: (Date.now() - t0) / 1000 };
   };
-  const side = (t) => q(`[...document.querySelectorAll('.side-btn')].find((b) => b.textContent.trim() === ${JSON.stringify(t)}).click()`);
   // Hovers one tile (by its label) so its live preview plays.
   const hoverTile = (label) => q(`(() => {
     document.querySelectorAll('.tile').forEach((t) => t.dispatchEvent(new PointerEvent('pointerleave')));
@@ -131,7 +130,7 @@ module.exports = async function readmeShots(win, dir, result) {
   await until(`document.querySelectorAll('.lib-row').length > 3`, 20000);
   await wait(600);
   await snap('audio-music', '.left');
-  await side('Text to speech');
+  await q(`[...document.querySelectorAll('[aria-label="Audio source"] button')].find(b => b.textContent.trim() === 'Text to speech').click()`);
   await wait(800);
   await snap('text-to-speech', '.left');
   await q(`window.__fve.tab('media')`);

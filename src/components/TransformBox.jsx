@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { RotateCw } from 'lucide-react';
 import { clipLen, freeLen, videoLayout } from '../store.js';
 import { transformOf } from '../visual.js';
 import { pictureGeometry } from '../pictureGeometry.js';
-import { baseAt, editAt, hasMotion, stateAt } from '../anim.js';
+import { baseAt, editAt, hasMotion } from '../anim.js';
 import { pinOffsetAt, stateAtPinned } from '../track.js';
 import { resolveStyle, textBox, textVisible } from '../text/render.js';
 

@@ -945,6 +945,4 @@ export const OVERLAY_EFFECTS = [
   { id: 'fx_fireflies', name: 'Fireflies', icon: '🪲', draw: drawFireflies },
 ];
 
-export const isPixelFx = (id) => PIXEL_EFFECTS.some((e) => e.id === id);
-export const isOverlayFx = (id) => OVERLAY_EFFECTS.some((e) => e.id === id);
 export const fxTransition = (id) => FX_TRANSITIONS.find((t) => t.id === id);

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, AudioLines, Copy, CopyPlus, Eye, EyeOff, Film, Flag, GripVertical, Layers, Link2, Lock, LockOpen, Magnet, Mic, MoreHorizontal, MousePointer2, Music, Pencil, Plus, Scissors, Slice,
   Sparkles, Square, StretchHorizontal, Target, Trash2, Type, Undo2, Unlink, Volume2, VolumeX, Redo2, X, ZoomIn, ZoomOut, Captions,
@@ -7,7 +7,7 @@ import { LAYERED, MIN_CLIP, clipLayer, effectObjects, formatTime, freeLen, isLay
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from '../fx/filters.js';
 import { EFFECTS, TRANSITIONS } from '../effects.js';
-import { FILTERS, clipCss } from '../effects.js';
+import { clipCss } from '../effects.js';
 import { activeDrag, isFiles, isInternal, laneFor, readPayload } from '../dnd.js';
 import { followScrollTarget, interpolateTime, playheadX } from '../playbackClock.js';
 import AudioMeter from './AudioMeter.jsx';
@@ -777,7 +777,6 @@ export default function Timeline({
               );
             }
             const m = mediaById[l.clip.mediaId];
-            const sp = l.clip.speed || 1;
             return (
               <Clip {...common} key={l.clip.id} track="video" clip={l.clip} start={l.start} length={l.end - l.start}
                 label={videoLabel(l.clip, m)} dropHere={drop?.clipId === l.clip.id} tags={lookTags('video', l.clip)}

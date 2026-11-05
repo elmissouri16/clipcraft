@@ -102,14 +102,3 @@ export function coverTargetFor(p, t) {
   const vid = media.find((x) => x.type === 'video');
   return vid ? { kind: 'video', media: vid, at: 0 } : null;
 }
-
-export function posterFracAt(p, t) {
-  if (!p || !p.videoClips) return null;
-  const byId = new Map((p.media || []).map((m) => [m.id, m]));
-  const src = posterSourceFor(p, (x) => x);
-  if (!src || src.kind !== 'sprite' || !src.media.duration) return null;
-  const first = videoLayout(p.videoClips).find((l) => !l.clip.gap && l.clip.mediaId === src.media.id);
-  if (!first || t < first.start || t > first.end) return null;
-  const srcT = (first.clip.in || 0) + (t - first.start) * (first.clip.speed || 1);
-  return Math.min(1, Math.max(0, srcT / src.media.duration));
-}

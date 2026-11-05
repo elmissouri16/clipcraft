@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ExternalLink, Image as ImageIcon, KeyRound, Layers, Loader2, Plus, Search, Video, WifiOff, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ExternalLink, KeyRound, Layers, Loader2, Plus, Search, WifiOff, X } from 'lucide-react';
 import { formatTime, toFileUrl } from '../store.js';
 import { FavStar, favStock } from '../favorites.jsx';
 

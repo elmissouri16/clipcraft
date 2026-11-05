@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Blend, Film, Info, Layers, Music, RotateCcw, Settings2, Sparkles, Type } from 'lucide-react';
 import { clipLen, formatTime, parseEffectKey, videoLayout } from '../store.js';
-import { ANIMATIONS, EFFECTS, RATIOS, TRANSITIONS, sizeFor } from '../effects.js';
+import { EFFECTS, RATIOS, TRANSITIONS, sizeFor } from '../effects.js';
 import { EXPORT_PRESETS, ENCODER_PRESETS, RES_CAPS, FPS_CHOICES, AUDIO_RATES, storedExportSettings, settingsPatch, resolveExport } from '../exportQuality.js';
 import Slider from './Slider.jsx';
 import CurveEditor from './CurveEditor.jsx';
 import NumBox from './NumBox.jsx';
 import TextInspector from './TextInspector.jsx';
-import ClipInspector, { PinToTrack } from './ClipInspector.jsx';
+import ClipInspector from './ClipInspector.jsx';
 import AudioFxControls from './AudioFx.jsx';
 import EnhanceVoice from './EnhanceVoice.jsx';
 import { isLookPatch, lookAction, selectedPictures } from '../look.js';
@@ -24,15 +24,6 @@ function Select({ label, value, options, onChange }) {
       <select value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
       </select>
-    </label>
-  );
-}
-
-function Color({ label, value, onChange }) {
-  return (
-    <label className="field row">
-      <span>{label}</span>
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }

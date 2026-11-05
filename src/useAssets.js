@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 // The folder-backed pack manifest (window.api.assetsList), fetched once and shared by the
 // Audio tab's Music place and the Assets tab: a module-level cache + subscribers, so both
-// panels read the same snapshot and a refresh reaches both. Returns null while loading,
+// panels share the in-flight request and receive its result. Returns null while loading,
 // then { root, hasLibrary, items, counts, total, error? }.
 let cache = null;
 let pending = null;
@@ -26,10 +26,4 @@ export function useAssets() {
     return () => subs.delete(setLib);
   }, []);
   return lib;
-}
-
-export function refreshAssets() {
-  cache = null;
-  pending = null;
-  return load();
 }

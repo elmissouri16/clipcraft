@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FIT_VIEW, QUALITY_LABELS, QUALITY_MAX_SIDE, applyZoomChoice, clipLen, formatTime, freeLen, getPlaybackQuality, levelCopyState, previewPath, toFileUrl, videoLayout, zoomByFactor, zoomTransform } from '../store.js';
 import { hasMotion } from '../anim.js';
-import { fitFactors, mediaToStage, pinOffsetAt, stageToMedia, stateAtPinned } from '../track.js';
+import { fitFactors, mediaToStage, stageToMedia, stateAtPinned } from '../track.js';
 import { aspectRatioOf, dragCrop, moveCrop } from '../cropMath.js';
 import { pictureGeometry, stageToSource } from '../pictureGeometry.js';
 import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, LoaderCircle, Maximize, Minimize, Pause, Play, SkipBack, SkipForward, ZoomIn } from 'lucide-react';
-import { clipCss, textAnim } from '../effects.js';
+import { clipCss } from '../effects.js';
 import { drawTextLayer } from '../text/render.js';
 import { applyElementVolume, resumeAudioGraph, wireElement } from '../audioTap.js';
 import { fontsReady, onFontsChanged } from '../fonts.js';
@@ -19,7 +19,6 @@ import { easeValue } from '../fx/easing.js';
 import { fxGL } from '../fx/gl.js';
 import { classicViaShader, drawOverlayPasses, pixelPasses } from '../fx/apply.js';
 import { anchorCorrection, interpolateTime } from '../playbackClock.js';
-
 
 // Overlay effects (snow, sparkles, fire...) of every clip on screen at time t, drawn in project pixels.
 // The export draws the same function into its text layer frames (src/exportText.js).
@@ -694,7 +693,6 @@ export default function Preview({
             const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === cropEdit.id);
             const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
             if (!srcClip || !srcMedia) return null;
-            const track = (project.overlayClips || []).some((c) => c.id === srcClip.id) ? 'overlay' : 'video';
             return <CropEditOverlay project={project} clip={srcClip} media={srcMedia} value={cropEdit.draftCrop} aspectId={cropEdit.draftAspect} onDraft={onCropDraft} time={time} />;
           })()}
           {colorPick && (

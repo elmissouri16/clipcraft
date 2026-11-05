@@ -14,7 +14,6 @@ export const EASE_PRESETS = [
   { id: 'overshoot', name: 'Overshoot', pts: [0.34, 1.56, 0.64, 1] },
 ];
 const BY_ID = new Map(EASE_PRESETS.map((p) => [p.id, p]));
-export const easePreset = (id) => BY_ID.get(id) || null;
 export const isCustomEase = (e) => !!e && typeof e === 'object'
   && ['p1x', 'p1y', 'p2x', 'p2y'].every((k) => Number.isFinite(e[k]));
 export const customPts = (e) => [e.p1x, e.p1y, e.p2x, e.p2y];
@@ -23,12 +22,6 @@ export const ptsOf = (e) => {
   if (typeof e === 'string') return (BY_ID.get(e) || BY_ID.get('linear')).pts;
   if (isCustomEase(e)) return customPts(e);
   return [0, 0, 1, 1];
-};
-export const easeName = (e) => {
-  if (!e || e === 'linear') return 'Linear';
-  if (typeof e === 'string') return (BY_ID.get(e)?.name) || e;
-  if (isCustomEase(e)) return 'Custom';
-  return 'Linear';
 };
 
 // Cubic bezier solver: given x (time), find y (progress). Newton iterations with a bisection fallback,

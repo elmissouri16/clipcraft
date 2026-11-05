@@ -95,7 +95,6 @@ export function normalizeProject(p) {
   };
 }
 
-export const isGap = (c) => !!c.gap;
 export const newGap = (id, len) => ({ id, gap: true, in: 0, out: len, speed: 1 });
 
 // Merges neighbouring gaps, drops empty ones and removes a trailing gap (nothing plays after it).
@@ -1203,8 +1202,6 @@ export const QUALITY_LABELS = { full: 'Full', high: 'High', medium: 'Medium', lo
 let playbackQuality = 'full';
 export const setPlaybackQuality = (q) => { playbackQuality = PLAYBACK_QUALITIES.includes(q) ? q : 'full'; };
 export const getPlaybackQuality = () => playbackQuality;
-// Legacy shims for readers that only knew the on/off proxy setting (on meant light copies).
-export const setProxyPref = (on) => setPlaybackQuality(on ? 'medium' : 'full');
 export const proxyPrefOn = () => playbackQuality !== 'full';
 
 const evenPx = (n) => Math.max(2, Math.round(n / 2) * 2);

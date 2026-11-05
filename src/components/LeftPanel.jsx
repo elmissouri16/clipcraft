@@ -1,11 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Anvil, ArrowLeftRight, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Mic, Music, Plus, SlidersHorizontal,
-  Loader2, Sparkles, Square, Trash2, Type, Upload, WandSparkles, X,
-  Layers, ChevronDown, ChevronRight, ChevronUp, Sparkles as SparklesIcon, Award, FolderPlus, MonitorUp, History, UserRound, Users, LayoutTemplate,
+  Anvil, Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Music, Plus, SlidersHorizontal,
+  Sparkles, Trash2, Type, Upload, WandSparkles, X, Layers, ChevronDown, ChevronRight, ChevronUp, MonitorUp, LayoutTemplate,
 } from 'lucide-react';
 import AssetsTab from './AssetsPanel.jsx';
-import PackMusic from './PackMusic.jsx';
 import { useAssets } from '../useAssets.js';
 import { mediaTreeCounts, mediaTreeFilter } from '../assetsLib.js';
 import ForgePanel from './ForgePanel.jsx';
@@ -18,14 +16,14 @@ import { loadLutLibrary, saveLutLibrary, addLutEntry, removeLutEntry } from '../
 import { formatTime, previewPath, proxyPrefOn, toFileUrl, uid } from '../store.js';
 import { COLLECTIONS, PACKS, COLLECTION_ITEMS, loadFavorites, saveFavorites, toggleFavorite } from '../fx/collections.js';
 import { parseSRT, regroupSegments } from '../subtitles.js';
-import { DEFAULT_ADJUST, EFFECTS, EFFECT_GROUPS, FILTERS, TRANSITIONS } from '../effects.js';
+import { EFFECTS, EFFECT_GROUPS, FILTERS, TRANSITIONS } from '../effects.js';
 import { dragProps } from '../dnd.js';
 import Slider from './Slider.jsx';
 import SearchBox from './SearchBox.jsx';
 import AudioLibrary, { MUSIC_TAGS, SFX_TAGS, SOUNDZA_TAGS, TROLL_TAGS } from './AudioLibrary.jsx';
 import StockLibrary, { CHIPS as STOCK_CHIPS } from './StockLibrary.jsx';
-import { TabFrame } from './SideNav.jsx';
-import { FxThumb, samplePictureUrl } from '../fx/previews.jsx';
+import { TabFrame } from './TabFrame.jsx';
+import { FxThumb } from '../fx/previews.jsx';
 import MediaFavorites from './MediaFavorites.jsx';
 import { FavStar, favFile } from '../favorites.jsx';
 import { TemplateGrid } from './TextInspector.jsx';
