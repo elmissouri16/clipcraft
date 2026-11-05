@@ -352,27 +352,29 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
             ))}
           </div>
 
-          {style && (
-            <div className="pilot-picked">
-              <span className="pilot-picked-pill" title={EDIT_STYLES[style].look}>
-                {EDIT_STYLES[style].emoji} {EDIT_STYLES[style].title}
-                <button type="button" onClick={() => setStyle(null)} aria-label="Remove the style"><X size={12} /></button>
-              </span>
-              <span className="pilot-picked-hint">Add what you want (length, language, music…) or just send.</span>
-            </div>
-          )}
-          <div className="pilot-input">
-            <textarea ref={inputRef} rows={2} value={input} dir="auto"
-              placeholder={style ? `A reel in the ${EDIT_STYLES[style].title} style… (optional details)` : 'Tell CraftAI what to do…'}
-              onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready} aria-label="Message" />
-            {busy ? (
-              <button className="send stop" onClick={() => {
-                canceled.current = true;
-                window.api.agentCancel?.(activeRequest.current).catch(() => {});
-              }} aria-label="Stop"><Square size={14} fill="currentColor" /></button>
-            ) : (
-              <button className="send" onClick={() => send(input)} disabled={modelSaving || (!input.trim() && !style) || !config?.ready} aria-label="Send"><ArrowUp size={16} /></button>
+          <div className="pilot-composer">
+            {style && (
+              <div className="pilot-picked">
+                <span className="pilot-picked-pill" title={EDIT_STYLES[style].look}>
+                  {EDIT_STYLES[style].emoji} {EDIT_STYLES[style].title}
+                  <button type="button" onClick={() => setStyle(null)} aria-label="Remove the style"><X size={12} /></button>
+                </span>
+                <span className="pilot-picked-hint">Add details, or send to use this style.</span>
+              </div>
             )}
+            <div className="pilot-input">
+              <textarea ref={inputRef} rows={2} value={input} dir="auto"
+                placeholder={style ? 'Add details for your reel… (optional)' : 'Tell CraftAI what to do…'}
+                onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready} aria-label="Message" />
+              {busy ? (
+                <button className="send stop" onClick={() => {
+                  canceled.current = true;
+                  window.api.agentCancel?.(activeRequest.current).catch(() => {});
+                }} aria-label="Stop"><Square size={14} fill="currentColor" /></button>
+              ) : (
+                <button className="send" onClick={() => send(input)} disabled={modelSaving || (!input.trim() && !style) || !config?.ready} aria-label="Send"><ArrowUp size={16} /></button>
+              )}
+            </div>
           </div>
         </section>
       )}

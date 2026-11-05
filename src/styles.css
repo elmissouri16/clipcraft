@@ -1294,6 +1294,7 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
   box-shadow: 0 10px 26px rgba(109, 40, 224, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .pilot2 .pilot-welcome h3 { font-size: 17px; font-weight: 700; }
+.pilot2 .pilot-welcome { padding-left: 0; padding-right: 0; }
 .pilot2 .pilot-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; margin-top: 6px; }
 .pilot2 .pilot-action {
   display: flex; align-items: center; gap: 9px; text-align: left; padding: 10px; cursor: pointer;
@@ -1333,12 +1334,20 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .pilot2 .pilot-steps { background: rgba(130, 92, 251, 0.06); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 11px; padding: 8px 10px; }
 .pilot2 .pilot-callout { background: #181826; border: 1px solid rgba(130, 92, 251, 0.4); border-radius: 14px; }
 .pilot2 .pilot-callout.warn { border-color: rgba(245, 158, 11, 0.45); }
+.pilot2 .pilot-composer { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px;
+  border-top: 1px solid var(--border); background: rgba(18, 18, 29, 0.7); }
+.pilot2 .pilot-picked { flex-direction: column; align-items: flex-start; gap: 6px; padding: 0; }
 .pilot2 .pilot-input {
-  margin: 10px; padding: 6px 6px 6px 14px; border: 1px solid rgba(130, 92, 251, 0.35); border-top: 1px solid rgba(130, 92, 251, 0.35);
-  border-radius: 20px; background: #181826; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 10px;
+  margin: 0; padding: 10px 12px; border: 1px solid var(--border-strong);
+  border-radius: 14px; background: #181826; box-shadow: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.pilot2 .pilot-input textarea { background: transparent; border: 0; resize: none; padding: 6px 0; }
-.pilot2 .pilot-input textarea:focus { outline: none; }
+.pilot2 .pilot-input:focus-within { border-color: rgba(167, 139, 250, 0.65); box-shadow: 0 0 0 2px rgba(130, 92, 251, 0.1); }
+.pilot2 .pilot-input textarea { width: 100%; min-width: 0; min-height: 44px; background: transparent;
+  border: 0; border-radius: 0; resize: none; padding: 2px 0; line-height: 20px; }
+.pilot2 .pilot-input textarea:focus { outline: none; box-shadow: none; }
+.pilot2 .pilot-input textarea::placeholder { color: var(--text-3); }
 .pilot2 .pilot-input .send {
   flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; color: #fff; cursor: pointer;
   background: linear-gradient(135deg, #8b5cf6, #6d28e0); display: grid; place-items: center;
