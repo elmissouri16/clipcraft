@@ -6,6 +6,21 @@ const GROQ_BASE = 'https://api.groq.com/openai/v1';
 // 'custom' has no default: the user sets the address of any OpenAI-compatible service.
 const OPENAI_LIKE = { openai: 'https://api.openai.com/v1', groq: GROQ_BASE, openrouter: 'https://openrouter.ai/api/v1', custom: '' };
 const OLLAMA_DEFAULT = 'http://localhost:11434';
+const localAgents = require('./localAgents.cjs');
+
+// A deliberately blank SDK model means "use the CLI default", even when a
+// different model was saved before opening Settings. API blank-field behavior
+// continues to use the saved/default model.
+function resolveDraft(saved, draft = {}) {
+  return {
+    provider: saved.provider,
+    model: localAgents.isProvider(saved.provider) && draft.model !== undefined
+      ? String(draft.model || '').trim() : (draft.model || '').trim() || saved.model,
+    baseUrl: draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
+    apiKey: (draft.apiKey || '').trim() || saved.apiKey,
+    executablePath: draft.executablePath !== undefined ? String(draft.executablePath).trim() : saved.executablePath,
+  };
+}
 
 // The chat-completions base URL for an OpenAI-like provider, or a clear error.
 function openAiBase(cfg) {
@@ -45,7 +60,7 @@ function normalizeModel(provider, model) {
   return m.replace(/^models\//i, '').toLowerCase().replace(/\s+/g, '-');
 }
 
-async function http(url, { headers, body, timeoutMs = 45000 }, key) {
+async function http(url, { headers, body, timeoutMs = 45000, signal }, key) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res;
@@ -54,9 +69,10 @@ async function http(url, { headers, body, timeoutMs = 45000 }, key) {
       method: body ? 'POST' : 'GET',
       headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
       body: body ? JSON.stringify(body) : undefined,
-      signal: ctl.signal,
+      signal: signal ? AbortSignal.any([ctl.signal, signal]) : ctl.signal,
     });
   } catch (e) {
+    if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
     const why = e.name === 'AbortError' ? 'timed out' : redact(e.cause?.code || e.message, key);
     throw new AiError(`Could not reach the AI service (${why}). Check your internet connection or the address in Settings.`, 0);
   } finally {
@@ -112,13 +128,13 @@ const textOf = (parts) => (parts || []).map((p) => p.text || '').join('');
 
 // One Gemini generateContent call. Tries the endpoint that matches the key type, then the other one.
 // cfg: { apiKey, model (already normalised), baseUrl, vertexBase?, studioBase? }; body: the request JSON.
-async function geminiGenerate(cfg, body, timeoutMs) {
+async function geminiGenerate(cfg, body, timeoutMs, signal) {
   const { apiKey, model } = cfg;
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
   // Keys starting with "AQ." are Vertex AI express keys; they use another endpoint than AI Studio keys.
   const vertexFirst = /^AQ\./.test(apiKey);
-  const vertex = { label: 'Vertex AI', run: () => http(`${cfg.vertexBase || base || VERTEX_EXPRESS_BASE}/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, { body, timeoutMs }, apiKey) };
-  const studio = { label: 'Google AI Studio (Gemini API)', run: () => http(`${cfg.studioBase || base || GEMINI_BASE}/v1beta/models/${model}:generateContent`, { headers: { 'x-goog-api-key': apiKey }, body, timeoutMs }, apiKey) };
+  const vertex = { label: 'Vertex AI', run: () => http(`${cfg.vertexBase || base || VERTEX_EXPRESS_BASE}/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, { body, timeoutMs, signal }, apiKey) };
+  const studio = { label: 'Google AI Studio (Gemini API)', run: () => http(`${cfg.studioBase || base || GEMINI_BASE}/v1beta/models/${model}:generateContent`, { headers: { 'x-goog-api-key': apiKey }, body, timeoutMs, signal }, apiKey) };
   const attempts = vertexFirst ? [vertex, studio] : [studio, vertex];
   const failures = [];
   for (const a of attempts) {
@@ -142,6 +158,7 @@ async function geminiGenerate(cfg, body, timeoutMs) {
 
 // cfg: { provider, model, baseUrl, apiKey }; messages: [{ role: 'user' | 'assistant', content }]; system: string.
 async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs }) {
+  if (localAgents.isProvider(cfg.provider)) return localAgents.chat(cfg, { system, messages, timeoutMs });
   const { provider, apiKey } = cfg;
   const model = normalizeModel(provider, cfg.model);
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
@@ -194,8 +211,11 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
 // 503 "high demand", 504) is waited out and retried: the wait the service names ("try again in 10.7s"), else 2,
 // 5 then 10 seconds, up to about a minute in all.
 async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+  if (localAgents.isProvider(cfg.provider)) return localAgents.agentStep(cfg, opts);
   let waited = 0;
   for (let attempt = 0; ; attempt++) {
+    if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
     try {
       return await agentStepOnce(cfg, opts);
     } catch (e) {
@@ -215,10 +235,10 @@ async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeou
   }
 }
 
-async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, timeoutMs = 90000 }) {
+async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, timeoutMs = 90000, signal }) {
   // Groq counts max_tokens in its per-minute budget: ask for what a step needs (a tool call or a short answer).
-  if (OPENAI_LIKE[cfg.provider] !== undefined || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: Math.min(maxTokens, 1024), timeoutMs });
-  if (cfg.provider === 'claude') return anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs });
+  if (OPENAI_LIKE[cfg.provider] !== undefined || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: Math.min(maxTokens, 1024), timeoutMs, signal });
+  if (cfg.provider === 'claude') return anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
   if (cfg.provider !== 'gemini') {
     throw new AiError('Unknown AI provider. Choose one in Settings.', 0);
   }
@@ -229,7 +249,7 @@ async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, t
     generationConfig: { maxOutputTokens: maxTokens },
   };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
-  const j = await geminiGenerate({ ...cfg, model: normalizeModel('gemini', cfg.model) }, body, timeoutMs);
+  const j = await geminiGenerate({ ...cfg, model: normalizeModel('gemini', cfg.model) }, body, timeoutMs, signal);
   const cand = j?.candidates?.[0];
   const content = cand?.content || { role: 'model', parts: [{ text: '' }] };
   if (!content.role) content.role = 'model';
@@ -285,7 +305,7 @@ function toOpenAiMessages(system, contents) {
   return msgs;
 }
 
-async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs }) {
+async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }) {
   if (!cfg.apiKey && cfg.provider !== 'ollama') throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
   const base = openAiBase(cfg);
   const j = await http(`${base}/chat/completions`, {
@@ -299,6 +319,7 @@ async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeou
       tool_choice: 'auto',
     },
     timeoutMs,
+    signal,
   }, cfg.apiKey);
   const msg = j?.choices?.[0]?.message || {};
   const calls = (msg.tool_calls || []).map((tc) => {
@@ -344,7 +365,7 @@ function toAnthropicMessages(system, contents) {
   return { system: system || undefined, messages };
 }
 
-async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs }) {
+async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }) {
   if (!cfg.apiKey) throw new AiError('No API key saved for Anthropic Claude. Add it in Settings.', 0);
   const base = (cfg.baseUrl || '').replace(/\/+$/, '') || 'https://api.anthropic.com';
   const conv = toAnthropicMessages(system, contents);
@@ -358,6 +379,7 @@ async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, tim
       tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: toJsonSchema(t.parameters) })),
     },
     timeoutMs,
+    signal,
   }, cfg.apiKey);
   const blocks = j?.content || [];
   const calls = blocks.filter((b) => b.type === 'tool_use').map((b) => ({ name: b.name, args: b.input || {} }));
@@ -370,7 +392,7 @@ async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, tim
 async function testConnection(cfg) {
   const t0 = Date.now();
   try {
-    const reply = await chat(cfg, { messages: [{ role: 'user', content: 'Reply with the single word: OK' }], maxTokens: 256, timeoutMs: 30000 });
+    const reply = await chat(cfg, { messages: [{ role: 'user', content: 'Reply with the single word: OK' }], maxTokens: 256, timeoutMs: localAgents.isProvider(cfg.provider) ? 120000 : 30000 });
     return { ok: true, ms: Date.now() - t0, reply: reply.trim().slice(0, 60) };
   } catch (e) {
     let { message } = e;
@@ -393,6 +415,7 @@ async function testConnection(cfg) {
 // Asks the provider which models this key can use, so the user picks a real model id instead of typing one.
 // Returns { ok, models: [id...] } or { ok: false, error }.
 async function listModels(cfg) {
+  if (localAgents.isProvider(cfg.provider)) return localAgents.listModels(cfg);
   const { provider, apiKey } = cfg;
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
   try {
@@ -424,4 +447,4 @@ async function listModels(cfg) {
   }
 }
 
-module.exports = { chat, agentStep, testConnection, listModels, normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase };
+module.exports = { chat, agentStep, testConnection, listModels, normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };

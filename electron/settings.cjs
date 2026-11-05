@@ -7,7 +7,7 @@ const path = require('path');
 const { randomUUID } = require('node:crypto');
 const { app, safeStorage } = require('electron');
 
-const PROVIDERS = ['gemini', 'groq', 'ollama', 'openai', 'openrouter', 'claude', 'custom'];
+const PROVIDERS = ['gemini', 'groq', 'ollama', 'openai', 'openrouter', 'claude', 'custom', 'codex-sdk', 'claude-agent-sdk'];
 const DEFAULT_MODELS = {
   gemini: 'gemini-3.8-flash',
   groq: 'openai/gpt-oss-120b',
@@ -16,6 +16,8 @@ const DEFAULT_MODELS = {
   openrouter: 'openai/gpt-4o-mini',
   claude: 'claude-haiku-5-5',
   custom: '',
+  'codex-sdk': '',
+  'claude-agent-sdk': '',
 };
 
 function settingsFile() {
@@ -63,6 +65,7 @@ function getPublic() {
     provider: PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini',
     models: { ...DEFAULT_MODELS, ...(ai.models || {}) },
     baseUrls: ai.baseUrls || {},
+    executablePaths: ai.executablePaths || {},
     keys, // provider -> "…abcd" for providers that have a saved key
     defaultModels: DEFAULT_MODELS,
     encryption: safeStorage.isEncryptionAvailable(),
@@ -139,6 +142,7 @@ function getActive(providerOverride) {
     model: (ai.models && ai.models[provider]) || DEFAULT_MODELS[provider],
     baseUrl: (ai.baseUrls && ai.baseUrls[provider]) || '',
     apiKey,
+    executablePath: (ai.executablePaths && ai.executablePaths[provider]) || '',
   };
 }
 
@@ -150,6 +154,9 @@ function save(patch) {
   ai.provider = provider;
   ai.models = { ...(ai.models || {}), [provider]: (patch.model || '').trim() || DEFAULT_MODELS[provider] };
   ai.baseUrls = { ...(ai.baseUrls || {}), [provider]: (patch.baseUrl || '').trim().replace(/\/+$/, '') };
+  if (['codex-sdk', 'claude-agent-sdk'].includes(provider) && patch.executablePath !== undefined) {
+    ai.executablePaths = { ...(ai.executablePaths || {}), [provider]: String(patch.executablePath || '').trim() };
+  }
   if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) {
     if (!safeStorage.isEncryptionAvailable()) {
       throw new Error('Secure storage is not available on this PC, so the key was not saved.');

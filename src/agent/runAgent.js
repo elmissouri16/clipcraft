@@ -21,7 +21,7 @@ How to work:
 - Be concise. No filler, no restating the question.`;
 
 const MAX_STEPS = 40; // a full edit takes many tool calls
-const providerName = (p) => ({ gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama' }[p] || p);
+const providerName = (p) => ({ gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama', 'codex-sdk': 'Codex SDK', 'claude-agent-sdk': 'Claude Agent SDK' }[p] || p);
 
 // Tool arguments shown as a short phrase in the chat.
 export function describeCall(name, args) {
@@ -73,7 +73,7 @@ export function describeCall(name, args) {
 
 // contents: the running conversation (mutated). onEvent: UI callback. isCanceled(): polled between steps.
 // ctx: { getProject, dispatch, api, settle }.
-export async function runAgent({ contents, ctx, onEvent, isCanceled }) {
+export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId }) {
   const runner = createToolRunner(ctx);
   // MCP servers configured in Settings contribute their tools for this run, prefixed
   // mcp_<server>_<tool>; a server that fails to start is skipped, never fatal.
@@ -89,8 +89,9 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled }) {
   let provider; // once a fallback answered, the rest of the request stays on it
   for (let step = 0; step < MAX_STEPS; step++) {
     if (isCanceled()) return { text: '', canceled: true, changed };
-    const res = await ctx.api.agentStep({ system: SYSTEM_PROMPT, contents, tools, provider });
-    if (!res.ok) return { error: res };
+    const res = await ctx.api.agentStep({ system: SYSTEM_PROMPT, contents, tools, provider, requestId });
+    if (res.canceled || isCanceled()) return { text: '', canceled: true, changed };
+    if (!res.ok) return { error: res, changed };
     if (res.fellBack?.length) {
       const why = res.fellBack.map((f) => `${f.name} ${f.reason}`).join(', ');
       onEvent({ type: 'tool', id: `switch-${step}`, name: 'switch', label: `${why}: switched to ${providerName(res.provider)} (${res.model})`, status: 'switch' });

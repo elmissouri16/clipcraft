@@ -50,5 +50,19 @@ try {
   assert.deepEqual(saved.futureSetting, existing.futureSetting);
   assert.deepEqual(fs.readdirSync(path.dirname(file)), ['settings.json']);
   if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  // Adding SDK settings must preserve the API key records and unrelated settings
+  // of an existing profile, including when switching back to an API provider.
+  for (const provider of ['codex-sdk', 'claude-agent-sdk']) {
+    settings.save({ provider, model: '', executablePath: `/custom/${provider}` });
+    assert.equal(settings.getPublic().provider, provider);
+    assert.equal(settings.getActive().model, '', 'an empty SDK model delegates to the installed CLI');
+    assert.equal(settings.getActive().executablePath, `/custom/${provider}`);
+    assert.equal(settings.getPublic().keys.openai, existing.ai.keys.openai.hint);
+  }
+  settings.save({ provider: 'openai', model: 'api-model' });
+  assert.equal(settings.getActive().provider, 'openai');
+  assert.equal(settings.getActive().model, 'api-model');
+  assert.equal(settings.getPublic().executablePaths['codex-sdk'], '/custom/codex-sdk');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).ai.keys, existing.ai.keys);
   console.log('settings ok (write/rename failures preserve keys, compatible JSON, private mode)');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

@@ -9,6 +9,8 @@ const PROVIDERS = [
   { id: 'openrouter', name: 'OpenRouter', needsKey: true, hint: 'One key for many models (OpenAI, Anthropic, Meta…). Model ids look like "openai/gpt-4o-mini".', keyUrl: 'https://openrouter.ai/keys', keyUrlLabel: 'Get a key (OpenRouter)' },
   { id: 'claude', name: 'Anthropic Claude', needsKey: true, hint: 'Key from console.anthropic.com.', keyUrl: 'https://console.anthropic.com/settings/keys', keyUrlLabel: 'Open Anthropic console' },
   { id: 'custom', name: 'Custom (OpenAI-compatible)', needsKey: true, hint: 'Any service that speaks the OpenAI chat API: set its address (base URL) and the exact model id below. LM Studio and similar local servers work too — the key may be any value the server accepts.', baseUrl: '' },
+  { id: 'codex-sdk', name: 'Codex SDK (installed)', needsKey: false, sdk: true, hint: 'Use your installed Codex and its existing login. Sign in in a terminal with codex login, then test the connection here. Credentials stay with Codex.', keyUrl: 'https://developers.openai.com/codex/cli', keyUrlLabel: 'Install Codex' },
+  { id: 'claude-agent-sdk', name: 'Claude Agent SDK (installed)', needsKey: false, sdk: true, hint: 'Use your installed Claude executable and its existing login for your personal setup. Sign in in a terminal with claude auth login, then test the connection here. Credentials stay with Claude.', keyUrl: 'https://code.claude.com/docs/en/quickstart', keyUrlLabel: 'Install Claude' },
 ];
 
 
@@ -174,6 +176,8 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
   const [model, setModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [executablePath, setExecutablePath] = useState('');
+  const [sdkStatus, setSdkStatus] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState(null); // 'save' | 'test' | 'models'
   const [models, setModels] = useState([]); // model ids offered by the provider
@@ -185,12 +189,25 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
     setModel(s.models[p] || s.defaultModels[p]);
     setBaseUrl(s.baseUrls[p] || '');
     setApiKey('');
+    setExecutablePath(s.executablePaths?.[p] || '');
     setResult(null);
     setModels([]);
   };
   useEffect(() => {
     window.api.settingsGet().then((s) => load(s));
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setSdkStatus(null);
+    if (!PROVIDERS.find((p) => p.id === provider)?.sdk) return;
+    const timer = setTimeout(() => {
+      window.api.aiSdkStatus({ provider, executablePath }).then((status) => {
+        if (alive) setSdkStatus(status);
+      }).catch((error) => { if (alive) setSdkStatus({ ok: false, error: error.message }); });
+    }, 250);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [provider, executablePath]);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -201,13 +218,14 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
   if (!saved) return null;
   const info = PROVIDERS.find((p) => p.id === provider);
   const hint = saved.keys[provider];
-  const draft = { provider, model, baseUrl, apiKey };
+  const draft = { provider, model, baseUrl, apiKey, executablePath };
 
   const switchProvider = (p) => {
     setProvider(p);
     setModel(saved.models[p] || saved.defaultModels[p]);
     setBaseUrl(saved.baseUrls[p] || '');
     setApiKey('');
+    setExecutablePath(saved.executablePaths?.[p] || '');
     setResult(null);
     setModels([]);
   };
@@ -236,7 +254,10 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
     setBusy(null);
     if (!r.ok) return setResult({ ok: false, text: r.error, link: r.link, linkLabel: r.linkLabel });
     setModels(r.models);
-    setResult({ ok: true, text: `${r.models.length} models available. Pick one from the Model list.` });
+    setResult({ ok: true, text: r.useCliDefault
+      ? 'Leave Model blank to use the installed CLI default, or enter a model id.'
+      : r.fromCache ? `${r.models.length} models in the CLI’s cached catalog. Choose one your account can use.`
+        : `${r.models.length} models available. Pick one from the Model list.` });
   };
 
   const removeKey = async () => {
@@ -281,6 +302,30 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
             </button>
           )}
 
+          {info.sdk && (
+            <>
+              <label className="field">
+                <span>Agent executable (optional)</span>
+                <div className="key-row">
+                  <input type="text" value={executablePath} spellCheck={false} aria-label="Agent executable"
+                    placeholder="Detect installed CLI automatically" onChange={(e) => setExecutablePath(e.target.value)} />
+                  <button className="btn btn-sm" type="button" onClick={async () => {
+                    const file = await window.api.aiPickExecutable(provider);
+                    if (file) setExecutablePath(file);
+                  }}>Browse</button>
+                </div>
+              </label>
+              <div className={`result ${!sdkStatus ? '' : sdkStatus.ok && sdkStatus.authenticated !== false ? 'ok' : 'bad'}`} role="status" aria-label="Installed agent status">
+                <div className="result-body">
+                  {!sdkStatus ? 'Checking the installed agent…' : !sdkStatus.ok ? sdkStatus.error
+                    : sdkStatus.authenticated === false ? `Installed: ${sdkStatus.version}. Sign in with ${sdkStatus.loginCommand}.`
+                    : `Detected: ${sdkStatus.version}${sdkStatus.authenticated ? ' · Signed in' : ' · Test the connection to check login'}`}
+                  {sdkStatus?.ok && <small className="muted">{sdkStatus.executablePath}</small>}
+                </div>
+              </div>
+            </>
+          )}
+
           {info.needsKey && (
             <label className="field">
               <span>
@@ -303,13 +348,13 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
             <span>
               Model
               <button className="btn btn-ghost btn-sm" type="button" onClick={loadModels}
-                disabled={!!busy || (info.needsKey && !apiKey.trim() && !hint)}>
+                disabled={!!busy || (info.needsKey && !apiKey.trim() && !hint) || (info.sdk && !sdkStatus?.ok)}>
                 {busy === 'models' ? <Loader2 size={13} className="spin" /> : null} Load models
               </button>
             </span>
-            <input type="text" list="model-ids" value={model} spellCheck={false} onChange={(e) => setModel(e.target.value)} />
+            <input type="text" list="model-ids" value={model} spellCheck={false} placeholder={info.sdk ? 'Default from installed CLI' : undefined} onChange={(e) => setModel(e.target.value)} />
             <datalist id="model-ids">{models.map((m) => <option key={m} value={m} />)}</datalist>
-            <small className="muted">Use the model id (for example gemini-3.8-flash), not the display name. “Load models” lists the real ones.</small>
+            <small className="muted">{info.sdk ? 'Leave blank to use your installed CLI’s configured model, or enter a model id.' : 'Use the model id (for example gemini-3.8-flash), not the display name. “Load models” lists the real ones.'}</small>
           </label>
 
           {(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && (
@@ -344,7 +389,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared }) {
           )}
 
           <div className="settings-actions">
-            <button className="btn" onClick={test} disabled={!!busy || (info.needsKey && !apiKey.trim() && !hint)}>
+            <button className="btn" onClick={test} disabled={!!busy || (info.needsKey && !apiKey.trim() && !hint) || (info.sdk && (!sdkStatus?.ok || sdkStatus.authenticated === false))}>
               {busy === 'test' ? <Loader2 size={14} className="spin" /> : null} Test connection
             </button>
             <button className="btn btn-primary" onClick={save} disabled={!!busy}>

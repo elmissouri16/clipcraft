@@ -63,6 +63,15 @@ MIT-licensed.
   downloaded on first use, at the user's request, from the official
   whisper.cpp GitHub releases and HuggingFace.
 
+### Agent SDK clients
+- **@openai/codex-sdk** and its Codex CLI dependency (Apache-2.0) —
+  https://github.com/openai/codex. CraftAI can select a separately installed CLI
+  and uses its existing authentication.
+- **@anthropic-ai/claude-agent-sdk** — governed by Anthropic's Commercial
+  Terms of Service, as described in the SDK's README and
+  https://code.claude.com/docs/en/agent-sdk/overview. CraftAI selects the user's
+  installed Claude executable; provider credentials are not copied into the app.
+
 ### Fonts
 The bundled fonts (via Fontsource packages) are licensed under the **SIL
 Open Font License 1.1** or **Apache License 2.0**, per family; each font

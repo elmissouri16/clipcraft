@@ -734,9 +734,10 @@ ipcMain.handle('export:cancel', () => {
 // ---- Settings and AI. API keys stay in this process; the renderer only ever sees a hint like "…abcd". ----
 const settings = require('./settings.cjs');
 const ai = require('./ai.cjs');
+const localAgents = require('./localAgents.cjs');
 
 // Opens a help page in the browser. Only a short allowlist of known sites is accepted.
-const HELP_HOSTS = new Set(['www.slaycamera.com', 'www.instagram.com', 'elevenlabs.io', 'try.elevenlabs.io', 'pixabay.com', 'aistudio.google.com', 'console.developers.google.com', 'console.cloud.google.com', 'ollama.com', 'console.anthropic.com', 'platform.openai.com', 'console.groq.com', 'github.com', 'hamzaabika.com', 'www.hamzaabika.com', 'paypal.me']);
+const HELP_HOSTS = new Set(['www.slaycamera.com', 'www.instagram.com', 'elevenlabs.io', 'try.elevenlabs.io', 'pixabay.com', 'aistudio.google.com', 'console.developers.google.com', 'console.cloud.google.com', 'ollama.com', 'console.anthropic.com', 'platform.openai.com', 'developers.openai.com', 'learn.chatgpt.com', 'code.claude.com', 'console.groq.com', 'github.com', 'hamzaabika.com', 'www.hamzaabika.com', 'paypal.me']);
 ipcMain.handle('app:openHelp', (_e, url) => {
   try {
     const u = new URL(url);
@@ -1274,16 +1275,16 @@ ipcMain.handle('stock:add', async (_e, item) => {
 });
 // Tests the typed (not yet saved) values when given, otherwise the saved configuration.
 const draftConfig = (draft = {}) => {
-  const saved = settings.getActive(draft.provider);
-  return {
-    provider: saved.provider,
-    model: (draft.model || '').trim() || saved.model,
-    baseUrl: draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
-    apiKey: (draft.apiKey || '').trim() || saved.apiKey,
-  };
+  return ai.resolveDraft(settings.getActive(draft.provider), draft);
 };
 ipcMain.handle('ai:test', (_e, draft) => ai.testConnection(draftConfig(draft)));
 ipcMain.handle('ai:models', (_e, draft) => ai.listModels(draftConfig(draft)));
+ipcMain.handle('ai:sdkStatus', (_e, draft) => localAgents.status(draftConfig(draft)));
+ipcMain.handle('ai:pickExecutable', async (_e, provider) => {
+  if (!localAgents.isProvider(provider)) return null;
+  const res = await dialog.showOpenDialog(win, { title: `Choose the installed ${localAgents.PROVIDERS[provider].cli} executable`, properties: ['openFile'] });
+  return res.canceled ? null : res.filePaths[0] || null;
+});
 
 // ---- LUTs (.cube): the bundled ones in shared/luts, or a file the user picked. ----
 const LUT_DIR = path.join(__dirname, '..', 'shared', 'luts');
@@ -1314,20 +1315,38 @@ ipcMain.handle('lut:import', async () => {
 // ---- CraftAI agent: one model step per call; tools run in the interface, heavy ones call back here. ----
 // If the provider fails, the step goes to the next one with a saved key (Gemini, Groq, OpenAI-compatible).
 // req.provider: the provider that answered the previous step of this request, so a run stays on it.
-ipcMain.handle('agent:step', async (_e, req) => {
+const agentRequests = new Map();
+const agentRequestKey = (event, id) => `${event.sender.id}:${String(id || 'legacy').slice(0, 100)}`;
+ipcMain.handle('agent:cancel', (event, requestId) => {
+  agentRequests.get(agentRequestKey(event, requestId))?.abort();
+});
+app.on('before-quit', () => { for (const controller of agentRequests.values()) controller.abort(); });
+ipcMain.handle('agent:step', async (event, req) => {
+  const key = agentRequestKey(event, req?.requestId);
+  if (agentRequests.has(key)) return { ok: false, error: 'This assistant request is already running.' };
+  const controller = new AbortController();
+  agentRequests.set(key, controller);
+  const onDestroyed = () => controller.abort();
+  event.sender.once('destroyed', onDestroyed);
   try {
     const fb = require('./aifallback.cjs');
     const active = settings.getActive();
-    const first = fb.TOOL_PROVIDERS.includes(req.provider) ? req.provider : active.provider;
+    const first = fb.TOOL_PROVIDERS.includes(req.provider) || localAgents.isProvider(req.provider) ? req.provider : active.provider;
     const keys = settings.getPublic().keys || {};
     const order = fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
-    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, req));
+    // SDK choices are explicit: never silently send their conversations to an API
+    // provider (or launch a local SDK as an API provider's fallback).
+    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, signal: controller.signal }));
     return {
       ok: true, ...result, provider, model: settings.getActive(provider).model,
       fellBack: failed.map((f) => ({ provider: f.provider, name: fb.NAMES[f.provider], reason: f.reason })),
     };
   } catch (e) {
+    if (controller.signal.aborted || e.name === 'AbortError') return { ok: false, canceled: true };
     return { ok: false, error: e.message, link: e.link, linkLabel: e.linkLabel, suggestModel: e.suggestModel };
+  } finally {
+    agentRequests.delete(key);
+    if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
   }
 });
 ipcMain.handle('agent:silences', async (_e, project, opts) => {

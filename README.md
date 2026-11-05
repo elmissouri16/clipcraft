@@ -123,6 +123,39 @@ Glitch & digital, film looks, light leaks and more — stack effects on any clip
 
 CraftAI is an AI editing assistant inside the editor: one-click looks, or just say what to do — cut the filler, style the captions, apply a look — and watch it work on your timeline. It works with **your provider and your key** — Gemini, OpenAI, Anthropic, Groq, OpenRouter, Ollama and more — and it shows its work: you stay in control of every change.
 
+## Installed AI agents
+
+CraftAI can also use **Codex SDK** or **Claude Agent SDK** with an installed
+`codex` or `claude` executable and that CLI's existing authentication. In
+**Settings → AI assistant**, select **Codex SDK (installed)** or
+**Claude Agent SDK (installed)**. The app detects the installation and sign-in
+state; use **Browse** if the executable is in a custom location, then press
+**Test connection** and **Save**. No API key needs to be copied into ClipCraft
+for these choices.
+
+Install and sign in using the provider's own instructions:
+[Codex CLI](https://developers.openai.com/codex/cli) or
+[Claude](https://code.claude.com/docs/en/quickstart). Leave **Model** blank to
+use the installed CLI's configured default, or enter a model id. **Load models**
+uses Claude's SDK catalog or Codex's cached CLI catalog when it is available.
+
+These backends support the same CraftAI editing tools and Undo as the existing
+API providers. **Stop** cancels an in-flight SDK request. Selecting an installed
+agent never silently falls back to a different API provider. Authentication,
+account limits, and model access are managed by the installed CLI and provider;
+these options do not turn cloud models into offline models. Media services such
+as cloud transcription, image generation, stock search, and paid voice services
+keep their existing engines and credentials; CraftAI can orchestrate them through
+its normal editor tools.
+
+For contributors, `node scripts/test-local-agents.cjs`,
+`node scripts/test-agent-runner.mjs`, and `node scripts/test-ai-cancel.cjs` run
+without real accounts. The opt-in live editor check is
+`FVE_SMOKE=<temporary directory> FVE_SMOKE_MODE=local-agents npm run dev`;
+it uses the installed CLI logins for small connection/edit prompts and keeps
+project/settings test data separate from the normal profile.
+
+
 ## Export
 
 <p align="center">

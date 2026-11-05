@@ -30,6 +30,7 @@ async function withFallback(order, getCfg, step) {
       const result = await step(getCfg(provider));
       return { result, provider, failed };
     } catch (e) {
+      if (e.name === 'AbortError') throw e;
       failed.push({ provider, reason: reason(e), error: e });
     }
   }

@@ -62,16 +62,29 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const [showStyles, setShowStyles] = useState(false); // the style cards once the chat has started
   const contents = useRef([]); // the model conversation, kept between messages
   const canceled = useRef(false);
+  const activeRequest = useRef(null);
+  const configRequest = useRef(0);
   const listRef = useRef(null);
   const inputRef = useRef(null);
 
   const refreshConfig = useCallback(async () => {
+    const generation = ++configRequest.current;
     const s = await window.api.settingsGet();
-    setConfig({ ready: s.provider === 'ollama' || !!s.keys[s.provider], provider: s.provider, model: s.models[s.provider] });
+    const sdk = ['codex-sdk', 'claude-agent-sdk'].includes(s.provider);
+    const status = sdk ? await window.api.aiSdkStatus({ provider: s.provider, executablePath: s.executablePaths?.[s.provider] || '' }) : null;
+    if (generation !== configRequest.current) return;
+    setConfig({ ready: sdk ? status.ok && status.authenticated !== false : s.provider === 'ollama' || !!s.keys[s.provider],
+      provider: s.provider, model: s.models[s.provider] || (sdk ? `${s.provider === 'codex-sdk' ? 'Codex' : 'Claude'} · CLI default` : ''),
+      error: sdk ? status.error || (status.authenticated === false ? `Sign in with ${status.loginCommand}.` : '') : '', sdk });
   }, []);
   useEffect(() => {
     refreshConfig();
   }, [refreshConfig, settingsVersion, open]);
+  useEffect(() => () => {
+    canceled.current = true;
+    configRequest.current++;
+    if (activeRequest.current) window.api.agentCancel?.(activeRequest.current).catch(() => {});
+  }, []);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
@@ -96,11 +109,15 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     setStyle(null);
     setBusy(true);
     canceled.current = false;
+    const requestId = crypto.randomUUID();
+    activeRequest.current = requestId;
     setMessages((m) => [...m, { role: 'user', text: msg }, { role: 'assistant', text: '', steps: [], pending: true }]);
+    const conversationStart = contents.current.length;
     contents.current.push({ role: 'user', parts: [{ text: msg }] });
 
     const startLen = getHistoryLength();
     const result = await runAgent({
+      requestId,
       contents: contents.current,
       ctx: {
         getProject, dispatch, api: window.api, settle, ...app,
@@ -124,14 +141,16 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     // Everything the assistant did becomes a single Undo step.
     if (result.changed) dispatch({ type: 'collapseHistory', from: startLen });
     if (result.error) {
-      // Drop the unanswered user turn so the conversation stays valid for the next message.
-      contents.current.pop();
-      while (contents.current.length && contents.current.at(-1).role !== 'user') contents.current.pop();
+      // Drop the incomplete request, including unanswered tool calls, so a retry
+      // starts from a valid conversation while any completed edits remain undoable.
+      contents.current.splice(conversationStart);
       updateLast((last) => ({ ...last, pending: false, error: result.error, changed: result.changed }));
     } else {
+      if (result.canceled) contents.current.splice(conversationStart);
       updateLast((last) => ({ ...last, pending: false, text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: result.changed }));
     }
     setBusy(false);
+    activeRequest.current = null;
   };
 
   const newChat = () => {
@@ -146,9 +165,6 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       send(input);
     }
   };
-
-  // Providers whose models can call the editing tools.
-  const notGemini = config && config.ready && !['gemini', 'groq', 'openai'].includes(config.provider);
 
   return (
     <>
@@ -168,18 +184,10 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
             {config && !config.ready && (
               <div className="pilot-callout">
                 <b>Connect an AI first</b>
-                <p>Add your API key in Settings. A free Google AI Studio key works.</p>
+                <p>{config.error || 'Choose an installed Codex or Claude agent, a local Ollama model, or an API provider in Settings.'}</p>
                 <button className="btn btn-primary btn-sm" onClick={onOpenSettings}>Open Settings</button>
               </div>
             )}
-            {notGemini && (
-              <div className="pilot-callout warn">
-                <b>Editing needs Gemini, Groq or an OpenAI-compatible service</b>
-                <p>The assistant can edit your project with Google Gemini, Groq or an OpenAI-compatible service. Choose one in Settings.</p>
-                <button className="btn btn-sm" onClick={onOpenSettings}>Open Settings</button>
-              </div>
-            )}
-
             {!messages.length && (
               <div className="pilot-welcome">
                 <div className="pilot-logo"><Zap size={22} /></div>
@@ -260,7 +268,10 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
               placeholder={style ? `A reel in the ${EDIT_STYLES[style].title} style… (optional details)` : 'Tell CraftAI what to do…'}
               onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready} aria-label="Message" />
             {busy ? (
-              <button className="send stop" onClick={() => { canceled.current = true; }} aria-label="Stop"><Square size={14} fill="currentColor" /></button>
+              <button className="send stop" onClick={() => {
+                canceled.current = true;
+                window.api.agentCancel?.(activeRequest.current).catch(() => {});
+              }} aria-label="Stop"><Square size={14} fill="currentColor" /></button>
             ) : (
               <button className="send" onClick={() => send(input)} disabled={(!input.trim() && !style) || !config?.ready} aria-label="Send"><ArrowUp size={16} /></button>
             )}
