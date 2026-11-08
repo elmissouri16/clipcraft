@@ -1,6 +1,6 @@
 # One tool contract, one adapter per agent
 
-Status: phases 0–1 done, phase 2 next (2026-11-08). Branch: `feat/agent-adapters`.
+Status: phases 0–2 done, phase 3 next (2026-11-08). Branch: `feat/agent-adapters`.
 
 ## Goal
 
@@ -138,6 +138,31 @@ completion check failures, duration, tokens, outcome. Counts only.
 - Verified unchanged: the inventory before and after the refactor is identical for both agents
   (tools, instruction text, request options); native unit suites and the real-app native check
   (`tests/unit/agents/test-native-agents-ui.cjs`) pass.
+
+## Phase 2 results
+
+- **Built-ins:** every Codex feature that can put a tool in front of the model is switched off
+  (`CODEX_FEATURES_OFF` in `codexNative.cjs`, also used by the step path), including `view_image`.
+  Codex 0.167 still offers `request_user_input` (no switch exists; inert outside Plan mode, and
+  ClipCraft refuses it) and keeps `unified_exec` on internally, with no tool reaching the model.
+- **Limits:** `contract.cjs` `LIMITS`: 300 tool calls per request (`complete_edit` always allowed),
+  15 minutes per call, 3 completion attempts, 6 images; enforced by the session manager for both
+  agents. Claude's own `maxTurns` and MCP timeout sit above them.
+- **Instructions once:** `nativeSystemPrompt()` is fixed text sent once per session through the
+  system channel (with the web research line); `nativeRequestContext(revision)` travels with each
+  request. Neither agent sees the instructions repeated in the request any more.
+- **Identical tool text:** Claude's tool server lists the contract's JSON Schemas directly (its Zod
+  round trip added ±2^53 bounds to every integer field). The contract writes text and schemas both
+  transports carry unchanged: three-dot ellipses (Claude rewrote `…`) and limits as description
+  text, since Codex drops `maxItems`. The renderer still validates calls against the original limits.
+- **Memory:** already one policy: sessions live in memory for both, and a fresh session (new
+  settings, restart, error) receives the prepared chat history.
+- **Tool names:** Claude's `mcp__clipcraft__` prefix comes from the SDK and cannot be removed; all
+  ClipCraft text uses bare names, which both agents map.
+- **Verified at the wire:** `tests/unit/agents/test-agent-parity.mjs` runs both installed agents
+  against the fake model API and fails on any difference in ClipCraft tools, descriptions, schemas,
+  instruction text or placement, request context, or unexpected built-ins (skips when an agent is
+  not installed). `test-agent-limits.mjs` covers the limits.
 
 ## Phases
 

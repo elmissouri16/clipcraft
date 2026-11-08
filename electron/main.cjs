@@ -1736,7 +1736,7 @@ ipcMain.handle('agent:runNative', async (event, req) => {
     job.report = require('./agents/runReport.cjs').createRunReport({ dir:crashDir(), provider:cfg.provider, model:cfg.model, webResearch:require('./agents/research.cjs').enabled(cfg) });
     const attached = await chatImages.native(req.prompt, req.history, req.chatImageIds || []);
     const result = await localAgents.runEditorNative(cfg, {
-      sessionKey:`${event.sender.id}:${req.sessionKey}`, tools, system:req.system, ...attached,
+      sessionKey:`${event.sender.id}:${req.sessionKey}`, tools, system:req.system, context:typeof req.context === 'string' ? req.context.slice(0, 4000) : '', ...attached,
       signal:job.controller.signal,
       onSearch:search=>{if(!event.sender.isDestroyed())event.sender.send('agent:nativeProgress',{requestId:req.requestId,event:{type:'tool',id:`native-web-${search.id}`,name:'web_search',label:search.query?`Searching web: ${search.query}`:'Searching the web',status:search.status}});},
       onTool:async(name,args)=>{

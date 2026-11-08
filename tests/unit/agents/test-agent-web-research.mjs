@@ -48,7 +48,9 @@ try {
   let q = queries.at(-1);
   assert.deepEqual(q.options.tools, []);
   assert.ok(q.options.allowedTools.every((n) => n.startsWith('mcp__clipcraft__')));
-  assert.match(q.prompt, /Web research is off/);
+  assert.match(q.options.systemPrompt, /Web research is off/, 'research state is part of the instructions');
+  assert.ok(!q.prompt.includes('Edit videos.'), 'instructions are not repeated in the request message');
+  assert.match(q.prompt, /Current user request:\nResearch Fez/);
 
   // Claude, switched on: only its web tools join the editor tools; searches reach the chat.
   const searches = [];
@@ -57,8 +59,8 @@ try {
   assert.deepEqual(q.options.tools, ['WebSearch', 'WebFetch']);
   assert.deepEqual(q.options.allowedTools, ['mcp__clipcraft__get_project', 'WebSearch', 'WebFetch']);
   assert.equal(q.options.resume, undefined, 'changing the setting starts a fresh session');
-  assert.match(q.prompt, /WebSearch and WebFetch tools are enabled/);
-  assert.match(q.prompt, /untrusted data/);
+  assert.match(q.options.systemPrompt, /WebSearch and WebFetch tools are enabled/);
+  assert.match(q.options.systemPrompt, /untrusted data/);
   assert.deepEqual(searches.map((s) => [s.id, s.query, s.status]), [['w1', 'Fez medina history', 'running'], ['w2', 'https://example.org/fez', 'running'],
     ['w1', 'Fez medina history', 'done'], ['w2', 'https://example.org/fez', 'done']], 'web tools show in the chat; editor tool results do not');
   await run({ provider: 'claude-agent-sdk', webResearch: true });

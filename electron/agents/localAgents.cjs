@@ -251,7 +251,7 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
           return {file,label:String(image.label||`Frame ${index+1}`).slice(0,600)};
         });
         const codex = new session.sdk.Codex({ codexPathOverride: session.executablePath, env: session.env,
-          config: { features: { shell_tool: false, unified_exec: false, image_generation: false, apps: false, plugins: false, skip_host_skill_discovery: true },
+          config: { features: { ...require('./codexNative.cjs').CODEX_FEATURES_OFF, skip_host_skill_discovery: true },
             skills: { include_instructions: false }, mcp_servers: {},
           },
         });

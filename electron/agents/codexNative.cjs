@@ -3,10 +3,20 @@
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 const { abortError, checkAbort, abortable } = require("../system/cancel.cjs");
+// Codex features that can put a tool or an action in front of the model; all off, so a ClipCraft
+// session offers ClipCraft's tools only (docs/design/agent-adapters.md). With these off, Codex
+// 0.167 still offers request_user_input (inert outside Plan mode; ClipCraft refuses it) and keeps
+// unified_exec on, which only backs the shell tool that is off. tests/unit/agents/test-agent-parity.mjs
+// checks the tools the model actually receives.
+const CODEX_FEATURES_OFF = Object.fromEntries(['shell_tool', 'unified_exec', 'unified_exec_tty', 'shell_snapshot', 'apps', 'plugins', 'image_generation',
+  'multi_agent', 'memories', 'hooks', 'goals', 'view_image', 'sleep_tool', 'code_mode_host', 'browser_use', 'browser_use_external', 'browser_use_full_cdp_access',
+  'browser_annotation_api', 'computer_use', 'in_app_browser', 'in_app_local_automation', 'tool_suggest', 'skill_search', 'skill_mcp_dependency_install',
+  'remote_plugin', 'plugin_discovery_prefetch', 'plugin_sharing', 'workspace_dependencies'].map((name) => [name, false]));
+
 class CodexNative {
   constructor({ executablePath, cwd, env, cfg = {}, system, tools = [], catalogOnly = false, webSearch = true, spawnImpl = spawn }) {
     this.cfg = cfg; this.cwd = cwd; this.tools = tools; this.pending = new Map(); this.nextId = 1; this.active = null; this.threadId = null; this.closed = false;
-    const settings = { features: { shell_tool:false, unified_exec:false, apps:false, plugins:false, image_generation:false, multi_agent:false, memories:false, hooks:false, goals:false, skip_host_skill_discovery:true }, skills:{include_instructions:false}, mcp_servers:{} };
+    const settings = { features: { ...CODEX_FEATURES_OFF, skip_host_skill_discovery:true }, skills:{include_instructions:false}, mcp_servers:{} };
     const args = ['app-server'];
     const flatten = (object, prefix='') => { for (const [key, value] of Object.entries(object)) {
       const name = prefix ? `${prefix}.${key}` : key;
@@ -104,4 +114,4 @@ class CodexNative {
   fail(error) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear(); this.active?.reject(error); }
   close() { this.closed=true;this.fail(new Error('Codex session closed.'));this.lines.close();try{this.proc.kill();}catch{} }
 }
-module.exports={CodexNative};
+module.exports={CodexNative,CODEX_FEATURES_OFF};

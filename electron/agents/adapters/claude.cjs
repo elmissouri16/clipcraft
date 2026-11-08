@@ -2,6 +2,7 @@
 // one resumed SDK session per chat. Wire format only: it never adds, drops or renames tools or
 // instructions. Claude's own built-ins stay off except its web tools under Web research.
 const research = require('../research.cjs');
+const { LIMITS } = require('../contract.cjs');
 
 // opts: { sdk, executablePath, cwd, env, cfg, system, tools, webResearch }
 function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools, webResearch }) {
@@ -12,7 +13,8 @@ function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools
   // The server lives for one request; a callback outside a request is refused.
   const ensureServer = () => {
     if (server) return server;
-    server = sdk.createSdkMcpServer({ name: 'clipcraft', version: '1.0.0', tools: [], alwaysLoad: true, timeout: 900000 });
+    // Its timeout sits above the shared tool timeout, which the session manager enforces.
+    server = sdk.createSdkMcpServer({ name: 'clipcraft', version: '1.0.0', tools: [], alwaysLoad: true, timeout: LIMITS.toolCallTimeoutMs + 60000 });
     for (const declaration of tools) {
       // Public SDK instance registration accepts a whole Zod object, so open-ended external tool
       // schemas retain additional properties.
@@ -21,6 +23,13 @@ function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools
         return current.onTool(declaration.name, args, { nativeCallId: extra?.requestId, turnId: current.attempt });
       });
     }
+    // List the contract's own JSON Schemas: the Zod round trip above adds bounds to every integer
+    // field (±2^53) that Codex never sees. Calls are still validated as registered.
+    const { ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+    server.instance.server.removeRequestHandler?.('tools/list');
+    server.instance.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters })),
+    }));
     return server;
   };
 
@@ -40,7 +49,8 @@ function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools
         allowedTools: [...tools.map((tool) => `mcp__clipcraft__${tool.name}`), ...webTools], settingSources: [], permissionMode: 'dontAsk',
         persistSession: true, ...(sessionId ? { resume: sessionId } : {}),
         ...(cfg.model ? { model: cfg.model } : {}), ...(cfg.reasoningEffort ? { effort: cfg.reasoningEffort } : {}),
-        abortController: controller, maxTurns: 100,
+        // Above the shared tool call budget, so the session manager's limit is the one that applies.
+        abortController: controller, maxTurns: LIMITS.toolCallsPerRequest + 50,
       } });
       const searches = new Map(); // web tool id -> query
       let result;

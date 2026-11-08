@@ -32,7 +32,9 @@ References: [Codex app-server](https://learn.chatgpt.com/docs/app-server),
 server). Both receive the same tool list (`runNativeAgent.js` `nativeTools`, `contract.cjs`
 `wireTools`) and instructions (`nativeSystemPrompt`); image generation is Codex only. See
 `docs/design/agent-adapters.md`, and `node scripts/agent-inventory.mjs` for what each agent sends
-its model. Each request is counted in `<userData>/logs/agent-runs.jsonl`.
+its model. Each request is counted in `<userData>/logs/agent-runs.jsonl`. Both agents share the
+limits in `contract.cjs` (`LIMITS`), get the instructions once through their system channel, and no
+provider built-ins beyond web research; `tests/unit/agents/test-agent-parity.mjs` checks this at the wire.
 
 ## Web research
 

@@ -22,8 +22,10 @@ export function nativeTools(provider, externalTools = []) {
   return { catalog, tools: [...catalog.tools(), COMPLETE, ...(provider === 'codex-sdk' ? [IMAGES] : [])] };
 }
 
-// The instructions every native agent receives for a request at this project revision.
-export const nativeSystemPrompt = (revision) => SYSTEM_PROMPT.replace('- Load needed tool groups with load_tools. Batch independent reads and group loads; perform edits in order. Only use available tools. Explain unsupported requests briefly.', '- Editor tools are registered natively. Call them directly; do not emit JSON tool requests in your answer. Perform dependent edits in order. load_tools is optional discovery. Explain unsupported requests briefly.') + `\nLive editor revision: ${revision}. Reuse current user-attached references; refresh missing or stale project IDs/times before editing.` + '\nUse only registered ClipCraft tools for editing; no native filesystem or shell work. Before your final answer call complete_edit until ready is true. Review images returned by that tool. Describe actual edits in the final reply without internal tool/protocol names. When generate_images is available, use it for parallel scene images; it preserves insertion order and bounds native generation concurrency.';
+// The instructions every native agent receives, sent once per session through its system channel.
+export const nativeSystemPrompt = () => SYSTEM_PROMPT.replace('- Load needed tool groups with load_tools. Batch independent reads and group loads; perform edits in order. Only use available tools. Explain unsupported requests briefly.', '- Editor tools are registered natively. Call them directly; do not emit JSON tool requests in your answer. Perform dependent edits in order. load_tools is optional discovery. Explain unsupported requests briefly.') + '\nUse only registered ClipCraft tools for editing; no native filesystem or shell work. Before your final answer call complete_edit until ready is true. Review images returned by that tool. Describe actual edits in the final reply without internal tool/protocol names. When generate_images is available, use it for parallel scene images; it preserves insertion order and bounds native generation concurrency.';
+// What changes per request (the live revision) travels with the request, not the instructions.
+export const nativeRequestContext = (revision) => `Live editor revision: ${revision}. Reuse current user-attached references; refresh missing or stale project IDs/times before editing.`;
 
 export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, requestId, sessionKey }) {
   const initial = ctx.getProject(), initialRevision = projectRevision(initial);
@@ -142,10 +144,10 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
     });
     offStop = ctx.api.onAgentNativeStop?.(event => { if (event.requestId === requestId) { stopped = true;stopError = event.error || null; } });
     offProgress = ctx.api.onAgentNativeProgress?.(event => { if (event.requestId === requestId && event.event) onEvent(event.event); });
-    const nativeSystem = nativeSystemPrompt(initialRevision);
+    const nativeSystem = nativeSystemPrompt(), requestContext = nativeRequestContext(initialRevision);
     const prompt = contents.at(-1)?.parts?.filter(part=>part.text).map(part=>part.text).join('\n') || '';
     const history = prepareContext(contents.slice(0, -1)).contents;
-    const response = await ctx.api.agentRunNative({ requestId, sessionKey, provider:ctx.provider, system:nativeSystem, prompt, history, tools, chatImageIds: ctx.chatImageIds || [] });
+    const response = await ctx.api.agentRunNative({ requestId, sessionKey, provider:ctx.provider, system:nativeSystem, context:requestContext, prompt, history, tools, chatImageIds: ctx.chatImageIds || [] });
     await queue;
     if (staleError) return finish({ error:{error:staleError, code:'edit_interrupted', ...(interruption ? { interruption } : {})} });
     if (stopError) return finish({ error:stopError });

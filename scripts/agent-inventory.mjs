@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const { startFakeModelServer } = require('../tests/fixtures/fake-model-server.cjs');
 const { createLocalAgents } = require('../electron/agents/localAgents.cjs');
 const { wireTools } = require('../electron/agents/contract.cjs');
-const { nativeTools, nativeSystemPrompt } = await import('../src/features/agent/runNativeAgent.js');
+const { nativeTools, nativeSystemPrompt, nativeRequestContext } = await import('../src/features/agent/runNativeAgent.js');
 
 const hash = (text) => crypto.createHash('sha256').update(String(text)).digest('hex').slice(0, 12);
 const server = await startFakeModelServer();
@@ -26,7 +26,7 @@ const env = { ...process.env, CODEX_HOME: codexHome, PROBE_API_KEY: 'probe', ANT
 for (const name of ['OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN']) delete env[name];
 const agents = createLocalAgents({ env, home: os.homedir() });
 
-const system = nativeSystemPrompt('inventory');
+const system = nativeSystemPrompt(), context = nativeRequestContext('inventory');
 const report = { generated: new Date().toISOString(), runs: [] };
 try {
   for (const provider of ['codex-sdk', 'claude-agent-sdk']) {
@@ -38,7 +38,7 @@ try {
       let error = null;
       try {
         await agents.runEditorNative({ provider, model: provider === 'codex-sdk' ? 'probe-model' : 'claude-probe', webResearch }, {
-          sessionKey: `${provider}-${webResearch}`, tools, system, prompt: 'Inventory request: reply with one word.', history: [],
+          sessionKey: `${provider}-${webResearch}`, tools, system, context, prompt: 'Inventory request: reply with one word.', history: [],
           onTool: async () => ({ content: [{ type: 'text', text: '{"ready":true}' }] }), isComplete: async () => true,
           signal: AbortSignal.timeout(90000) });
       } catch (e) { error = e.message.slice(0, 300); }
@@ -55,13 +55,15 @@ try {
         run.otherTools = names.filter((n) => !offered.has(bare(n)));
         run.otherToolTypes = b.tools.filter((t) => !offered.has(bare(toolName(t)))).map((t) => ({ name: toolName(t), type: t.type || 'custom' }));
         run.toolNamePrefix = names.some((n) => n.startsWith('mcp__clipcraft__')) ? 'mcp__clipcraft__' : '';
-        const systemText = typeof b.instructions === 'string' ? b.instructions
-          : Array.isArray(b.system) ? b.system.map((s) => s.text || '').join('\n') : String(b.system || '');
-        const messagesText = JSON.stringify(b.input || b.messages || []);
-        const marker = 'Live editor revision: inventory';
-        run.instructions = { systemChars: systemText.length, systemHash: hash(systemText),
-          clipcraftInSystem: systemText.includes(marker), clipcraftInFirstMessage: messagesText.includes(marker),
-          providerPreambleChars: systemText.includes(marker) ? systemText.indexOf(system.slice(0, 60)) : systemText.length };
+        // Codex sends instructions as developer messages, Claude as system blocks; user messages are the request.
+        const text = (content) => typeof content === 'string' ? content : (content || []).map((c) => c.text || '').join('\n');
+        const turns = b.input || b.messages || [];
+        const systemText = [typeof b.instructions === 'string' ? b.instructions : '', Array.isArray(b.system) ? b.system.map((x) => x.text || '').join('\n') : String(b.system || ''),
+          ...turns.filter((m) => ['developer', 'system'].includes(m.role)).map((m) => text(m.content))].join('\n');
+        const userText = turns.filter((m) => m.role === 'user').map((m) => text(m.content)).join('\n');
+        const marker = system.slice(0, 120);
+        run.instructions = { systemChars: systemText.length, clipcraftInSystem: systemText.includes(marker), clipcraftInUserMessage: userText.includes(marker),
+          requestContextInUserMessage: userText.includes(context), clipcraftHash: hash(systemText.slice(systemText.indexOf(marker), systemText.indexOf(marker) + system.length)) };
         run.options = Object.fromEntries(Object.entries(b).filter(([k]) => !['tools', 'input', 'messages', 'instructions', 'system', 'metadata'].includes(k))
           .map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v).slice(0, 160) : v]));
       }
@@ -78,6 +80,6 @@ for (const r of report.runs) {
   console.log(`\n== ${r.provider}  web research ${r.webResearch ? 'on' : 'off'}${r.error ? `  ERROR: ${r.error}` : ''}`);
   if (!r.instructions) { console.log('   no model request captured'); continue; }
   console.log(`   ClipCraft tools: ${r.clipcraftTools}  other tools: ${r.otherTools.length ? r.otherTools.join(', ') : 'none'}`);
-  console.log(`   instructions: system ${r.instructions.systemChars} chars (ClipCraft in system: ${r.instructions.clipcraftInSystem}, in first message: ${r.instructions.clipcraftInFirstMessage}, provider text before ClipCraft's: ${r.instructions.providerPreambleChars} chars)`);
+  console.log(`   instructions: ClipCraft's in system channel: ${r.instructions.clipcraftInSystem}, repeated in user message: ${r.instructions.clipcraftInUserMessage}, request context in user message: ${r.instructions.requestContextInUserMessage} (hash ${r.instructions.clipcraftHash})`);
   console.log(`   options: ${JSON.stringify(r.options)}`);
 }

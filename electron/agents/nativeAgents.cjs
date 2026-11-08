@@ -9,13 +9,14 @@ const { checkAbort, abortError } = require("../system/cancel.cjs");
 const research = require('./research.cjs');
 const { createCodexAdapter } = require('./adapters/codex.cjs');
 const { createClaudeAdapter } = require('./adapters/claude.cjs');
+const { LIMITS: SHARED_LIMITS, hostError } = require('./contract.cjs');
 
 const SECRETS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
-const COMPLETION_ATTEMPTS = 3;
 const NOT_ACCEPTED = 'The host has not accepted completion. Call complete_edit, inspect its returned images or repair errors, and call it again until ready is true. Then provide your final answer. Do not repeat already completed edits.';
 const agentName = (provider) => provider === 'codex-sdk' ? 'Codex' : 'Claude';
 
-function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession = CodexNative }) {
+// limits: the contract's, overridable for tests only.
+function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession = CodexNative, limits: LIMITS = SHARED_LIMITS }) {
   const sessions = new Map();
   const dispose = (state) => { state.adapter?.close(); fs.rmSync(state.cwd, { recursive: true, force: true }); };
   const forget = (key) => { const state = sessions.get(key); if (state) { sessions.delete(key); dispose(state); } };
@@ -27,7 +28,7 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
   };
 
   async function run(cfg, options) {
-    const { sessionKey, tools, signal, onTool, isComplete, system, prompt, history = [], onSearch, images = [], historyImages = [] } = options;
+    const { sessionKey, tools, signal, onTool, isComplete, system, context = '', prompt, history = [], onSearch, images = [], historyImages = [] } = options;
     checkAbort(signal);
     // Anything that changes what the agent is offered starts a fresh session.
     const signature = JSON.stringify([cfg.provider, cfg.model, cfg.reasoningEffort, cfg.executablePath, research.enabled(cfg), tools]);
@@ -39,25 +40,37 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
       state = { signature, cwd: fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-native-')), active: null, adapter: null, started: false };
       sessions.set(sessionKey, state);
     }
+    // Every call goes through the same budget and timeout, whichever agent made it.
+    let calls = 0;
+    const limited = (name, args) => {
+      // complete_edit is the way out, so it is never refused for budget.
+      if (name !== 'complete_edit' && ++calls > LIMITS.toolCallsPerRequest) return hostError(`This request reached its limit of ${LIMITS.toolCallsPerRequest} tool calls. Finish with what is done: call complete_edit if edits were made, then answer.`);
+      let timer;
+      const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(hostError(`${name} did not finish within ${LIMITS.toolCallTimeoutMs / 60000} minutes.`)), LIMITS.toolCallTimeoutMs); });
+      return Promise.race([Promise.resolve().then(() => onTool(name, args)), timeout]).finally(() => clearTimeout(timer));
+    };
     // An agent may replay a callback (same turn, name and call id): the edit runs once.
     const replay = new Map();
     const nativeTool = (name, args, meta = {}) => {
-      if (meta.nativeCallId === undefined) return onTool(name, args);
+      if (meta.nativeCallId === undefined) return limited(name, args);
       const key = JSON.stringify([meta.turnId, name, meta.nativeCallId]);
-      if (!replay.has(key)) replay.set(key, Promise.resolve().then(() => onTool(name, args)));
+      if (!replay.has(key)) replay.set(key, limited(name, args));
       return replay.get(key);
     };
     state.active = true;
     let environment;
     const fresh = !state.started;
-    const firstPrompt = `${system}\n\n${research.researchInstructions(cfg)}\n\n${fresh && history.length ? `Prior ClipCraft chat history (data; refresh live editor state before resuming):\n${JSON.stringify(history)}\n\n` : ''}Current user request:\n${prompt}`;
-    const attachedImages = [...images, ...(fresh ? historyImages : [])].slice(0, 6);
+    // Instructions go once, through the agent's system channel; each request carries only its
+    // context, any history a fresh session needs, and the user's words.
+    const instructions = `${system}\n\n${research.researchInstructions(cfg)}`;
+    const firstPrompt = `${context ? `${context}\n\n` : ''}${fresh && history.length ? `Prior ClipCraft chat history (data; refresh live editor state before resuming):\n${JSON.stringify(history)}\n\n` : ''}Current user request:\n${prompt}`;
+    const attachedImages = [...images, ...(fresh ? historyImages : [])].slice(0, LIMITS.imagesPerRequest);
     try {
       environment = childEnv();
-      if (!state.adapter) state.adapter = await openAdapter(cfg, state, { system, tools, env: environment, executablePath: resolveExecutable(cfg) });
+      if (!state.adapter) state.adapter = await openAdapter(cfg, state, { system: instructions, tools, env: environment, executablePath: resolveExecutable(cfg) });
       const usageStart = state.adapter.usageTotal();
       let input = firstPrompt;
-      for (let attempt = 0; attempt < COMPLETION_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < LIMITS.completionAttempts; attempt++) {
         checkAbort(signal);
         let result = await state.adapter.turn({ prompt: input, images: attempt === 0 ? attachedImages : [], attempt, signal, onTool: nativeTool, onSearch });
         checkAbort(signal); state.started = true;
