@@ -386,6 +386,9 @@ export default function App() {
   // project whose cached graphic files are gone. Not a separate Undo step (the change that caused it
   // is); during an agent request it belongs to the agent's edit instead of interrupting it.
   const graphicsKey = project.media.filter(isGraphicMedia).map((m) => m.id).join(',');
+  // The cache never removes the graphics this project uses.
+  const graphicCacheKeys = project.media.filter(isGraphicMedia).map((m) => m.graphic?.key).filter(Boolean).join(',');
+  useEffect(() => { window.api.graphicsInUse?.(graphicCacheKeys ? graphicCacheKeys.split(',') : []); }, [graphicCacheKeys]);
   const redrawing = useRef(new Set());
   useEffect(() => {
     let cancelled = false;

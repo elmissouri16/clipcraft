@@ -29,6 +29,20 @@ import { GRAPHICS_DECLARATIONS, createGraphicsTools } from './graphicsTools.js';
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
 const ids = (list) => list.map((x) => x.id).join(', ');
+// An option id from a list, accepting the spellings agents use for the same thing: any case, spaces,
+// - or _ between words, and the in/out suffix one vocabulary has and the other lacks (title fade vs
+// clip fade_in, zoomIn vs zoom_in, "Montserrat" vs montserrat). Exact ids always win.
+const squash = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+export function matchName(value, list) {
+  if (list.some((x) => x.id === value)) return value;
+  const n = squash(value);
+  if (!n) return null;
+  for (const candidate of [n, `${n}in`, n.replace(/(in|out)$/, '')]) {
+    const hit = list.find((x) => squash(x.id) === candidate);
+    if (hit) return hit.id;
+  }
+  return null;
+}
 const CAPTION_STYLES = TEXT_TEMPLATES.filter((t) => t.caption);
 
 const S = { type: 'STRING' };
@@ -470,10 +484,15 @@ export function createToolRunner(ctx) {
   };
   const num = (v, name) => (Number.isFinite(Number(v)) ? Number(v) : { error: `${name} must be a number.` });
   // A main-track or overlay picture clip, with where it starts on the timeline and how long it lasts.
-  const needPicture = (id) => {
+  const needPicture = (id, tool) => {
     const f = findClip(id);
     if (!f) return { error: `No clip with id "${id}". Call get_project to see the real ids.` };
-    if (!(f.track === 'video' || f.track === 'overlay') || f.clip.gap) return { error: `Clip "${id}" is not a main-track or overlay video / photo.` };
+    if (!(f.track === 'video' || f.track === 'overlay') || f.clip.gap) {
+      const what = f.clip.gap ? 'a gap' : { text: 'a title', audio: 'an audio clip', effect: 'an effect layer' }[f.track] || 'not a picture';
+      const instead = f.track === 'text' ? (tool === 'set_animation' ? ' Titles animate with edit_text (anim_in, anim_out, anim_loop).' : ' Titles are placed and styled with edit_text (x, y, size, rotation, opacity).')
+        : f.track === 'audio' ? ' It has no picture; set_volume and set_audio_effects change audio.' : '';
+      return { error: `Clip "${id}" is ${what}, not a main-track or overlay video / photo.${instead}` };
+    }
     const p = project();
     f.start = f.track === 'overlay' ? f.clip.start : videoLayout(p.videoClips).find((l) => l.clip.id === id).start;
     f.len = clipLen(f.clip);
@@ -691,8 +710,9 @@ export function createToolRunner(ctx) {
     if (a.color !== undefined) patch.color = a.color;
     if (a.font !== undefined) {
       const known = ctx.fontIds?.();
-      if (known && !known.includes(a.font)) return bad(`Unknown font "${a.font}". Some fonts: ${known.slice(0, 40).join(', ')}.`);
-      patch.font = a.font;
+      const font = known ? matchName(a.font, known.map((id) => ({ id }))) : a.font;
+      if (!font) return bad(`Unknown font "${a.font}". Some fonts: ${known.slice(0, 40).join(', ')}.`);
+      patch.font = font;
     }
     for (const k of ['bold', 'italic', 'uppercase']) if (a[k] !== undefined) patch[k] = !!a[k];
     if (a.align !== undefined) {
@@ -713,8 +733,9 @@ export function createToolRunner(ctx) {
     }
     for (const [k, key, list, dflt] of [['anim_in', 'animIn', ANIM_IN, { dur: 0.4 }], ['anim_out', 'animOut', ANIM_OUT, { dur: 0.3 }], ['anim_loop', 'animLoop', ANIM_LOOP, { speed: 1 }]]) {
       if (a[k] === undefined) continue;
-      if (!list.some((x) => x.id === a[k])) return bad(`${k} must be one of: ${ids(list)}.`);
-      patch[key] = { ...dflt, ...(cur[key] || {}), id: a[k] };
+      const id = matchName(a[k], list);
+      if (!id) return bad(`${k} must be one of: ${ids(list)}.`);
+      patch[key] = { ...dflt, ...(cur[key] || {}), id };
     }
     if (a.bubble !== undefined) {
       if (!BUBBLES.some((x) => x.id === a.bubble)) return bad(`bubble must be one of: ${ids(BUBBLES)}.`);
@@ -1166,7 +1187,7 @@ export function createToolRunner(ctx) {
     },
 
     async add_keyframes({ clip_id, property, easing, keyframes: keys }) {
-      const f = needPicture(clip_id);
+      const f = needPicture(clip_id, 'add_keyframes');
       if (f.error) return f;
       const prop = PROP[property];
       if (!prop) return { error: 'property must be scale, x, y, rotation or opacity.' };
@@ -1175,7 +1196,11 @@ export function createToolRunner(ctx) {
       const pairs = (keys || []).map((k) => [Number(k.time_sec) - f.start, Number(k.value), k.easing ?? easing]).filter(([lt, v]) => Number.isFinite(lt) && Number.isFinite(v));
       if (!pairs.length) return { error: 'Give at least one keyframe with time_sec and value.' };
       const outside = pairs.find(([lt]) => lt < -0.01 || lt > f.len + 0.01);
-      if (outside) return { error: `A keyframe at ${r2(outside[0] + f.start)}s is outside the clip (${r2(f.start)}s to ${r2(f.start + f.len)}s).` };
+      if (outside) {
+        // Times counted from the clip's start instead of the timeline: say how to convert them.
+        const fromClipStart = f.start > 0.01 && pairs.every(([lt]) => lt + f.start >= -0.01 && lt + f.start <= f.len + 0.01);
+        return { error: `A keyframe at ${r2(outside[0] + f.start)}s is outside the clip (${r2(f.start)}s to ${r2(f.start + f.len)}s). time_sec is timeline time${fromClipStart ? `; these times fit if counted from the clip's start, so add ${r2(f.start)}s to each` : ''}.` };
+      }
       const list = putKeys(f.clip.keyframes?.[prop], f.clip, pairs.map(([lt, v, e]) => [Math.min(f.len, Math.max(0, lt)), v, e]));
       const keyframes = { ...(f.clip.keyframes || {}), [prop]: list };
       dispatch({ type: 'update', track: f.track, id: clip_id, patch: { keyframes } });
@@ -1183,7 +1208,7 @@ export function createToolRunner(ctx) {
     },
 
     async set_animation({ clip_id, in: inId, in_duration_sec = 0.5, out: outId, out_duration_sec = 0.5, combo }) {
-      const f = needPicture(clip_id);
+      const f = needPicture(clip_id, 'set_animation');
       if (f.error) return f;
       const anim = { ...(f.clip.anim || {}) };
       const pick = (kind, id, dur) => {
@@ -1192,8 +1217,9 @@ export function createToolRunner(ctx) {
           delete anim[kind];
           return null;
         }
-        if (!ANIMATIONS[kind].some((x) => x.id === id)) return `Unknown ${kind} animation "${id}". Use one of: ${ids(ANIMATIONS[kind])}.`;
-        anim[kind] = kind === 'combo' ? { type: id } : { type: id, duration: Math.min(5, Math.max(0.1, Number(dur) || 0.5)) };
+        const type = matchName(id, ANIMATIONS[kind]);
+        if (!type) return `Unknown ${kind} animation "${id}". Use one of: ${ids(ANIMATIONS[kind])}.`;
+        anim[kind] = kind === 'combo' ? { type } : { type, duration: Math.min(5, Math.max(0.1, Number(dur) || 0.5)) };
         if (kind === 'combo') {
           delete anim.in;
           delete anim.out;

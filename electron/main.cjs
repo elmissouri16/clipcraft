@@ -1941,6 +1941,16 @@ ipcMain.handle('graphics:render', async (event, req = {}) => {
   } catch (error) { return { ok: false, error: controller.signal.aborted ? 'Graphic render replaced or stopped.' : error.message, ...(controller.signal.aborted ? { canceled: true } : {}) }; }
   finally { if (graphicJobs.get(jobKey) === controller) graphicJobs.delete(jobKey); }
 });
+// The graphics an open project uses (cache keys), per window: never removed by the cache limit or Clear.
+const graphicsOwners = new Set();
+ipcMain.handle('graphics:inUse', (event, keys = []) => {
+  const owner = event.sender.id;
+  graphics().setInUse(owner, (Array.isArray(keys) ? keys : []).filter(k => typeof k === 'string' && /^[a-f0-9]{8,64}$/.test(k)).slice(0, 2000));
+  if (!graphicsOwners.has(owner)) { graphicsOwners.add(owner); event.sender.once('destroyed', () => { graphicsOwners.delete(owner); graphics().setInUse(owner, []); }); }
+  return true;
+});
+ipcMain.handle('graphics:usage', () => graphics().usage());
+ipcMain.handle('graphics:clear', () => graphics().clear());
 // Which graphics lost their cached files (moved user data, cleaned disk): the editor draws them again.
 // Only paths inside the graphics folder are checked.
 ipcMain.handle('graphics:missing', (_event, items = []) => {

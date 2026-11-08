@@ -6,7 +6,7 @@ import { historyReducer, normalizeProject, videoLayout } from "../../../src/stat
 import { createToolRunner, summarizeProject, TOOL_DECLARATIONS } from "../../../src/features/agent/tools.js";
 import { createToolCatalog, TOOL_GROUPS } from "../../../src/features/agent/toolCatalog.js";
 import geminiTts from "../../../electron/audio/geminiTts.cjs";
-import { clearsFailure, editTarget } from "../../../src/features/agent/runAgent.js";
+import { clearsFailure, editTarget, failureTargets, pruneFailures, unresolvedReport } from "../../../src/features/agent/runAgent.js";
 
 let state = {
   past: [], future: [],
@@ -309,12 +309,48 @@ ok(await run('export_video'), 'export_video');
 assert.equal(exported, 1);
 assert.ok(!runner.mutates('search_sounds') && !runner.mutates('export_video') && runner.mutates('add_sound'));
 
+// Errors point to the right tool, and the spellings agents use for the same option are accepted.
+{
+  const title = (await run('add_text', { text: 'Spelling', start_sec: 0, duration_sec: 2, font: 'Montserrat', anim_in: 'fade_in', anim_out: 'zoom_out' }));
+  ok(title, 'a font in any case and the clip animation spelling work for titles');
+  const t = p().textClips.find((c) => c.id === title.clip_id);
+  assert.equal(t.font, 'montserrat'); assert.equal(t.animIn.id, 'fade'); assert.equal(t.animOut.id, 'zoomOut');
+  ok(await run('edit_text', { clip_id: title.clip_id, font: 'ANTON', anim_in: 'slide-up' }), 'edit_text accepts the same spellings');
+  assert.equal(p().textClips.find((c) => c.id === title.clip_id).font, 'anton');
+  err(await run('add_text', { text: 'x', font: 'Comic Neue' }), /Unknown font "Comic Neue"/, 'unknown fonts still fail');
+  const wrongTool = await run('set_animation', { clip_id: title.clip_id, in: 'fade' });
+  err(wrongTool, /is a title.*Titles animate with edit_text \(anim_in, anim_out, anim_loop\)/, 'set_animation on a title names the right tool');
+  err(await run('add_keyframes', { clip_id: title.clip_id, property: 'scale', keyframes: [{ time_sec: 0, value: 1 }] }), /Titles are placed and styled with edit_text/, 'other picture tools name edit_text too');
+  ok(await run('set_animation', { clip_id: 'a', in: 'fade', out: 'zoomOut' }), 'clip animations accept the title spellings');
+  const anim = (p().videoClips.find((c) => c.id === 'a') || {}).anim;
+  assert.equal(anim.in.type, 'fade_in'); assert.equal(anim.out.type, 'zoom_out');
+  // Keyframe times counted from the clip's start get the conversion.
+  const later = p().videoClips.find((c) => c.id === 'b'), startB = videoLayout(p().videoClips).find((l) => l.clip.id === 'b').start;
+  const kf = await run('add_keyframes', { clip_id: 'b', property: 'scale', keyframes: [{ time_sec: 0, value: 1 }, { time_sec: 2, value: 1.2 }] });
+  assert.ok(startB > 0.01, 'clip b starts after the timeline start');
+  err(kf, new RegExp(`time_sec is timeline time; these times fit if counted from the clip's start, so add ${Math.round(startB * 100) / 100}s to each`), 'keyframes from the clip start get the conversion');
+  assert.ok(later);
+}
+
 // A failed voice-over is replaced by add_narration naming it in retry_of (one id or a list).
 const failed = { name: 'add_voiceover', key: editTarget('add_voiceover', { text: 'Line two', engine: 'gemini' }) };
 assert.ok(clearsFailure('op-1', failed, 'add_narration', { lines: ['Line one', 'Line two'], retry_of: ['op-1', 'op-2'] }));
 assert.ok(clearsFailure('op-1', failed, 'add_voiceover', { text: 'Line two', engine: 'gemini', model: 'gemini-3.8-flash-lite-tts', retry_of: 'op-1' }));
 assert.ok(clearsFailure('op-1', failed, 'add_voiceover', { text: 'Line two', engine: 'gemini' }), 'the same call again');
 assert.ok(!clearsFailure('op-1', failed, 'add_narration', { lines: ['Line one', 'Line two'] }), 'only when it names the failure');
-assert.ok(!clearsFailure('op-1', failed, 'add_sound', { sound_id: 's1', retry_of: 'op-1' }), 'an unrelated tool cannot stand in');
+assert.ok(clearsFailure('op-1', failed, 'edit_text', { clip_id: 't1', anim_in: 'fade', retry_of: 'op-1' }), 'any tool can stand in when it names the failure');
+assert.ok(!clearsFailure('op-1', failed, 'add_sound', { sound_id: 's1' }), 'a call that does not name it never resolves it');
+assert.ok(!clearsFailure('op-1', failed, 'add_sound', { sound_id: 's1', retry_of: 'op-2' }), 'naming another failure does not resolve this one');
+// Failures on clips deleted since stop blocking; clips that never existed are not counted.
+{
+  const project = { videoClips: [{ id: 'v1' }], textClips: [{ id: 't1' }], overlayClips: [], audioClips: [] };
+  assert.deepEqual(failureTargets({ clip_id: 't1', clip_ids: ['v1', 'ghost'] }, project), ['t1', 'v1']);
+  const failures = new Map([['a', { name: 'set_animation', targets: ['t1'] }], ['b', { name: 'add_text', targets: [] }], ['c', { name: 'trim_clip', targets: ['t1', 'v1'] }]]);
+  assert.deepEqual(pruneFailures(failures, { ...project, textClips: [] }), ['a'], 'only failures whose every target is gone');
+  assert.deepEqual([...failures.keys()], ['b', 'c']);
+  const report = unresolvedReport(failures);
+  assert.deepEqual(report.unresolved_operations.map((o) => o.failed_operation_id), ['b', 'c']);
+  assert.match(report.error, /2 failed operations not resolved: b \(add_text\)/); assert.match(report.how_to_resolve, /retry_of/);
+}
 
 console.log(`AGENT TOOLS OK (${names.length} tools)`);

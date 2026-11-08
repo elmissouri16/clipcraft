@@ -35,8 +35,41 @@ function validate(job) {
   return { code, inputs, fonts, width: width + (width % 2), height: height + (height % 2), fps, frames: Math.max(1, Math.round(duration_sec * fps)) };
 }
 
+// The cache keeps at most this much; least recently used graphics go first. Graphics an open project
+// uses and anything used in the last few minutes are never removed; a removed graphic is drawn
+// again when a project that uses it opens (src/app/App.jsx).
+const CACHE_MAX_BYTES = 4 * 1024 ** 3, RECENT_MS = 10 * 60 * 1000;
+const dirSize = (dir) => { let n = 0; for (const f of fs.readdirSync(dir)) { try { n += fs.statSync(path.join(dir, f)).size; } catch {} } return n; };
+
 class GraphicsService {
-  constructor({ root, ffmpegPath, probe, renderGraphic }) { Object.assign(this, { root, ffmpegPath, probe, renderGraphic }); }
+  constructor({ root, ffmpegPath, probe, renderGraphic, maxBytes = CACHE_MAX_BYTES, now = Date.now }) { Object.assign(this, { root, ffmpegPath, probe, renderGraphic, maxBytes, now }); this.inUse = new Map(); }
+
+  // Keys an open project uses, per owner (a window); they survive pruning and clearing.
+  setInUse(owner, keys) { if (keys?.length) this.inUse.set(owner, new Set(keys.map(String))); else this.inUse.delete(owner); }
+  protectedKeys() { return new Set([...this.inUse.values()].flatMap((set) => [...set])); }
+
+  // Cached graphics, least recently used first: [{ key, dir, bytes, used }].
+  entries() {
+    if (!fs.existsSync(this.root)) return [];
+    return fs.readdirSync(this.root).filter((name) => !name.includes('.part-')).map((key) => {
+      const dir = path.join(this.root, key);
+      try { const meta = path.join(dir, 'meta.json'); return { key, dir, bytes: dirSize(dir), used: fs.existsSync(meta) ? fs.statSync(meta).mtimeMs : 0 }; } catch { return null; }
+    }).filter(Boolean).sort((a, b) => a.used - b.used);
+  }
+  usage() { const all = this.entries(); return { entries: all.length, bytes: all.reduce((n, e) => n + e.bytes, 0) }; }
+
+  // Remove least recently used graphics until the cache fits (or all removable ones, for Clear).
+  prune({ all = false, keep = [] } = {}) {
+    const keepSet = new Set([...this.protectedKeys(), ...keep]), list = this.entries();
+    let bytes = list.reduce((n, e) => n + e.bytes, 0), removed = 0;
+    for (const e of list) {
+      if (!all && bytes <= this.maxBytes) break;
+      if (keepSet.has(e.key) || (!all && this.now() - e.used < RECENT_MS)) continue;
+      fs.rmSync(e.dir, { recursive: true, force: true }); bytes -= e.bytes; removed++;
+    }
+    return { removed, ...this.usage() };
+  }
+  clear() { return this.prune({ all: true }); }
 
   key(job) {
     return sha(JSON.stringify([VERSION, job.code, job.inputs, job.fonts.map((f) => [f.family, f.weight, f.style, f.unicodeRange, sha(f.data)]), job.width, job.height, job.fps, job.frames]));
@@ -49,8 +82,10 @@ class GraphicsService {
     const job = validate(request), key = this.key(job), dir = path.join(this.root, key);
     const file = path.join(dir, 'graphic.mov'), preview = path.join(dir, 'preview.webm'), metaFile = path.join(dir, 'meta.json');
     let cached = fs.existsSync(file) && fs.existsSync(preview) && fs.existsSync(metaFile), stats;
-    if (cached) stats = JSON.parse(fs.readFileSync(metaFile, 'utf8')).stats;
-    else {
+    if (cached) {
+      stats = JSON.parse(fs.readFileSync(metaFile, 'utf8')).stats;
+      try { const t = new Date(this.now()); fs.utimesSync(metaFile, t, t); } catch {} // marks it recently used
+    } else {
       const work = `${dir}.part-${crypto.randomBytes(4).toString('hex')}`;
       try {
         const out = await this.renderGraphic({ ffmpegPath: this.ffmpegPath, ...job, dir: work, signal, onProgress });
@@ -63,6 +98,7 @@ class GraphicsService {
         fs.rmSync(dir, { recursive: true, force: true });
         fs.renameSync(work, dir);
       } catch (error) { fs.rmSync(work, { recursive: true, force: true }); throw error; }
+      try { this.prune({ keep: [key] }); } catch {} // a full cache never fails a render
     }
     const duration = job.frames / job.fps;
     // Sample frames for the agent, over neutral grey (grey = transparent), at most 1024 px.
@@ -80,4 +116,4 @@ class GraphicsService {
   }
 }
 
-module.exports = { GraphicsService, validate, VERSION };
+module.exports = { CACHE_MAX_BYTES, GraphicsService, validate, VERSION };

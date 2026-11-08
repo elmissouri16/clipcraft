@@ -36,7 +36,9 @@ function wireTools(declarations) {
     if (aliases.has(name)) throw new Error('Two native tools have the same name. Rename the configured external tools.');
     aliases.set(name, tool.name);
     const parameters = portable(schema);
-    return { name, description: plain(tool.description), parameters: { ...parameters, properties: { ...parameters.properties, retry_of: { type: 'string' } } } };
+    // A tool may declare its own retry_of (add_narration takes a list); otherwise one id.
+    const retryOf = parameters.properties?.retry_of || { type: 'string', description: 'failed_operation_id this call replaces' };
+    return { name, description: plain(tool.description), parameters: { ...parameters, properties: { ...parameters.properties, retry_of: retryOf } } };
   });
   return { tools, aliases };
 }

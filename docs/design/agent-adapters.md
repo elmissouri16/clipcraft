@@ -1,6 +1,6 @@
 # One tool contract, one adapter per agent
 
-Status: phases 0–2 done, phase 3 next (2026-11-08). Branch: `feat/agent-adapters`.
+Status: phases 0–3 done; phase 5 (A/B in the real app) next (2026-11-08). Branch: `feat/agent-adapters`.
 
 ## Goal
 
@@ -163,6 +163,27 @@ completion check failures, duration, tokens, outcome. Counts only.
   against the fake model API and fails on any difference in ClipCraft tools, descriptions, schemas,
   instruction text or placement, request context, or unexpected built-ins (skips when an agent is
   not installed). `test-agent-limits.mjs` covers the limits.
+
+## Phase 3 results
+
+Shared tool behavior, the same for both agents (no new instructions):
+
+- **Completion check:** `complete_edit` lists each unresolved operation (`failed_operation_id`,
+  tool, error) with how to resolve it; any successful call that names a failure in `retry_of`
+  resolves it, whatever the tool; failures whose clips (existing when they failed) have all been
+  deleted since stop blocking. One set of helpers in `runAgent.js` (`clearsFailure`,
+  `failureTargets`, `pruneFailures`, `unresolvedReport`) serves the native path and the step loop.
+- **Errors name the right tool:** a picture tool given a title says titles animate with `edit_text`
+  (`anim_in`/`anim_out`/`anim_loop`) or are placed with `edit_text`; an audio clip points to the
+  audio tools. Keyframes given from the clip's start get the conversion ("add 3s to each").
+- **Spellings:** `matchName` accepts font names in any case and spacing, and animation names across
+  the title and clip vocabularies (`fade` ↔ `fade_in`, `zoomIn` ↔ `zoom_in`); exact ids win and
+  unknown names still fail.
+- **retry_of:** a tool's own `retry_of` (add_narration's list) is no longer overwritten on the wire.
+- **Graphics cache:** at most 4 GB, least recently used first; graphics an open project uses (the
+  editor reports their keys) and anything used in the last 10 minutes stay; Settings > Performance
+  shows the size with Clear. Follow-up: the full-quality transparent .mov is large (about 380 MB
+  for a 40 s graphic at 1080×1350); a smaller lossless alpha codec would cut the cache several-fold.
 
 ## Phases
 

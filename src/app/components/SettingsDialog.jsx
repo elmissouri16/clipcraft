@@ -139,6 +139,27 @@ const PERF_MODE_OPTIONS = [
   ['balanced', 'Balanced', 'Your playback quality, two background jobs at a time'],
   ['high-performance', 'High-Performance', 'Full-quality playback, three background jobs at a time'],
 ];
+// Motion graphics are kept as full-quality transparent video; the cache keeps the newest 4 GB and
+// never removes what an open project uses (a removed graphic is drawn again when its project opens).
+function GraphicsCache({ mb }) {
+  const [use, setUse] = useState(null);
+  useEffect(() => { window.api.graphicsUsage?.().then(setUse).catch(() => {}); }, []);
+  if (!use) return null;
+  return (
+    <SettingsGroup label="Motion graphics" hint="Rendered graphics are kept so they play and export at once. Up to 4 GB is kept; older ones are drawn again when a project that uses them opens.">
+      <div className="proxy-store">
+        <span className="muted" aria-label="Motion graphics cache size">{use.entries ? `${use.entries} graphic${use.entries > 1 ? 's' : ''} · ${mb(use.bytes)} on disk` : 'No graphics on disk.'}</span>
+        {use.entries > 0 && (
+          <button className="btn btn-ghost btn-sm" type="button" onClick={async () => setUse(await window.api.graphicsClear())}
+            title="Delete rendered graphics that no open project uses">
+            <Trash2 size={13} /> Clear
+          </button>
+        )}
+      </div>
+    </SettingsGroup>
+  );
+}
+
 function ProxySettings({ onCleared }) {
   const [st, setSt] = useState(null);
   const [mode, setMode] = useState(null);
@@ -170,6 +191,7 @@ function ProxySettings({ onCleared }) {
         )}
       </div>
     </SettingsGroup>
+    <GraphicsCache mb={mb} />
     <SettingsGroup label="Performance mode" hint="How much background work (thumbnails, waveforms, copies) runs at once, and whether exports leave room for other apps.">
       <div className="seg-tabs small" role="radiogroup" aria-label="Performance mode">
         {PERF_MODE_OPTIONS.map(([id, label, hint]) => (

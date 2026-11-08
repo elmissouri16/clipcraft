@@ -140,6 +140,26 @@ module.exports = async (win, app, dir) => {
     fs.writeFileSync(path.join(dir, 'preview-table.png'), (await win.capturePage()).toPNG());
     await q('window.__fve.seek(3.5)'); await wait(1200);
     fs.writeFileSync(path.join(dir, 'preview-chart.png'), (await win.capturePage()).toPNG());
+    // 6. The cache in Settings > Performance: its size, and Clear keeping what the open project uses.
+    const graphicsRoot = path.join(dir, 'graphics');
+    const cacheDirs = () => fs.readdirSync(graphicsRoot).filter((n) => !n.includes('.part-'));
+    const cacheBefore = cacheDirs();
+    const used = await q('window.__fve.rawProject().media.filter(m=>m.graphic).map(m=>m.graphic.key)');
+    await wait(300); // the in-use report is sent from an effect
+    await q('document.querySelector(".topbar button[aria-label=Settings]").click()');
+    await until('[...document.querySelectorAll(".set2-rail button")].some(b=>b.textContent.trim()==="Performance")');
+    await q('[...document.querySelectorAll(".set2-rail button")].find(b=>b.textContent.trim()==="Performance").click()');
+    await until('!!document.querySelector(\'[aria-label="Motion graphics cache size"]\')');
+    const shown = await q('document.querySelector(\'[aria-label="Motion graphics cache size"]\').textContent');
+    result.cache = { before: cacheBefore.length, used, shown };
+    check('Settings show the motion graphics cache size', new RegExp(`^${cacheBefore.length} graphics · `).test(shown));
+    await q('[...document.querySelectorAll(".set2-pane button")].find(b=>b.textContent.trim()==="Clear").click()');
+    await until(`!document.querySelector('[aria-label="Motion graphics cache size"]').textContent.startsWith(${JSON.stringify(shown.split(' ·')[0])})`);
+    const cacheAfter = cacheDirs();
+    result.cache.after = cacheAfter.length;
+    check('Clear removes graphics no open project uses and keeps the open project\'s', used.length > 0 && used.every((k) => cacheAfter.includes(k)) && cacheAfter.length === new Set(used).size && cacheBefore.length > cacheAfter.length);
+    fs.writeFileSync(path.join(dir, 'settings-graphics-cache.png'), (await win.capturePage()).toPNG());
+    await q('document.querySelector(\'button[aria-label="Close settings"]\').click()');
     check('no renderer exceptions', !result.errors.length);
   } catch (error) { result.error = error.stack; try { fs.writeFileSync(path.join(dir, 'failure.png'), (await win.capturePage()).toPNG()); } catch {} }
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2)); app.exit(result.error ? 1 : 0);

@@ -2,7 +2,7 @@
 // callbacks and keeps all editor writes inside the existing validated runner.
 import { TOOL_DECLARATIONS, createToolRunner, describeImageProgress } from './tools.js';
 import { TOOL_GROUPS, createToolCatalog } from './toolCatalog.js';
-import { SYSTEM_PROMPT, clearsFailure, describeCall, editTarget } from './runAgent.js';
+import { SYSTEM_PROMPT, clearsFailure, describeCall, editTarget, failureTargets, pruneFailures, unresolvedReport } from './runAgent.js';
 import { validateToolCall } from "../../../shared/toolArguments.mjs";
 import { prepareContext, projectRevision, recallContext } from './context.js';
 import { validateAgentProject } from './validation.js';
@@ -43,10 +43,10 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
   // validate; any edit requires an explicit, current complete_edit.
   const settled = () => !failures.size && (finalized === projectRevision(ctx.getProject()) || (!changed && projectRevision(ctx.getProject()) === initialRevision));
   const validOwner = () => { if (canceled()) throw new Error(stopError?.error || 'Editing stopped.'); if (ctx.editActive && !ctx.editActive()) { staleError = 'The project changed during this request. Completed edits were kept. Continue from the current timeline.'; const cause = ctx.editInterruption?.();interruption = cause?.token === requestId ? cause : null;ctx.api.agentCancel?.(requestId).catch(()=>{});throw new Error(staleError); } };
-  const remember = (name, args, result, id) => {
+  const remember = (name, args, result, id, before = ctx.getProject()) => {
     result.operation_id = id;
     if (result.error && !result.not_applicable && runner.requiresSuccess(name)) {
-      result.failed_operation_id = id; failures.set(id, { name, key: editTarget(name, args), error: result.error });
+      result.failed_operation_id = id; failures.set(id, { name, key: editTarget(name, args), error: result.error, targets: failureTargets(args, before) });
     } else if (!result.error) for (const [key, failure] of failures) {
       if (clearsFailure(key, failure, name, args)) failures.delete(key);
     }
@@ -60,7 +60,8 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
     const { catalog, tools } = nativeTools(ctx.provider, external?.tools || []);
     const verify = async () => {
       validOwner();
-      if (failures.size) return { error: `Unresolved operations: ${[...failures.values()].map(f=>f.error).join(' ')}`, ready:false };
+      pruneFailures(failures, ctx.getProject());
+      if (failures.size) return { ...unresolvedReport(failures), ready:false };
       const validation = validateAgentProject(ctx.getProject());
       const issues = validation.issues.filter(issue => !initialIssues.has(issue));
       if (changed && issues.length) return { error:`Edit validation failed: ${issues.join(' ')}`, ready:false };
@@ -111,7 +112,7 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
           result = external?.ok ? typeof external.result === 'string' ? { text:external.result } : external.result : { error:external?.error || 'MCP tool failed.' };
         } else if (call.name === 'generate_images') {
           const results = await runner.runImages(call.args.scenes);
-          results.forEach((value, i) => remember('generate_image', call.args.scenes[i], value, `${requestId}:${id}:${i}`));
+          results.forEach((value, i) => remember('generate_image', call.args.scenes[i], value, `${requestId}:${id}:${i}`, beforeProject));
           result = { results, changed:results.some(value=>value.changed), ...(results.some(value=>value.error) ? { error:'Some scenes failed. Retry only the failed scenes using their failed_operation_id.' } : {}) };
         } else result = await runner.run(call.name, call.args);
         await ctx.settle(); validOwner();
@@ -123,7 +124,7 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
         visual = updateVisualRequirements(initial, beforeProject, ctx.getProject(), visual);
       }
       if (['inspect_frames','get_storyboard','review_section','export_video'].includes(call.name) && result.revision === after && !result.error) markVisualCoverage(visual, result.frames);
-      if (!['complete_edit','generate_images'].includes(call.name)) remember(call.name, call.args || {}, result, `${requestId}:${id}`);
+      if (!['complete_edit','generate_images'].includes(call.name)) remember(call.name, call.args || {}, result, `${requestId}:${id}`, beforeProject);
       contents.push({ role:'model', parts:[{ functionCall:{ name:call.name, args:call.args } }] }, { role:'user', parts:[{ functionResponse:{ name:call.name, response:{ result } } }] });
       onEvent({ type:'tool', id, name:call.name, label:call.name === 'complete_edit'
         ? result.review_required ? `Checking the edit: ${result.checked_regions} of ${result.total_regions} regions reviewed` : 'Validating the completed edit'
