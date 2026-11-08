@@ -1,0 +1,361 @@
+{
+  "date": "2026-11-08T14:21:11.993Z",
+  "platform": "darwin 25.5.0 arm64",
+  "electron": "33.4.11",
+  "chrome": "130.0.6723.191",
+  "graphic": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "frames": 150
+  },
+  "methods": {
+    "canvas": {
+      "ok": true,
+      "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-graphics-spike-oelUuf/graphics/canvas/graphic.mov",
+      "bytes": 2959603,
+      "ms_per_frame": 18.7,
+      "ms_per_frame_after_load": 18,
+      "method": "canvas",
+      "frames": 150,
+      "load_ms": 103,
+      "capture_ms": 0,
+      "encode_wait_ms": 825,
+      "peak_memory_mb": 184,
+      "render_ms": 5.099999785423279,
+      "raster_ms": 392.49999964237213,
+      "send_ms": 2325.1000006198883,
+      "repeated": 52,
+      "total_ms": 2808,
+      "samples": {
+        "background": {
+          "got": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "want": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "max_error": 0
+        },
+        "bar": {
+          "got": [
+            232,
+            179,
+            74,
+            255
+          ],
+          "want": [
+            232,
+            179,
+            74,
+            255
+          ],
+          "max_error": 0
+        },
+        "gridline": {
+          "got": [
+            255,
+            255,
+            255,
+            64
+          ],
+          "want": [
+            255,
+            255,
+            255,
+            64
+          ],
+          "max_error": 0
+        }
+      },
+      "bar_top_row": 500
+    },
+    "capture": {
+      "ok": true,
+      "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-graphics-spike-oelUuf/graphics/capture/graphic.mov",
+      "bytes": 6075263,
+      "ms_per_frame": 33.2,
+      "ms_per_frame_after_load": 32.9,
+      "method": "capture",
+      "frames": 150,
+      "load_ms": 52,
+      "capture_ms": 772,
+      "encode_wait_ms": 1762,
+      "peak_memory_mb": 108,
+      "render_ms": 5.0000001192092896,
+      "raster_ms": 270.7000011205673,
+      "send_ms": 4618.999998927116,
+      "repeated": 52,
+      "total_ms": 4987,
+      "samples": {
+        "background": {
+          "got": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "want": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "max_error": 0
+        },
+        "bar": {
+          "got": [
+            232,
+            179,
+            74,
+            255
+          ],
+          "want": [
+            232,
+            179,
+            74,
+            255
+          ],
+          "max_error": 0
+        },
+        "gridline": {
+          "got": [
+            255,
+            255,
+            255,
+            64
+          ],
+          "want": [
+            255,
+            255,
+            255,
+            64
+          ],
+          "max_error": 0
+        }
+      },
+      "bar_top_row": 500,
+      "vs_canvas_frame_40": {
+        "channels_off_by_more_than_2": 94800,
+        "worst": 255
+      }
+    },
+    "paint": {
+      "ok": false,
+      "error": "Error: Error invoking remote method 'graphics:shown': Error: Frame 0: nothing was drawn."
+    }
+  },
+  "fonts": {
+    "anton_19kb": {
+      "ms_per_frame": 17.8,
+      "raster_ms_per_drawn_frame": 4.1,
+      "title_ink": 2859409,
+      "plain_title_ink": 1886178
+    },
+    "amiri_arabic_100kb": {
+      "ms_per_frame": 18.9,
+      "raster_ms_per_drawn_frame": 5.3,
+      "title_ink": 1372996,
+      "plain_title_ink": 1886178
+    }
+  },
+  "fastest": "canvas",
+  "preview": {
+    "full": {
+      "encode_ms": 661,
+      "bytes": 284258,
+      "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-graphics-spike-oelUuf/graphics/preview-full.webm",
+      "alpha": {
+        "background": {
+          "got": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "want": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bar": {
+          "got": [
+            236,
+            176,
+            67,
+            255
+          ],
+          "want": [
+            232,
+            179,
+            74,
+            255
+          ]
+        },
+        "gridline": {
+          "got": [
+            253,
+            253,
+            253,
+            64
+          ],
+          "want": [
+            255,
+            255,
+            255,
+            64
+          ]
+        }
+      }
+    },
+    "half": {
+      "encode_ms": 381,
+      "bytes": 160032,
+      "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-graphics-spike-oelUuf/graphics/preview-half.webm",
+      "alpha": {
+        "background": {
+          "got": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "want": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "bar": {
+          "got": [
+            236,
+            176,
+            67,
+            255
+          ],
+          "want": [
+            232,
+            179,
+            74,
+            255
+          ]
+        },
+        "gridline": {
+          "got": [
+            244,
+            244,
+            244,
+            61
+          ],
+          "want": [
+            255,
+            255,
+            255,
+            64
+          ]
+        }
+      }
+    },
+    "chromium": {
+      "video": [
+        1080,
+        1920
+      ],
+      "background_over_red": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "bar": [
+        232,
+        179,
+        75,
+        255
+      ],
+      "gridline_over_red": [
+        255,
+        64,
+        64,
+        255
+      ]
+    }
+  },
+  "export": {
+    "probe": {
+      "type": "video",
+      "duration": 5,
+      "hasVideo": true,
+      "hasAudio": true,
+      "fps": 30,
+      "width": 1080,
+      "height": 1920,
+      "rotation": 0,
+      "hdr": false,
+      "vcodec": "h264",
+      "acodec": "aac",
+      "pixFmt": "yuv420p",
+      "profile": "High",
+      "channels": 2
+    },
+    "mean_error": 5.12,
+    "worst_error": 83,
+    "blend_vs_source_background": {
+      "mean": 5.12,
+      "worst": 83,
+      "share_over_8": 0.0084
+    },
+    "blend_vs_exported_background": {
+      "mean": 0.51,
+      "worst": 77,
+      "share_over_8": 0.0047
+    },
+    "note": "Luma about 2 levels low under any overlay (also with a plain image overlay): an existing export-path offset, not the graphic.",
+    "bar_top_row": {
+      "graphic": 500,
+      "exported": 500
+    },
+    "pixels": {
+      "background": [
+        23,
+        47,
+        81,
+        255
+      ],
+      "bar": [
+        231,
+        176,
+        73,
+        255
+      ],
+      "gridline": [
+        79,
+        102,
+        123,
+        255
+      ],
+      "gridline_expected": [
+        86,
+        104,
+        129
+      ]
+    }
+  },
+  "sandbox": {
+    "probes": "Error: {\"net\":\"blocked (TypeError)\",\"file\":\"blocked (TypeError)\",\"require\":\"undefined\",\"process\":\"undefined\",\"host_visible\":\"object\",\"host_job\":\"refused\",\"host_frame\":\"refused\",\"random\":\"seeded\",\"now\":1704067200000}",
+    "endless_loop": "A graphic frame took longer than 1500 ms; the render was stopped.",
+    "endless_loop_stopped_after_ms": 1602,
+    "not_svg": "Error: Frame 0: render must return SVG markup (kit.svg`<svg …>`)."
+  },
+  "windows_left_open": 1,
+  "work_dir": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-graphics-spike-oelUuf/graphics"
+}

@@ -39,6 +39,10 @@ const fakeSdk = {
       async *[Symbol.asyncIterator]() {
         if (pending) await new Promise((resolve, reject) => options.abortController.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
         if (failure) throw failure;
+        if (options.tools?.includes('WebSearch')) {
+          yield { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'web1', name: 'WebSearch', input: { query: 'Fez population 1950' } }] } };
+          yield { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'web1', content: 'results' }, { type: 'tool_result', tool_use_id: 'mcp-other', content: 'not a search' }] } };
+        }
         yield { type: 'result', subtype: 'success', structured_output: response, result: 'OK' };
       },
       supportedModels: async () => [{ value: 'sonnet', resolvedModel: 'claude-sonnet-5', displayName: 'Sonnet', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] }],
@@ -111,6 +115,29 @@ const agents = createLocalAgents({ loadSdk: async () => fakeSdk, resolveExecutab
         assert.equal(session.options.strictMcpConfig, true);
         assert.equal(session.options.persistSession, false);
         assert.equal(session.options.permissionMode, 'dontAsk');
+      }
+      // Web research follows the per-agent setting: Codex on by default, Claude off.
+      const latest = () => captured.findLast((entry) => entry.kind === (provider === 'codex-sdk' ? 'thread' : 'query'));
+      const promptOf = () => provider === 'codex-sdk' ? captured.findLast((entry) => entry.kind === 'run').prompt : latest().options.systemPrompt;
+      if (provider === 'codex-sdk') {
+        await agents.agentStep({ provider, webResearch: false }, req);
+        assert.equal(latest().options.webSearchMode, 'disabled', 'Codex search off when the setting is off');
+        assert.match(promptOf(), /Web research is off/);
+      } else {
+        assert.match(session.options.systemPrompt, /Web research is off/, 'Claude starts without web research');
+        assert.equal(session.options.maxTurns, 4);
+        const searches = [];
+        await agents.agentStep({ provider, webResearch: true }, { ...req, onSearch: (s) => searches.push(s) });
+        const web = latest().options;
+        assert.deepEqual(web.tools, ['WebSearch', 'WebFetch'], 'only the web tools, nothing else built in');
+        assert.deepEqual(web.allowedTools, ['WebSearch', 'WebFetch']);
+        assert.equal((await web.canUseTool('WebFetch')).behavior, 'allow');
+        assert.equal((await web.canUseTool('Bash')).behavior, 'deny', 'shell and files stay off');
+        assert.equal((await web.canUseTool('Write')).behavior, 'deny');
+        assert.match(web.systemPrompt, /WebSearch and WebFetch tools are enabled/);
+        assert.match(web.systemPrompt, /untrusted data/);
+        assert.deepEqual(searches, [{ id: 'web1', query: 'Fez population 1950', status: 'running' }, { id: 'web1', query: 'Fez population 1950', status: 'done' }],
+          'searches reach the chat; other tool results do not');
       }
       await agents.agentStep({ provider, model: 'explicit-model' }, req);
       assert.equal(captured.findLast((entry) => entry.kind === (provider === 'codex-sdk' ? 'thread' : 'query')).options.model, 'explicit-model');

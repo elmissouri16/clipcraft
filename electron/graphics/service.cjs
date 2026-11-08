@@ -1,0 +1,83 @@
+// Motion graphics service: validates a graphic job, renders it once (electron/graphics/render.cjs)
+// and keeps the result by content, so the same code, inputs, fonts and size never render twice.
+// Each graphic is a folder under user data:
+//   graphic.mov   transparent lossless video (QuickTime RLE): what the export composites;
+//   preview.webm  transparent VP9 copy: what the preview plays (Chromium cannot play RLE, and
+//                 FFmpeg's own VP9 decoder drops alpha, so each format has its one job);
+//   meta.json     size, frame rate, frame count and render timings.
+// Graphics referenced by saved projects live here, so nothing is evicted automatically.
+const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
+
+const VERSION = 'graphics-1';
+const LIMITS = { code: 200000, inputs: 2 * 1024 * 1024, fonts: 3 * 1024 * 1024, seconds: 60, side: 4096 };
+const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+const run = (file, args, signal) => new Promise((resolve, reject) => {
+  const child = execFile(file, args, { maxBuffer: 64 * 1024 * 1024, encoding: 'buffer', windowsHide: true }, (error, stdout, stderr) => error ? reject(Object.assign(Error(String(stderr || error.message).trim().split('\n').pop()), { name: signal?.aborted ? 'AbortError' : 'Error' })) : resolve(stdout));
+  signal?.addEventListener('abort', () => child.kill('SIGKILL'), { once: true });
+});
+
+// Throws a message the agent can act on, or returns the normalized job.
+function validate(job) {
+  const { code, inputs = {}, fonts = [], width, height, fps = 30, duration_sec } = job || {};
+  if (typeof code !== 'string' || !code.trim()) throw Error('code must be the graphic component source.');
+  if (code.length > LIMITS.code) throw Error(`The graphic code is too long (${code.length} characters; at most ${LIMITS.code}).`);
+  if (!/export\s+default/.test(code)) throw Error('The graphic must `export default function render({ frame, fps, width, height, inputs, kit })`.');
+  const inputText = JSON.stringify(inputs ?? {});
+  if (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs)) throw Error('inputs must be an object.');
+  if (inputText.length > LIMITS.inputs) throw Error('inputs are too large (at most 2 MB).');
+  if (!Array.isArray(fonts) || fonts.some((f) => !f || typeof f.family !== 'string' || typeof f.data !== 'string')) throw Error('Invalid fonts.');
+  if (fonts.reduce((n, f) => n + f.data.length, 0) > LIMITS.fonts) throw Error('Too much font data: use fewer font families or weights.');
+  if (![width, height].every((n) => Number.isInteger(n) && n >= 16 && n <= LIMITS.side)) throw Error('width and height must be whole pixels from 16 to 4096.');
+  if (!(Number.isFinite(fps) && fps >= 1 && fps <= 60)) throw Error('fps must be from 1 to 60.');
+  if (!(Number.isFinite(duration_sec) && duration_sec >= 0.2 && duration_sec <= LIMITS.seconds)) throw Error(`duration_sec must be from 0.2 to ${LIMITS.seconds} seconds.`);
+  // Even sizes keep the VP9 preview's 4:2:0 alpha exact.
+  return { code, inputs, fonts, width: width + (width % 2), height: height + (height % 2), fps, frames: Math.max(1, Math.round(duration_sec * fps)) };
+}
+
+class GraphicsService {
+  constructor({ root, ffmpegPath, probe, renderGraphic }) { Object.assign(this, { root, ffmpegPath, probe, renderGraphic }); }
+
+  key(job) {
+    return sha(JSON.stringify([VERSION, job.code, job.inputs, job.fonts.map((f) => [f.family, f.weight, f.style, f.unicodeRange, sha(f.data)]), job.width, job.height, job.fps, job.frames]));
+  }
+
+  // Resolves with { key, file, preview, media (probe of the graphic), width, height, fps, frames,
+  // duration_sec, cached, stats, samples: [{ time_sec, bytes (JPEG), width, height }] }.
+  // samples false: no sample frames (the editor re-rendering a graphic needs none).
+  async render(request, { signal, onProgress, sampleTimes, samples: wantSamples = true } = {}) {
+    const job = validate(request), key = this.key(job), dir = path.join(this.root, key);
+    const file = path.join(dir, 'graphic.mov'), preview = path.join(dir, 'preview.webm'), metaFile = path.join(dir, 'meta.json');
+    let cached = fs.existsSync(file) && fs.existsSync(preview) && fs.existsSync(metaFile), stats;
+    if (cached) stats = JSON.parse(fs.readFileSync(metaFile, 'utf8')).stats;
+    else {
+      const work = `${dir}.part-${crypto.randomBytes(4).toString('hex')}`;
+      try {
+        const out = await this.renderGraphic({ ffmpegPath: this.ffmpegPath, ...job, dir: work, signal, onProgress });
+        stats = out.stats;
+        const t = Date.now();
+        await run(this.ffmpegPath, ['-v', 'error', '-y', '-i', out.file, '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-b:v', '0', '-crf', '30',
+          '-deadline', 'realtime', '-cpu-used', '8', '-row-mt', '1', '-auto-alt-ref', '0', path.join(work, 'preview.webm')], signal);
+        stats.preview_ms = Date.now() - t;
+        fs.writeFileSync(path.join(work, 'meta.json'), JSON.stringify({ version: VERSION, width: job.width, height: job.height, fps: job.fps, frames: job.frames, stats }));
+        fs.rmSync(dir, { recursive: true, force: true });
+        fs.renameSync(work, dir);
+      } catch (error) { fs.rmSync(work, { recursive: true, force: true }); throw error; }
+    }
+    const duration = job.frames / job.fps;
+    // Sample frames for the agent, over neutral grey (grey = transparent), at most 1024 px.
+    const times = (sampleTimes?.length ? sampleTimes : [0.12, 0.3, 0.5, 0.7, 0.88, 1].map((f) => f * duration)).slice(0, 6)
+      .map((t) => Math.min(job.frames - 1, Math.max(0, Math.round(t * job.fps))));
+    const scale = Math.min(1, 1024 / Math.max(job.width, job.height)), w = Math.max(2, Math.round(job.width * scale / 2) * 2), h = Math.max(2, Math.round(job.height * scale / 2) * 2);
+    const samples = [];
+    for (const n of wantSamples ? [...new Set(times)] : []) {
+      const bytes = await run(this.ffmpegPath, ['-v', 'error', '-i', file, '-f', 'lavfi', '-i', `color=c=0x3a3a3a:s=${job.width}x${job.height}`,
+        '-filter_complex', `[0:v]select=eq(n\\,${n}),format=rgba[g];[1:v][g]overlay=format=auto:shortest=1,scale=${w}:${h}:flags=lanczos`, '-frames:v', '1', '-q:v', '3', '-f', 'mjpeg', 'pipe:1'], signal);
+      samples.push({ time_sec: Math.round(n / job.fps * 1000) / 1000, bytes, width: w, height: h });
+    }
+    const media = await this.probe(file);
+    return { key, file, preview, media, width: job.width, height: job.height, fps: job.fps, frames: job.frames, duration_sec: duration, cached, stats, schema: stats?.schema ?? null, samples };
+  }
+}
+
+module.exports = { GraphicsService, validate, VERSION };

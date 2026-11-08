@@ -26,6 +26,7 @@ function resolveDraft(saved, draft = {}) {
     baseUrl: draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
     apiKey: (draft.apiKey || '').trim() || saved.apiKey,
     executablePath: draft.executablePath !== undefined ? String(draft.executablePath).trim() : saved.executablePath,
+    webResearch: typeof draft.webResearch === 'boolean' ? draft.webResearch : saved.webResearch,
   };
 }
 

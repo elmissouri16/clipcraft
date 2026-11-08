@@ -17,6 +17,9 @@ module.exports = async function smoke(win, app, dir) {
   const result = { errors };
   if (process.env.FVE_SMOKE_MODE === 'reference-video') return require('./smoke-reference-video.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'smooth-motion') return require('./smoke-smooth-motion.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'graphics') return require('./smoke-graphics.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'agent-selection') return require('./smoke-agent-selection.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'graphics-spike') return require('../spikes/graphics-capture.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'shortcuts') return require('./smoke-shortcuts.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-editorial') return require('./smoke-agent-editorial.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-eval') return require('./smoke-agent-eval.cjs')(win, app, dir);
@@ -57,6 +60,7 @@ module.exports = async function smoke(win, app, dir) {
   if (['codex-images','codex-images-parallel','codex-images-portrait'].includes(process.env.FVE_SMOKE_MODE)) {
     return require('./smoke-codex-images.cjs')(win, app, dir);
   }
+  if (process.env.FVE_SMOKE_MODE === 'web-research') return require('./smoke-web-research.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'gemini-tts') {
     return require('./smoke-gemini-tts.cjs')(win, app, dir);
   }

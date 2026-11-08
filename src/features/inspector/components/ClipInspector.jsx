@@ -21,6 +21,7 @@ import EnhanceVoice from "../../audio/components/EnhanceVoice.jsx";
 import { baseAt, editAt, hasAnyKeys, localTime, nextArrival, segmentEase, setSegmentEase } from "../../timeline/anim.js";
 import { findClipAnywhere, trackedClips } from "../../timeline/track.js";
 import CurveEditor from './CurveEditor.jsx';
+import GraphicPanel from './GraphicPanel.jsx';
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -163,7 +164,8 @@ export function PinToTrack({ clip, project, set, card = false }) {
 // Properties of a picture clip (main track or overlay), the clip properties panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
 export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, readTime = () => time, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
-  const [tab, setTab] = useState('video');
+  // A motion graphic opens on its own fields.
+  const [tab, setTab] = useState(media?.graphic ? 'graphic' : 'video');
   const [sub, setSub] = useState('basic');
   const [maskEdit, setMaskEdit] = useState(false);
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
@@ -248,7 +250,8 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
     set(framingPatch(clip, media, W, H, mode));
   };
 
-  const tabs = [['video', 'Video'], ['animation', 'Animation'], ...(isVideo ? [['audio', 'Audio'], ['speed', 'Speed']] : []), ['adjust', 'Adjust']];
+  const graphic = !!media?.graphic;
+  const tabs = [...(graphic ? [['graphic', 'Graphic']] : []), ['video', 'Video'], ['animation', 'Animation'], ...(isVideo && !graphic ? [['audio', 'Audio'], ['speed', 'Speed']] : []), ['adjust', 'Adjust']];
 
   return (
     <div className="clip-inspector">
@@ -258,8 +261,10 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
         ))}
       </div>
       <div className="info">{media?.name}<br />
-        <span className="dim">{media?.width}×{media?.height}{isVideo ? ` · ${formatTime(media.duration)}` : ' · photo'} · on timeline: {clipLen(clip).toFixed(2)}s</span>
+        <span className="dim">{media?.width}×{media?.height}{graphic ? ' · graphic' : isVideo ? ` · ${formatTime(media.duration)}` : ' · photo'} · on timeline: {clipLen(clip).toFixed(2)}s</span>
       </div>
+
+      {tab === 'graphic' && graphic && <GraphicPanel key={media.id} clip={clip} media={media} project={project} track={track} dispatch={dispatch} />}
 
       {tab === 'video' && (
         <>

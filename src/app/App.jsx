@@ -48,6 +48,7 @@ import { renderTextFrames } from "../features/export/exportText.js";
 import { fxWork, renderFxPass } from "../features/export/fxExport.js";
 import { TEXT_TEMPLATES } from "../features/text/catalog.js";
 import { allFonts } from "../features/text/fonts.js";
+import { graphicOutdated, isGraphicMedia, redrawGraphicAction, renderGraphicMedia } from '../features/graphics/graphicMedia.js';
 
 // (The emoji-to-PNG rasterizer that lived here served only the Stickers feature, removed
 // in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
@@ -381,6 +382,33 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaKey]);
 
+  // Graphics follow the canvas: a new size or frame rate draws them again, and so does opening a
+  // project whose cached graphic files are gone. Not a separate Undo step (the change that caused it
+  // is); during an agent request it belongs to the agent's edit instead of interrupting it.
+  const graphicsKey = project.media.filter(isGraphicMedia).map((m) => m.id).join(',');
+  const redrawing = useRef(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const graphics = projectRef.current.media.filter(isGraphicMedia);
+      if (!graphics.length || !window.api.renderGraphic) return;
+      const missing = new Set((await window.api.graphicsMissing?.(graphics.map((m) => ({ id: m.id, path: m.path, preview: m.proxy })))) || []);
+      for (const m of graphics) {
+        if (cancelled || redrawing.current.has(m.id) || !(missing.has(m.id) || graphicOutdated(m, projectRef.current))) continue;
+        redrawing.current.add(m.id);
+        try {
+          const out = await renderGraphicMedia({ api: window.api, project: projectRef.current, code: m.graphic.code, inputs: m.graphic.inputs || {},
+            fonts: m.graphic.fonts || [], duration_sec: m.duration, name: m.name, requestId: `auto-${m.id}` });
+          if (out.error || !projectRef.current.media.some((x) => x.id === m.id)) continue;
+          const token = historyRef.current.agentEdit?.token;
+          dispatch({ ...redrawGraphicAction(projectRef.current, m, out.media), transient: true, ...(token ? { agentToken: token } : {}) });
+        } finally { redrawing.current.delete(m.id); }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, projectLoadVersion, project.width, project.height, project.fps, graphicsKey]);
+
   useEffect(() => {
     window.api.captionsStatus().then((st) => setCaptions((c) => ({ ...c, installed: st.installed, models: st.models || {}, available: st.available })));
   }, []);
@@ -476,7 +504,7 @@ export default function App() {
     if (payload.kind === 'media') {
       const m = project.media.find((x) => x.id === payload.id);
       if (!m) return;
-      if (info.lane === 'overlay' && m.type !== 'audio') {
+      if ((info.lane === 'overlay' || m.graphic) && m.type !== 'audio') {
         dispatch({ type: 'addOverlayClip', mediaId: m.id, clipId, at: info.time, layer: layer('overlay') });
         return setSelection({ track: 'overlay', id: clipId });
       }
@@ -632,6 +660,8 @@ export default function App() {
 
   const addToTimeline = (mediaId) => {
     const m = project.media.find((x) => x.id === mediaId);
+    // A motion graphic always goes over the whole frame at the playhead, never onto the main track.
+    if (m?.graphic) return addAsOverlay(mediaId);
     guardAdd(m, () => {
       const clipId = uid();
       dispatch({ type: 'addToTimeline', mediaId, clipId, at: readTime() });

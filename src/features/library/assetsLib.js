@@ -34,6 +34,9 @@ const RENDER_NAME = /-(detach|rev|stab)\.[a-z0-9]+$/i;
 export const isSpeechMedia = (m) => !!m && m.type === 'audio'
   && (m.origin === 'tts' || ['piper', 'elevenlabs', 'gemini'].includes(m.credit?.license));
 
+// A motion graphic (drawn by CraftAI or from an example): transparent video with its code and inputs.
+export const isGraphicMedia = (m) => !!m?.graphic;
+
 export const isProcessedMedia = (m) => {
   if (!m) return false;
   if (PROCESSED_ORIGINS.includes(m.origin)) return true;
@@ -41,10 +44,12 @@ export const isProcessedMedia = (m) => {
   return RENDER_NAME.test(m.name || '') || RENDER_NAME.test(base);
 };
 
-// Tree nodes: 'all' | 'video' | 'audio' | 'image' | 'speech' | 'processed'.
+// Tree nodes: 'all' | 'video' | 'audio' | 'image' | 'speech' | 'processed' | 'graphic'.
+// Graphics are their own kind: they are not counted as videos.
 export function mediaTreeCounts(media) {
-  const c = { all: media.length, video: 0, audio: 0, image: 0, speech: 0, processed: 0 };
+  const c = { all: media.length, video: 0, audio: 0, image: 0, speech: 0, processed: 0, graphic: 0 };
   for (const m of media) {
+    if (isGraphicMedia(m)) { c.graphic += 1; continue; }
     if (m.type === 'video') c.video += 1;
     else if (m.type === 'audio') c.audio += 1;
     else if (m.type === 'image') c.image += 1;
@@ -56,7 +61,8 @@ export function mediaTreeCounts(media) {
 
 export function mediaTreeFilter(media, sel) {
   switch (sel) {
-    case 'video': return media.filter((m) => m.type === 'video');
+    case 'video': return media.filter((m) => m.type === 'video' && !isGraphicMedia(m));
+    case 'graphic': return media.filter((m) => isGraphicMedia(m));
     case 'audio': return media.filter((m) => m.type === 'audio');
     case 'image': return media.filter((m) => m.type === 'image');
     case 'speech': return media.filter((m) => isSpeechMedia(m));

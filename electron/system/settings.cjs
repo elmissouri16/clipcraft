@@ -56,6 +56,11 @@ function write(data) {
   }
 }
 
+// Native agents' own web search ("web research"): Codex had it from the start, Claude starts without.
+const WEB_RESEARCH_DEFAULTS = require('../agents/research.cjs').DEFAULTS;
+const webResearchOf = (ai, provider) => provider in WEB_RESEARCH_DEFAULTS
+  ? (typeof ai.webResearch?.[provider] === 'boolean' ? ai.webResearch[provider] : WEB_RESEARCH_DEFAULTS[provider]) : false;
+
 // What the renderer may see.
 function getPublic() {
   const ai = read().ai || {};
@@ -67,6 +72,7 @@ function getPublic() {
     baseUrls: ai.baseUrls || {},
     executablePaths: ai.executablePaths || {},
     reasoningEfforts: ai.reasoningEfforts || {},
+    webResearch: Object.fromEntries(Object.keys(WEB_RESEARCH_DEFAULTS).map((p) => [p, webResearchOf(ai, p)])),
     keys, // provider -> "…abcd" for providers that have a saved key
     defaultModels: DEFAULT_MODELS,
     encryption: safeStorage.isEncryptionAvailable(),
@@ -169,6 +175,7 @@ function getActive(providerOverride) {
     executablePath: (ai.executablePaths && ai.executablePaths[provider]) || '',
     reasoningEffort: typeof effort === 'string' ? effort : '',
     reasoningEfforts: ai.reasoningEfforts?.[provider] || {},
+    webResearch: webResearchOf(ai, provider),
   };
 }
 
@@ -183,6 +190,7 @@ function save(patch) {
   if (['codex-sdk', 'claude-agent-sdk'].includes(provider) && patch.executablePath !== undefined) {
     ai.executablePaths = { ...(ai.executablePaths || {}), [provider]: String(patch.executablePath || '').trim() };
   }
+  if (provider in WEB_RESEARCH_DEFAULTS && typeof patch.webResearch === 'boolean') ai.webResearch = { ...(ai.webResearch || {}), [provider]: patch.webResearch };
   if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) {
     if (!safeStorage.isEncryptionAvailable()) {
       throw new Error('Secure storage is not available on this PC, so the key was not saved.');

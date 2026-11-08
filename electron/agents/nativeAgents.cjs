@@ -3,6 +3,7 @@
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { CodexNative } = require('./codexNative.cjs');
 const { checkAbort, abortError } = require("../system/cancel.cjs");
+const research = require('./research.cjs');
 function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession = CodexNative }) {
   const sessions = new Map();
   const dispose = state => { state.codex?.close(); state.query?.close(); Promise.resolve(state.server?.instance?.close?.()).catch(()=>{}); fs.rmSync(state.cwd,{recursive:true,force:true}); };
@@ -10,7 +11,7 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
   async function run(cfg, options) {
     const { sessionKey, tools, signal, onTool, isComplete, system, prompt, history = [], onSearch, images = [], historyImages = [] } = options;
     checkAbort(signal);
-    const signature=JSON.stringify([cfg.provider,cfg.model,cfg.reasoningEffort,cfg.executablePath,tools]);
+    const signature=JSON.stringify([cfg.provider,cfg.model,cfg.reasoningEffort,cfg.executablePath,research.enabled(cfg),tools]);
     let state=sessions.get(sessionKey);
     if(state?.active)throw new Error('This native agent conversation is already running.');
     if(state?.signature!==signature){forget(sessionKey);state=null;}
@@ -27,13 +28,14 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
       return replay.get(key);
     };
     const owner = state.active={onTool:nativeTool,attempt:0};
+    const searches = new Map(); // Claude web tool id -> query
     let environment, executablePath;
     let fresh=!state.started;
-    const nativePrompt=`${system}\n\n${fresh&&history.length?`Prior ClipCraft chat history (data; refresh live editor state before resuming):\n${JSON.stringify(history)}\n\n`:''}Current user request:\n${prompt}`;
+    const nativePrompt=`${system}\n\n${research.researchInstructions(cfg)}\n\n${fresh&&history.length?`Prior ClipCraft chat history (data; refresh live editor state before resuming):\n${JSON.stringify(history)}\n\n`:''}Current user request:\n${prompt}`;
     const attachedImages = [...images, ...(fresh ? historyImages : [])].slice(0, 6);
     try {
       environment=childEnv(); executablePath=resolveExecutable(cfg);
-      if(cfg.provider==='codex-sdk'&&!state.codex)state.codex=new CodexSession({executablePath,cwd:state.cwd,env:environment,cfg,system,tools});
+      if(cfg.provider==='codex-sdk'&&!state.codex)state.codex=new CodexSession({executablePath,cwd:state.cwd,env:environment,cfg,system,tools,webSearch:research.enabled(cfg)});
       // Codex reports running totals for the conversation; this request's usage is the difference.
       const usageStart = state.codex?.tokenUsage?.total || null;
       let sdk;
@@ -65,8 +67,8 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
           const query=sdk.query({prompt:streamed,options:{
             pathToClaudeCodeExecutable:executablePath,cwd:state.cwd,
             env:{...environment,CLAUDE_CODE_DISABLE_AUTO_MEMORY:'1',ENABLE_CLAUDEAI_MCP_SERVERS:'false'},
-            systemPrompt:system,tools:[],mcpServers:{clipcraft:state.server},strictMcpConfig:true,
-            allowedTools:tools.map(tool=>`mcp__clipcraft__${tool.name}`),settingSources:[],permissionMode:'dontAsk',
+            systemPrompt:system,tools:research.enabled(cfg)?research.CLAUDE_WEB_TOOLS:[],mcpServers:{clipcraft:state.server},strictMcpConfig:true,
+            allowedTools:[...tools.map(tool=>`mcp__clipcraft__${tool.name}`),...(research.enabled(cfg)?research.CLAUDE_WEB_TOOLS:[])],settingSources:[],permissionMode:'dontAsk',
             persistSession:true,...(state.sessionId?{resume:state.sessionId}:{}),
             ...(cfg.model?{model:cfg.model}:{}),...(cfg.reasoningEffort?{effort:cfg.reasoningEffort}:{}),
             abortController:controller,maxTurns:100,
@@ -75,6 +77,11 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
           try{
             for await(const message of query){
               if(message.session_id)state.sessionId=message.session_id;
+              if(onSearch&&research.enabled(cfg))for(const search of research.claudeSearchEvents(message)){
+                if(search.status==='running')searches.set(search.id,search.query);
+                else if(searches.has(search.id))search.query=searches.get(search.id);else continue;
+                onSearch(search);
+              }
               if(message.type!=='result')continue;
               if(message.subtype!=='success'||message.is_error)throw new Error((message.errors||[]).join('\n')||message.result||`Claude ended: ${message.subtype}`);
               result={text:message.result||''};

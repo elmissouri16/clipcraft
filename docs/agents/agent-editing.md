@@ -59,6 +59,51 @@ The agent reviews rendered sections as still images, so it cannot see motion. It
   - `tests/unit/export/test-continuous-motion-export.mjs` measures a dot on rendered export frames: per-key `inout` stops at the middle waypoints, `continuous` keeps moving.
   - `tests/unit/agents/test-smooth-motion-ui.cjs` runs the real app.
 
+## Motion graphics
+
+The agent draws custom graphics from scratch: charts, buttons, callouts, lower thirds, diagrams
+and map routes. They are written for the video's style; there is no template catalogue. Plan and
+measurements: [motion graphics](../design/motion-graphics.md).
+
+- **Tools** (`graphics` group, `src/features/agent/graphicsTools.js`):
+  - `graphics_guide` gives the component format, the toolkit, design rules and three reference
+    components (a chart, a call-to-action button, a lower third) to learn from.
+  - `add_graphic` renders the agent's component and places it as a full-frame transparent overlay.
+  - `edit_graphic` re-renders it with merged inputs, new code, fonts or duration. The clip keeps
+    its position, keyframes and effects; the old render leaves the library.
+- **Rendering** (`electron/graphics/`):
+  - The component runs in a locked-down hidden window: sandboxed, no Node, no network, its own
+    session, seeded randomness, a fixed clock, a one-time-token bridge and a time limit per frame.
+  - Each SVG frame is rasterised in a canvas into a transparent RLE video (export) plus a
+    transparent VP9 copy (preview, at every playback quality).
+  - Renders are kept by content hash under user data; identical requests reuse them.
+- **What the agent gets back:**
+  - up to six sample frames over grey (grey is transparent) as one contact sheet;
+  - component errors with their line number;
+  - `design_warnings`, measured while rendering: text under 3 % of the frame width, the picture
+    standing still for more than 2.5 s, or a graphic longer than 15 s.
+- **In the editor** (`src/features/graphics/graphicMedia.js`), a graphic is a graphic, not a
+  plain video:
+  - The media library lists graphics under Generated ▸ Graphics, with a Graphic badge.
+  - "+ Add", double-click and drops always place it over the whole frame at the playhead, never on
+    the main track (enforced in the reducer).
+  - The inspector opens on a Graphic tab showing the inputs the component declares. The sandbox
+    reports them; the editor never runs the code. Text, numbers, colours, on/off and data tables
+    get proper controls, alongside the duration. Update re-draws the graphic and swaps it in as
+    one Undo step.
+  - A new canvas size or frame rate re-draws every graphic, and so does opening a project whose
+    cached graphic files are gone. A re-draw is not an Undo step of its own, and during an agent
+    request it belongs to the agent's edit.
+- **Fonts:** fonts come from the app's bundled `@font-face` rules and are embedded in the graphic.
+  - "Inter" finds "Inter Variable".
+  - A missing weight uses the family's nearest bundled weight.
+  - A family that is not bundled is refused, with the list of available families.
+- **Tests:**
+  - `tests/unit/agents/test-agent-graphics.mjs` covers the tools against the real reducer.
+  - `tests/unit/agents/test-graphics-ui.cjs` runs the real app: a button over a video,
+    transparent in preview and export and pressed later in the export; edits; errors; a US-state
+    population chart on an empty project.
+
 ## Speech and silence
 
 Silence analysis defaults to the audible full mix, including detached and overlay audio. `remove_silences` only removes pauses inside the selected, audible clips (the host returns where they play, using the same rules as the analysis render): stretches where nothing selected plays — other clips, photos, silent b-roll, or pieces of a clip that earlier cuts split under new IDs — are never cut, and the result reports how much of the timeline was analysed. `source` can select `all`, `video`, `overlay`, or `audio`; `clip_ids` isolates particular sources without changing their absolute placement. A source with no audible clips fails rather than treating synthetic silence as removable footage. Background music can mask pauses, so select speech clips when that is the intended analysis.
@@ -66,6 +111,32 @@ Silence analysis defaults to the audible full mix, including detached and overla
 Transcription supports local or configured cloud engines, source selection, time bounds, search, and pagination. Word timings and their measured/estimated provenance survive retrieval and caption generation. Caption regrouping uses supplied word boundaries; inferred boundaries are labelled estimated. Creating captions reuses the transcript rather than running inference again.
 
 A bounded local cache fingerprints audible edits, source files, and engine options. Title, crop, and color changes reuse speech work. Audio edits or replaced files invalidate it. Stop cancels decoding, inference, downloads, and cloud requests; incomplete results are not cached as success.
+
+## Narration and speech limits
+
+`add_voiceover` speaks one clip. `add_narration` speaks 2–40 lines with **one** Gemini request
+(`electron/audio/narration.cjs`): the lines are read as paragraphs with a requested pause between
+them, ffmpeg finds the pauses, and the N−1 pauses that best match where each line should end by its
+share of the text are the cuts (short pauses inside a line stay in it). Each line becomes its own
+audio clip; a line without `start_sec` follows the previous one after `gap_sec`. When the pauses do
+not fit the lines (the voice ran lines together) each line is spoken on its own request instead and
+the result says so. Lines are cached, so the same narration asked again needs no request.
+
+Google limits Gemini TTS requests per model and API tier (per minute and per day), separately from
+the project's spend cap. `electron/audio/geminiTts.cjs` reads only the quota id, its value and the
+retry delay from a 429, never the provider message:
+
+- per minute: speech requests run one at a time, and a limit is waited out (as long as Google says,
+  up to 65 s, three times); the result carries `rate_limit_wait_sec` and tells CraftAI to group lines
+  into `add_narration`;
+- per day: no retry; the model is remembered as out of requests until midnight Pacific time (per key,
+  in memory) so later calls fail without a request. The tool result carries `provider_limit`
+  (`kind`, `model`, `requests_allowed`, `resets`, `other_model`) and `next` advice: switch to the
+  other Gemini model with `retry_of`, otherwise finish the rest and tell the user what is missing.
+
+A failed `add_voiceover` can be replaced by `add_narration` (and the reverse) when the new call names
+it in `retry_of` (one id or a list). Real-app check: `tests/unit/audio/test-gemini-tts-ui.cjs`
+(simulated Gemini, real IPC, FFmpeg and tool loop).
 
 ## Scenes and storyboard
 

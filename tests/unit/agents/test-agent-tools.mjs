@@ -6,6 +6,7 @@ import { historyReducer, normalizeProject, videoLayout } from "../../../src/stat
 import { createToolRunner, summarizeProject, TOOL_DECLARATIONS } from "../../../src/features/agent/tools.js";
 import { createToolCatalog, TOOL_GROUPS } from "../../../src/features/agent/toolCatalog.js";
 import geminiTts from "../../../electron/audio/geminiTts.cjs";
+import { clearsFailure, editTarget } from "../../../src/features/agent/runAgent.js";
 
 let state = {
   past: [], future: [],
@@ -29,7 +30,11 @@ const api = {
   librarySearch: async (o) => { calls.push(['librarySearch', o]); return { results: [{ id: 'freesound-1', title: 'Whoosh fast', duration: 1.2, creator: 'X', license: 'cc0', url: 'https://x' }, { id: 'jam-2', title: 'Happy', duration: 95, creator: 'Y', license: 'by' }] }; },
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
   ttsStatus: async () => ({ voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male' }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog() }),
-  ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' } : probed('Voice - hello.wav', 'audio', 2.5); },
+  ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' }
+    : req.text === 'Out of quota' ? { error: 'Gemini TTS daily request limit reached.', limit: { provider: 'gemini', kind: 'daily', model: 'gemini-3.8-flash-tts', resets: 'midnight Pacific time', other_model: 'gemini-3.8-flash-lite-tts' } }
+    : req.text === 'Waited' ? { ...probed('Voice - waited.wav', 'audio', 1), waited_sec: 31 } : probed('Voice - hello.wav', 'audio', 2.5); },
+  ttsSpeakLines: async (req) => { calls.push(['ttsSpeakLines', req]); return req.lines[0] === 'Over the limit' ? { error: 'Gemini TTS is still over its per-minute request limit.', limit: { provider: 'gemini', kind: 'per_minute', model: 'gemini-3.8-flash-tts' } }
+    : { items: req.lines.map((t, i) => probed(`Voice ${i + 1} - ${t}.wav`, 'audio', 1.5 + i)), mode: 'one_request', requests: 1 }; },
   stockSearch: async (o) => ({ results: [{ id: '77', kind: o.kind, tags: 'city, night', duration: 12, width: 1920, height: 1080, url: 'https://cdn.pixabay.com/x' }] }),
   stockAdd: async (item) => probed(`city ${item.id}.mp4`, 'video', 12),
   agentGenerateImage: async (req) => { calls.push(['agentGenerateImage', req]); return { ...probed('Generated character.png', 'image'), origin: 'codex-image' }; },
@@ -105,7 +110,29 @@ const audioCount = p().audioClips.length;
 err(await run('add_voiceover', { engine: 'unknown', text: 'Hello' }), /engine/, 'unknown engines never fall back to Piper');
 err(await run('add_voiceover', { engine: 'gemini', voice_id: 'bad', text: 'Hello' }), /Unknown voice/, 'generation failure does not insert audio');
 assert.equal(p().audioClips.length, audioCount);
+// A provider limit comes back as a quota CraftAI acts on, not a generic failure.
+r = await run('add_voiceover', { engine: 'gemini', text: 'Out of quota' });
+err(r, /daily request limit/, 'daily limit error');
+assert.equal(r.provider_limit.kind, 'daily'); assert.match(r.next, /gemini-3\.8-flash-lite-tts/); assert.match(r.next, /Do not call Gemini TTS/);
+assert.equal(p().audioClips.length, audioCount, 'nothing placed on a limit');
+r = await run('add_voiceover', { engine: 'gemini', text: 'Waited' });
+ok(r, 'narration after a per-minute wait'); assert.equal(r.rate_limit_wait_sec, 31); assert.match(r.note_limit, /add_narration/);
+// Several lines in one request, each its own clip.
+const narrated = p().audioClips.length;
+r = await run('add_narration', { lines: [{ text: 'First line', start_sec: 2 }, { text: 'Second line' }, { text: 'Third line', start_sec: 12 }], voice_id: 'Puck', style: 'Calm', gap_sec: 0.5, volume: 0.7 });
+ok(r, 'add_narration');
+assert.deepEqual(calls.at(-1)[1].lines, ['First line', 'Second line', 'Third line']);
+assert.equal(calls.at(-1)[1].voiceId, 'Puck'); assert.equal(calls.at(-1)[1].style, 'Calm');
+assert.equal(r.clips.length, 3); assert.equal(r.requests, 1);
+assert.deepEqual(r.clips.map((c) => c.start_sec), [2, 4, 12], 'a line without start_sec follows the previous one after gap_sec');
+assert.ok(r.clips.every((c) => p().audioClips.find((a) => a.id === c.clip_id)?.volume === 0.7));
+assert.equal(p().audioClips.length, narrated + 3);
+err(await run('add_narration', { lines: [{ text: 'Only one' }] }), /two lines/, 'one line belongs to add_voiceover');
+err(await run('add_narration', { lines: [{ text: 'A' }, { text: ' ' }] }), /needs text/, 'empty line');
+r = await run('add_narration', { lines: ['Over the limit', 'Second'] });
+assert.equal(r.provider_limit.kind, 'per_minute'); assert.match(r.next, /one add_narration call/);
 geminiConfigured = false;
+err(await run('add_narration', { lines: ['A', 'B'] }), /Gemini TTS/, 'add_narration needs Gemini');
 
 // Generated images enter the same media/clip store and accept scene timing.
 r = await run('generate_image', { prompt: 'A new scene with the same logo character', reference_media_ids: ['pic'], start_sec: 12, duration_sec: 4.5, transparent_background: true });
@@ -281,5 +308,13 @@ for (const group of Object.keys(TOOL_GROUPS)) {
 ok(await run('export_video'), 'export_video');
 assert.equal(exported, 1);
 assert.ok(!runner.mutates('search_sounds') && !runner.mutates('export_video') && runner.mutates('add_sound'));
+
+// A failed voice-over is replaced by add_narration naming it in retry_of (one id or a list).
+const failed = { name: 'add_voiceover', key: editTarget('add_voiceover', { text: 'Line two', engine: 'gemini' }) };
+assert.ok(clearsFailure('op-1', failed, 'add_narration', { lines: ['Line one', 'Line two'], retry_of: ['op-1', 'op-2'] }));
+assert.ok(clearsFailure('op-1', failed, 'add_voiceover', { text: 'Line two', engine: 'gemini', model: 'gemini-3.8-flash-lite-tts', retry_of: 'op-1' }));
+assert.ok(clearsFailure('op-1', failed, 'add_voiceover', { text: 'Line two', engine: 'gemini' }), 'the same call again');
+assert.ok(!clearsFailure('op-1', failed, 'add_narration', { lines: ['Line one', 'Line two'] }), 'only when it names the failure');
+assert.ok(!clearsFailure('op-1', failed, 'add_sound', { sound_id: 's1', retry_of: 'op-1' }), 'an unrelated tool cannot stand in');
 
 console.log(`AGENT TOOLS OK (${names.length} tools)`);

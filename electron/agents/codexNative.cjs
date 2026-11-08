@@ -4,7 +4,7 @@ const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 const { abortError, checkAbort, abortable } = require("../system/cancel.cjs");
 class CodexNative {
-  constructor({ executablePath, cwd, env, cfg = {}, system, tools = [], catalogOnly = false, spawnImpl = spawn }) {
+  constructor({ executablePath, cwd, env, cfg = {}, system, tools = [], catalogOnly = false, webSearch = true, spawnImpl = spawn }) {
     this.cfg = cfg; this.cwd = cwd; this.tools = tools; this.pending = new Map(); this.nextId = 1; this.active = null; this.threadId = null; this.closed = false;
     const settings = { features: { shell_tool:false, unified_exec:false, apps:false, plugins:false, image_generation:false, multi_agent:false, memories:false, hooks:false, goals:false, skip_host_skill_discovery:true }, skills:{include_instructions:false}, mcp_servers:{} };
     const args = ['app-server'];
@@ -26,7 +26,7 @@ class CodexNative {
       this.send({method:'initialized'});
       if (catalogOnly) return;
       const thread = await this.request('thread/start', { cwd, ...(cfg.model ? {model:cfg.model} : {}), baseInstructions:system, approvalPolicy:'never', sandbox:'read-only', ephemeral:true,
-        config:{web_search:'live'},
+        config:{web_search:webSearch===false?'disabled':'live'},
         dynamicTools:tools.map(tool=>({type:'function',name:tool.name,description:tool.description,inputSchema:tool.parameters,deferLoading:false})) });
       this.threadId = thread.thread.id;
     })();

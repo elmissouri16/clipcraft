@@ -1,6 +1,6 @@
 # Motion graphics: plan
 
-Status: plan, not built. Branch `feat/motion-graphics`.
+Status: phase 0 spike done (go). The agent slice works: `graphics_guide`, `add_graphic`, `edit_graphic`, sandbox render, preview and export (see [agent editing](../agents/agent-editing.md#motion-graphics)). Editor integration done: Graphics library group and badge, always a full-frame overlay, inspector Graphic tab with the declared fields, automatic re-draw on canvas changes and lost files. Next: cache size in Settings, re-timing on trim, poster frames over a checkerboard, Windows/Linux runs. Branch `feat/motion-graphics`.
 
 ## Goal
 
@@ -136,6 +136,89 @@ and put it on the timeline. Then:
   exact (no dark fringes), and export composites the graphic exactly where the preview shows it.
 - **Decide:** whether to use plain tagged templates or a small React-style layer.
 - **Check:** offscreen transparency on Windows and Linux, not only macOS.
+
+#### Spike results (done: go)
+
+Run with `node tests/spikes/run-graphics-spike.cjs`. It renders the fixture
+`tests/fixtures/graphics/barChart.js` at 1080×1920, 30 fps, 150 frames, through
+`electron/graphics/` (sandbox page, runtime, renderer). Evidence:
+[`motion-graphics-spike.json`](motion-graphics-spike.json), from macOS 25.5 arm64 with Electron
+33.4.11.
+
+**Capture methods**
+
+| Method | ms per frame (whole render) | Exact pixels | Notes |
+| --- | --- | --- | --- |
+| canvas (SVG rasterised in the sandbox) | **18.7** | yes | Start-up 103 ms. 52 repeated frames skipped. Peak sandbox memory 184 MB. File 3.0 MB. |
+| capture (`capturePage`) | 33.2 | yes on the final frame | At frame 40, 94,800 channels differ from canvas: it captures stale frames. |
+| paint (offscreen paint event) | — | — | No paint arrived for the transparent offscreen window. Not pursued. |
+
+- **Chosen: canvas.** It meets the 50 ms target with room to spare.
+- Of the 18.7 ms, rasterising takes about 4 ms per drawn frame and QuickTime RLE encoding about
+  4 ms (measured separately).
+- **The rest is copying the 8 MB frame to the main process.** The next speed-up is sending only
+  the changed rows; `TextStream` already accepts patches.
+- **Repeated frames are free:** when a frame's markup equals the previous one, nothing is drawn
+  or copied, and the encoder repeats the last frame. This suits holds and settled charts, and is
+  one reason to keep returning markup (see the decision below).
+
+**Transparency**
+
+- Exact on the final frame: background alpha 0, bar `232,179,74,255`, the 25 % gridline
+  `255,255,255,64`. There is no dark fringe.
+- The `capture` method converts Chromium's premultiplied BGRA itself and matches on those pixels
+  too.
+
+**Preview copy**
+
+- Transparent VP9: 661 ms to encode the full 5 s at full size (284 kB), 381 ms at half size.
+- Alpha is kept (gridline `253,253,253,64`).
+- Chromium plays it with transparency: drawn over red, the background stays `255,0,0` and the
+  gridline is `255,64,64` (25 % white over red).
+- Decoding with transparency needs FFmpeg's `libvpx-vp9` decoder; the built-in one drops alpha.
+  So **export keeps the RLE file and the preview uses the VP9 copy.**
+
+**Export composite**
+
+The graphic is placed as an overlay over a solid background through the real
+`buildExportArgs`.
+
+- **Bar edge:** row 500 in both the graphic and the export.
+- **Blend:** against the background as exported, the mean error is 0.51. 0.47 % of channels are
+  off by more than 8, all at sharp coloured edges (H.264 4:2:0 chroma).
+- **Separate existing issue:** every overlay makes the background about 2 luma levels darker,
+  plain image overlays too (Y 58 without an overlay, 56 with one; BT.709 expects 59).
+  This belongs to the existing export path and needs fixing on its own.
+
+**Sandbox**
+
+- Network and `file://` fetches are blocked.
+- `require` and `process` do not exist.
+- `Math.random` is seeded and `Date.now` is fixed.
+- An endless loop is stopped after 1.6 s.
+- Output that is not SVG is rejected with a readable message.
+- The host bridge cannot be deleted from the page, so it is locked instead. The runtime takes the
+  job and a one-time token before the component loads; a component calling the bridge is refused
+  for both the job and frames.
+
+**Fonts**
+
+- An SVG drawn as an image loads nothing external, so fonts are embedded as `data:` URLs.
+- Cost per drawn frame: about 4.1 ms with a 19 kB font and 5.3 ms with a 100 kB font, against
+  4.0 ms with none.
+- The font is applied: the title's ink changes.
+- A font subset without the text's script falls back to another font, so the real version must
+  embed subsets that cover the text.
+
+**Decisions**
+
+- Capture with canvas. Phase 1 removes the `capture` and `paint` paths.
+- Components return SVG markup through tagged templates: no bundler, no dependencies, and equal
+  markup means an identical frame. A React-style layer is not needed now; phase 3 evaluates
+  whether models write better components with one.
+- Two cached files per graphic: RLE for export, VP9 with alpha for the preview.
+
+**Not tested yet:** Windows and Linux, and GPU-less machines.
 
 ### 1. Runtime, sandbox, render service, graphic clip
 

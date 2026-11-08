@@ -22,6 +22,7 @@ src/
     recording/             Recording hooks and dialogs
     templates/             Template replacement and slot UI
     text/                  Captions, fonts and text rendering
+    graphics/              Motion graphics as media: render, swap, re-draw, fonts
     timeline/              Timeline UI, timing, motion and drag/drop
 electron/
   main.cjs                 Application windows and IPC registration
@@ -29,6 +30,7 @@ electron/
   agents/                  Providers, native runtimes, MCP and frame tools
   audio/                   Speech, transcription and audio processing
   export/                  Layers, text streaming, render jobs and fonts
+  graphics/                Motion graphics sandbox, runtime and renderer
   library/                 Assets, stock, sounds, generation and templates
   media/                   FFmpeg, proxies, geometry and media analysis
   project/                 Saved projects, autosaves and favorites

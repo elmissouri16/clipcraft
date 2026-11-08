@@ -335,7 +335,7 @@ function reduceProjectInner(p, a) {
       if (!Array.isArray(a.actions) || a.actions.length > 512 || a.actions.some(x => !x || ![
         'update', 'updateMany', 'split', 'delete', 'insertAudioClip', 'addText', 'addMedia', 'addToTimeline',
         'addOverlayClip', 'addEffectClip', 'setCaptions', 'renameLayer', 'addLayer', 'removeLayer', 'moveLayer',
-        'deleteLayer', 'addMarker', 'removeMarker',
+        'deleteLayer', 'addMarker', 'removeMarker', 'removeMedia', 'extendVideoTo',
       ].includes(x.type))) return p;
       return a.actions.reduce((next, action) => reduceProject(next, action), p);
     case 'load':
@@ -355,6 +355,8 @@ function reduceProjectInner(p, a) {
     case 'addToTimeline': {
       const m = p.media.find((x) => x.id === a.mediaId);
       if (!m) return p;
+      // A motion graphic is a full-frame overlay drawn over the video, never a main-track shot.
+      if (m.graphic) return reduceProject(p, { type: 'addOverlayClip', mediaId: m.id, clipId: a.clipId, at: Number.isFinite(a.at) ? a.at : 0 });
       if (m.type === 'video' || m.type === 'image') {
         const list = [...p.videoClips];
         list.splice(a.index ?? list.length, 0, newVideoClip(a.clipId, m));
@@ -371,7 +373,8 @@ function reduceProjectInner(p, a) {
       // dropped over a corner). x/y are frame fractions from the centre, so 0/0 is centred.
       const m = p.media.find((x) => x.id === a.mediaId);
       if (!m || m.type === 'audio') return p;
-      const clip = { ...newVideoClip(a.clipId, m), start: Math.max(0, a.at), transform: { scale: 0.5, x: 0, y: 0 }, ...(a.layer != null && { layer: a.layer }) };
+      // A motion graphic is drawn at canvas size: it covers the whole frame.
+      const clip = { ...newVideoClip(a.clipId, m), start: Math.max(0, a.at), transform: { scale: m.graphic ? 1 : 0.5, x: 0, y: 0 }, ...(a.layer != null && { layer: a.layer }) };
       return { ...p, overlayClips: [...p.overlayClips, clip] };
     }
     case 'extendVideoTo': {
@@ -1529,10 +1532,13 @@ function reduceHistory(state, a) {
   // first commits the agent checkpoint, then revokes its token. Later in-flight
   // agent results cannot overwrite that manual edit or absorb it into Undo.
   if (a.agentToken && state.agentEdit?.token !== a.agentToken) return state;
-  // Explicit history/navigation/gesture intent revokes ownership immediately.
-  // Other actions must first pass locks/validation and actually change the
-  // document. A late blur, ignored callback or rejected edit is not a new edit.
-  if (state.agentEdit && !a.agentToken && ['undo', 'redo', 'load', 'beginGesture'].includes(a.type)) return historyReducer(finishAgentEdit(state, a), a);
+  // Explicit history/navigation intent revokes ownership immediately. Other
+  // actions must first pass locks/validation and actually change the document.
+  // A late blur, ignored callback or rejected edit is not a new edit, and neither
+  // is pressing on a clip: the timeline begins a gesture on every press before
+  // it knows whether this is a drag or a selection. A gesture interrupts the
+  // request at its first real change (below), never by starting.
+  if (state.agentEdit && !a.agentToken && ['undo', 'redo', 'load'].includes(a.type)) return historyReducer(finishAgentEdit(state, a), a);
   if (a.type === 'undo') {
     if (!state.past.length) return state;
     const restored = state.past[state.past.length - 1];
@@ -1552,6 +1558,9 @@ function reduceHistory(state, a) {
   if (a.type === 'beginGesture') return { ...state, gestureStart: state.present };
   if (a.type === 'endGesture') {
     const start = state.gestureStart;
+    // Still owned by the request: the gesture changed nothing itself (its first change would have
+    // ended the request), so any difference is the agent's and belongs to the agent's Undo step.
+    if (state.agentEdit) return { ...state, gestureStart: null };
     if (!start || start === state.present) return { ...state, gestureStart: null };
     return { past: [...state.past, start].slice(-100), present: state.present, future: [], gestureStart: null };
   }
@@ -1611,7 +1620,10 @@ function reduceHistory(state, a) {
   if (next === state.present) return state;
   if (a.type === 'load') return { past: [], present: next, future: [] };
   if (state.agentEdit && !a.agentToken) state = finishAgentEdit(state, a);
+  // An agent step while the user holds a gesture moves the gesture's base along, so a manual trim
+  // or drag that follows starts from the agent's latest result instead of reverting it.
   if (state.agentEdit && a.agentToken === state.agentEdit.token) return { ...state, present: next, future: [],
+    ...(state.gestureStart ? { gestureStart: next } : {}),
     agentEdit: { ...state.agentEdit, steps: [...state.agentEdit.steps, state.present] } };
   if (a.transient || state.gestureStart) return { ...state, present: next };
   return { ...(state.agentInterruption ? { agentInterruption: state.agentInterruption } : {}), past: [...state.past, state.present].slice(-100), present: next, future: [] };

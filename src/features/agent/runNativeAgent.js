@@ -2,7 +2,7 @@
 // callbacks and keeps all editor writes inside the existing validated runner.
 import { TOOL_DECLARATIONS, createToolRunner, describeImageProgress } from './tools.js';
 import { TOOL_GROUPS, createToolCatalog } from './toolCatalog.js';
-import { SYSTEM_PROMPT, describeCall, editTarget } from './runAgent.js';
+import { SYSTEM_PROMPT, clearsFailure, describeCall, editTarget } from './runAgent.js';
 import { validateToolCall } from "../../../shared/toolArguments.mjs";
 import { prepareContext, projectRevision, recallContext } from './context.js';
 import { validateAgentProject } from './validation.js';
@@ -31,10 +31,10 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
   const validOwner = () => { if (canceled()) throw new Error(stopError?.error || 'Editing stopped.'); if (ctx.editActive && !ctx.editActive()) { staleError = 'The project changed during this request. Completed edits were kept. Continue from the current timeline.'; const cause = ctx.editInterruption?.();interruption = cause?.token === requestId ? cause : null;ctx.api.agentCancel?.(requestId).catch(()=>{});throw new Error(staleError); } };
   const remember = (name, args, result, id) => {
     result.operation_id = id;
-    if (result.error && runner.requiresSuccess(name)) {
+    if (result.error && !result.not_applicable && runner.requiresSuccess(name)) {
       result.failed_operation_id = id; failures.set(id, { name, key: editTarget(name, args), error: result.error });
     } else if (!result.error) for (const [key, failure] of failures) {
-      if (failure.key === editTarget(name, args) || (args.retry_of === key && (failure.name === name || failure.name === 'generate_image' && name === 'generate_image'))) failures.delete(key);
+      if (clearsFailure(key, failure, name, args)) failures.delete(key);
     }
     operations.push({ id, name, changed: !!result.changed, status: result.error ? 'failed' : 'completed', revision: result.revision, ...(result.error ? { error: result.error } : {}) });
   };

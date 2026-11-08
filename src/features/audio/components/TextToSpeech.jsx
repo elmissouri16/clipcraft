@@ -165,7 +165,8 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
 
       {progress && busy && (
         <div className="lib-loading"><Loader2 size={15} className="spin" />
-          {progress.stage === 'speech' ? 'Generating speech with Gemini…'
+          {progress.stage === 'wait' ? `Gemini's per-minute request limit: waiting ${Math.ceil(progress.seconds || 0)} s, then trying again…`
+            : progress.stage === 'speech' ? 'Generating speech with Gemini…'
             : progress.stage === 'engine' ? `Downloading the voice engine… ${Math.round(progress.fraction * 100)}%`
             : progress.fraction < 1 ? `Downloading the voice… ${Math.round(progress.fraction * 100)}%` : 'Speaking…'}
         </div>

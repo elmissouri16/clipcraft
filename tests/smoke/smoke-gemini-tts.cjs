@@ -28,28 +28,47 @@ module.exports = async (win, app, dir) => {
   settings.setFirstRun({ tourSeen: true, packPromptSeen: true });
   settings.save({ provider: 'ollama' });
   const oldFetch = net.fetch;
-  let quota = false, generations = 0;
+  let quota = false, generations = 0, limitedOnce = false;
+  // A narration passage as Gemini would read it: three lines with long pauses between them.
+  const passage = (() => {
+    const rate = 24000, parts = [[0, 0.3], [1, 1.6], [0, 0.15], [1, 0.6], [0, 0.9], [1, 1.4], [0, 1.0], [1, 2.1], [0, 0.4]];
+    const n = parts.reduce((a, [, d]) => a + Math.round(d * rate), 0), wav = Buffer.alloc(44 + n * 2);
+    wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVE', 8); wav.write('fmt ', 12); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(n * 2, 40);
+    let o = 44, k = 0;
+    for (const [on, d] of parts) for (let i = 0; i < Math.round(d * rate); i++, k++, o += 2) wav.writeInt16LE(on ? Math.round(8000 * Math.sin(k * 2 * Math.PI * 200 / rate)) : 0, o);
+    return wav;
+  })();
+  const limited = (quotaId, retryDelay) => new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: key, details: [
+    { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId, quotaValue: quotaId.includes('Day') ? '100' : '10' }] },
+    { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] } }), { status: 429 });
   const key = 'synthetic-gemini-smoke-key';
   net.fetch = async (url, opts = {}) => {
     if (!String(url).startsWith('https://generativelanguage.googleapis.com/v1beta/')) return oldFetch(url, opts);
     assert.equal(opts.headers['x-goog-api-key'], key);
     if (String(url).includes('/models/')) return new Response(JSON.stringify({ name: 'models/gemini-3.8-flash-tts' }));
-    if (quota) return new Response(JSON.stringify({ error: { message: key } }), { status: 429 });
-    const body = JSON.parse(opts.body);
+    if (quota) return limited('GenerateRequestsPerDayPerProjectPerModel', '50s');
+    const body = JSON.parse(opts.body), many = body.input[0].content[0].text.includes('\n\n');
+    if (many && !limitedOnce) { limitedOnce = true; return limited('GenerateRequestsPerMinutePerProjectPerModel', '1s'); }
     generations++;
     result.requests.push(body);
     return new Response(JSON.stringify({ status: 'completed', steps: [{ type: 'model_output', content: [
-      { type: 'audio', mime_type: 'audio/wav', data: fixtureWav(2).toString('base64') },
+      { type: 'audio', mime_type: 'audio/wav', data: (many ? passage : fixtureWav(2)).toString('base64') },
     ] }] }));
   };
   const ai = require("../../electron/agents/ai.cjs");
-  let turn = 0;
-  ai.agentStep = async () => {
-    const sequence = [
-      { name: 'load_tools', args: { groups: ['audio'] } },
-      { name: 'list_voices', args: {} },
-      { name: 'add_voiceover', args: { text: 'A brief history of Morocco.', start_sec: 8, style: 'Warm documentary narrator.' } },
-    ];
+  let turn = 0, script = 'voiceover';
+  const toolResults = [];
+  const scripts = {
+    voiceover: [{ name: 'load_tools', args: { groups: ['audio'] } }, { name: 'list_voices', args: {} },
+      { name: 'add_voiceover', args: { text: 'A brief history of Morocco.', start_sec: 8, style: 'Warm documentary narrator.' } }],
+    narration: [{ name: 'load_tools', args: { groups: ['audio'] } },
+      { name: 'add_narration', args: { lines: [{ text: 'Fez is a city of alleys.', start_sec: 1 }, { text: 'Each one hides a workshop.' }, { text: 'And every workshop keeps a story.' }], style: 'Calm guide.' } }],
+    daily: [{ name: 'load_tools', args: { groups: ['audio'] } }, { name: 'add_voiceover', args: { text: 'Out of requests today.', engine: 'gemini' } }],
+  };
+  ai.agentStep = async (_cfg, opts = {}) => {
+    for (const part of opts.contents?.at(-1)?.parts || []) if (part.functionResponse) toolResults.push({ name: part.functionResponse.name, result: part.functionResponse.response?.result });
+    const sequence = scripts[script];
     const call = sequence[turn++];
     return call ? { calls: [call], content: { role: 'model', parts: [{ functionCall: call }] } }
       : { calls: [], text: 'Added English narration at eight seconds.', content: { role: 'model', parts: [{ text: 'Added English narration at eight seconds.' }] } };
@@ -117,12 +136,46 @@ module.exports = async (win, app, dir) => {
     check('CraftAI prefers configured Gemini', result.requests[1].model==='gemini-3.8-flash-tts');
     await click('.pilot-undo'); await until('window.__fve.exportData().project.audioClips.length===1');
     check('one Undo removes the AI speech and preserves manual audio', (await q('window.__fve.exportData().project.audioClips[0].start'))===3.25);
+    // Several lines: one Gemini request (after waiting out a per-minute limit), cut into one clip per line.
+    const ask = async (text) => {
+      await fill('.pilot-input textarea', text, 'HTMLTextAreaElement');
+      await until('!document.querySelector("button[aria-label=Send]").disabled');
+      await click('button[aria-label=Send]');
+    };
+    const nodeUntil = async (fn, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return; await wait(100); } throw new Error('Timed out waiting for the agent'); };
+    script = 'narration'; turn = 0; const gens = generations;
+    await ask('Narrate three lines about Fez.');
+    await nodeUntil(() => toolResults.some((r) => r.name === 'add_narration'));
+    await until('window.__fve.exportData().project.audioClips.length===4');
+    const narration = toolResults.find((r) => r.name === 'add_narration').result;
+    result.narration = narration;
+    check('add_narration speaks every line in one Gemini request', !narration.error && generations === gens + 1 && narration.requests === 1
+      && result.requests.at(-1).input[0].content[0].text === 'Fez is a city of alleys.\n\nEach one hides a workshop.\n\nAnd every workshop keeps a story.');
+    check('a per-minute limit is waited out and the agent is told', limitedOnce && narration.rate_limit_wait_sec >= 1 && /add_narration/.test(narration.note_limit));
+    const lineClips = (await q('window.__fve.exportData().project.audioClips')).filter((c) => narration.clips.some((n) => n.clip_id === c.id)).sort((a, b) => a.start - b.start);
+    const lens = lineClips.map((c) => c.out - c.in);
+    result.narrationLengths = lens;
+    check('each line is its own clip, cut at the pauses, placed one after another', lineClips.length === 3 && lineClips[0].start === 1
+      && Math.abs(lens[0] - 2.56) < 0.3 && Math.abs(lens[1] - 1.6) < 0.3 && Math.abs(lens[2] - 2.3) < 0.3
+      && Math.abs(lineClips[1].start - (lineClips[0].start + lens[0] + 0.3)) < 0.02);
+    await until('!document.querySelector(".pilot-run-status") && !!document.querySelector(".pilot-undo")');
+    await click('.pilot-undo'); await until('window.__fve.exportData().project.audioClips.length===1');
+    check('one Undo removes the whole narration', true);
+
+    // Out of daily requests: CraftAI gets the limit and what to do instead of a bare failure.
+    quota = true; script = 'daily'; turn = 0;
+    await ask('Add one more line.');
+    await nodeUntil(() => toolResults.some((r) => r.name === 'add_voiceover' && r.result?.provider_limit));
+    const daily = toolResults.find((r) => r.name === 'add_voiceover' && r.result?.provider_limit).result;
+    result.daily = daily;
+    check('a daily limit reaches the agent as a quota with advice', daily.provider_limit.kind === 'daily' && daily.provider_limit.requests_allowed === 100
+      && /gemini-3\.8-flash-lite-tts/.test(daily.next) && /spend cap/.test(daily.error) && !JSON.stringify(daily).includes(key));
+    await until('!document.querySelector(".pilot-run-status")');
     await click('button[aria-label="Close assistant"]');
-    quota = true;
     await fill('.tts textarea:not([aria-label])','A different passage to test quota.','HTMLTextAreaElement');
     await chooseButton('.tts .row-btns button','Add to timeline');
-    await until('document.querySelector(".tts .error-text")?.textContent.includes("quota")');
-    check('quota errors do not insert audio or expose keys', await q(`window.__fve.exportData().project.audioClips.length===1 && !document.querySelector('.tts').textContent.includes(${JSON.stringify(key)})`));
+    await until('document.querySelector(".tts .error-text")?.textContent.includes("daily request limit")');
+    check('limit errors explain the request limit, insert nothing and never expose keys', await q(`window.__fve.exportData().project.audioClips.length===1 && document.querySelector('.tts .error-text').textContent.includes('spend cap') && !document.querySelector('.tts').textContent.includes(${JSON.stringify(key)})`));
     await openSettings();
     await click('button[aria-label="Delete saved Gemini TTS API key"]');
     await until('(async()=>!(await window.api.settingsGet()).serviceKeys["gemini-tts"])()');

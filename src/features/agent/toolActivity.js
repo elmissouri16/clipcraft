@@ -20,9 +20,9 @@ const TITLES={
   layer_tools:'Organizing layers',transcribe:'Transcribing speech',add_captions:'Creating captions',add_text:'Adding text',edit_text:'Updating text',
   edit_caption_words:'Correcting caption timing',caption_tools:'Editing captions',export_subtitles:'Saving subtitles',
   set_volume:'Adjusting audio level',set_audio_effects:'Processing audio',set_volume_envelope:'Shaping volume over time',duck_audio:'Lowering music beneath speech',
-  search_sounds:'Finding audio',add_sound:'Adding audio',list_voices:'Finding a voice',add_voiceover:'Generating narration',
+  search_sounds:'Finding audio',add_sound:'Adding audio',list_voices:'Finding a voice',add_voiceover:'Generating narration',add_narration:'Generating narration',
   set_filter:'Applying a filter',set_effects:'Applying clip effects',add_effect:'Adding an effect layer',set_color:'Adjusting color',set_compositing:'Compositing the picture',
-  add_transition:'Joining two shots',set_aspect_ratio:'Changing video format',set_transform:'Positioning the picture',zoom:'Adding a zoom',add_keyframes:'Building motion',move_along_path:'Moving along a path',
+  add_transition:'Joining two shots',set_aspect_ratio:'Changing video format',set_transform:'Positioning the picture',zoom:'Adding a zoom',add_keyframes:'Building motion',move_along_path:'Moving along a path',graphics_guide:'Reading the graphics guide',add_graphic:'Drawing a motion graphic',edit_graphic:'Redrawing a motion graphic',
   set_animation:'Animating the picture',motion_guide:'Planning motion',track_subject:'Following a subject',pin_to_subject:'Attaching to a subject',
   add_media:'Placing media',list_local_media:'Finding files',import_media:'Importing media',search_stock:'Finding stock media',add_stock:'Adding stock media',
   add_scene:'Creating a background',generate_image:'Generating a scene image',generate_images:'Generating scene images',inspect_frames:'Inspecting the picture',
@@ -51,10 +51,12 @@ function activity(name,args={},project={},result) {
     case 'generate_image':description=join(['Codex',placement,a.reference_media_ids?.length?count(a.reference_media_ids.length,'reference image'):'']);excerpt=a.prompt;excerptLabel='Image prompt';break;
     case 'generate_images':description=join([count(a.scenes?.length,'scene image'),'Inserted in scene order']);excerpt=(a.scenes||[]).slice(0,12).map((s,i)=>`${i+1}. ${join([activityTime(s.start_sec),seconds(s.duration_sec)])}\n${clean(s.prompt,350)}`).join('\n\n');excerptLabel='Scene prompts';break;
     case 'add_voiceover':description=join([a.engine?human(a.engine):'Automatic voice selection',a.voice_id?human(a.voice_id):'',placement]);excerpt=a.text;excerptLabel='Narration';break;
+    case 'add_narration':description=join(['gemini',a.voice_id?human(a.voice_id):'',Array.isArray(a.lines)?`${a.lines.length} lines`:'']);excerpt=Array.isArray(a.lines)?a.lines.map(l=>typeof l==='string'?l:l?.text).filter(Boolean).join(' / '):'';excerptLabel='Narration';break;
     case 'add_text':case 'edit_text':description=join([clip||'Text layer',placement,...Object.entries(a).filter(([key])=>!['clip_id','text','start_sec','duration_sec','retry_of'].includes(key)).map(([key,value])=>`${human(key)}: ${typeof value==='string'?human(value):typeof value==='boolean'?(value?'on':'off'):Number.isFinite(value)?value:''}`)]);excerpt=a.text;excerptLabel='Text';break;
     case 'transcribe':case 'add_captions':description=join([a.source?human(a.source)+' audio':'Timeline audio',a.language?human(a.language):'',a.style_id?human(a.style_id):'',a.words_per_caption?`${a.words_per_caption} words per caption`:'']);break;
     case 'search_sounds':case 'search_stock':case 'web_search':description=join([a.kind?human(a.kind):'',a.query?`“${clean(a.query)}”`:'']);break;
     case 'add_keyframes':description=join([clip,human(a.property),count(a.keys?.length,'motion point'),a.easing?human(a.easing):'']);break;
+    case 'add_graphic':case 'edit_graphic':description=join([a.name||clip,Number.isFinite(a.duration_sec)?`${a.duration_sec}s`:'',Array.isArray(a.fonts)&&a.fonts.length?a.fonts.join(', '):'',a.inputs?count(Object.keys(a.inputs).length,'input'):'']);break;
     case 'move_along_path':description=join([clip,count(a.points?.length,'waypoint'),a.orient?'Facing the way it moves':'']);break;
     case 'set_animation':description=join([clip,a.in?`In: ${human(a.in)}`:'',a.out?`Out: ${human(a.out)}`:'',a.combo?human(a.combo):'']);break;
     case 'set_transform':description=join([clip,a.scale!==undefined?`${a.scale}× scale`:'',a.x!==undefined?`X ${a.x}`:'',a.y!==undefined?`Y ${a.y}`:'',a.rotation!==undefined?`${a.rotation}°`:'',a.fit?human(a.fit):'']);break;
@@ -119,11 +121,13 @@ function activity(name,args={},project={},result) {
     else if(name==='search_sounds')outcome=count(r.sounds?.length,'audio result');
     else if(name==='search_stock')outcome=count(r.items?.length,'stock result');
     else if(name==='add_keyframes')outcome=join([count(r.keyframes,'motion point applied','motion points applied'),motionNote(r.motion)]);
+    else if(name==='add_graphic'||name==='edit_graphic')outcome=join([r.cached?'Reused the earlier render':Number.isFinite(r.render_ms)?`Rendered in ${(r.render_ms/1000).toFixed(1)} s`:'',r.font_warning?'Fallback font used':'']);
     else if(name==='move_along_path')outcome=join([count(r.waypoints,'waypoint'),motionNote(r.motion)]);
     else if(name==='export_video')outcome=join([basename(r.file||r.artifact?.path),r.metadata?.duration_sec?seconds(r.metadata.duration_sec):'',r.size?`${(r.size/1048576).toFixed(1)} MB`:'']);
     else if(name==='edit_caption_words')outcome=count(r.words,'word timing updated','word timings updated');
     else if(name==='set_audio_effects'&&r.live_preview===false)outcome='Saved · applies to rendered audio';
     else if(name==='add_voiceover')outcome=join(['Narration added',seconds(r.length_sec)]);
+    else if(name==='add_narration')outcome=join([`${r.clips?.length||0} narration lines added`,r.requests===1?'one request':'']);
     else if(name==='generate_image'&&r.changed)outcome='Scene image added to the timeline';
     else if(Number.isFinite(r.imported_cues))outcome=count(r.imported_cues,'caption imported','captions imported');
     else if(Number.isFinite(r.removed_sec))outcome=`${seconds(r.removed_sec)} removed`;

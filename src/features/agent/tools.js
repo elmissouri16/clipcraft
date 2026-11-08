@@ -24,6 +24,7 @@ import { REVIEW_DECLARATIONS, createReviewTools } from './reviewTools.js';
 import { EDITORIAL_DECLARATIONS, createEditorialTools } from './editorialTools.js';
 import { REFERENCE_DECLARATIONS, createReferenceTools } from './referenceTools.js';
 import { PATH_DECLARATIONS, createPathTools } from './pathTools.js';
+import { GRAPHICS_DECLARATIONS, createGraphicsTools } from './graphicsTools.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -35,9 +36,11 @@ const N = { type: 'NUMBER' };
 const B = { type: 'BOOLEAN' };
 const SPEECH = { language: { ...S, description: 'en, ar, fr, es...; default auto' }, source: { ...S, enum: ['all', 'video', 'overlay', 'audio'], description: 'Audible mix by default. Select a track family or clip_ids to isolate speech from music.' },
   clip_ids: { type: 'ARRAY', items: S }, engine: { ...S, enum: ['local', 'cloud'] }, provider: { ...S, description: 'Cloud transcription: groq, openai, deepgram, elevenlabs' }, model: S };
-const NON_MUTATING = new Set(['analyze_reference', 'analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options',
+const NON_MUTATING = new Set(['analyze_reference', 'graphics_guide', 'analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options',
   'motion_guide', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video', 'review_section', 'list_local_media', 'export_subtitles', 'load_tools', 'recall_context',
   'edit_guide', 'log_footage', 'find_highlights', 'propose_edit_plan', 'critique_edit', 'get_beats']);
+// Our own audio planner's message (electron/media/ffmpeg.cjs analysisAudioPlan) when nothing is audible.
+const NOTHING_AUDIBLE = /^No audible clips in the selected \w+ source\./;
 const REQUIRED_PROOF = new Set(['inspect_frames', 'get_storyboard', 'analyze_scenes', 'annotate_scene', 'transcribe', 'export_video', 'export_subtitles', 'review_section', 'log_footage', 'get_beats']);
 
 // Look of a text (edit_text). Ids come from list_options, so the declarations stay short: every step sends them,
@@ -58,6 +61,7 @@ export const TOOL_DECLARATIONS = [
   ...EDITORIAL_DECLARATIONS,
   ...REFERENCE_DECLARATIONS,
   ...PATH_DECLARATIONS,
+  ...GRAPHICS_DECLARATIONS,
   {
     name:'inspect_frames',
     description:'Look at 1–6 actual frames with the configured vision-capable model. source timeline shows composition; clip shows raw source at timeline times_sec. source media inspects library footage using media_id and source_times_sec before insertion. Clip requires clip_id. Read-only.',
@@ -207,17 +211,22 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'list_voices',
-    description: 'Available speech engines, models and voices for add_voiceover.',
+    description: 'Speech engines, models and voices for add_voiceover and add_narration.',
     parameters: { type: 'OBJECT', properties: {} },
   },
   {
     name: 'add_voiceover',
-    description: 'Generate speech onto the audio track. First list_voices. text is verbatim (max 5000 characters).',
-    parameters: { type: 'OBJECT', properties: { text: S, voice_id: { ...S, description: 'From list_voices; Gemini default Kore.' },
-      engine: { ...S, description: 'gemini, piper, elevenlabs; prefers configured Gemini.' },
-      model: { ...S, description: 'Gemini model from list_voices.' },
-      style: { ...S, description: 'Gemini tone, accent and pacing directions; not spoken.' },
-      start_sec: N, speed: { ...N, description: 'Piper/ElevenLabs only; Gemini uses style.' }, volume: N }, required: ['text'] },
+    description: 'Generate one speech clip on the audio track. First list_voices (Gemini default voice Kore). text verbatim, max 5000 chars.',
+    parameters: { type: 'OBJECT', properties: { text: S, voice_id: S, engine: { ...S, description: 'gemini (default when set up), piper, elevenlabs' }, model: S,
+      style: { ...S, description: 'Gemini tone, accent, pacing; not spoken.' },
+      start_sec: N, speed: { ...N, description: 'Not Gemini (use style).' }, volume: N }, required: ['text'] },
+  },
+  {
+    name: 'add_narration',
+    description: 'Gemini TTS: 2–40 lines in one request, each its own clip. Use instead of several add_voiceover (rate limits).',
+    parameters: { type: 'OBJECT', properties: {
+      lines: { type: 'ARRAY', items: { type: 'OBJECT', properties: { text: S, start_sec: N }, required: ['text'] }, description: 'Verbatim, 5000 chars total. No start_sec: previous end + gap_sec (0.3).' },
+      voice_id: S, model: S, style: S, start_sec: N, gap_sec: N, volume: N, retry_of: { type: 'ARRAY', items: S } }, required: ['lines'] },
   },
   {
     name: 'search_stock',
@@ -624,6 +633,16 @@ export function createToolRunner(ctx) {
   }
 
   // Volume, fades and length of a new audio clip.
+  // A speech provider's request limit, as a result CraftAI can act on instead of retrying blindly.
+  const speechFailure = (res, model) => {
+    const l = res.limit;
+    if (!l) return { error: res.error };
+    const next = l.kind === 'daily'
+      ? `Do not call Gemini TTS with ${l.model || model || 'this model'} again in this request: it is out of requests until ${l.resets}. ${l.other_model ? `Retry the missing lines with model "${l.other_model}" (its own limit), passing retry_of. ` : ''}If that fails too, finish the rest of the edit and tell the user which lines are missing and when the limit resets. Use piper or elevenlabs only if a different voice is acceptable, and say so.`
+      : 'Gemini is over its per-minute request limit even after waiting. Do other edits first, then send the remaining lines together in one add_narration call.';
+    return { error: res.error, provider_limit: l, next };
+  };
+  const speechWaitNote = (res) => res.waited_sec ? { rate_limit_wait_sec: res.waited_sec, note_limit: `Gemini's per-minute request limit delayed this by ${res.waited_sec} s. Send further narration lines together in one add_narration call.` } : {};
   const shapeAudio = async (id, { duration_sec, volume = 1, fade_in_sec = 0, fade_out_sec = 0 }, extra) => {
     const c = findClip(id).clip;
     const patch = { volume: clamp(volume, 0, 2, 1), fadeIn: clamp(fade_in_sec, 0, 30, 0), fadeOut: clamp(fade_out_sec, 0, 30, 0) };
@@ -804,11 +823,13 @@ export function createToolRunner(ctx) {
   const reviewTools = createReviewTools({ project, revision: projectRevision, startExport: ctx.startExport, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, editActive: ctx.editActive, onProgress:ctx.onToolProgress });
   const editorialTools = createEditorialTools({ project, dispatch, after, api, requestId: ctx.requestId, speech, sceneData, settle: ctx.settle, isCanceled: ctx.isCanceled });
   const pathTools = createPathTools({ project, dispatch, after, needPicture });
+  const graphicsTools = createGraphicsTools({ project, dispatch, after, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, settle: ctx.settle });
   const referenceTools = createReferenceTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled });
   const tools = {
     ...editorialTools,
     ...referenceTools,
     ...pathTools,
+    ...graphicsTools,
     ...reviewTools,
     ...trackingTools,
     ...audioTools,
@@ -1241,10 +1262,35 @@ export function createToolRunner(ctx) {
       if (!['gemini', 'eleven', 'piper'].includes(normalized)) return { error: 'engine must be gemini, piper or elevenlabs.' };
       const voiceId = voice_id || (normalized === 'gemini' ? 'Kore' : st?.voices?.[0]?.id);
       const res = await api.ttsSpeak({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
-      if (res.error) return { error: res.error };
+      if (res.error) return speechFailure(res, model);
       const added = await place(addProbed({ ...res, origin: 'tts' }), { start_sec, name: res.name });
       if (added.error) return added;
-      return shapeAudio(added.clip_id, { volume }, added);
+      return shapeAudio(added.clip_id, { volume }, { ...added, ...speechWaitNote(res) });
+    },
+
+    async add_narration({ lines, voice_id, model, style, start_sec = 0, gap_sec = 0.3, volume = 1 } = {}) {
+      if (!api.ttsSpeakLines) return { error: 'add_narration requires an updated ClipCraft; use add_voiceover per line.' };
+      const list = (Array.isArray(lines) ? lines : []).map((l) => (typeof l === 'string' ? { text: l } : l || {}));
+      if (list.length < 2) return { error: 'Give at least two lines; use add_voiceover for one.' };
+      if (list.some((l) => !String(l.text || '').trim())) return { error: 'Every line needs text.' };
+      const st = await api.ttsStatus();
+      if (!st.geminiKey) return { error: 'add_narration uses Gemini TTS, which has no key in Settings > Speech generation. Use add_voiceover per line with piper or elevenlabs.' };
+      const res = await api.ttsSpeakLines({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), lines: list.map((l) => String(l.text).trim()), voiceId: voice_id, model, style });
+      if (res.error) return speechFailure(res, model);
+      const gap = clamp(gap_sec, 0, 10, 0.3), clips = [];
+      let at = Math.max(0, Number(start_sec) || 0);
+      for (let i = 0; i < res.items.length; i++) {
+        const want = Number(list[i].start_sec);
+        if (Number.isFinite(want) && want >= 0) at = want;
+        const added = await place(addProbed(res.items[i]), { start_sec: at, name: res.items[i].name });
+        if (added.error) return { ...added, placed_clip_ids: clips.map((c) => c.clip_id) };
+        dispatch({ type: 'update', track: 'audio', id: added.clip_id, patch: { volume: clamp(volume, 0, 2, 1) } });
+        const len = res.items[i].duration || 0;
+        clips.push({ clip_id: added.clip_id, start_sec: r2(at), length_sec: r2(len), text: String(list[i].text).slice(0, 40) });
+        at += len + gap;
+      }
+      await ctx.settle();
+      return after({ clips, requests: res.requests, ...(res.mode === 'per_line' ? { note: 'The voice ran lines together, so each line was spoken on its own request.' } : {}), ...speechWaitNote(res) });
     },
 
     async generate_image(args) {
@@ -1555,6 +1601,9 @@ export function createToolRunner(ctx) {
         }
       } catch (e) { result = { error: e.message || String(e) }; }
       finally { operation = null; }
+      // Nothing to analyse (no audible clip: an empty, silent or fully muted timeline) is an answer,
+      // not a failed operation: the completion gate must not wait for a retry that cannot succeed.
+      if (result?.error && NOTHING_AUDIBLE.test(result.error)) result.not_applicable = true;
       if (!edits) return result;
       if (name === 'undo' && !result.error) active.wrote = true;
       await ctx.settle();

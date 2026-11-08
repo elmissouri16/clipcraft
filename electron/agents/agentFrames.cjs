@@ -179,10 +179,11 @@ class AgentFrames {
       return {path:frame.path,label:frame.label || `${frame.source} frame at ${frame.source==='media'?'source':'timeline'} ${frame.source==='media'?frame.source_time_sec:frame.time_sec}s${frame.clip_id?` from clip ${frame.clip_id}, source ${frame.source_time_sec}s`:''}; ${frame.width}x${frame.height}; editor revision ${frame.revision}`};
     });
   }
-  addRendered(owner, bytes, { revision, time_sec, render_time_sec, label }) {
+  // width/height (the image's pixel size) let rendered frames go on a contact sheet.
+  addRendered(owner, bytes, { revision, time_sec, render_time_sec, label, width, height }) {
     const frame = this.addExternal(owner, bytes, { revision, label });
     const record = this.records.get(frame.id);
-    Object.assign(record, { source: 'rendered', time_sec, render_time_sec });
+    Object.assign(record, { source: 'rendered', time_sec, render_time_sec, ...(width > 0 && height > 0 ? { width, height } : {}) });
     const { owner: ignored, path: omitted, ...meta } = record;
     return meta;
   }

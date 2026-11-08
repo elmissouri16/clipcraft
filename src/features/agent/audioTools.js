@@ -3,15 +3,15 @@ import { AUDIO_PRESETS, normalizeAudioFx } from '../effects/audioPresets.js';
 
 const S = { type: 'STRING' }, N = { type: 'NUMBER' }, B = { type: 'BOOLEAN' };
 export const AUDIO_DECLARATIONS = [
-  { name: 'set_audio_effects', description: 'Audio finishing on main/overlay/audio clips: clip_id, or clip_ids (up to 200) to apply the same settings to every piece of a cut talking head in one call. preset clear-voice, podcast, warm, bright or none replaces effects; explicit fields then override it. Without preset, merge given fields. EQ dB ±15, highpass 0–1000 Hz, lowpass 0–20000 Hz, pitch ±12 semitones. Effects are heard in renders, not live HTML playback; render a section to review.',
+  { name: 'set_audio_effects', description: 'Audio finishing on clips: clip_id, or clip_ids (up to 200) for every piece of a cut talking head. preset clear-voice, podcast, warm, bright or none replaces effects, explicit fields override; without preset, fields merge. EQ dB ±15, highpass 0–1000 Hz, lowpass 0–20000 Hz, pitch ±12 semitones. Heard in renders, not live playback.',
     parameters: { type: 'OBJECT', properties: { clip_id: S, clip_ids: { type: 'ARRAY', items: S, maxItems: 200 }, preset: S,
       eq: { type: 'OBJECT', properties: { low: N, mid: N, high: N } }, highpass: N, lowpass: N,
       comp: B, limit: B, denoise: B, loudnorm: B, pitch: N,
       echo: { type: 'OBJECT', properties: { enabled: B, delay: N, decay: N } },
     }, required: [] } },
-  { name: 'set_volume_envelope', description: 'Replace a clip’s volume automation with linear points at absolute timeline time_sec, value 0–2 (multiplies base volume). Points must be strictly ordered inside the clip, max 512. [] clears automation. Source-time storage preserves the curve across split/trim/speed. Applies to preview, export and audio analysis.',
+  { name: 'set_volume_envelope', description: 'Replace a clip’s volume automation: linear points at timeline time_sec, value 0–2 (times base volume), strictly ordered inside the clip, max 512; [] clears. Survives split/trim/speed.',
     parameters: { type: 'OBJECT', properties: { clip_id: S, points: { type: 'ARRAY', maxItems: 512, items: { type: 'OBJECT', properties: { time_sec: N, value: N }, required: ['time_sec', 'value'] } } }, required: ['clip_id', 'points'] } },
-  { name: 'duck_audio', description: 'Lower target music beneath explicitly selected speech clips using actual local silence analysis; no transcription/download. target_clip_ids and speech_clip_ids must be disjoint. Replaces targets’ volume automation, keeps base volume/fades. duck_volume 0–1 default .2, attack_sec .15, release_sec .4, threshold_db -35. Activity detection includes any sound in the speech selection; isolate dialogue, not the whole mix.',
+  { name: 'duck_audio', description: 'Lower target music under the given speech clips by local level analysis. target_clip_ids and speech_clip_ids disjoint. Replaces targets’ volume automation, keeps base volume/fades. duck_volume 0–1 (.2), attack_sec .15, release_sec .4, threshold_db -35. Any sound in the speech clips counts; select dialogue, not the mix.',
     parameters: { type: 'OBJECT', properties: { target_clip_ids: { type: 'ARRAY', items: S }, speech_clip_ids: { type: 'ARRAY', items: S }, duck_volume: N, attack_sec: N, release_sec: N, threshold_db: N }, required: ['target_clip_ids', 'speech_clip_ids'] } },
 ];
 const finite = value => typeof value === 'number' && Number.isFinite(value);

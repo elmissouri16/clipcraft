@@ -214,6 +214,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [executablePath, setExecutablePath] = useState('');
+  const [webResearch, setWebResearch] = useState(false);
   const [sdkStatus, setSdkStatus] = useState(null);
   const [runtimeProgress, setRuntimeProgress] = useState(null);
   const [runtimeError, setRuntimeError] = useState('');
@@ -246,6 +247,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
     setBaseUrl(s.baseUrls[p] || '');
     setApiKey('');
     setExecutablePath(s.executablePaths?.[p] || '');
+    setWebResearch(!!s.webResearch?.[p]);
     setResult(null);
     setCustomModel(false);
   };
@@ -301,7 +303,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
   const page = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
   const info = PROVIDERS.find((p) => p.id === provider);
   const hint = saved.keys[provider];
-  const draft = { provider, model, baseUrl, apiKey, executablePath };
+  const draft = { provider, model, baseUrl, apiKey, executablePath, ...(info?.sdk ? { webResearch } : {}) };
   const runtimeBusy = installingProvider === provider || (runtimeProgress && runtimeProgress.stage !== 'ready');
   const installRuntime = async () => {
     const selected = provider;
@@ -326,6 +328,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
     setBaseUrl(saved.baseUrls[p] || '');
     setApiKey('');
     setExecutablePath(saved.executablePaths?.[p] || '');
+    setWebResearch(!!saved.webResearch?.[p]);
     setResult(null);
     setModels([]);
     setCustomModel(false);
@@ -469,6 +472,13 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
                 </div>
               )}
               {runtimeError && <p className="error-text" role="alert">{runtimeError}</p>}
+              <label className="set2-switch-row">
+                <span className="set2-switch-text">
+                  <b>Web research</b>
+                  <small className="muted">{provider === 'codex-sdk' ? 'Codex' : 'Claude'} may search the web{provider === 'claude-agent-sdk' ? ' and read pages' : ''} when you ask for research, sources or current facts. Searches show in the chat and answers link their sources. It never changes your project on its own.</small>
+                </span>
+                <input type="checkbox" className="switch" aria-label="Web research" checked={webResearch} onChange={(e) => setWebResearch(e.target.checked)} />
+              </label>
             </>
           )}
           {info.needsKey && (

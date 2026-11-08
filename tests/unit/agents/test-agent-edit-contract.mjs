@@ -86,3 +86,31 @@ console.log('agent edit contract ok (blocked/no-op results, range safety, audio 
  f.ctx.dispatch({type:'undo'});assert.equal(f.state().agentEdit,undefined);
  assert.equal(f.state().agentInterruption.action,'undo');assert.equal(f.state().present.name,'Untitled');
 }
+// Pressing on a clip begins a gesture before the timeline knows whether it is a drag or a selection.
+// A selection (press and release, nothing moved) must not end the request; a real drag still does,
+// at its first change; agent edits made while the press is held stay in the agent's Undo step.
+{
+ const f=fixture();f.ctx.dispatch({type:'beginAgentEdit',token:'select-owner'});
+ f.ctx.dispatch({type:'setProject',patch:{name:'Agent first'},agentToken:'select-owner'});
+ f.ctx.dispatch({type:'beginGesture'});
+ assert.equal(f.state().agentEdit?.token,'select-owner','pressing on a clip does not interrupt the request');
+ f.ctx.dispatch({type:'setProject',patch:{name:'Agent while held'},agentToken:'select-owner'});
+ assert.equal(f.state().gestureStart,f.state().present,'the held gesture starts from the agent result');
+ f.ctx.dispatch({type:'endGesture'});
+ assert.equal(f.state().agentEdit?.token,'select-owner','a selection (press and release) leaves the request running');
+ assert.equal(f.state().agentInterruption,undefined);assert.equal(f.state().past.length,0,'no manual Undo step for a click');
+ f.ctx.dispatch({type:'endAgentEdit',token:'select-owner'});
+ assert.equal(f.state().past.length,1);f.ctx.dispatch({type:'undo'});assert.equal(f.state().present.name,'Untitled','one Undo removes all the agent work');
+}
+{
+ const f=fixture();f.ctx.dispatch({type:'beginAgentEdit',token:'drag-owner'});
+ f.ctx.dispatch({type:'setProject',patch:{name:'Agent title'},agentToken:'drag-owner'});
+ f.ctx.dispatch({type:'beginGesture'});
+ f.ctx.dispatch({type:'update',track:'video',id:'v',patch:{out:8},transient:true});
+ assert.equal(f.state().agentEdit,undefined,'a drag that changes the timeline ends the request');
+ assert.equal(f.state().agentInterruption.action,'update','reported as the change, not the press');
+ f.ctx.dispatch({type:'endGesture'});
+ f.ctx.dispatch({type:'undo'});assert.equal(f.state().present.videoClips[0].out,10);assert.equal(f.state().present.name,'Agent title','Undo removes the drag first');
+ f.ctx.dispatch({type:'undo'});assert.equal(f.state().present.name,'Untitled','then the agent work');
+}
+console.log('agent edit contract: selections never interrupt a request; real drags do');

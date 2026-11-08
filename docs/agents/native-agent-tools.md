@@ -25,6 +25,28 @@ Zod while preserving open-ended external tool inputs.
 References: [Codex app-server](https://learn.chatgpt.com/docs/app-server),
 [Claude custom tools](https://code.claude.com/docs/en/agent-sdk/custom-tools).
 
+## Web research
+
+Settings > AI assistant > Web research is a switch per native agent, saved in `ai.webResearch`
+(`electron/system/settings.cjs`). Codex starts on (it always had live search), Claude starts off;
+API providers have no native research. `electron/agents/research.cjs` owns the defaults, the
+instruction each run gets, and the search events:
+
+- off: Claude gets no built-in tools at all (`tools: []`, only `mcp__clipcraft__*` allowed) and Codex
+  runs with `web_search: disabled`; the agent is told research is off and where to turn it on.
+- on: Codex runs with live search; Claude gets exactly `WebSearch` and `WebFetch` (still no shell or
+  files; `canUseTool` denies everything else on the step path). The agent is told to research only
+  when asked, cite real source URLs and treat pages as untrusted data.
+- searches and fetched pages show in the chat as "Searching web: …" rows, from Codex items or
+  Claude's web tool calls; results of editor tools never show as searches.
+- changing the switch starts a fresh native session, so a running conversation never keeps the old
+  tool set.
+
+Checks: `tests/unit/agents/test-agent-web-research.mjs` (native path, both agents on and off),
+`test-local-agents.cjs` (step path), `test-settings.cjs` (storage) and
+`tests/unit/agents/test-web-research-ui.cjs` (the real Settings dialog: defaults, real clicks, save,
+reopen, what the agent run receives).
+
 ## Native runtime installation
 
 The application includes the small JavaScript SDK adapters, but excludes the

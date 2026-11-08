@@ -160,8 +160,9 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
         {!m.optimizing && proxyPrefOn() && previewPath(m) !== (m.proxy || m.path) && (
           <span className="asset-opt proxy" title="Plays from a scaled proxy copy at the current playback quality. Export uses the original at full quality.">Proxy</span>
         )}
-        <button className="asset-add" onClick={() => onAdd(m.id)} aria-label={`Add ${m.name} to the timeline`}><Plus size={14} /></button>
-        {onOverlay && m.type !== 'audio' && (
+        {m.graphic && <span className="asset-badge graphic" title="Motion graphic: edit its text and data in the inspector">Graphic</span>}
+        <button className="asset-add" onClick={() => onAdd(m.id)} aria-label={`Add ${m.name} to the timeline`} title={m.graphic ? 'Add over the whole frame at the playhead' : undefined}><Plus size={14} /></button>
+        {onOverlay && m.type !== 'audio' && !m.graphic && (
           <button className="asset-add overlay" onClick={() => onOverlay(m.id)} aria-label={`Add ${m.name} as an overlay`}
             title="Add as overlay (picture in picture)"><Layers size={13} /></button>
         )}
@@ -234,7 +235,7 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
             <label className="media-filter">
               <span>Show</span>
               <select aria-label="Filter project media" value={treeSel} onChange={e => setTreeSel(e.target.value)}>
-                {[['all', 'All media', counts.all], ['video', 'Video', counts.video], ['audio', 'Audio', counts.audio], ['image', 'Images', counts.image], ['speech', 'Generated speech', counts.speech], ['processed', 'Processed', counts.processed]].map(([id, label, n]) => <option key={id} value={id}>{label} · {n}</option>)}
+                {[['all', 'All media', counts.all], ['video', 'Video', counts.video], ['audio', 'Audio', counts.audio], ['image', 'Images', counts.image], ['graphic', 'Graphics', counts.graphic], ['speech', 'Generated speech', counts.speech], ['processed', 'Processed', counts.processed]].map(([id, label, n]) => <option key={id} value={id}>{label} · {n}</option>)}
               </select>
             </label>
             <div className="media-tree">
@@ -254,6 +255,7 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
               </button>
               {treeOpen.gen && (
                 <div className="mt-nodes">
+                  {treeNode('graphic', 'Graphics', counts.graphic)}
                   {treeNode('speech', 'Speech', counts.speech)}
                   {treeNode('processed', 'Processed', counts.processed)}
                 </div>
@@ -264,7 +266,9 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
                 {shownMedia.map((m) => <MediaCard key={m.id} m={m} onAdd={onAdd} onRemove={onRemoveMedia} onOverlay={onAddAsOverlay} onPeek={onPeek} peeking={peekId === m.id} />)}
               </div>
             ) : (
-              <p className="empty-note">{treeSel === 'speech'
+              <p className="empty-note">{treeSel === 'graphic'
+                ? 'No graphics yet — charts, callouts and other graphics CraftAI draws land here.'
+                : treeSel === 'speech'
                 ? 'No generated speech yet — voice-overs you make with Text to speech land here.'
                 : treeSel === 'processed'
                   ? 'No processed renders yet — detached, reversed and stabilized renders land here.'

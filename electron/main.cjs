@@ -989,6 +989,7 @@ const tts = require("./audio/tts.cjs");
 const geminiTts = require("./audio/geminiTts.cjs");
 const ttsDir = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'tts');
 const ttsOut = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'voiceovers');
+const ttsWords = (text) => String(text || '').trim().split(/\s+/).slice(0, 5).join(' ').replace(/[\\/:*?"<>|]+/g, '');
 ipcMain.handle('tts:status', () => ({ ...tts.piperStatus(ttsDir()), elevenKey: !!settings.getServiceKey('elevenlabs'),
   geminiKey: !!settings.getServiceKey('gemini-tts'), gemini: geminiTts.catalog() }));
 ipcMain.handle('tts:geminiTestKey', async (_e, key) => {
@@ -1025,11 +1026,12 @@ ipcMain.handle('tts:testKey', async (_e, key) => {
 ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, async signal => {
   try {
     if (!req || !['piper', 'eleven', 'gemini'].includes(req.engine)) return { error: 'Choose a supported speech engine.' };
-    const send = (stage, fraction) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction }); };
-    let file;
+    const send = (stage, fraction, extra) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction, ...extra }); };
+    let file, waited = 0;
     if (req.engine === 'gemini') {
       send('speech', 0);
-      file = await geminiTts.speak(scopedFetch(net.fetch, signal), settings.getServiceKey('gemini-tts'), ttsOut(), { ...req, signal });
+      const onWait = (seconds) => { waited += seconds; send('wait', 0, { seconds }); };
+      file = await geminiTts.speak(scopedFetch(net.fetch, signal), settings.getServiceKey('gemini-tts'), ttsOut(), { ...req, signal, onWait });
     } else if (req.engine === 'eleven') {
       send('voice', 0);
       file = await tts.elevenSpeak(scopedFetch(net.fetch, signal), settings.getServiceKey('elevenlabs'), ttsOut(), { ...req, signal });
@@ -1040,15 +1042,38 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
     }
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
-    const words = String(req.text).trim().split(/\s+/).slice(0, 5).join(' ').replace(/[\\/:*?"<>|]+/g, '');
+    const words = ttsWords(req.text);
     const credit = req.engine === 'gemini'
       ? { license: 'gemini', providerName: 'Google Gemini', creator: req.voiceId || geminiTts.DEFAULT_VOICE, line: 'Speech generated with Google Gemini TTS' }
       : req.engine === 'eleven'
       ? { license: 'elevenlabs', providerName: 'ElevenLabs', creator: req.voiceName || 'ElevenLabs voice', line: 'Voice generated with ElevenLabs (elevenlabs.io)' }
       : { license: 'piper', providerName: 'Piper', creator: req.voiceName || req.voiceId, line: `Voice: Piper ${req.voiceId}` };
-    return { ...m, origin: 'tts', name: `Voice - ${words || 'text'}${path.extname(file)}`, credit };
+    return { ...m, origin: 'tts', name: `Voice - ${words || 'text'}${path.extname(file)}`, credit, ...(waited ? { waited_sec: Math.round(waited) } : {}) };
   } catch (e) {
-    return { error: e.message };
+    return { error: e.message, ...(e.limit ? { limit: e.limit } : {}) };
+  }
+}));
+// Several narration lines from one Gemini request, cut into one audio item per line (audio/narration.cjs).
+ipcMain.handle('tts:speakLines', (event, req) => withAgentJob(event, req?.requestId, async signal => {
+  try {
+    const lines = Array.isArray(req?.lines) ? req.lines.map((t) => String(t ?? '')) : [];
+    const send = (stage, extra) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction: 0, ...extra }); };
+    const key = settings.getServiceKey('gemini-tts'), voiceId = req?.voiceId || geminiTts.DEFAULT_VOICE, model = req?.model || geminiTts.DEFAULT_MODEL;
+    if (lines.join('\n\n').length > geminiTts.MAX_TEXT) return { error: `Keep one narration to ${geminiTts.MAX_TEXT} characters in total; split it into two add_narration calls.` };
+    let waited = 0;
+    const onWait = (seconds) => { waited += seconds; send('wait', { seconds }); };
+    send('speech');
+    const out = await require('./audio/narration.cjs').speakLines({ ffmpegPath: require('./media/ffmpeg.cjs').ffmpegPath, outDir: ttsOut(), lines, style: req?.style,
+      cacheKey: ['gemini', model, voiceId], signal,
+      speak: (text, style) => geminiTts.speak(scopedFetch(net.fetch, signal), key, ttsOut(), { text, voiceId, model, style, signal, onWait }) });
+    const probed = await probeAll(out.files);
+    const bad = probed.find((m) => m.error);
+    if (bad) return { error: bad.error };
+    const credit = { license: 'gemini', providerName: 'Google Gemini', creator: voiceId, line: 'Speech generated with Google Gemini TTS' };
+    return { items: probed.map((m, i) => ({ ...m, origin: 'tts', name: `Voice ${i + 1} - ${ttsWords(lines[i]) || 'text'}.wav`, credit })),
+      mode: out.mode, requests: out.requests, ...(waited ? { waited_sec: Math.round(waited) } : {}) };
+  } catch (e) {
+    return { error: e.message, ...(e.limit ? { limit: e.limit } : {}) };
   }
 }));
 
@@ -1726,7 +1751,7 @@ ipcMain.handle('agent:runNative', async (event, req) => {
         const result = await invoke(aliases.get(name),args);
         checkAbort(job.controller.signal);
         // A contact sheet replaces its cells as the one image sent for overview checks.
-        const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit','analyze_reference'].includes(aliases.get(name)) ? (result.sheet_ids?.length ? result.sheet_ids : result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
+        const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit','analyze_reference','add_graphic','edit_graphic'].includes(aliases.get(name)) ? (result.sheet_ids?.length ? result.sheet_ids : result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
         const images = agentFrames.images(event.sender.id,ids || []);
         const content = [{type:'text',text:JSON.stringify(result)}];
         for (const image of require("./agents/agentImages.cjs").readImages(images)) content.push({type:'text',text:image.label},{type:'image',mimeType:'image/jpeg',data:image.data});
@@ -1878,6 +1903,53 @@ ipcMain.handle('agent:reviewRendered', (event, req = {}) => withAgentJob(event, 
   }));
   return { ...result, frames, revision: req.revision, semantic_audio_review: false, continuous_semantic_video_review: false };
 }));
+
+// Motion graphics: a component the agent wrote, rendered in the locked-down sandbox
+// (electron/graphics/) into a transparent video plus a transparent preview copy. Sample frames are
+// registered like inspected frames, so the model sees what it drew.
+let graphicsService;
+const graphics = () => graphicsService ||= new (require('./graphics/service.cjs').GraphicsService)({
+  root: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'graphics'), ffmpegPath: require('./media/ffmpeg.cjs').ffmpegPath, probe,
+  renderGraphic: require('./graphics/render.cjs').renderGraphic,
+});
+ipcMain.handle('agent:renderGraphic', (event, req = {}) => withAgentJob(event, req.requestId, async signal => {
+  let last = 0;
+  const result = await graphics().render(req, { signal, sampleTimes: req.sample_times_sec, onProgress: (done, total) => {
+    const now = Date.now(); if ((now - last < 150 && done < total) || event.sender.isDestroyed()) return; last = now;
+    event.sender.send('agent:graphicProgress', { requestId: req.requestId, done, total });
+  } });
+  const start = Number.isFinite(req.start_sec) ? req.start_sec : 0;
+  const frames = result.samples.map(sample => agentFrames.addRendered(event.sender.id, sample.bytes, { revision: req.revision, time_sec: start + sample.time_sec, render_time_sec: sample.time_sec, width: sample.width, height: sample.height,
+    label: `Graphic frame at ${sample.time_sec}s of the graphic (timeline ${Math.round((start + sample.time_sec) * 1000) / 1000}s), drawn over neutral grey: grey is transparent.` }));
+  const { samples, media, ...rest } = result;
+  return { ok: true, ...rest, media: { ...media, path: result.file }, frames };
+}));
+
+// The editor re-rendering a graphic (inspector fields, a new canvas size, missing cached files): the
+// same sandbox and cache, no sample frames. One render per window at a time; a newer one replaces it.
+const graphicJobs = new Map();
+ipcMain.handle('graphics:render', async (event, req = {}) => {
+  // One render per window and purpose (the inspector, each automatic re-render): a newer one replaces it.
+  const jobKey = `${event.sender.id}:${String(req.requestId || 'editor').slice(0, 80)}`;
+  graphicJobs.get(jobKey)?.abort();
+  const controller = new AbortController(); graphicJobs.set(jobKey, controller);
+  let last = 0;
+  try {
+    const { samples, media, ...rest } = await graphics().render(req, { signal: controller.signal, samples: false, onProgress: (done, total) => {
+      const now = Date.now(); if ((now - last < 150 && done < total) || event.sender.isDestroyed()) return; last = now;
+      event.sender.send('agent:graphicProgress', { requestId: req.requestId || 'editor', done, total });
+    } });
+    return { ok: true, ...rest, media: { ...media, path: rest.file } };
+  } catch (error) { return { ok: false, error: controller.signal.aborted ? 'Graphic render replaced or stopped.' : error.message, ...(controller.signal.aborted ? { canceled: true } : {}) }; }
+  finally { if (graphicJobs.get(jobKey) === controller) graphicJobs.delete(jobKey); }
+});
+// Which graphics lost their cached files (moved user data, cleaned disk): the editor draws them again.
+// Only paths inside the graphics folder are checked.
+ipcMain.handle('graphics:missing', (_event, items = []) => {
+  const root = path.resolve(path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'graphics')) + path.sep;
+  const inside = file => typeof file === 'string' && path.resolve(file).startsWith(root);
+  return (Array.isArray(items) ? items.slice(0, 500) : []).filter(i => i && [i.path, i.preview].some(f => inside(f) && !fs.existsSync(f)) || (i && !inside(i.path))).map(i => i.id);
+});
 
 ipcMain.handle('captions:status', () => whisper.status(whisperDir()));
 let transcriptService;

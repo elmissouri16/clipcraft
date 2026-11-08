@@ -62,6 +62,19 @@ try {
     assert.equal(settings.getActive().executablePath, `/custom/${provider}`);
     assert.equal(settings.getPublic().keys.openai, existing.ai.keys.openai.hint);
   }
+  // Web research: Codex on and Claude off until changed, saved per agent, never for API providers.
+  assert.deepEqual({ ...settings.getPublic().webResearch }, { 'codex-sdk': true, 'claude-agent-sdk': false });
+  settings.save({ provider: 'claude-agent-sdk', model: '', webResearch: true });
+  assert.equal(settings.getActive().webResearch, true);
+  settings.save({ provider: 'codex-sdk', model: '', webResearch: false });
+  assert.equal(settings.getActive().webResearch, false);
+  settings.save({ provider: 'codex-sdk', model: '' });
+  assert.equal(settings.getActive().webResearch, false, 'a save without the field keeps the choice');
+  assert.deepEqual({ ...settings.getPublic().webResearch }, { 'codex-sdk': false, 'claude-agent-sdk': true });
+  settings.save({ provider: 'openai', model: 'api-model', webResearch: true });
+  assert.equal(settings.getActive().webResearch, false, 'API providers have no native research');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).ai.webResearch.openai, undefined);
+  settings.save({ provider: 'codex-sdk', model: '', webResearch: true });
   settings.save({ provider: 'openai', model: 'api-model' });
   assert.equal(settings.getActive().provider, 'openai');
   assert.equal(settings.getActive().model, 'api-model');

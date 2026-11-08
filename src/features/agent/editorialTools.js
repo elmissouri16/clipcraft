@@ -33,7 +33,7 @@ export const EDITORIAL_DECLARATIONS = [
     }, required: ['goal', 'hook', 'story'] } },
   { name: 'critique_edit', description: 'Review the current edit like a senior editor: black gaps, pacing (time without visual change), hook in the first 3 s, remaining fillers/retakes/dead air, caption reading speed and safe area, title readability, music level under speech, loudness and true peak, transitions and target duration. Returns a 0–100 score and issues with time and fix. Fix high/medium issues before finishing.',
     parameters: { type: 'OBJECT', properties: { platform: { ...S, enum: PLATFORMS }, target_duration_sec: N, measure_loudness: B, speech: { ...S, enum: ['cached', 'transcribe', 'none'], description: 'cached (default) reuses this request’s transcript; transcribe refreshes it' } }, required: [] } },
-  { name: 'get_beats', description: 'Beat grid of the music (or other selected sources) in timeline seconds: bpm, beats, estimated downbeats (bar starts) and accents (strong hits). Use it to cut, zoom or pop text on the beat. Select the music clip with clip_ids and source audio.',
+  { name: 'get_beats', description: 'Beat grid of the music (or selected sources) in timeline seconds: bpm, beats, downbeats (bar starts), accents (strong hits). Cut, zoom or pop text on the beat; select music with clip_ids and source audio.',
     parameters: { type: 'OBJECT', properties: { clip_ids: { type: 'ARRAY', items: S }, source: { ...S, enum: ['all', 'video', 'overlay', 'audio'] }, ...RANGE }, required: [] } },
 ];
 export const EDITORIAL_TOOL_NAMES = EDITORIAL_DECLARATIONS.map(t => t.name);
@@ -120,8 +120,11 @@ export function createEditorialTools({ project, dispatch, after, api, requestId,
 
     async log_footage(a = {}) {
       const offset = Number.isInteger(a.offset) && a.offset >= 0 ? a.offset : 0, limit = Number.isInteger(a.limit) && a.limit > 0 ? Math.min(80, a.limit) : 40;
-      const res = await wordsFor(a);
-      if (res.error) return res;
+      let res = await wordsFor(a);
+      // A timeline with nothing audible (empty, silent or muted) has no speech to log, not an error.
+      const silent = res.error && /^No audible clips/.test(res.error);
+      if (res.error && !silent) return res;
+      if (silent) res = { words: [], language: 'none', cached: false, note: exportDuration(project()) ? `No speech to log: ${res.error}` : 'The timeline is empty: there is no footage or speech to log yet.' };
       const words = res.words, list = sentences(words), fillers = findFillers(words, { language: res.language }), retakes = findRetakes(words, list);
       const hooks = hookCandidates(list, { limit: 6 });
       let shots = [];
@@ -150,7 +153,7 @@ export function createEditorialTools({ project, dispatch, after, api, requestId,
         stutters: retakes.filter(r => r.kind === 'stutter').length,
         hook_candidates: hooks,
         shots: shots.some(s => s.error) ? { error: shots[0].error } : { count: shots.length, observed: shots.filter(s => s.observation).length },
-        note: 'Flags are heuristic. Read the sentences, judge the story, then plan. Shot links are visual candidates; inspect frames before describing content.',
+        note: res.note || 'Flags are heuristic. Read the sentences, judge the story, then plan. Shot links are visual candidates; inspect frames before describing content.',
       };
     },
 

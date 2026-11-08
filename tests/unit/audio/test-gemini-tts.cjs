@@ -58,6 +58,42 @@ async function main() {
       }, key, dir, { ...req, text: `Error ${code}` }), (e) => !e.message.includes(key) && /Gemini TTS/.test(e.message));
       assert.equal(attempts, code >= 500 ? 2 : 1);
     }
+    // 429s are request limits per model and tier, not the spend cap.
+    const slept = []; tts._setSleep(async (ms) => { slept.push(ms); });
+    const limited = (quotaId, quotaValue, retryDelay) => ({ ok: false, status: 429, json: async () => ({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: `${key} Please retry in 31.2s.`,
+      details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId, quotaValue: String(quotaValue) }] },
+        ...(retryDelay ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] : [])] } }) });
+    let tries = 0;
+    await tts.speak(async () => ++tries <= 2 ? limited('GenerateRequestsPerMinutePerProjectPerModel', 10, '31s') : reply(), key, dir, { ...req, text: 'Per-minute limit clears' });
+    assert.equal(tries, 3, 'a per-minute limit is waited out and retried');
+    assert.deepEqual(slept, [31250, 31250], 'waits as long as Google says');
+    tries = 0; slept.length = 0;
+    await assert.rejects(tts.speak(async () => { tries++; return limited('GenerateRequestsPerDayPerProjectPerModel', 100, '40s'); }, key, dir, { ...req, text: 'Daily limit' }),
+      (e) => /daily request limit/.test(e.message) && /100 requests a day/.test(e.message) && /spend cap/.test(e.message) && /Flash-Lite/.test(e.message) && !e.message.includes(key));
+    assert.equal(tries, 1, 'a daily limit is not retried'); assert.equal(slept.length, 0);
+    await assert.rejects(tts.speak(async () => { tries++; return reply(); }, key, dir, { ...req, text: 'After the daily limit' }),
+      (e) => e.limit?.kind === 'daily' && e.limit.model === 'gemini-3.8-flash-tts' && e.limit.requests_allowed === 100 && e.limit.other_model === 'gemini-3.8-flash-lite-tts' && !!e.limit.resets);
+    assert.equal(tries, 1, 'a model out of daily requests is not asked again until it resets');
+    await tts.speak(async () => { tries++; return reply(); }, key, dir, { ...req, model: 'gemini-3.8-flash-lite-tts', text: 'Other model still works' });
+    assert.equal(tries, 2, 'the other model has its own limit');
+    tts._resetLimits();
+    tries = 0; const waits = [];
+    await assert.rejects(tts.speak(async () => { tries++; return limited('GenerateRequestsPerMinutePerProjectPerModel', 10, '20s'); }, key, dir, { ...req, text: 'Still limited', onWait: (s) => waits.push(s) }),
+      (e) => /per-minute request limit/.test(e.message) && /10 a minute/.test(e.message) && !e.message.includes(key) && e.limit?.kind === 'per_minute');
+    assert.deepEqual(waits, [20, 20, 20], 'each wait is reported');
+    assert.equal(tries, 4, 'gives up after three waits');
+    tries = 0;
+    await tts.speak(async () => ++tries === 1 ? { ...limited('', 0, null), json: async () => ({ error: { message: 'Please retry in 12.5s.' } }) } : reply(), key, dir, { ...req, text: 'Retry hint in the message' });
+    assert.equal(tries, 2, 'the retry hint in the message counts too');
+    const controller = new AbortController(); tts._setSleep(null);
+    const waiting = tts.speak(async () => limited('GenerateRequestsPerMinutePerProjectPerModel', 10, '30s'), key, dir, { ...req, text: 'Stopped while waiting', signal: controller.signal });
+    setTimeout(() => controller.abort(), 30);
+    await assert.rejects(waiting, (e) => e.name === 'AbortError' || /cancel|stop/i.test(e.message), 'stopping ends the wait');
+    // One request at a time: a narration of many lines queues instead of bursting.
+    let inFlight = 0, most = 0;
+    const slow = async () => { inFlight++; most = Math.max(most, inFlight); await new Promise((r) => setTimeout(r, 10)); inFlight--; return reply(); };
+    await Promise.all(['one', 'two', 'three'].map((t) => tts.speak(slow, key, dir, { ...req, text: `Queued ${t}` })));
+    assert.equal(most, 1, 'speech requests run one at a time');
     let attempts = 0;
     await tts.speak(async () => ++attempts === 1 ? { ok: false, status: 500 } : reply(), key, dir, { ...req, text: 'Retry succeeds' });
     assert.equal(attempts, 2);
@@ -79,7 +115,7 @@ async function main() {
     assert.equal(isSpeechMedia({ type: 'audio', credit: { license: 'gemini' } }), true);
     assert.equal(isSpeechMedia({ type: 'audio', origin: 'tts' }), true);
     assert.equal(isSpeechMedia({ type: 'audio', name: 'voiceover-recording.m4a' }), false);
-    console.log('Gemini TTS OK (Interactions contract, real WAV probe, cache, voices/models, errors, retries, concurrent requests, key test)');
+    console.log('Gemini TTS OK (Interactions contract, real WAV probe, cache, voices/models, errors, retries, request limits, queue, concurrent requests, key test)');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 module.exports = { fixtureWav };

@@ -165,6 +165,10 @@ contextBridge.exposeInMainWorld('api', {
   agentAnnotateScene: req => ipcRenderer.invoke('agent:annotateScene', req),
   agentInspectFrames: (req) => ipcRenderer.invoke('agent:inspectFrames', req),
   agentFrameSheet: (req) => ipcRenderer.invoke('agent:frameSheet', req),
+  agentRenderGraphic: (req) => ipcRenderer.invoke('agent:renderGraphic', req),
+  renderGraphic: (req) => ipcRenderer.invoke('graphics:render', req),
+  graphicsMissing: (items) => ipcRenderer.invoke('graphics:missing', items),
+  onGraphicProgress: (cb) => { const h = (_e, v) => cb(v); ipcRenderer.on('agent:graphicProgress', h); return () => ipcRenderer.removeListener('agent:graphicProgress', h); },
   agentGenerateImage: (req) => ipcRenderer.invoke('agent:generateImage', req),
   agentGenerateImages: (req) => ipcRenderer.invoke('agent:generateImages', req),
   onAgentImageProgress: cb => { const handler = (_event, progress) => cb(progress); ipcRenderer.on('agent:imageProgress', handler); return () => ipcRenderer.removeListener('agent:imageProgress', handler); },
@@ -203,6 +207,7 @@ contextBridge.exposeInMainWorld('api', {
   ttsTestKey: (key) => ipcRenderer.invoke('tts:testKey', key),
   ttsGeminiTestKey: (key) => ipcRenderer.invoke('tts:geminiTestKey', key),
   ttsSpeak: (req) => ipcRenderer.invoke('tts:speak', req),
+  ttsSpeakLines: (req) => ipcRenderer.invoke('tts:speakLines', req),
   onTtsProgress: (fn) => {
     const h = (_e, p) => fn(p);
     ipcRenderer.on('tts:progress', h);

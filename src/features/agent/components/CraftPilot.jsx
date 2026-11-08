@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { ArrowDown, ArrowUp, Check, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, Settings, Square, Undo2, X } from 'lucide-react';
 import { runAgent } from "../runAgent.js";
 import { addTimelineAttachment, resolveTimelineAttachments, timelineAttachmentLabel, timelineContextPart } from '../timelineContext.js';
-import { projectRevision } from "../context.js";
+import { projectRevision, proposedPlanNote } from "../context.js";
 import CraftModelPicker from './CraftModelPicker.jsx';
 import Dropdown from "../../../components/ui/Dropdown.jsx";
 import { newChatSession, normalizeChatSessions, snapshotChatSessions } from "../chatSessions.js";
@@ -338,16 +338,21 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const ownsUndo = app.getAgentEdit?.()?.token === requestId && app.getAgentEdit?.()?.steps.length > 0 && projectRevision(getProject()) !== requestRevision;
     const undoRevision = ownsUndo ? projectRevision(getProject()) : null;
     dispatch({ type: 'endAgentEdit', token: requestId });
+    // A plan the agent proposed in this request was shown to the user, who may approve it next: it
+    // must survive the checkpoint below, or "Approved" reaches an agent that never saw the plan.
+    const proposedPlan = () => proposedPlanNote(contents.current.slice(conversationStart));
     if (result.error) {
       // Drop the incomplete request, including unanswered tool calls, so a retry
       // starts from a valid conversation while any completed edits remain undoable.
+      const plan = proposedPlan();
       contents.current.splice(conversationStart);
-      if (result.operations?.length || contextPart || item.images?.length) contents.current.push({ role: 'user', parts: [{ text: `Host recovery checkpoint for interrupted request ${requestId}. Original request: ${msg}\n${contextPart ? contextPart + '\n' : ''}Completed/failed operations: ${JSON.stringify(result.operations)}\nCompleted edits remain in the live project. Read current project state before continuing; do not repeat completed operations blindly.` }, ...imageMessageParts(item.images)] });
+      if (result.operations?.length || contextPart || item.images?.length || plan) contents.current.push({ role: 'user', parts: [{ text: `Host recovery checkpoint for interrupted request ${requestId}. Original request: ${msg}${plan}\n${contextPart ? contextPart + '\n' : ''}Completed/failed operations: ${JSON.stringify(result.operations)}\nCompleted edits remain in the live project. Read current project state before continuing; do not repeat completed operations blindly.` }, ...imageMessageParts(item.images)] });
       updateLast((last) => ({ ...last, pending: false, steps: last.steps.map(step => step.status === 'running' ? { ...step, status: 'error', detail: result.error.error } : step), error: result.error, changed: !!ownsUndo, undoRevision }), contents.current);
     } else {
       if (result.canceled) {
+        const plan = proposedPlan();
         contents.current.splice(conversationStart);
-        if (result.operations?.length || contextPart || item.images?.length) contents.current.push({ role: 'user', parts: [{ text: `Host recovery checkpoint: request stopped. Original request: ${msg}\n${contextPart ? contextPart + '\n' : ''}Operation outcomes: ${JSON.stringify(result.operations)}\nCompleted edits remain. Read live project state before continuing.` }, ...imageMessageParts(item.images)] });
+        if (result.operations?.length || contextPart || item.images?.length || plan) contents.current.push({ role: 'user', parts: [{ text: `Host recovery checkpoint: request stopped. Original request: ${msg}${plan}\n${contextPart ? contextPart + '\n' : ''}Operation outcomes: ${JSON.stringify(result.operations)}\nCompleted edits remain. Read live project state before continuing.` }, ...imageMessageParts(item.images)] });
       }
       updateLast((last) => ({ ...last, pending: false, steps: last.steps.map(step => step.status === 'running' ? { ...step, status: 'error', detail: result.canceled ? 'Stopped.' : 'Finished.' } : step), text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: !!ownsUndo, undoRevision, ...(result.tokenUsage ? { tokenUsage: result.tokenUsage } : {}) }), contents.current);
     }

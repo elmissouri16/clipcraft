@@ -147,3 +147,14 @@ export function latestEditorRevision(contents) {
   }
   return null;
 }
+
+// The plan an interrupted request proposed (propose_edit_plan), as a line for the recovery
+// checkpoint. The user saw it with Approve/Change buttons and may approve it next, so it must
+// survive when the request's own turns are dropped.
+export function proposedPlanNote(entries = []) {
+  for (const entry of [...entries].reverse()) for (const part of entry?.parts || []) {
+    const plan = part.functionResponse?.name === 'propose_edit_plan' && part.functionResponse.response?.result?.plan;
+    if (plan) return `\nPlan proposed to the user in this request (shown with Approve/Change buttons; if they approve, carry out exactly this plan): ${JSON.stringify(plan)}`;
+  }
+  return '';
+}
