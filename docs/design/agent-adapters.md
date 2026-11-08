@@ -1,6 +1,6 @@
 # One tool contract, one adapter per agent
 
-Status: plan (2026-11-08). Branch: `feat/motion-graphics` (to move to its own branch).
+Status: phases 0–1 done, phase 2 next (2026-11-08). Branch: `feat/agent-adapters`.
 
 ## Goal
 
@@ -100,6 +100,44 @@ name prefix Claude sees is mapped back in the adapter, and error text uses the b
 - Anything useful from a built-in becomes a ClipCraft tool given to both. Example: a task list
   (`update_plan`) shown in the chat, if phase 0 finds Codex uses one.
 - Web research stays the only provider built-in, behind the same switch for both.
+
+## Phase 0 results: what each agent sends its model
+
+`node scripts/agent-inventory.mjs` runs the installed agents through ClipCraft's own launch code
+against a local fake model API (`tests/fixtures/fake-model-server.cjs`), with temporary config
+folders: no account, token or network. Results on Codex CLI 0.167.0 and Claude Code 2.1.319:
+
+| | Codex | Claude |
+|---|---|---|
+| ClipCraft tools | 74 (72 shared + 2 image) | 72, full schemas (only Claude Code's own placeholder is deferred) |
+| Provider built-ins | `view_image` (any local image file), `request_user_input` (Plan mode only) | none |
+| Web research | `web_search` (switch) | `WebSearch`, `WebFetch` (switch) |
+| ClipCraft instructions | developer message, and again in the first user message | system text, and again in the first user message |
+| Provider wrapper text | sandbox permissions note, environment block | 62-character SDK line, environment block |
+| Request options | parallel tool calls, reasoning summary, model's default effort | adaptive thinking, effort high by default, 32k max tokens |
+| Limits | none | 100 turns per attempt |
+
+Also found: Codex features that ClipCraft does not switch off are still active in its sessions
+(`experimentalFeature/list`): browser use, computer use, image viewing, a sleep tool, tool
+suggestions and others, and `unified_exec` remains on although ClipCraft passes
+`unified_exec=false`. None of them reaches the model as a tool except `view_image` and
+`request_user_input`, but phase 2 switches them off explicitly so a Codex update cannot expose them.
+
+Every native request now appends a line to `<userData>/logs/agent-runs.jsonl`
+(`electron/agents/runReport.cjs`): provider, model, web research, calls and failures per tool,
+completion check failures, duration, tokens, outcome. Counts only.
+
+## Phase 1 results
+
+- `electron/agents/contract.cjs`: the wire tool list (JSON Schema, wire names, `retry_of`).
+- `runNativeAgent.js` exports `nativeTools(provider)` and `nativeSystemPrompt(revision)`: the one
+  tool list and instruction text, used by the app and the inventory.
+- `electron/agents/adapters/codex.cjs` and `adapters/claude.cjs`: each starts its agent with the
+  shared tools, runs one turn and closes. `nativeAgents.cjs` is the session manager (session reuse,
+  request prompt, completion re-prompt, duplicate callbacks, redaction) for both.
+- Verified unchanged: the inventory before and after the refactor is identical for both agents
+  (tools, instruction text, request options); native unit suites and the real-app native check
+  (`tests/unit/agents/test-native-agents-ui.cjs`) pass.
 
 ## Phases
 

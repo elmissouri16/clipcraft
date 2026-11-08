@@ -25,6 +25,15 @@ Zod while preserving open-ended external tool inputs.
 References: [Codex app-server](https://learn.chatgpt.com/docs/app-server),
 [Claude custom tools](https://code.claude.com/docs/en/agent-sdk/custom-tools).
 
+## Adapters
+
+`electron/agents/nativeAgents.cjs` is the session manager for every native agent; the wire work is in
+`electron/agents/adapters/codex.cjs` (app-server dynamic tools) and `adapters/claude.cjs` (SDK MCP
+server). Both receive the same tool list (`runNativeAgent.js` `nativeTools`, `contract.cjs`
+`wireTools`) and instructions (`nativeSystemPrompt`); image generation is Codex only. See
+`docs/design/agent-adapters.md`, and `node scripts/agent-inventory.mjs` for what each agent sends
+its model. Each request is counted in `<userData>/logs/agent-runs.jsonl`.
+
 ## Web research
 
 Settings > AI assistant > Web research is a switch per native agent, saved in `ai.webResearch`

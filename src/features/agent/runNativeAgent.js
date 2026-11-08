@@ -13,6 +13,18 @@ import { activityEvidence, renderActivityProgress } from './activityEvidence.js'
 
 const COMPLETE = { name: 'complete_edit', description: 'Required before finishing. Validate the live edit and inspect any missing changed regions. If ready is false, review the returned images or repair failed operations, then call again. Only finish after ready is true.', parameters: { type: 'OBJECT', properties: {} } };
 const IMAGES = { name: 'generate_images', description: 'Generate independent scene images concurrently, then insert them in request order. Use up to 12 scenes. Reuse an existing character reference before batching. Failed scenes have separate operation IDs; retry only those scenes with generate_image and retry_of.', parameters: { type: 'OBJECT', properties: { scenes: { type: 'ARRAY', minItems: 1, maxItems: 12, items: TOOL_DECLARATIONS.find(tool => tool.name === 'generate_image').parameters } }, required: ['scenes'] } };
+// Every native agent is offered this list: all editor tool groups, the user's MCP tools and
+// complete_edit; image generation only where the agent can generate images (Codex).
+export function nativeTools(provider, externalTools = []) {
+  const declarations = TOOL_DECLARATIONS.filter(tool => provider === 'codex-sdk' || tool.name !== 'generate_image');
+  const catalog = createToolCatalog(declarations, externalTools);
+  catalog.load([...Object.keys(TOOL_GROUPS), 'external']);
+  return { catalog, tools: [...catalog.tools(), COMPLETE, ...(provider === 'codex-sdk' ? [IMAGES] : [])] };
+}
+
+// The instructions every native agent receives for a request at this project revision.
+export const nativeSystemPrompt = (revision) => SYSTEM_PROMPT.replace('- Load needed tool groups with load_tools. Batch independent reads and group loads; perform edits in order. Only use available tools. Explain unsupported requests briefly.', '- Editor tools are registered natively. Call them directly; do not emit JSON tool requests in your answer. Perform dependent edits in order. load_tools is optional discovery. Explain unsupported requests briefly.') + `\nLive editor revision: ${revision}. Reuse current user-attached references; refresh missing or stale project IDs/times before editing.` + '\nUse only registered ClipCraft tools for editing; no native filesystem or shell work. Before your final answer call complete_edit until ready is true. Review images returned by that tool. Describe actual edits in the final reply without internal tool/protocol names. When generate_images is available, use it for parallel scene images; it preserves insertion order and bounds native generation concurrency.';
+
 export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, requestId, sessionKey }) {
   const initial = ctx.getProject(), initialRevision = projectRevision(initial);
   const initialIssues = new Set(validateAgentProject(initial).issues), failures = new Map(), operations = [];
@@ -43,10 +55,7 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
     const external = await ctx.api.mcpTools?.({ requestId });
     validOwner();
     if (external?.problems?.length) onEvent({ type:'tool', id:'native-mcp-warning', name:'mcp', label:external.problems.map(p=>`${p.server}: ${p.error}`).join('; '), status:'error' });
-    const declarations = TOOL_DECLARATIONS.filter(tool => ctx.provider === 'codex-sdk' || tool.name !== 'generate_image');
-    const catalog = createToolCatalog(declarations, external?.tools || []);
-    catalog.load([...Object.keys(TOOL_GROUPS), 'external']);
-    const tools = [...catalog.tools(), COMPLETE, ...(ctx.provider === 'codex-sdk' ? [IMAGES] : [])];
+    const { catalog, tools } = nativeTools(ctx.provider, external?.tools || []);
     const verify = async () => {
       validOwner();
       if (failures.size) return { error: `Unresolved operations: ${[...failures.values()].map(f=>f.error).join(' ')}`, ready:false };
@@ -133,7 +142,7 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
     });
     offStop = ctx.api.onAgentNativeStop?.(event => { if (event.requestId === requestId) { stopped = true;stopError = event.error || null; } });
     offProgress = ctx.api.onAgentNativeProgress?.(event => { if (event.requestId === requestId && event.event) onEvent(event.event); });
-    const nativeSystem = SYSTEM_PROMPT.replace('- Load needed tool groups with load_tools. Batch independent reads and group loads; perform edits in order. Only use available tools. Explain unsupported requests briefly.', '- Editor tools are registered natively. Call them directly; do not emit JSON tool requests in your answer. Perform dependent edits in order. load_tools is optional discovery. Explain unsupported requests briefly.') + `\nLive editor revision: ${initialRevision}. Reuse current user-attached references; refresh missing or stale project IDs/times before editing.` + '\nUse only registered ClipCraft tools for editing; no native filesystem or shell work. Before your final answer call complete_edit until ready is true. Review images returned by that tool. Describe actual edits in the final reply without internal tool/protocol names. When generate_images is available, use it for parallel scene images; it preserves insertion order and bounds native generation concurrency.';
+    const nativeSystem = nativeSystemPrompt(initialRevision);
     const prompt = contents.at(-1)?.parts?.filter(part=>part.text).map(part=>part.text).join('\n') || '';
     const history = prepareContext(contents.slice(0, -1)).contents;
     const response = await ctx.api.agentRunNative({ requestId, sessionKey, provider:ctx.provider, system:nativeSystem, prompt, history, tools, chatImageIds: ctx.chatImageIds || [] });

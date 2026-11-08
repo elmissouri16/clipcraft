@@ -1730,16 +1730,10 @@ ipcMain.handle('agent:runNative', async (event, req) => {
   };
   try {
     const {validateToolCall} = await import('../shared/toolArguments.mjs');
-    const aliases = new Map();
-    const tools = req.tools.map(tool => {
-      const schema = ai.toJsonSchema(tool.parameters || {type:'object'});
-      const name = /^[A-Za-z0-9_-]{1,64}$/.test(tool.name) ? tool.name : `${String(tool.name).replace(/[^A-Za-z0-9_-]/g,'_').slice(0,48)}_${require('node:crypto').createHash('sha256').update(String(tool.name)).digest('hex').slice(0,8)}`;
-      if (aliases.has(name)) throw new Error('Two native tools have the same name. Rename the configured external tools.');
-      aliases.set(name,tool.name);
-      return {name,description:tool.description || '',parameters:{...schema,properties:{...schema.properties,retry_of:{type:'string'}}}};
-    });
+    const { tools, aliases } = require('./agents/contract.cjs').wireTools(req.tools);
     const cfg = settings.getActive(req.provider);
     job.cfg = cfg;
+    job.report = require('./agents/runReport.cjs').createRunReport({ dir:crashDir(), provider:cfg.provider, model:cfg.model, webResearch:require('./agents/research.cjs').enabled(cfg) });
     const attached = await chatImages.native(req.prompt, req.history, req.chatImageIds || []);
     const result = await localAgents.runEditorNative(cfg, {
       sessionKey:`${event.sender.id}:${req.sessionKey}`, tools, system:req.system, ...attached,
@@ -1747,8 +1741,9 @@ ipcMain.handle('agent:runNative', async (event, req) => {
       onSearch:search=>{if(!event.sender.isDestroyed())event.sender.send('agent:nativeProgress',{requestId:req.requestId,event:{type:'tool',id:`native-web-${search.id}`,name:'web_search',label:search.query?`Searching web: ${search.query}`:'Searching the web',status:search.status}});},
       onTool:async(name,args)=>{
         const error = validateToolCall({name,args},tools);
-        if(error)return {isError:true,content:[{type:'text',text:error}]};
+        if(error){job.report.call(aliases.get(name)||name,true);return {isError:true,content:[{type:'text',text:error}]};}
         const result = await invoke(aliases.get(name),args);
+        job.report.call(aliases.get(name),!!result?.error);
         checkAbort(job.controller.signal);
         // A contact sheet replaces its cells as the one image sent for overview checks.
         const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit','analyze_reference','add_graphic','edit_graphic'].includes(aliases.get(name)) ? (result.sheet_ids?.length ? result.sheet_ids : result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
@@ -1761,10 +1756,13 @@ ipcMain.handle('agent:runNative', async (event, req) => {
       isComplete:async()=>!!(await invoke('__native_status',{})).ready,
     });
     checkAbort(job.controller.signal);
+    job.report?.finish({ outcome:'completed', tokenUsage:result.tokenUsage });
     return {ok:true,...result,provider:cfg.provider,model:cfg.model};
   } catch(error) {
+    const canceled = !job.failure && (job.controller.signal.aborted || error.name === 'AbortError');
+    job.report?.finish({ outcome:canceled ? 'canceled' : 'failed' });
     if(job.failure)return {ok:false,...job.failure};
-    if(job.controller.signal.aborted || error.name === 'AbortError')return {ok:false,canceled:true};
+    if(canceled)return {ok:false,canceled:true};
     return {ok:false,error:error.message};
   } finally {
     job.lifetime.dispose();
