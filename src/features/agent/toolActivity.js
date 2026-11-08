@@ -10,9 +10,11 @@ const basename=value=>clean(value,500).split(/[\\/]/).at(-1);
 export const activityTime=value=>{if(!Number.isFinite(value))return '';const ticks=Math.round(Math.max(0,value)*10);return `${Math.floor(ticks/600).toString().padStart(2,'0')}:${((ticks%600)/10).toFixed(1).padStart(4,'0')}`;};
 const seconds=value=>Number.isFinite(value)?`${Number(value.toFixed(2))}s`:'';
 const count=(n,singular,plural=singular+'s')=>Number.isFinite(n)?`${n} ${n===1?singular:plural}`:'';
+// Motion measured after a keyframe edit (src/features/timeline/motionQuality.js), in a few words.
+const motionNote=m=>{if(!m)return '';const turns=(m.reversals||[]).filter(r=>!r.after_hold).length,issues=[count(m.stops?.length||0,'stop'),count(m.jerks?.length||0,'jolt'),turns?count(turns,'reversal'):''].filter(x=>!/^0 /.test(x)&&x);return issues.length?issues.join(', '):'Smooth motion';};
 const TITLES={
   get_project:'Reading the timeline',list_options:'Finding available styles',load_tools:'Preparing editing tools',recall_context:'Recalling earlier work',
-  analyze_scenes:'Finding scene boundaries',get_storyboard:'Reviewing scene samples',annotate_scene:'Saving a scene note',
+  analyze_reference:'Studying the reference edit',analyze_scenes:'Finding scene boundaries',get_storyboard:'Reviewing scene samples',annotate_scene:'Saving a scene note',
   remove_silences:'Removing silent sections',cut_range:'Cutting a section',keep_ranges:'Keeping selected sections',delete_clip:'Removing a clip',
   split_at:'Splitting a clip',set_speed:'Changing playback speed',move_clip:'Moving a clip',trim_clip:'Trimming a clip',clip_tools:'Editing a clip',
   layer_tools:'Organizing layers',transcribe:'Transcribing speech',add_captions:'Creating captions',add_text:'Adding text',edit_text:'Updating text',
@@ -20,7 +22,7 @@ const TITLES={
   set_volume:'Adjusting audio level',set_audio_effects:'Processing audio',set_volume_envelope:'Shaping volume over time',duck_audio:'Lowering music beneath speech',
   search_sounds:'Finding audio',add_sound:'Adding audio',list_voices:'Finding a voice',add_voiceover:'Generating narration',
   set_filter:'Applying a filter',set_effects:'Applying clip effects',add_effect:'Adding an effect layer',set_color:'Adjusting color',set_compositing:'Compositing the picture',
-  add_transition:'Joining two shots',set_aspect_ratio:'Changing video format',set_transform:'Positioning the picture',zoom:'Adding a zoom',add_keyframes:'Building motion',
+  add_transition:'Joining two shots',set_aspect_ratio:'Changing video format',set_transform:'Positioning the picture',zoom:'Adding a zoom',add_keyframes:'Building motion',move_along_path:'Moving along a path',
   set_animation:'Animating the picture',motion_guide:'Planning motion',track_subject:'Following a subject',pin_to_subject:'Attaching to a subject',
   add_media:'Placing media',list_local_media:'Finding files',import_media:'Importing media',search_stock:'Finding stock media',add_stock:'Adding stock media',
   add_scene:'Creating a background',generate_image:'Generating a scene image',generate_images:'Generating scene images',inspect_frames:'Inspecting the picture',
@@ -53,6 +55,7 @@ function activity(name,args={},project={},result) {
     case 'transcribe':case 'add_captions':description=join([a.source?human(a.source)+' audio':'Timeline audio',a.language?human(a.language):'',a.style_id?human(a.style_id):'',a.words_per_caption?`${a.words_per_caption} words per caption`:'']);break;
     case 'search_sounds':case 'search_stock':case 'web_search':description=join([a.kind?human(a.kind):'',a.query?`“${clean(a.query)}”`:'']);break;
     case 'add_keyframes':description=join([clip,human(a.property),count(a.keys?.length,'motion point'),a.easing?human(a.easing):'']);break;
+    case 'move_along_path':description=join([clip,count(a.points?.length,'waypoint'),a.orient?'Facing the way it moves':'']);break;
     case 'set_animation':description=join([clip,a.in?`In: ${human(a.in)}`:'',a.out?`Out: ${human(a.out)}`:'',a.combo?human(a.combo):'']);break;
     case 'set_transform':description=join([clip,a.scale!==undefined?`${a.scale}× scale`:'',a.x!==undefined?`X ${a.x}`:'',a.y!==undefined?`Y ${a.y}`:'',a.rotation!==undefined?`${a.rotation}°`:'',a.fit?human(a.fit):'']);break;
     case 'zoom':description=join([range,a.scale?`${a.scale}×`:'',a.smooth===false?'Quick punch-in':'Smooth ramp']);break;
@@ -115,7 +118,8 @@ function activity(name,args={},project={},result) {
     else if(name==='transcribe')outcome=join([count(r.matched_segments??r.total_segments,'speech segment'),r.cached?'Reused existing transcript':'']);
     else if(name==='search_sounds')outcome=count(r.sounds?.length,'audio result');
     else if(name==='search_stock')outcome=count(r.items?.length,'stock result');
-    else if(name==='add_keyframes')outcome=count(r.keyframes,'motion point applied','motion points applied');
+    else if(name==='add_keyframes')outcome=join([count(r.keyframes,'motion point applied','motion points applied'),motionNote(r.motion)]);
+    else if(name==='move_along_path')outcome=join([count(r.waypoints,'waypoint'),motionNote(r.motion)]);
     else if(name==='export_video')outcome=join([basename(r.file||r.artifact?.path),r.metadata?.duration_sec?seconds(r.metadata.duration_sec):'',r.size?`${(r.size/1048576).toFixed(1)} MB`:'']);
     else if(name==='edit_caption_words')outcome=count(r.words,'word timing updated','word timings updated');
     else if(name==='set_audio_effects'&&r.live_preview===false)outcome='Saved · applies to rendered audio';

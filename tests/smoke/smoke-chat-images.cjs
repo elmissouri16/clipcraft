@@ -45,7 +45,7 @@ module.exports = async (win, app, dir) => {
     await until('!!window.__fve&&!!document.querySelector(".home-frame-card")'); await click('.home-frame-card');
     await until('!!document.querySelector(".topbar")'); await q('document.querySelector(".welcome-go")?.click()'); await click('.workspace-switch button:last-child');
     await until('!document.querySelector(".pilot-input textarea").disabled');
-    selected = formats.slice(0, 6).map(ext => path.join(dir, 'reference.' + ext)); await click('button[aria-label="Attach images"]');
+    selected = formats.slice(0, 6).map(ext => path.join(dir, 'reference.' + ext)); await click('button[aria-label="Attach images or reference videos"]');
     await until('document.querySelectorAll(".pilot-image-attachments .pilot-image img").length===6');
     check('picker attaches six image formats with real thumbnails', await q('!document.querySelector(".pilot-image-error")'));
     result.formats.push(...formats.slice(0, 6));
@@ -53,7 +53,7 @@ module.exports = async (win, app, dir) => {
     await type('Use these image references'); await click('.pilot-input .send'); await untilFn(() => runs.length === 1, 'first image request');
     check('native provider receives six decoded JPEG image files', runs[0].options.images.length === 6);
     check('sent messages keep image thumbnails and clear pending attachments', await q('document.querySelectorAll(".pilot-msg.user .pilot-image").length===6&&!document.querySelector(".pilot-image-attachments")'));
-    selected = formats.slice(6).map(ext => path.join(dir, 'reference.' + ext)); await click('button[aria-label="Attach images"]');
+    selected = formats.slice(6).map(ext => path.join(dir, 'reference.' + ext)); await click('button[aria-label="Attach images or reference videos"]');
     await until(`document.querySelectorAll('.pilot-image-attachments .pilot-image img').length===${selected.length}&&!document.querySelector('.pilot-image-loading')`);
     check('AVIF, ICO, SVG, PSD and platform HEIC decode successfully', await q('!document.querySelector(".pilot-image-error")'));
     result.formats.push(...formats.slice(6));
@@ -79,20 +79,20 @@ module.exports = async (win, app, dir) => {
     await q('window.__imageProject=structuredClone(window.__fve.rawProject());window.__fve.load(window.__imageProject)');
     await until('!!document.querySelector(".pilot-image-attachments img")');
     check('image-only draft restores from project data', await q('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===1'));
-    selected = [path.join(dir, 'brief.txt')]; await click('button[aria-label="Attach images"]'); await until('!!document.querySelector(".pilot-image-error")');
+    selected = [path.join(dir, 'brief.txt')]; await click('button[aria-label="Attach images or reference videos"]'); await until('!!document.querySelector(".pilot-image-error")');
     check('non-images are rejected without losing existing attachments', await q('document.querySelector(".pilot-image-error").textContent.includes("not supported")&&document.querySelectorAll(".pilot-image-attachments .pilot-image").length===1'));
     await click('button[aria-label="Dismiss attachment error"]');
-    selected = [transparent]; await click('button[aria-label="Attach images"]'); await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===2&&!document.querySelector(".pilot-image-loading")');
+    selected = [transparent]; await click('button[aria-label="Attach images or reference videos"]'); await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===2&&!document.querySelector(".pilot-image-loading")');
     const transparentId = await q('window.__fve.rawProject().craftAI.sessions[0].images.find(image=>image.name==="transparent.png").id');
     const pixel = require('electron').nativeImage.createFromPath(path.join(dir, 'chat-images', transparentId, 'image.jpg')).toBitmap();
     check('transparent references retain visible artwork on a white preview', pixel[0] > 240 && pixel[1] > 240 && pixel[2] > 240 && pixel[(20 * 40 + 20) * 4] < 20);
     await click('button[aria-label="Remove image transparent.png"]');
     // Fill all attachment slots, queue a second image message and keep a tall draft.
-    selected = formats.slice(0, 6).map(ext => path.join(dir, 'reference.' + ext)); await click('button[aria-label="Attach images"]');
+    selected = formats.slice(0, 6).map(ext => path.join(dir, 'reference.' + ext)); await click('button[aria-label="Attach images or reference videos"]');
     await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===6&&!document.querySelector(".pilot-image-loading")');
     await type('Hold this request'); await click('.pilot-input .send'); await untilFn(() => runs.length === 3, 'layout request');
-    await click('button[aria-label="Attach images"]'); await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===6&&!document.querySelector(".pilot-image-loading")'); await type('Queued image edit'); await click('.pilot-input .send');
-    await click('button[aria-label="Attach images"]'); await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===6&&!document.querySelector(".pilot-image-loading")'); await type('A multiline draft\n'.repeat(8));
+    await click('button[aria-label="Attach images or reference videos"]'); await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===6&&!document.querySelector(".pilot-image-loading")'); await type('Queued image edit'); await click('.pilot-input .send');
+    await click('button[aria-label="Attach images or reference videos"]'); await until('document.querySelectorAll(".pilot-image-attachments .pilot-image").length===6&&!document.querySelector(".pilot-image-loading")'); await type('A multiline draft\n'.repeat(8));
     for (const [w, h] of [[1400, 900], [1000, 640]]) {
       win.setContentSize(w, h); await wait(200);
       const geometry = await q('(()=>{const p=document.querySelector(".pilot-panel").getBoundingClientRect(),i=document.querySelector(".pilot-input").getBoundingClientRect(),s=document.querySelector(".pilot-input .send").getBoundingClientRect(),l=document.querySelector(".pilot-list").getBoundingClientRect();return {panel:p.toJSON(),input:i.toJSON(),send:s.toJSON(),listHeight:l.height,overflow:document.documentElement.scrollWidth>innerWidth}})()');
@@ -107,7 +107,7 @@ module.exports = async (win, app, dir) => {
     await q(`window.__fve.load({...window.__fve.rawProject(),craftAI:{version:1,activeSessionId:'missing',sessions:[{id:'missing',title:'Missing image',images:[{id:'${'f'.repeat(64)}',name:'Missing.png',bytes:10,width:1,height:1}],messages:[],contents:[],draft:'Use this missing image'}]}})`);
     await until('!!document.querySelector(".pilot-image.is-unavailable")'); await click('.pilot-input .send'); await until('!!document.querySelector(".pilot-context-error")');
     check('missing images block sending with a removable reference', await q('document.querySelector(".pilot-context-error").textContent.includes("no longer available")&&!document.querySelector("button[aria-label=Stop]")'));
-    selected = 'delay'; await click('.pilot-image-remove'); await click('button[aria-label="Attach images"]'); await untilFn(() => !!pickerResolve, 'delayed chooser');
+    selected = 'delay'; await click('.pilot-image-remove'); await click('button[aria-label="Attach images or reference videos"]'); await untilFn(() => !!pickerResolve, 'delayed chooser');
     await q('window.__fve.load({id:"new-image-project",name:"Another project",media:[],videoClips:[],textClips:[],audioClips:[]})');
     pickerResolve({ canceled: false, filePaths: [source] }); await wait(300);
     check('late attachment results cannot reach another project', await q('!document.querySelector(".pilot-image-attachments")'));

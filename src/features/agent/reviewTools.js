@@ -1,5 +1,6 @@
 import { videoLayout, clipLen, exportDuration } from '../../state/store.js';
 import { stateAtPinned } from '../timeline/track.js';
+import { motionQuality } from '../timeline/motionQuality.js';
 
 const N = { type: 'NUMBER' };
 export const REVIEW_DECLARATIONS = [{
@@ -25,9 +26,14 @@ export function reviewTimelineData(p, start, end) {
       }
       previous = current;
     }
-    motion.push({ clip_id: row.clip.id, maximum_translation_per_frame: maximumStep, maximum_scale_per_frame: maximumScale, abrupt_transform_candidates_sec: candidates });
+    // Smoothness, measured over the whole clip and reported inside this section.
+    const q = motionQuality(lt => stateAtPinned(p, row, lt, len), { len, fps, width: p.width || 1920, height: p.height || 1080, start: row.start, entrance: row.track === 'overlay' });
+    const inside = list => list.filter(v => { const t = typeof v === 'number' ? v : v.at_sec; return t >= start && t <= end; });
+    motion.push({ clip_id: row.clip.id, maximum_translation_per_frame: maximumStep, maximum_scale_per_frame: maximumScale, abrupt_transform_candidates_sec: candidates,
+      smooth: !inside(q.stops).length && !inside(q.jerks).length && !inside(q.rotation_jumps).length, stops_sec: inside(q.stops), jerks_sec: inside(q.jerks), rotation_jumps_sec: inside(q.rotation_jumps),
+      reversals: inside(q.reversals), fast: inside(q.fast), peak_pan_frame_widths_per_sec: q.peak_pan_frame_widths_per_sec, peak_zoom_pct_per_sec: q.peak_zoom_pct_per_sec });
   }
-  return { expected_cuts: cuts.slice(0, 32), planned_motion: motion, note: 'Transform and cut metadata describe the requested timeline, not proof of rendered quality.' };
+  return { expected_cuts: cuts.slice(0, 32), planned_motion: motion, note: 'Transform and cut metadata describe the requested timeline, not proof of rendered quality. Motion smoothness is measured frame by frame from the timeline: stops (stop-and-go at keyframes), jerks (sudden speed changes), rotation jumps and reversals (not after_hold) are defects unless intended; the still images cannot show them.' };
 }
 export function createReviewTools({ project, revision, startExport, api, requestId, isCanceled, editActive, onProgress }) {
   return {

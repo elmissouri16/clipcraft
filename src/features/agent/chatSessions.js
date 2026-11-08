@@ -1,11 +1,12 @@
 import { normalizeTimelineAttachments } from './timelineAttachments.js';
 import { normalizeToolActivity } from './activityData.js';
 import { normalizeChatImages } from './imageAttachments.js';
+import { normalizeChatVideos } from './videoAttachments.js';
 // Project-owned conversations. Only completed turns enter saved model context;
 // an interrupted request can be displayed without replaying unfinished tools.
 const record = (v) => v && typeof v === 'object' && !Array.isArray(v);
 export const newChatSession = () => ({
-  id: crypto.randomUUID(), title: 'New chat', messages: [], contents: [], draft: '', timelineAttachments: [], images: [], queue: [], queuePaused: false,
+  id: crypto.randomUUID(), title: 'New chat', messages: [], contents: [], draft: '', timelineAttachments: [], images: [], videos: [], queue: [], queuePaused: false,
 });
 
 export function normalizeMessageQueue(value) {
@@ -13,7 +14,7 @@ export function normalizeMessageQueue(value) {
   return (Array.isArray(value) ? value : []).filter(item => {
     if (!record(item) || typeof item.id !== 'string' || !item.id || seen.has(item.id) || typeof item.text !== 'string' || !item.text.trim()) return false;
     seen.add(item.id); return true;
-  }).map(item => ({ id: item.id, text: item.text.trim(), timelineAttachments: normalizeTimelineAttachments(item.timelineAttachments), ...(normalizeChatImages(item.images).length ? { images: normalizeChatImages(item.images) } : {}) }));
+  }).map(item => ({ id: item.id, text: item.text.trim(), timelineAttachments: normalizeTimelineAttachments(item.timelineAttachments), ...(normalizeChatImages(item.images).length ? { images: normalizeChatImages(item.images) } : {}), ...(normalizeChatVideos(item.videos).length ? { videos: normalizeChatVideos(item.videos) } : {}) }));
 }
 
 export function normalizeChatSessions(value) {
@@ -25,13 +26,14 @@ export function normalizeChatSessions(value) {
     id: s.id, title: typeof s.title === 'string' ? s.title : 'New chat',
     timelineAttachments: normalizeTimelineAttachments(s.timelineAttachments),
     images: normalizeChatImages(s.images),
+    videos: normalizeChatVideos(s.videos),
     draft: typeof s.draft === 'string' ? s.draft : '',
     queue: normalizeMessageQueue(s.queue),
     // Reopening a project never submits saved instructions automatically.
     queuePaused: normalizeMessageQueue(s.queue).length > 0,
     messages: (Array.isArray(s.messages) ? s.messages : []).filter((m) => record(m)
       && ['user', 'assistant'].includes(m.role) && typeof m.text === 'string').map((m) => ({
-      ...(m.role === 'user' ? { timelineAttachments: normalizeTimelineAttachments(m.timelineAttachments), ...(normalizeChatImages(m.images).length ? { images: normalizeChatImages(m.images) } : {}) } : {}),
+      ...(m.role === 'user' ? { timelineAttachments: normalizeTimelineAttachments(m.timelineAttachments), ...(normalizeChatImages(m.images).length ? { images: normalizeChatImages(m.images) } : {}), ...(normalizeChatVideos(m.videos).length ? { videos: normalizeChatVideos(m.videos) } : {}) } : {}),
       role: m.role, text: m.pending ? 'Interrupted. Send another message to continue.' : m.text,
       ...(record(m.contextUsage) ? { contextUsage: Object.fromEntries(['requests', 'inputChars', 'avoidedChars', 'tools', 'abbreviated']
         .map((key) => [key, Number.isFinite(m.contextUsage[key]) && m.contextUsage[key] >= 0 ? m.contextUsage[key] : 0])) } : {}),
@@ -70,4 +72,4 @@ export function snapshotChatSessions(chat) {
   })) }));
 }
 
-export const hasChatContent = (p) => !!p.craftAI?.sessions?.some((s) => s.messages?.length || s.draft?.trim() || s.timelineAttachments?.length || s.images?.length || s.queue?.length);
+export const hasChatContent = (p) => !!p.craftAI?.sessions?.some((s) => s.messages?.length || s.draft?.trim() || s.timelineAttachments?.length || s.images?.length || s.videos?.length || s.queue?.length);

@@ -5,7 +5,10 @@
 export const MOTION_GUIDE = {
   principles: `Timing and motion, like a motion designer:
 - Enter in 0.3-0.6 s, hold at least 1.5 s to read (about 0.3 s per word), exit in 0.2-0.4 s. Never let everything move at once: stagger elements by 0.1-0.2 s.
-- Natural motion eases: keyframes with easing "spring" (no bounce) for things arriving, "back" for a playful pop, "out" to settle, "inout" for camera moves. Avoid "linear" except for very slow drifts.
+- Natural motion eases: "spring" (no bounce) for things arriving, "back" for a playful pop, "out" to settle, "inout" for a single camera move. Avoid "linear" except for very slow drifts.
+- Those easings come to rest at their keyframe. A move through three or more keys needs easing "continuous" on every key after the first, or it stops and restarts at each one (reads as rough, robotic). Objects travelling (troops, ships, a route on a map): move_along_path, orient true when the artwork has a front.
+- Camera on a still or shot: one direction per shot (push in, or pull out, or pan one way), slow (zoom 3-15 % per second, pan under 0.3 frame widths per second for documentary calm). Never zoom in and back out within a shot unless it holds 0.25 s or more in between.
+- Check every motion edit: add_keyframes / move_along_path return motion measurements; stops, jerks and reversals should be empty unless intended. Still frames cannot show smoothness.
 - Scale pops: 0 -> 1.08 -> 1 (back) feels better than 0 -> 1. Small moves (x / y 0.03-0.08 of the frame) read as premium; big ones as cheap.
 - One focal point at a time; keep text inside the middle 80% of the frame (safe area); on 9:16, keep captions above y 0.8 (the app buttons cover the bottom).
 - Contrast: light text on dark or busy backgrounds needs an outline (stroke_width 6-10) or a box (background_color).`,

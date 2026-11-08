@@ -63,6 +63,15 @@ module.exports=async(win,app,dir)=>{
   await send();await until('!document.querySelector("button[aria-label=Stop]")&&!!document.querySelector(".pilot-output video")');
   check('no export dialog appears during agent rendering, delivery or review',await q('!window.__exportModalSeen&&!document.querySelector(".pilot-error")'));
   await until('document.querySelector(".pilot-output video").readyState>=1');
+  // One listening level: the chat player follows the preview volume, and the other way round.
+  const slider='(async()=>{if(!document.querySelector("input[aria-label=\'Preview volume level\']")){document.querySelector("button[aria-label=\'Preview volume\']").click();await new Promise(r=>setTimeout(r,100));}return document.querySelector("input[aria-label=\'Preview volume level\']");})()';
+  await q(`(async()=>{const e=await ${slider};Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,"35");e.dispatchEvent(new Event("input",{bubbles:true}));})()`);await wait(100);
+  const followed=await q('(()=>{const v=document.querySelector(".pilot-output video");return {volume:v.volume,muted:v.muted};})()');result.chatVolume=followed;
+  check('the chat video plays at the preview volume',Math.abs(followed.volume-.35)<.01&&!followed.muted);
+  await q('(()=>{const v=document.querySelector(".pilot-output video");v.volume=.6;})()');await wait(100);
+  const back=await q(`(async()=>Number((await ${slider}).value))()`);result.previewVolumeAfterChat=back;
+  check('changing the chat video volume changes the preview volume',back===60);
+  await q(`(async()=>{const e=await ${slider};Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,"100");e.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("button[aria-label='Preview volume']").click();})()`);await wait(100);
   const playback=await q('(async()=>{const v=document.querySelector(".pilot-output video");v.muted=true;await v.play();return v.videoWidth;})()');check('the delivered video plays directly in chat',playback===320);
   await until('document.querySelector(".pilot-output video").currentTime>.1');await q('document.querySelector(".pilot-output video").pause()');
   await q('document.querySelector(".pilot-output").scrollIntoView({block:"center"});void 0');await shot('video-ready.png');

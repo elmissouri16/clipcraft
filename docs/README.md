@@ -4,6 +4,7 @@
 - [Reorganization validation](architecture/reorganization-validation.md)
 - [Agent editing](agents/agent-editing.md)
 - [Editorial agent: plans, transcript cuts, critique and beats](agents/editorial-agent.md)
+- [Edit vocabulary and reference videos](agents/edit-vocabulary.md)
 - [Agent evaluation harness](agents/agent-eval.md)
 - [Agent editing validation](agents/agent-editing-validation.md)
 - [Agent loop reliability](agents/agent-loop-validation.md)

@@ -5,7 +5,9 @@
 import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable, exportDuration, actionLocked, cutRanges, retimeVideoClip, retimeTransition, prepareProjectAction } from "../../state/store.js";
 import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from "../effects/effects.js";
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
-import { ANIMATIONS, EASINGS, KEY_PROPS, baseAt, hasKeys } from "../timeline/anim.js";
+import { ANIMATIONS, KEY_EASINGS, KEY_PROPS, baseAt, hasKeys } from "../timeline/anim.js";
+import { motionQuality } from '../timeline/motionQuality.js';
+import { stateAtPinned } from '../timeline/track.js';
 import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from "../preview/visual.js";
 import { MOTION_GUIDE, MOTION_TOPICS } from './motionGuide.js';
 import { projectRevision, audioRevision } from './context.js';
@@ -20,6 +22,8 @@ import { AUDIO_DECLARATIONS, createAudioTools } from './audioTools.js';
 import { TRACKING_DECLARATIONS, createTrackingTools } from './trackingTools.js';
 import { REVIEW_DECLARATIONS, createReviewTools } from './reviewTools.js';
 import { EDITORIAL_DECLARATIONS, createEditorialTools } from './editorialTools.js';
+import { REFERENCE_DECLARATIONS, createReferenceTools } from './referenceTools.js';
+import { PATH_DECLARATIONS, createPathTools } from './pathTools.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -31,7 +35,7 @@ const N = { type: 'NUMBER' };
 const B = { type: 'BOOLEAN' };
 const SPEECH = { language: { ...S, description: 'en, ar, fr, es...; default auto' }, source: { ...S, enum: ['all', 'video', 'overlay', 'audio'], description: 'Audible mix by default. Select a track family or clip_ids to isolate speech from music.' },
   clip_ids: { type: 'ARRAY', items: S }, engine: { ...S, enum: ['local', 'cloud'] }, provider: { ...S, description: 'Cloud transcription: groq, openai, deepgram, elevenlabs' }, model: S };
-const NON_MUTATING = new Set(['analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options',
+const NON_MUTATING = new Set(['analyze_reference', 'analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options',
   'motion_guide', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video', 'review_section', 'list_local_media', 'export_subtitles', 'load_tools', 'recall_context',
   'edit_guide', 'log_footage', 'find_highlights', 'propose_edit_plan', 'critique_edit', 'get_beats']);
 const REQUIRED_PROOF = new Set(['inspect_frames', 'get_storyboard', 'analyze_scenes', 'annotate_scene', 'transcribe', 'export_video', 'export_subtitles', 'review_section', 'log_footage', 'get_beats']);
@@ -52,6 +56,8 @@ export const TOOL_DECLARATIONS = [
   ...TRACKING_DECLARATIONS,
   ...REVIEW_DECLARATIONS,
   ...EDITORIAL_DECLARATIONS,
+  ...REFERENCE_DECLARATIONS,
+  ...PATH_DECLARATIONS,
   {
     name:'inspect_frames',
     description:'Look at 1–6 actual frames with the configured vision-capable model. source timeline shows composition; clip shows raw source at timeline times_sec. source media inspects library footage using media_id and source_times_sec before insertion. Clip requires clip_id. Read-only.',
@@ -170,7 +176,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'add_keyframes',
-    description: `Keyframes of scale, x, y, rotation or opacity on a main or overlay clip (zooms, pans, fades, pops). time_sec on the timeline, inside the clip. easing (how the value moves into a keyframe): ${Object.keys(EASINGS).join(', ')}; spring = natural motion, back = small overshoot.`,
+    description: `Keyframes of scale, x, y, rotation or opacity on a main or overlay clip (zooms, pans, fades, pops). time_sec on the timeline, inside the clip. easing (move into a key): ${KEY_EASINGS.join(', ')}. All but continuous stop (or jolt, linear) at each key; continuous flows through keys: use it after the first key for one fluid multi-point move. spring = natural arrival, back = overshoot. Returns motion: stops/jerks/reversals empty unless intended.`,
     parameters: { type: 'OBJECT', properties: { clip_id: S, property: S, easing: S, keyframes: { type: 'ARRAY', items: { type: 'OBJECT', properties: { time_sec: N, value: N, easing: S }, required: ['time_sec', 'value'] } } }, required: ['clip_id', 'property', 'keyframes'] },
   },
   {
@@ -465,6 +471,11 @@ export function createToolRunner(ctx) {
     return f;
   };
   const PROP = { scale: 'scale', x: 'x', y: 'y', rotation: 'rot', rot: 'rot', opacity: 'opacity' };
+  // How smooth a picture clip's motion is, frame by frame (src/features/timeline/motionQuality.js).
+  const clipMotion = (f, clip) => {
+    const p = project();
+    return motionQuality((lt) => stateAtPinned(p, { clip, track: f.track }, lt, f.len), { len: f.len, fps: p.fps || 30, width: p.width || 1920, height: p.height || 1080, start: f.start, entrance: f.track === 'overlay' });
+  };
   const srcTime = (clip, lt) => (clip.in || 0) + lt * (clip.speed || 1);
   // A keyframe list ({ t: source time, v }) with values set at the given local times (same times replaced).
   // pairs: [localTime, value, easing?] (easing of the move arriving at that keyframe; see EASINGS in anim.js).
@@ -792,8 +803,12 @@ export function createToolRunner(ctx) {
   const trackingTools = createTrackingTools({ project, dispatch, after, findClip, api, requestId: ctx.requestId });
   const reviewTools = createReviewTools({ project, revision: projectRevision, startExport: ctx.startExport, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, editActive: ctx.editActive, onProgress:ctx.onToolProgress });
   const editorialTools = createEditorialTools({ project, dispatch, after, api, requestId: ctx.requestId, speech, sceneData, settle: ctx.settle, isCanceled: ctx.isCanceled });
+  const pathTools = createPathTools({ project, dispatch, after, needPicture });
+  const referenceTools = createReferenceTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled });
   const tools = {
     ...editorialTools,
+    ...referenceTools,
+    ...pathTools,
     ...reviewTools,
     ...trackingTools,
     ...audioTools,
@@ -1134,15 +1149,16 @@ export function createToolRunner(ctx) {
       if (f.error) return f;
       const prop = PROP[property];
       if (!prop) return { error: 'property must be scale, x, y, rotation or opacity.' };
-      const badEase = [easing, ...(keys || []).map((k) => k.easing)].find((e) => e !== undefined && e !== null && !EASINGS[e]);
-      if (badEase !== undefined) return { error: `easing must be one of: ${Object.keys(EASINGS).join(', ')}.` };
+      const badEase = [easing, ...(keys || []).map((k) => k.easing)].find((e) => e !== undefined && e !== null && !KEY_EASINGS.includes(e));
+      if (badEase !== undefined) return { error: `easing must be one of: ${KEY_EASINGS.join(', ')}.` };
       const pairs = (keys || []).map((k) => [Number(k.time_sec) - f.start, Number(k.value), k.easing ?? easing]).filter(([lt, v]) => Number.isFinite(lt) && Number.isFinite(v));
       if (!pairs.length) return { error: 'Give at least one keyframe with time_sec and value.' };
       const outside = pairs.find(([lt]) => lt < -0.01 || lt > f.len + 0.01);
       if (outside) return { error: `A keyframe at ${r2(outside[0] + f.start)}s is outside the clip (${r2(f.start)}s to ${r2(f.start + f.len)}s).` };
       const list = putKeys(f.clip.keyframes?.[prop], f.clip, pairs.map(([lt, v, e]) => [Math.min(f.len, Math.max(0, lt)), v, e]));
-      dispatch({ type: 'update', track: f.track, id: clip_id, patch: { keyframes: { ...(f.clip.keyframes || {}), [prop]: list } } });
-      return after({ keyframes: list.length });
+      const keyframes = { ...(f.clip.keyframes || {}), [prop]: list };
+      dispatch({ type: 'update', track: f.track, id: clip_id, patch: { keyframes } });
+      return after({ keyframes: list.length, motion: clipMotion(f, { ...f.clip, keyframes }) });
     },
 
     async set_animation({ clip_id, in: inId, in_duration_sec = 0.5, out: outId, out_duration_sec = 0.5, combo }) {

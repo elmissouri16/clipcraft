@@ -15,6 +15,8 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'reference-video') return require('./smoke-reference-video.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'smooth-motion') return require('./smoke-smooth-motion.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'shortcuts') return require('./smoke-shortcuts.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-editorial') return require('./smoke-agent-editorial.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-eval') return require('./smoke-agent-eval.cjs')(win, app, dir);

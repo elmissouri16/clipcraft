@@ -70,6 +70,8 @@ const ART = {
   review: [<><Surface y={4} height={19} /><path d="M10 28h12 M16 23v5" /></>, <><path d="m13 9 7 4.5-7 4.5Z" fill="currentColor" fillOpacity=".15" /><path d="m22 23 2 2 5-5" /></>],
   complete: [<><Surface x={6} y={3} width={20} height={26} /><path d="M11 9h10 M11 14h7" /></>, <><circle cx="21" cy="23" r="7" fill="var(--tool-ground)" /><path d="m17.5 23 2.5 2.5 4.5-5" /></>],
   playbook: [<><path d="M16 8c-3-3-7-4-12-3v21c5-1 9 0 12 3 3-3 7-4 12-3V5c-5-1-9 0-12 3Z" fill="currentColor" fillOpacity=".08" /><path d="M16 8v21" /></>, <path d="m20 11 6 3.5-6 3.5Z" fill="currentColor" fillOpacity=".2" />],
+  path: [<><path d="M5 25c5-1 4-9 10-10s6-8 12-9" strokeDasharray="2.5 3" /></>, <><circle cx="5" cy="25" r="2.4" fill="var(--tool-ground)" /><path d="m21 4 6 2-2 6" /></>],
+  reference: [<><Surface x={4} y={5} width={18} height={15} rx={2} /><path d="M7.5 8.5h.01 M7.5 16.5h.01 M18.5 8.5h.01 M18.5 16.5h.01" strokeWidth="2.4" /></>, <><rect x="14" y="14" width="14" height="13" rx="2" fill="var(--tool-ground)" /><path d="M17.5 18.5h7 M17.5 22.5h4.5" /></>],
   log: [<><Surface x={4} y={4} width={13} height={24} rx={2} /><path d="M7 8h.01 M7 14h.01 M7 20h.01" strokeWidth="2.6" /></>, <><path d="M20 9h8 M20 14h8 M20 19h6 M20 24h8" /></>],
   fillers: [<Wave />, <><rect x="11" y="9" width="7" height="14" rx="2" fill="var(--tool-ground)" /><path d="m12.5 12.5 4 7 M16.5 12.5l-4 7" /></>],
   retakes: [<><Surface x={3} y={9} width={11} height={14} rx={2} /><Surface x={18} y={9} width={11} height={14} rx={2} /></>, <><path d="m5 11 7 10" /><path d="m21 16 2.5 2.5 3.5-4.5" /></>],
@@ -83,10 +85,10 @@ const ART = {
   beats: [<><path d="M4 26h24" /><path d="M7 26v-6 M12 26v-12 M17 26v-6 M22 26v-12 M27 26v-6" /></>, <><circle cx="12" cy="9" r="2.5" fill="currentColor" fillOpacity=".25" /><circle cx="22" cy="9" r="2.5" fill="currentColor" fillOpacity=".25" /></>],
 };
 export const TOOL_ICONS = {
-  get_project:'project',list_options:'options',analyze_scenes:'scenes',get_storyboard:'storyboard',annotate_scene:'annotation',
+  get_project:'project',list_options:'options',analyze_reference:'reference',analyze_scenes:'scenes',get_storyboard:'storyboard',annotate_scene:'annotation',
   remove_silences:'silence',cut_range:'cut',keep_ranges:'keep',transcribe:'transcript',add_captions:'captions',add_text:'text',edit_text:'editText',
   delete_clip:'remove',split_at:'split',set_speed:'speed',set_volume:'volume',set_filter:'filter',set_effects:'effects',add_transition:'transition',
-  set_aspect_ratio:'ratio',zoom:'zoom',set_transform:'transform',add_keyframes:'keys',set_animation:'animation',add_media:'media',search_sounds:'soundSearch',
+  set_aspect_ratio:'ratio',zoom:'zoom',set_transform:'transform',add_keyframes:'keys',move_along_path:'path',set_animation:'animation',add_media:'media',search_sounds:'soundSearch',
   add_sound:'music',list_voices:'voices',add_voiceover:'voiceover',search_stock:'stockSearch',add_stock:'stock',add_effect:'effectLayer',move_clip:'move',
   trim_clip:'trim',clip_tools:'clip',set_color:'color',set_compositing:'composite',set_project:'settings',motion_guide:'guide',add_scene:'sceneAdd',
   generate_image:'image',generate_images:'images',inspect_frames:'inspect',undo:'undo',export_video:'export',load_tools:'tools',recall_context:'recall',

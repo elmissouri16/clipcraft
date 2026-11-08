@@ -3,6 +3,9 @@
 // project plus transcript words (timeline seconds). Heuristics are labelled as
 // candidates: the model still judges content, and tools report provenance.
 import { clipLen, exportDuration, videoLayout } from '../../state/store.js';
+import { hasMotion } from '../timeline/anim.js';
+import { motionQuality } from '../timeline/motionQuality.js';
+import { stateAtPinned } from '../timeline/track.js';
 
 const r2 = n => Math.round(n * 100) / 100;
 const finite = n => typeof n === 'number' && Number.isFinite(n);
@@ -188,6 +191,18 @@ const visibleChars = text => String(text || '').replace(/\s+/g, ' ').trim().leng
 // Issues with severity high|medium|low, a timeline time when one applies, and
 // a concrete fix. `transcript` is optional current-timeline words; `loudness`
 // is optional { integrated_lufs, true_peak_db }.
+// Every animated picture clip, measured frame by frame (stops, reversals, jerks): the agent reviews
+// still images, so this is how it learns that a move it built is not smooth.
+export function motionReport(p, layout = videoLayout(p.videoClips || [])) {
+  const fps = p.fps || 30, width = p.width || 1920, height = p.height || 1080;
+  const rows = [...layout.filter(r => !r.clip.gap && !r.clip.disabled).map(r => ({ clip: r.clip, track: 'video', start: r.start })),
+    ...(p.overlayClips || []).filter(c => !c.disabled).map(c => ({ clip: c, track: 'overlay', start: c.start }))].filter(r => hasMotion(r.clip));
+  return rows.slice(0, 64).map(r => {
+    const len = clipLen(r.clip);
+    return { ...r, quality: motionQuality(lt => stateAtPinned(p, { clip: r.clip, track: r.track }, lt, len), { len, fps, width, height, start: r.start, entrance: r.track === 'overlay' }) };
+  });
+}
+
 export function critiqueProject(p, { words: spoken = null, loudness = null, target_duration_sec, platform } = {}) {
   const issues = [], add = (severity, code, message, fix, at) => issues.push({ severity, code, message, fix, ...(finite(at) ? { at_sec: r2(at) } : {}) });
   const total = exportDuration(p), layout = videoLayout(p.videoClips || []);
@@ -264,6 +279,27 @@ export function critiqueProject(p, { words: spoken = null, loudness = null, targ
     if (finite(loudness.true_peak_db) && loudness.true_peak_db > -1) add('medium', 'clipping', `True peak ${r2(loudness.true_peak_db)} dBTP risks clipping.`, fix);
   }
 
+  // Motion: stop-and-go, jolts, sudden turns, camera breathing in and out, strobing speed.
+  const motion = motionReport(p, layout);
+  const ids = list => list.slice(0, 4).map(r => r.clip.id).join(', ') + (list.length > 4 ? '…' : '');
+  const motionIssue = (severity, code, pick, message, fix) => {
+    const hit = motion.filter(r => pick(r).length);
+    if (!hit.length) return 0;
+    const n = hit.reduce((sum, r) => sum + pick(r).length, 0), first = Math.min(...hit.map(r => { const v = pick(r)[0]; return typeof v === 'number' ? v : v.at_sec; }));
+    add(severity, code, message(n, hit.length) + ` (clip${hit.length > 1 ? 's' : ''} ${ids(hit)}).`, fix, first);
+    return n;
+  };
+  const stopCount = motionIssue('medium', 'motion_stop', r => r.quality.stops, (n, k) => `Motion stops and restarts ${n} time${n > 1 ? 's' : ''} in ${k} clip${k > 1 ? 's' : ''}`,
+    'Give the keyframes after the first easing "continuous" (add_keyframes) or rebuild the move with move_along_path, so it flows through them; keep a hold of 0.25 s or more where a pause is intended.');
+  const jerkCount = motionIssue('medium', 'motion_jerk', r => r.quality.jerks, (n, k) => `Speed jumps suddenly ${n} time${n > 1 ? 's' : ''} in ${k} clip${k > 1 ? 's' : ''}`,
+    'Linear keys meeting at different speeds or a move starting at full speed: use continuous (or an eased start) instead.');
+  motionIssue('medium', 'motion_rotation_jump', r => r.quality.rotation_jumps, (n) => `The picture turns more than 10° in one frame ${n} time${n > 1 ? 's' : ''}`,
+    'Spread the rotation over more time, or use move_along_path with orient for objects that turn as they travel.');
+  const turnCount = motionIssue('medium', 'motion_reversal', r => r.track === 'video' ? r.quality.reversals.filter(t => !t.after_hold) : [], (n, k) => `The camera zooms or pans back and forth ${n} time${n > 1 ? 's' : ''} in ${k} shot${k > 1 ? 's' : ''}`,
+    'Give each shot one direction (push in or pull out, pan one way); if it must turn back, hold at least 0.25 s first.');
+  motionIssue('low', 'motion_fast', r => r.quality.fast, (n) => `${n} very fast move${n > 1 ? 's' : ''} (pan above 1.5 frame widths/s or zoom above 120 %/s)`,
+    'Slow the move, or cut instead: very fast moves strobe at 30 fps.');
+
   // Transitions: long or overused dissolves feel dated in fast edits.
   const transitions = layout.filter(r => r.clip.transition);
   const longT = transitions.find(r => (r.clip.transition.duration || 0) > 1);
@@ -282,13 +318,14 @@ export function critiqueProject(p, { words: spoken = null, loudness = null, targ
   return { score, issues, metrics: { duration_sec: r2(total), cuts: layout.filter(r => !r.clip.gap).length, longest_static_sec: r2(longest.len),
     visual_changes_per_min: r2((changes.length - 1) / Math.max(total / 60, 1 / 60)), captions: caps.length, fast_captions: fast,
     ...(Array.isArray(spoken) ? { fillers, retakes, dead_air_sec: r2(deadAir), words_per_min: r2(spoken.length / Math.max(total / 60, 1 / 60)) } : {}),
-    ...(loudness ? { integrated_lufs: loudness.integrated_lufs, true_peak_db: loudness.true_peak_db } : {}) } };
+    ...(loudness ? { integrated_lufs: loudness.integrated_lufs, true_peak_db: loudness.true_peak_db } : {}),
+    ...(motion.length ? { motion: { animated_clips: motion.length, smooth_clips: motion.filter(r => r.quality.smooth).length, stops: stopCount, jerks: jerkCount, camera_reversals: turnCount } } : {}) } };
 }
 
 // Structural issues (no speech/loudness) that this request introduced: the
 // completion gate only asks the agent to fix what it caused, never to widen
 // the edit beyond the user's scope.
-const GATED = new Set(['gap', 'caption_speed', 'caption_safe_area', 'caption_overlap', 'title_short', 'title_safe_area', 'music_level', 'hook', 'transition_length']);
+const GATED = new Set(['motion_stop', 'motion_jerk', 'motion_rotation_jump', 'gap', 'caption_speed', 'caption_safe_area', 'caption_overlap', 'title_short', 'title_safe_area', 'music_level', 'hook', 'transition_length']);
 export function introducedIssues(before, after) {
   const old = new Set(critiqueProject(before).issues.map(i => i.code));
   return critiqueProject(after).issues.filter(i => GATED.has(i.code) && i.severity !== 'low' && !old.has(i.code));

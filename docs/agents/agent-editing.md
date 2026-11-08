@@ -26,6 +26,39 @@ Tools report `applied`, `unchanged`, or `blocked` from the resulting project and
 
 `get_project` distinguishes main-track export duration from total timeline extent. It exposes layers, locks/visibility/mute/solo, links, markers, source ranges, effects, and animation data. Use `clip_ids` or `details:true` for exact clip fields; keyframe `t` values are source seconds, while editing tools accept timeline seconds. Live playhead/selection are returned even for an unchanged document revision. Library insertion accepts exact `media_id`; ambiguous names are rejected.
 
+## Smooth motion
+
+The agent reviews rendered sections as still images, so it cannot see motion. It measures motion instead.
+
+- **Continuous keyframes.** Every other easing shapes one segment on its own: `in`, `out`, `inout`, `spring` and `back` come to rest at their keyframe, and `linear` changes speed abruptly there. A move through five keys therefore stops and restarts five times.
+  - Easing `continuous` (`src/features/timeline/anim.js`) makes a run of keys one cubic curve. It starts from rest, carries its speed through every key, and arrives at rest.
+  - It never overshoots a key: where the value turns back, it slows to a stop.
+  - The inspector offers it as the **Continuous** chip under Segment easing.
+- **`move_along_path`** (`src/features/agent/pathTools.js`) moves a clip through 2–24 waypoints as one journey.
+  - Waypoints are spaced by distance for an even speed, with longer first and last legs for a gentle start and arrival.
+  - With `orient`, the picture turns to face its direction of travel.
+  - The result is ordinary continuous keyframes at the waypoints, so it stays editable.
+- **Measurements.** `src/features/timeline/motionQuality.js` samples the same state the preview and the export draw, frame by frame, and reports:
+
+| Measurement | What it means |
+| --- | --- |
+| Stops | Stop-and-go at a key; a hold of 0.25 s or more is not a stop |
+| Reversals | Zoom by 4 % or more, or a pan by 2 % of the frame or more, changes direction; marked `after_hold` when a real hold comes first |
+| Jerks | The speed jumps suddenly from one frame to the next |
+| Rotation jumps | More than 10° in one frame |
+| Very fast moves | A sustained pan above 1.5 frame widths per second, or a zoom above 120 % per second |
+
+  Overlay entrances and exits (pops, fly-ins) are not judged for jerks or speed.
+- **Where the measurements appear:**
+  - `add_keyframes` and `move_along_path` return them.
+  - `review_section` reports them per clip, under `planned_motion`.
+  - `critique_edit` reports them as `motion_stop`, `motion_jerk`, `motion_rotation_jump`, `motion_reversal` (camera only) and `motion_fast`.
+  - The completion gate requires fixing stops, jerks and rotation jumps that the request introduced.
+- **Tests:**
+  - `tests/unit/agents/test-agent-smooth-motion.mjs` covers the tools, the critique and the review.
+  - `tests/unit/export/test-continuous-motion-export.mjs` measures a dot on rendered export frames: per-key `inout` stops at the middle waypoints, `continuous` keeps moving.
+  - `tests/unit/agents/test-smooth-motion-ui.cjs` runs the real app.
+
 ## Speech and silence
 
 Silence analysis defaults to the audible full mix, including detached and overlay audio. `remove_silences` only removes pauses inside the selected, audible clips (the host returns where they play, using the same rules as the analysis render): stretches where nothing selected plays — other clips, photos, silent b-roll, or pieces of a clip that earlier cuts split under new IDs — are never cut, and the result reports how much of the timeline was analysed. `source` can select `all`, `video`, `overlay`, or `audio`; `clip_ids` isolates particular sources without changing their absolute placement. A source with no audible clips fails rather than treating synthetic silence as removable footage. Background music can mask pauses, so select speech clips when that is the intended analysis.

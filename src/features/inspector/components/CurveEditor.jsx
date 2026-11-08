@@ -2,7 +2,8 @@
 // graph of the curve, a view-only motion preview, and — in Custom — two draggable bezier handles with
 // a live coordinate readout. Value is a preset id ('smooth', 'easeIn', …), a custom
 // { p1x, p1y, p2x, p2y } object, or undefined (linear). Rendering math lives in fx/easing.js; this is
-// only the control. The graph's y range (-0.4…1.45) leaves room to SEE overshoot curves pass 1.
+// only the control. With `continuous`, keyframe segments also offer Continuous: the motion flows
+// through the keyframe instead of coming to rest (src/features/timeline/anim.js). The graph's y range (-0.4…1.45) leaves room to SEE overshoot curves pass 1.
 import React, { useEffect, useRef, useState } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { EASE_PRESETS, bezierSolver, easeValue, isCustomEase, ptsOf } from "../../effects/easing.js";
@@ -34,7 +35,7 @@ function Glyph({ pts, dashed = false }) {
   );
 }
 
-export default function CurveEditor({ value, onChange, compact = false, resetValue = undefined }) {
+export default function CurveEditor({ value, onChange, compact = false, resetValue = undefined, continuous = false }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null); // 'p1' | 'p2' while dragging
   const [activeGrip, setActiveGrip] = useState(null); // dragging or hovered grip, for the readout
@@ -131,6 +132,17 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
             <span>{p.name}</span>
           </button>
         ))}
+        {continuous && (
+          <button type="button" className={`curve-chip ${activeId === 'continuous' ? 'on' : ''}`} onClick={() => pick('continuous')}
+            title="Flows through this keyframe without stopping">
+            <svg className="curve-glyph" viewBox="0 0 36 18" aria-hidden="true">
+              <line x1="2" x2="34" y1="14.5" y2="14.5" className="curve-glyph-base" />
+              <path d="M2 14.5C9 14 12 8 18 8.5S27 3 34 2.5" className="curve-glyph-line" fill="none" />
+              <circle cx="18" cy="8.5" r="1.6" className="curve-glyph-key" />
+            </svg>
+            <span>Continuous</span>
+          </button>
+        )}
         <button type="button" className={`curve-chip ${activeId === 'custom' ? 'on' : ''}`} onClick={() => pick('custom')}>
           <Glyph pts={[0.3, 0.05, 0.7, 0.95]} dashed />
           <span>Custom</span>
@@ -176,6 +188,7 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
           <span ref={dotRef} className="curve-dot" style={{ left: '0%' }} />
         </div>
       </div>
+      {activeId === 'continuous' && <p className="curve-note">Flows through this keyframe without stopping. Shape follows the neighbouring keyframes.</p>}
       {!compact && (
         <div className="curve-meta">
           <span className="curve-bezier">cubic-bezier({pts.map((n) => (+n.toFixed(2))).join(', ')})</span>

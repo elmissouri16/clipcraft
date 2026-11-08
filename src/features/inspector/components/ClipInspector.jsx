@@ -320,7 +320,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
               {hasAnyKeys(clip) && lt !== null && nextArrival(clip, lt, fps) !== null && (
                 <Section title="Segment easing">
                   <span className="dim small">How the motion travels into the keyframe at {localTime(clip, nextArrival(clip, lt, fps)).toFixed(2)}s. New segments start on Smooth.</span>
-                  <CurveEditor compact value={segmentEase(clip, lt, fps)} resetValue="smooth"
+                  <CurveEditor compact continuous value={segmentEase(clip, lt, fps)} resetValue="smooth"
                     onChange={(ease) => { const now=localNow();if(now!==null)set(setSegmentEase(clip,now,ease,fps)); }} />
                 </Section>
               )}

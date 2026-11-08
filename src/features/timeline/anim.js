@@ -195,6 +195,29 @@ const segEase = (e, p) => {
   return easeValue(e, p);
 };
 
+// 'continuous': the value flows through keyframes without stopping. Every other easing shapes one
+// segment on its own, so its speed falls to zero (or jumps) at each keyframe: a move through five
+// points stops and restarts five times. A run of continuous segments is one smooth curve instead
+// (cubic Hermite, speed carried across each keyframe). It starts from rest and arrives at rest,
+// and never overshoots a keyframe (Fritsch–Carlson limit): where the value turns back it slows to a
+// stop, as a real move would.
+export const CONTINUOUS = 'continuous';
+export const KEY_EASINGS = [...Object.keys(EASINGS), CONTINUOUS];
+function tangent(list, j) {
+  const into = j > 0 && list[j].e === CONTINUOUS, out = j < list.length - 1 && list[j + 1].e === CONTINUOUS;
+  if (!into || !out) return 0;
+  const h0 = list[j].t - list[j - 1].t, h1 = list[j + 1].t - list[j].t;
+  if (!(h0 > 0) || !(h1 > 0)) return 0;
+  const d0 = (list[j].v - list[j - 1].v) / h0, d1 = (list[j + 1].v - list[j].v) / h1;
+  if (d0 * d1 <= 0) return 0;
+  const m = (h1 * d0 + h0 * d1) / (h0 + h1);
+  return Math.sign(m) * Math.min(Math.abs(m), 3 * Math.min(Math.abs(d0), Math.abs(d1)));
+}
+function hermite(list, i, t) {
+  const a = list[i - 1], b = list[i], h = b.t - a.t, s = (t - a.t) / h, s2 = s * s, s3 = s2 * s;
+  return (2 * s3 - 3 * s2 + 1) * a.v + (s3 - 2 * s2 + s) * h * tangent(list, i - 1) + (-2 * s3 + 3 * s2) * b.v + (s3 - s2) * h * tangent(list, i);
+}
+
 function interp(list, t) {
   if (t <= list[0].t) return list[0].v;
   const last = list[list.length - 1];
@@ -203,6 +226,7 @@ function interp(list, t) {
   while (list[i].t < t) i++;
   const a = list[i - 1];
   const b = list[i];
+  if (b.e === CONTINUOUS) return hermite(list, i, t);
   return a.v + (b.v - a.v) * segEase(b.e, (t - a.t) / (b.t - a.t));
 }
 

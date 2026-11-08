@@ -1543,6 +1543,76 @@ ipcMain.handle('agent:analyzeScenes', async(event,req)=>{
   }catch(error){return {error:error.message,...(controller.signal.aborted?{canceled:true}:{})};}
   finally{agentRequests.delete(key);if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',destroyed);}
 });
+// Reference videos attached to CraftAI, and the edit fingerprint of a reference
+// (electron/media/editStyle.cjs): how it is cut, measured locally, never uploaded.
+const { ChatVideos, VIDEO_EXTENSIONS } = require('./agents/chatVideos.cjs');
+const chatVideos = new ChatVideos(path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'chat-videos'),
+  { ffmpegPath: require('./media/ffmpeg.cjs').ffmpegPath, probe: require('./media/ffmpeg.cjs').probe, fingerprint: fileFingerprint });
+ipcMain.handle('agent:attachVideos', async (event, items) => {
+  try {
+    if (items == null) {
+      const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+        title: 'Attach reference videos to CraftAI', properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Videos', extensions: VIDEO_EXTENSIONS }],
+      });
+      if (result.canceled) return { videos: [], errors: [] };
+      items = result.filePaths.map(file => ({ path: file }));
+    }
+    return await chatVideos.add(items);
+  } catch (error) { return { videos: [], errors: [{ name: '', error: error.message }] }; }
+});
+ipcMain.handle('agent:pickAttachments', async (event) => {
+  try {
+    const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: 'Attach images or reference videos to CraftAI', properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images and videos', extensions: [...CHAT_IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }, { name: 'Images', extensions: CHAT_IMAGE_EXTENSIONS }, { name: 'Videos', extensions: VIDEO_EXTENSIONS }],
+    });
+    if (result.canceled) return { images: [], videos: [], errors: [] };
+    const isVideo = file => VIDEO_EXTENSIONS.includes(path.extname(file).slice(1).toLowerCase());
+    const videoPaths = result.filePaths.filter(isVideo), imagePaths = result.filePaths.filter(file => !isVideo(file));
+    const images = imagePaths.length ? await chatImages.add(imagePaths.map(file => ({ path: file }))).catch(error => ({ images: [], errors: [{ name: '', error: error.message }] })) : { images: [], errors: [] };
+    const videos = videoPaths.length ? await chatVideos.add(videoPaths.map(file => ({ path: file }))).catch(error => ({ videos: [], errors: [{ name: '', error: error.message }] })) : { videos: [], errors: [] };
+    return { images: images.images, videos: videos.videos, errors: [...images.errors, ...videos.errors] };
+  } catch (error) { return { images: [], videos: [], errors: [{ name: '', error: error.message }] }; }
+});
+ipcMain.handle('agent:videoPreview', (_event, id) => chatVideos.preview(id).catch(error => ({ error: error.message })));
+ipcMain.handle('agent:validateVideos', async (_event, ids) => { try { await chatVideos.validate(ids); return { ok: true }; } catch (error) { return { error: error.message }; } });
+let editStyleService = null;
+const editStyle = () => editStyleService ||= require('./media/editStyle.cjs').createEditStyle({
+  ffmpegPath: require('./media/ffmpeg.cjs').ffmpegPath, probe: require('./media/ffmpeg.cjs').probe,
+  analyzeSamples: require('./audio/rhythm.cjs').analyzeSamples, fingerprint: fileFingerprint,
+  spawnDecoder: require('./export/framePipes.cjs').spawnDecoder,
+  cacheDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'edit-style'),
+  // Speech pacing of a reference, with the local speech model when it is installed.
+  transcribe: async (file, { seconds, signal }) => {
+    const dir = whisperDir();
+    if (!whisper.status(dir).installed) throw new Error('the local speech model is not installed (Settings › Voice).');
+    const tmp = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'clipcraft-reference-speech-'));
+    try {
+      const wav = path.join(tmp, 'speech.wav');
+      await new Promise((resolve, reject) => {
+        const p = require('node:child_process').spawn(require('./media/ffmpeg.cjs').ffmpegPath, ['-hide_banner', '-v', 'error', '-y', '-i', file, '-t', String(seconds), '-vn', '-ac', '1', '-ar', '16000', wav], { windowsHide: true, stdio: 'ignore', signal });
+        p.once('error', reject); p.once('close', code => code === 0 ? resolve() : reject(new Error('Could not read the reference audio.')));
+      });
+      // Segments keep their words: the timed transcript and the speech pacing both come from them.
+      return (await whisper.transcribe(dir, wav, { language: 'auto', maxLen: 0, signal }))
+        .map(segment => ({ start: segment.start, end: segment.end, text: segment.text, words: segment.words || [] }));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  },
+});
+ipcMain.handle('agent:analyzeReference', (event, req = {}) => withAgentJob(event, req.requestId, async signal => {
+  let file, name;
+  if (req.reference_id) { const meta = await chatVideos.get(req.reference_id); file = meta.path; name = meta.name; }
+  else {
+    const media = Array.isArray(req.project?.media) ? req.project.media.find(m => m.id === req.media_id) : null;
+    if (!media || media.type !== 'video') throw new Error('Choose a video from the media library or an attached reference video.');
+    file = media.path; name = media.name;
+  }
+  const { summarize } = require('./media/editStyle.cjs');
+  const value = await editStyle().analyze(file, { speech: req.speech !== false, signal,
+    onProgress: p => { if (!event.sender.isDestroyed()) event.sender.send('agent:referenceProgress', { requestId: req.requestId, progress: p }); } });
+  return { ok: true, name, cached: value.cached, fingerprint: summarize(value, { transcriptFrom: Math.max(0, Number(req.transcript_from_sec) || 0) }), source: { path: file, width: value.frame.width, height: value.frame.height, duration: value.duration_sec } };
+}));
 ipcMain.handle('agent:annotateScene',async(event,req)=>{
   try{
     const media=req?.project?.media?.find(m=>m.id===req.media_id);if(!media)throw new Error('Unknown media source.');
@@ -1656,7 +1726,7 @@ ipcMain.handle('agent:runNative', async (event, req) => {
         const result = await invoke(aliases.get(name),args);
         checkAbort(job.controller.signal);
         // A contact sheet replaces its cells as the one image sent for overview checks.
-        const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit'].includes(aliases.get(name)) ? (result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
+        const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit','analyze_reference'].includes(aliases.get(name)) ? (result.sheet_ids?.length ? result.sheet_ids : result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
         const images = agentFrames.images(event.sender.id,ids || []);
         const content = [{type:'text',text:JSON.stringify(result)}];
         for (const image of require("./agents/agentImages.cjs").readImages(images)) content.push({type:'text',text:image.label},{type:'image',mimeType:'image/jpeg',data:image.data});

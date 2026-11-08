@@ -1,8 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toFileUrl } from '../../../state/store.js';
 import { safeLocalPath } from '../activityEvidence.js';
 import { activityTime } from '../toolActivity.js';
 import { formatElapsed, formatRemaining } from '../../export/exportProgress.js';
+import { getPreviewAudio, setPreviewAudio, subscribePreviewAudio } from '../../audio/audioTap.js';
+
+// Rendered videos in the chat play at the preview's listening volume, and changing the
+// volume on either player changes it on both: one listening level for the whole app.
+function usePreviewListening() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const apply = () => { const a = getPreviewAudio(); el.volume = a.volume; el.muted = a.muted; };
+    const changed = () => setPreviewAudio({ volume: el.volume, muted: el.muted });
+    apply();
+    el.addEventListener('volumechange', changed);
+    const stop = subscribePreviewAudio(apply);
+    return () => { el.removeEventListener('volumechange', changed); stop(); };
+  });
+  return ref;
+}
 
 function Thumbnail({ media }) {
   const [unavailable,setUnavailable]=useState(false),src=safeLocalPath(media.src);
@@ -46,10 +64,10 @@ export function ToolRender({ render, onCancel, review=false }) {
   </div>;
 }
 export function ToolOutput({ artifact }) {
-  const [unavailable,setUnavailable]=useState(false),file=safeLocalPath(artifact?.file);
+  const [unavailable,setUnavailable]=useState(false),file=safeLocalPath(artifact?.file),player=usePreviewListening();
   if(!file||!/\.(mp4|mov|mkv|webm)$/i.test(file))return null;
   return <div className="pilot-output" aria-label={artifact.review?'Rendered section':'Exported video'}>
-    {!unavailable?<video className={artifact.review?'review-video':undefined} src={toFileUrl(file)} preload="metadata" controls playsInline aria-label="Exported video preview" onError={()=>setUnavailable(true)} />:<div className="pilot-output-unavailable">Video preview unavailable</div>}
+    {!unavailable?<video ref={player} className={artifact.review?'review-video':undefined} src={toFileUrl(file)} preload="metadata" controls playsInline aria-label="Exported video preview" onError={()=>setUnavailable(true)} />:<div className="pilot-output-unavailable">Video preview unavailable</div>}
     <div className="pilot-output-info"><strong>{artifact.review?'Section preview':artifact.name||file.split(/[\\/]/).at(-1)}</strong><span>{[Number.isFinite(artifact.duration_sec)?`${formatElapsed(artifact.duration_sec)}`:'',artifact.width&&artifact.height?`${artifact.width} × ${artifact.height}`:'',artifact.bytes?`${(artifact.bytes/1048576).toFixed(1)} MB`:''].filter(Boolean).join(' · ')}</span></div>
     <div className="pilot-output-actions"><button type="button" onClick={()=>window.api.openFile(file)}>{artifact.review?'Open preview':'Open video'}</button>{!artifact.review&&<button type="button" onClick={()=>window.api.showInFolder(file)}>Show in folder</button>}</div>
   </div>;

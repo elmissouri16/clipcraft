@@ -10,6 +10,8 @@ import ToolActivityRow from './ToolActivityRow.jsx';
 import EditPlanCard from './EditPlanCard.jsx';
 import MessageQueue from './MessageQueue.jsx';
 import ImageAttachments from './ImageAttachments.jsx';
+import VideoAttachments from './VideoAttachments.jsx';
+import { MAX_CHAT_VIDEOS, isVideoFile, videoMessagePart } from '../videoAttachments.js';
 import { MAX_CHAT_IMAGES, imageMessageParts } from '../imageAttachments.js';
 import { webSourceUrl } from "../../../../shared/webSource.mjs";
 
@@ -97,6 +99,44 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const setMessages = (value) => updateSession((s) => ({ messages: typeof value === 'function' ? value(s.messages) : value }));
   const setInput = (draft) => updateSession({ draft });
 
+  // Files from a drop, a paste or the picker: videos become references, the rest images.
+  const attachFiles = async files => {
+    if (!files) {
+      if (importingImages.current) return;
+      if (!window.api.agentPickAttachments) return attachImages();
+      importingImages.current = true; setImagesLoading(true); setImageError('');
+      const sessionId = chatRef.current.activeSessionId;
+      try { mergeAttachments(sessionId, await window.api.agentPickAttachments()); }
+      catch (error) { if (isCurrent() && chatRef.current.activeSessionId === sessionId) setImageError(error.message); }
+      finally { importingImages.current = false; if (isCurrent()) { setImagesLoading(false);requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true })); } }
+      return;
+    }
+    const videos = files.filter(isVideoFile), images = files.filter(file => !isVideoFile(file));
+    if (videos.length) await attachVideos(videos);
+    if (images.length) await attachImages(images);
+  };
+  const mergeAttachments = (sessionId, result) => {
+    if (!isCurrent()) return;
+    const current = chatRef.current, target = current.sessions.find(s => s.id === sessionId);
+    if (!target) return;
+    const images = [...new Map([...target.images, ...(result.images || [])].map(image => [image.id, image])).values()];
+    const videos = [...new Map([...(target.videos || []), ...(result.videos || [])].map(video => [video.id, video])).values()];
+    saveChat({ ...current, sessions: current.sessions.map(s => s.id === sessionId ? { ...s, images: images.slice(0, MAX_CHAT_IMAGES), videos: videos.slice(0, MAX_CHAT_VIDEOS) } : s) });
+    if (current.activeSessionId === sessionId) setImageError([...(result.errors || []).map(error => `${error.name ? error.name + ': ' : ''}${error.error}`),
+      ...(images.length > MAX_CHAT_IMAGES ? ['Only six images fit in a message. Additional images were not attached.'] : []),
+      ...(videos.length > MAX_CHAT_VIDEOS ? ['Only three reference videos fit in a message. Additional videos were not attached.'] : [])].join('\n'));
+  };
+  const attachVideos = async files => {
+    if (importingImages.current) return;
+    importingImages.current = true; setImagesLoading(true); setImageError('');
+    const sessionId = chatRef.current.activeSessionId;
+    try {
+      if (!window.api.agentAttachVideos) throw Error('Restart ClipCraft to enable reference videos.');
+      if (files.length > MAX_CHAT_VIDEOS) throw Error('Attach up to three reference videos per message.');
+      mergeAttachments(sessionId, await window.api.agentAttachVideos(files));
+    } catch (error) { if (isCurrent() && chatRef.current.activeSessionId === sessionId) setImageError(error.message); }
+    finally { importingImages.current = false; if (isCurrent()) setImagesLoading(false); }
+  };
   const attachImages = async files => {
     if (importingImages.current) return;
     importingImages.current = true; setImagesLoading(true); setImageError('');
@@ -229,6 +269,11 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         const validation = await window.api.agentValidateImages(item.images.map(image => image.id));
         if (validation?.error) throw Error(validation.error);
       }
+      if (item.videos?.length) {
+        if (!window.api.agentValidateVideos) throw Error('Restart ClipCraft to enable reference videos.');
+        const validation = await window.api.agentValidateVideos(item.videos.map(video => video.id));
+        if (validation?.error) throw Error(validation.error);
+      }
       attached = resolveTimelineAttachments(getProject(), item.timelineAttachments);
       contextPart = timelineContextPart(attached);
     } catch (error) { setContextError(error.message);if (queued) updateSession({ queuePaused: true });return; }
@@ -236,16 +281,17 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     if (!isCurrent()) return;
     setContextError('');
     if (queued) updateSession(s => ({ queue: s.queue.filter(entry => entry.id !== item.id) }));
-    else if (!preserveComposer) updateSession({ timelineAttachments: [], images: [], draft: '' });
+    else if (!preserveComposer) updateSession({ timelineAttachments: [], images: [], videos: [], draft: '' });
     setBusy(true);
     canceled.current = false;setStopping(false);
     const requestId = crypto.randomUUID();
     const requestRevision = projectRevision(getProject());
     activeRequest.current = requestId;
     updateSession((s) => ({ title: s.messages.length ? s.title : msg.replace(/\s+/g, ' ').slice(0, 60) }));
-    setMessages((m) => [...m, { role: 'user', text: msg, images: item.images || [], timelineAttachments: attached.map(({ snapshot, status, ...attachment }) => attachment) }, { role: 'assistant', text: '', steps: [], pending: true }]);
+    setMessages((m) => [...m, { role: 'user', text: msg, images: item.images || [], ...(item.videos?.length ? { videos: item.videos } : {}), timelineAttachments: attached.map(({ snapshot, status, ...attachment }) => attachment) }, { role: 'assistant', text: '', steps: [], pending: true }]);
     const conversationStart = contents.current.length;
-    contents.current.push({ role: 'user', parts: [{ text: msg }, ...(contextPart ? [{ text: contextPart }] : []), ...imageMessageParts(item.images)] });
+    const videoPart = videoMessagePart(item.videos);
+    contents.current.push({ role: 'user', parts: [{ text: msg }, ...(contextPart ? [{ text: contextPart }] : []), ...(videoPart ? [{ text: videoPart }] : []), ...imageMessageParts(item.images)] });
 
     dispatch({ type: 'beginAgentEdit', token: requestId });
     await settle();
@@ -313,11 +359,11 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
 
   const send = (text) => {
     const current = chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId);
-    const msg = text.trim() || (current.images.length ? 'Review the attached images.' : '');
+    const msg = text.trim() || (current.videos?.length ? 'Edit my footage in the style of the attached reference video.' : current.images.length ? 'Review the attached images.' : '');
     if (!msg || modelSaving || preparingRequest.current || importingImages.current || !config?.ready || !isCurrent()) return;
-    const item = { id: crypto.randomUUID(), text: msg, images: structuredClone(current.images), timelineAttachments: structuredClone(current.timelineAttachments || []) };
+    const item = { id: crypto.randomUUID(), text: msg, images: structuredClone(current.images), ...(current.videos?.length ? { videos: structuredClone(current.videos) } : {}), timelineAttachments: structuredClone(current.timelineAttachments || []) };
     if (activeRequest.current || current.queue.length) {
-      updateSession(s => ({ queue: [...s.queue, item], queuePaused: s.queue.length ? s.queuePaused : !!canceled.current, draft: '', timelineAttachments: [], images: [] }));
+      updateSession(s => ({ queue: [...s.queue, item], queuePaused: s.queue.length ? s.queuePaused : !!canceled.current, draft: '', timelineAttachments: [], images: [], videos: [] }));
       setContextError('');
     } else startTurn(item);
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
@@ -331,7 +377,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     if (activeRequest.current || preparingRequest.current || importingImages.current) return;
     const current = chatRef.current;
     const active = current.sessions.find((s) => s.id === current.activeSessionId);
-    if (!active.messages.length && !active.draft.trim() && !active.timelineAttachments?.length && !active.images.length && !active.queue.length) return;
+    if (!active.messages.length && !active.draft.trim() && !active.timelineAttachments?.length && !active.images.length && !active.videos?.length && !active.queue.length) return;
     const next = newChatSession();
     saveChat({ ...current, activeSessionId: next.id, sessions: [...current.sessions, next] });
     contents.current = [];
@@ -360,7 +406,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         <section id="craft-ai-panel" className="pilot-panel pilot2" aria-label="CraftAI assistant"
           onDragOver={event => { if (![...event.dataTransfer.types].includes('Files')) return;event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect = 'copy';setImageDrag(true);onAttachmentDrag?.(); }}
           onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setImageDrag(false); }}
-          onDrop={event => { if (!event.dataTransfer.files.length) return;event.preventDefault();event.stopPropagation();setImageDrag(false);onAttachmentDrag?.();attachImages([...event.dataTransfer.files]); }}>
+          onDrop={event => { if (!event.dataTransfer.files.length) return;event.preventDefault();event.stopPropagation();setImageDrag(false);onAttachmentDrag?.();attachFiles([...event.dataTransfer.files]); }}>
           <header className="pilot-head">
             <CraftModelPicker config={config} disabled={busy || preparing} onSavingChange={setModelSaving} onSaved={(s) => {
               configRequest.current++;
@@ -370,7 +416,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                 reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
               }));
             }} />
-            <button className="icon-btn" onClick={newChat} disabled={busy || preparing || imagesLoading || (!messages.length && !input.trim() && !session.timelineAttachments?.length && !session.images.length && !session.queue.length)} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
+            <button className="icon-btn" onClick={newChat} disabled={busy || preparing || imagesLoading || (!messages.length && !input.trim() && !session.timelineAttachments?.length && !session.videos?.length && !session.images.length && !session.queue.length)} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
             <button className="icon-btn" onClick={onOpenSettings} aria-label="AI settings" title="AI settings"><Settings size={16} /></button>
             {!docked && <button className="btn btn-sm" onClick={onExpand} title="Expand to Agent mode">Expand</button>}
             {!docked && <button className="icon-btn" onClick={closePanel} aria-label="Close assistant"><X size={16} /></button>}
@@ -415,6 +461,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                 {m.role === 'user' ? (
                   <div className="bubble" dir="auto">
                     <ImageAttachments images={m.images} />
+                    <VideoAttachments videos={m.videos} />
                     {m.timelineAttachments?.length > 0 && <div className="pilot-message-context" aria-label="Attached timeline context">{m.timelineAttachments.map(a => <span key={a.id}><Clock3 size={12} />{timelineAttachmentLabel(a)}</span>)}</div>}
                     {m.text}
                   </div>
@@ -491,16 +538,17 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
               </div>
             )}
             {contextError && <p className="pilot-context-error" role="alert">{contextError}</p>}
+            {session.videos?.length > 0 && <div className="pilot-image-attachments"><VideoAttachments videos={session.videos} onRemove={id => { updateSession({ videos: session.videos.filter(video => video.id !== id) });setContextError(''); }} /></div>}
             {session.images.length > 0 && <div className="pilot-image-attachments"><ImageAttachments images={session.images} onRemove={id => { updateSession({ images: session.images.filter(image => image.id !== id) });setContextError(''); }} /></div>}
-            {imagesLoading && <div className="pilot-image-loading" role="status"><Loader2 size={13} className="spin" />Preparing images…</div>}
+            {imagesLoading && <div className="pilot-image-loading" role="status"><Loader2 size={13} className="spin" />Preparing attachments…</div>}
             {imageError && <div className="pilot-image-error" role="alert"><span>{imageError}</span><button type="button" className="icon-btn sm" aria-label="Dismiss attachment error" onClick={() => setImageError('')}><X size={12} /></button></div>}
             <div className="pilot-input">
-              <button type="button" className="pilot-attach-button" aria-label="Attach images" title="Attach images · or drop/paste here · up to 6, 20 MB each" disabled={imagesLoading || preparing || session.images.length >= MAX_CHAT_IMAGES} onClick={() => attachImages()}><Paperclip size={17} /></button>
+              <button type="button" className="pilot-attach-button" aria-label="Attach images or reference videos" title="Attach images or reference videos · or drop/paste here · up to 6 images and 3 videos" disabled={imagesLoading || preparing || (session.images.length >= MAX_CHAT_IMAGES && (session.videos?.length || 0) >= MAX_CHAT_VIDEOS)} onClick={() => attachFiles(null)}><Paperclip size={17} /></button>
               <textarea ref={inputRef} rows={2} value={input} dir="auto"
                 placeholder={busy || session.queue.length ? 'Add the next instruction…' : 'Describe your next edit…'}
-                onPaste={event => { const files = [...event.clipboardData.files];if (files.length) { event.preventDefault();attachImages(files); } }}
+                onPaste={event => { const files = [...event.clipboardData.files];if (files.length) { event.preventDefault();attachFiles(files); } }}
                 onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready} aria-label="Message" />
-              <button className="send" onClick={() => send(chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId).draft)} disabled={modelSaving || preparing || imagesLoading || (!input.trim() && !session.images.length) || !config?.ready} aria-label={busy || session.queue.length ? 'Queue message' : 'Send'} title={busy || session.queue.length ? 'Add to queue (Enter)' : 'Send (Enter)'}>{preparing ? <Loader2 size={17} className="spin" /> : busy || session.queue.length ? <ListPlus size={17} /> : <ArrowUp size={17} />}</button>
+              <button className="send" onClick={() => send(chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId).draft)} disabled={modelSaving || preparing || imagesLoading || (!input.trim() && !session.images.length && !session.videos?.length) || !config?.ready} aria-label={busy || session.queue.length ? 'Queue message' : 'Send'} title={busy || session.queue.length ? 'Add to queue (Enter)' : 'Send (Enter)'}>{preparing ? <Loader2 size={17} className="spin" /> : busy || session.queue.length ? <ListPlus size={17} /> : <ArrowUp size={17} />}</button>
             </div>
             <div className="pilot-composer-hint"><span>{busy || session.queue.length ? 'Enter to queue · Shift+Enter for a new line' : 'Enter to send · Shift+Enter for a new line'}</span><span>Edits can be undone</span></div>
           </div>
