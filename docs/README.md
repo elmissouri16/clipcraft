@@ -14,6 +14,7 @@
 - [Design system](design/DESIGN-SYSTEM.md)
 - [Editor usability and UI regression coverage](design/editor-usability.md)
 - [Word animation](design/WORD-MODE-ADDENDUM.md)
+- [Motion graphics plan](design/motion-graphics.md)
 - [Export quality](export/EXPORT-QUALITY.md)
 - [Effect export storage and failure handling](export/EFFECT-STORAGE.md)
 - [Updates](updates/UPDATES.md)
