@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, Settings, Square, Undo2, X } from 'lucide-react';
 import { runAgent } from "../runAgent.js";
+import { makeAgentCtx } from "../agentCtx.js";
 import { addTimelineAttachment, resolveTimelineAttachments, timelineAttachmentLabel, timelineContextPart } from '../timelineContext.js';
 import { projectRevision, proposedPlanNote } from "../context.js";
 import CraftModelPicker from './CraftModelPicker.jsx';
@@ -298,27 +299,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const result = await runAgent({
       requestId, sessionKey: `${projectId}:${chatRef.current.activeSessionId}`,
       contents: contents.current,
-      ctx: {
-        ...app,
-        chatImageIds: (item.images || []).map(image => image.id),
-        provider: config?.provider,
-        getProject: () => {
-          if (!isCurrent()) throw new Error('The project changed.');
-          return getProject();
-        },
-        dispatch: (action) => { if (isCurrent() && !canceled.current) dispatch({ ...action, agentToken: requestId }); },
-        editActive: () => app.getAgentEdit?.()?.token === requestId,
-        editInterruption: () => app.getAgentInterruption?.(),
-        addProbed: (...args) => isCurrent() && !canceled.current ? app.addProbed?.(...args, requestId) : null,
-        startExport: (...args) => isCurrent() && !canceled.current ? app.startExport?.(...args) : undefined,
-        api: window.api, settle,
-        // Undo only what this request did: the user's earlier edits stay.
-        undoOwn: () => {
-          if (!isCurrent() || canceled.current || app.getAgentEdit?.()?.token !== requestId || !app.getAgentEdit?.()?.steps.length) return false;
-          dispatch({ type: 'undoAgentEdit', token: requestId });
-          return true;
-        },
-      },
+      ctx: makeAgentCtx({ app, provider: config?.provider, getProject, dispatch, settle, requestId, isCurrent, isStopped: () => canceled.current,
+        chatImageIds: (item.images || []).map(image => image.id) }),
       isCanceled: () => canceled.current || !isCurrent(),
       onEvent: (ev) => {
         if (ev.type === 'context') { updateLast((last) => ({ ...last, contextUsage: ev.usage })); return; }

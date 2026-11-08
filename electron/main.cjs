@@ -1739,20 +1739,8 @@ ipcMain.handle('agent:runNative', async (event, req) => {
       sessionKey:`${event.sender.id}:${req.sessionKey}`, tools, system:req.system, context:typeof req.context === 'string' ? req.context.slice(0, 4000) : '', ...attached,
       signal:job.controller.signal,
       onSearch:search=>{if(!event.sender.isDestroyed())event.sender.send('agent:nativeProgress',{requestId:req.requestId,event:{type:'tool',id:`native-web-${search.id}`,name:'web_search',label:search.query?`Searching web: ${search.query}`:'Searching the web',status:search.status}});},
-      onTool:async(name,args)=>{
-        const error = validateToolCall({name,args},tools);
-        if(error){job.report.call(aliases.get(name)||name,true);return {isError:true,content:[{type:'text',text:error}]};}
-        const result = await invoke(aliases.get(name),args);
-        job.report.call(aliases.get(name),!!result?.error);
-        checkAbort(job.controller.signal);
-        // A contact sheet replaces its cells as the one image sent for overview checks.
-        const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit','analyze_reference','add_graphic','edit_graphic'].includes(aliases.get(name)) ? (result.sheet_ids?.length ? result.sheet_ids : result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
-        const images = agentFrames.images(event.sender.id,ids || []);
-        const content = [{type:'text',text:JSON.stringify(result)}];
-        for (const image of require("./agents/agentImages.cjs").readImages(images)) content.push({type:'text',text:image.label},{type:'image',mimeType:'image/jpeg',data:image.data});
-        agentFrames.markPresented(event.sender.id,ids,req.requestId,cfg.provider,cfg.model);
-        return {isError:!!result.error,content};
-      },
+      onTool:require('./agents/toolResult.cjs').createToolCaller({ tools, aliases, validateToolCall, report:job.report, invoke, agentFrames,
+        ownerId:event.sender.id, requestId:req.requestId, provider:cfg.provider, model:cfg.model, checkAbort:()=>checkAbort(job.controller.signal) }),
       isComplete:async()=>!!(await invoke('__native_status',{})).ready,
     });
     checkAbort(job.controller.signal);

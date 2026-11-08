@@ -90,7 +90,7 @@ try {
 
   // Both completion paths and the API transport ask for and send the sheet.
   const runAgentSource = fs.readFileSync(new URL('../../../src/features/agent/runAgent.js', import.meta.url), 'utf8');
-  const nativeSource = fs.readFileSync(new URL('../../../src/features/agent/runNativeAgent.js', import.meta.url), 'utf8');
+  const nativeSource = fs.readFileSync(new URL('../../../src/features/agent/toolHost.js', import.meta.url), 'utf8'); // the native completion check (runNativeAgent uses it)
   await check('API and native completion checks request sheets; the API sends the sheet ID', () => {
     assert.match(runAgentSource, /runner\.run\('inspect_frames', \{ times_sec, sheet: true \}\)/);
     assert.match(runAgentSource, /frameIds = result\.sheet_id \? \[result\.sheet_id\]/);
