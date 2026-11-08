@@ -1,29 +1,27 @@
-import { samplePictureUrl } from "../../features/effects/previews.jsx";
-import React, { useEffect, useId, useState } from 'react';
-import { Clock3, Film, FolderOpen, Import, Monitor, Play, Plus, Search, X } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { Film, FolderOpen, Import, LayoutGrid, List, Monitor, Search, Trash2, X } from 'lucide-react';
 
 // The developer's Instagram — shown in the About dialog.
 export const DEV_INSTAGRAM_URL = 'https://www.instagram.com/hamza_abika/';
 
-// Support ClipCraft's development — the developer's PayPal.me page, opened in the
-// system browser (app:openHelp allowlist) from the Home quick tools and the top bar.
+// Support ClipCraft's development — the developer's PayPal.me page, opened in the system browser
+// (app:openHelp allowlist) from the Settings rail.
 export const SUPPORT_URL = 'https://paypal.me/hamzaAbika';
 
-// ClipCraft home / start screen (pass 3) — ClipCraft's own layout: a slim brand header with a
-// time-aware greeting, a "stage" hero whose five format frames carry real photography (the
-// bundled preview photos) and launch a project on click, a quick-tools row where every tile
-// does something real, an aligned recent-project gallery with a Resume action for the latest project. No sidebar, no banner clone: the stage is the hero.
+// ClipCraft home: a header with the three ways in (open, import, record), a compact row of formats
+// for a new project, and the projects themselves as a grid or a list. One quiet surface: no hero,
+// no slogans; the projects are the main content.
 
-// ratio -> the sizeFor() short side that yields the labelled pixel size; img -> the preview
-// photo whose crop suits the format (bundled in public/preview, see CREDITS.txt there).
+// ratio -> the sizeFor() short side that yields the labelled pixel size.
 const PRESETS = [
-  { ratio: '16:9', label: 'Landscape', use: 'YouTube & desktop', size: '1920 × 1080', short: 1080, img: './preview/p1015.jpg' },
-  { ratio: '9:16', label: 'Vertical', use: 'Reels, TikTok, Shorts', size: '1080 × 1920', short: 1080, img: './preview/p1025.jpg' },
-  { ratio: '1:1', label: 'Square', use: 'Feed posts', size: '1080 × 1080', short: 1080, img: './preview/p292.jpg' },
-  { ratio: '4:5', label: 'Portrait', use: 'Feed portrait', size: '1080 × 1350', short: 1080, img: './preview/p1060.jpg' },
-  { ratio: '21:9', label: 'Ultrawide', use: 'Cinematic', size: '2520 × 1080', short: 1080, img: './preview/p1016.jpg' },
+  { ratio: '16:9', label: 'Landscape', use: 'YouTube, desktop', size: '1920 × 1080', short: 1080 },
+  { ratio: '9:16', label: 'Vertical', use: 'Reels, TikTok, Shorts', size: '1080 × 1920', short: 1080 },
+  { ratio: '1:1', label: 'Square', use: 'Feed posts', size: '1080 × 1080', short: 1080 },
+  { ratio: '4:5', label: 'Portrait', use: 'Feed portrait', size: '1080 × 1350', short: 1080 },
+  { ratio: '21:9', label: 'Ultrawide', use: 'Cinematic', size: '2520 × 1080', short: 1080 },
 ];
 const FPS = [24, 30, 60];
+const VIEW_KEY = 'clipcraft.homeView';
 
 const fmtDate = (ts) => {
   try {
@@ -44,36 +42,20 @@ const relDate = (ts) => {
   return fmtDate(ts);
 };
 
-const greeting = () => {
-  const h = new Date().getHours();
-  if (h < 5) return 'Still up';
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-};
+// Where a project lives: its file name, or the automatic save.
+const placeOf = (r) => (r.path ? String(r.path).split(/[\\/]/).pop() : r.slotId ? 'Auto-saved' : '');
 
-// A stage frame drawn at the preset's real proportions with a real photo inside, standing on
-// the stage floor. Tall/narrow frames are height-driven; the ultrawide frame is width-driven
-// so its ratio stays true.
-function StageFrame({ preset }) {
-  const [failed, setFailed] = useState(false);
-  const [a, b] = preset.ratio.split(':').map(Number);
-  const wide = a / b >= 2;
-  const style = { aspectRatio: `${a} / ${b}`, ...(wide ? { width: '100%' } : { height: 66 }) };
-  return (
-    <span className="home-frame" style={style} aria-hidden="true">
-      <img className="home-frame-img" src={failed ? samplePictureUrl() : preset.img} alt="" draggable={false}
-        onError={failed ? undefined : () => setFailed(true)} />
-      <span className="home-frame-scrim" />
-      <span className="home-frame-grid" />
-      <span className="home-frame-chip"><Play size={10} fill="currentColor" /></span>
-    </span>
-  );
+// The format as an outline at its true proportions, fitted in a fixed box.
+function FormatShape({ ratio }) {
+  const [a, b] = ratio.split(':').map(Number);
+  // Fitted inside a 50 × 32 box, so every format reads at the same visual weight.
+  const scale = Math.min(50 / a, 32 / b), w = a * scale, h = b * scale;
+  return <span className="home-format-shape" aria-hidden="true"><span style={{ width: Math.round(w), height: Math.round(h) }} /></span>;
 }
 
-// A recent's thumbnail: the video sprite's first frame, an image, or the placeholder glyph.
-// Fixed gallery cells contain the full poster; sprite frames are clipped before fitting.
-function RecentThumb({ r, placeholder = 26 }) {
+// A project's thumbnail: the video sprite's first frame, an image, or the placeholder glyph.
+// Fixed cells contain the whole poster; sprite frames are clipped before fitting.
+function RecentThumb({ r, placeholder = 22 }) {
   const thumb = r.thumb;
   const src = typeof thumb === 'string' ? thumb : thumb?.src;
   const [failed, setFailed] = useState(false);
@@ -94,46 +76,66 @@ function RecentThumb({ r, placeholder = 26 }) {
   return <img src={src} alt="" draggable={false} loading="lazy" onError={() => setFailed(true)} />;
 }
 
-// The empty-state mark: a mini stage — three ratio frames on a floor, a playhead over two
-// timeline bars — built from divs only.
-function EmptyStage() {
+// Asked before a project leaves the list. Removing also deletes its auto-saved copy, so the text says
+// what is lost: for a project that was only auto-saved, the project itself. Cancel has the focus;
+// Escape and a click outside cancel.
+function RemoveDialog({ project, onCancel, onConfirm }) {
+  const cancel = useRef(null);
+  useEffect(() => {
+    cancel.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel(); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+  const name = String(project.name || 'Untitled').slice(0, 80), onlyAutoSaved = !project.path;
   return (
-    <div className="home-empty-stage" aria-hidden="true">
-      <div className="home-empty-frames">
-        <span className="home-empty-f f-wide" />
-        <span className="home-empty-f f-tall" />
-        <span className="home-empty-f f-sq" />
-      </div>
-      <div className="home-empty-track">
-        <span className="home-empty-playhead" />
-        <span className="home-empty-bar a" />
-        <span className="home-empty-bar b" />
+    <div className="modal-backdrop close-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="remove-title" aria-describedby="remove-text"
+      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div className="modal close-modal">
+        <div className="modal-icon error"><Trash2 size={22} /></div>
+        <h3 id="remove-title" dir="auto">{onlyAutoSaved ? `Delete “${name}”?` : `Remove “${name}” from projects?`}</h3>
+        <p id="remove-text" className="muted">{onlyAutoSaved
+          ? 'This project was only auto-saved and has no file, so it will be deleted permanently. This cannot be undone.'
+          : `The project file stays on disk (${placeOf(project)}) and can be opened again. Its auto-saved copy is deleted, so changes never saved to the file are lost.`}</p>
+        <div className="modal-actions">
+          <button ref={cancel} type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-danger" onClick={onConfirm}><Trash2 size={14} /> {onlyAutoSaved ? 'Delete project' : 'Remove'}</button>
+        </div>
       </div>
     </div>
   );
 }
 
+const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; } };
+
 export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved }) {
   const [fps, setFps] = useState(30);
-  // The version badge reads the real app version (package.json via app:version) —
-  // it must never drift from the shipped build again.
+  // The version reads the real app version (package.json via app:version).
   const [version, setVersion] = useState('');
   useEffect(() => {
-    window.api?.appVersion?.().then((v) => { if (v) setVersion(v.split(".").slice(0, 2).join('.')); }).catch(() => {});
+    window.api?.appVersion?.().then((v) => { if (v) setVersion(v.split('.').slice(0, 2).join('.')); }).catch(() => {});
   }, []);
+  const [view, setView] = useState(readView);
+  const chooseView = (v) => { setView(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* the choice just isn't remembered */ } };
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
-  const shownRecents = q ? recents.filter((r) => (r.name || '').toLowerCase().includes(q) || (r.ratio || '').includes(q)) : recents;
+  const shown = q ? recents.filter((r) => (r.name || '').toLowerCase().includes(q) || (r.ratio || '').includes(q)) : recents;
   const latest = recents[0] || null;
+  const [removing, setRemoving] = useState(null); // the project awaiting confirmation
+
   return (
     <div className="home">
       <header className="home-top">
-        <img src="./logo.png" alt="" className="home-logo" draggable={false} />
         <div className="home-brand">
-          <span className="home-name">Clip<b>Craft</b></span>
-          <span className="home-greet">{greeting()} — ready when you are.</span>
+          <img src="./logo.png" alt="" className="home-logo" draggable={false} />
+          <span className="home-name">ClipCraft</span>
+          <span className="home-ver">{version ? `Version ${version}` : 'ClipCraft'}</span>
         </div>
-        <span className="home-ver">{version ? `Version ${version}` : 'ClipCraft'}</span>
+        <nav className="home-actions" aria-label="Start">
+          <button type="button" className="btn home-action" onClick={onOpen}><FolderOpen size={15} /><span>Open project</span></button>
+          <button type="button" className="btn home-action" onClick={onImportMedia}><Import size={15} /><span>Import media</span></button>
+          <button type="button" className="btn home-action" onClick={() => onRecordStart?.(fps)}><Monitor size={15} /><span>Record screen</span></button>
+        </nav>
       </header>
 
       <main className="home-body">
@@ -150,98 +152,93 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           </div>
         )}
 
-        <section className="home-hero" aria-labelledby="home-new">
-          <div className="home-hero-side">
-            <span className="home-eyebrow">New project</span>
-            <h1 id="home-new">Start cutting.</h1>
-            <p className="home-hero-sub">Pick the frame your video lives in — you can reshape it later, any time, in the editor.</p>
-            <label className="home-fps">
-              <span>Frame rate</span>
-              <span className="seg" role="group" aria-label="Frame rate">
-                {FPS.map((f) => (
-                  <button key={f} className={fps === f ? 'on' : ''} aria-pressed={fps === f} onClick={() => setFps(f)}>{f} fps</button>
-                ))}
-              </span>
-            </label>
-          </div>
-          <div className="home-hero-stage">
-            <div className="home-frames">
-              {PRESETS.map((p) => (
-                <button key={p.ratio} className="home-frame-card" onClick={() => onNew(p, fps)} aria-label={`New ${p.ratio} project`}>
-                  <span className="home-frame-slot"><StageFrame preset={p} /></span>
-                  <b>{p.ratio}</b>
-                  <span className="home-preset-use">{p.label} · {p.use}</span>
-                  <span className="home-preset-size">{p.size}</span>
-                  <span className="home-preset-go"><Plus size={14} /> New project</span>
-                </button>
+        <section className="home-section" aria-labelledby="home-new-title">
+          <div className="home-section-head">
+            <h2 id="home-new-title">New project</h2>
+            <span className="home-seg home-fps" role="group" aria-label="Frame rate">
+              {FPS.map((f) => (
+                <button key={f} type="button" className={fps === f ? 'on' : ''} aria-pressed={fps === f} onClick={() => setFps(f)}>{f} fps</button>
               ))}
-            </div>
-            <div className="home-stage-floor" aria-hidden="true" />
+            </span>
+          </div>
+          <div className="home-formats">
+            {PRESETS.map((p) => (
+              <button key={p.ratio} type="button" className="home-frame-card" onClick={() => onNew(p, fps)} aria-label={`New ${p.ratio} project`} title={`${p.label} · ${p.use}`}>
+                <FormatShape ratio={p.ratio} />
+                <span className="home-format-text">
+                  <b>{p.ratio}</b>
+                  <span>{p.label}</span>
+                </span>
+                <span className="home-format-size">{p.size}</span>
+              </button>
+            ))}
           </div>
         </section>
 
-        <section className="home-quick" aria-label="Quick tools">
-          <button className="home-action" onClick={onOpen}>
-            <span className="home-action-icon"><FolderOpen size={18} /></span>
-            <span className="home-action-text"><b>Open project…</b><span>Pick up a .clipcraft file where you left it.</span></span>
-          </button>
-          <button className="home-action" onClick={onImportMedia}>
-            <span className="home-action-icon"><Import size={18} /></span>
-            <span className="home-action-text"><b>Import media…</b><span>Start from clips you already have — a new project opens around them.</span></span>
-          </button>
-          <button className="home-action" onClick={() => onRecordStart?.(fps)}>
-            <span className="home-action-icon"><Monitor size={18} /></span>
-            <span className="home-action-text"><b>Record screen</b><span>Capture your screen straight onto a new timeline.</span></span>
-          </button>
-          <button className="home-action" onClick={() => window.api.openHelp(SUPPORT_URL)} aria-label="Support ClipCraft on PayPal">
-            <span className="home-action-icon"><img src="./paypal.svg" alt="" className="home-paypal-mark" draggable={false} /></span>
-            <span className="home-action-text"><b>Support the project</b><span>Support its development via PayPal.</span></span>
-          </button>
-        </section>
-
-        <section className="home-recents" aria-labelledby="home-recent-title">
-          <div className="home-recents-head">
-            <h2 id="home-recent-title"><Clock3 size={16} /> Recent projects · {recents.length}</h2>
+        <section className="home-section home-recents" aria-labelledby="home-recent-title">
+          <div className="home-section-head">
+            <h2 id="home-recent-title">Projects {recents.length > 0 && <span className="home-count">{recents.length}</span>}</h2>
             {recents.length > 0 && (
-              <span className="home-search-wrap">
-                <Search size={14} aria-hidden="true" />
-                <input type="search" className="home-search" placeholder="Search projects…" value={query}
-                  onChange={(e) => setQuery(e.target.value)} aria-label="Search recent projects" />
-              </span>
+              <div className="home-tools">
+                <span className="home-search-wrap">
+                  <Search size={14} aria-hidden="true" />
+                  <input type="search" className="home-search" placeholder="Search projects" value={query}
+                    onChange={(e) => setQuery(e.target.value)} aria-label="Search recent projects" />
+                </span>
+                <span className="home-seg home-view" role="group" aria-label="Project view">
+                  <button type="button" className={view === 'grid' ? 'on' : ''} aria-pressed={view === 'grid'} aria-label="Grid view" title="Grid" onClick={() => chooseView('grid')}><LayoutGrid size={14} /></button>
+                  <button type="button" className={view === 'list' ? 'on' : ''} aria-pressed={view === 'list'} aria-label="List view" title="List" onClick={() => chooseView('list')}><List size={14} /></button>
+                </span>
+              </div>
             )}
           </div>
+
           {!recents.length && (
             <div className="home-empty">
-              <EmptyStage />
-              <p><b>Nothing on the shelf yet.</b></p>
-              <p className="muted">The projects you save or open will wait for you here, one click away.</p>
+              <Film size={22} aria-hidden="true" />
+              <p><b>No projects yet</b></p>
+              <p className="muted">Choose a format above, or open a project file. Projects you open or save appear here.</p>
             </div>
           )}
-          {recents.length > 0 && !shownRecents.length && (
-            <p className="muted">No projects match “{query}”.</p>
-          )}
-          {shownRecents.length > 0 && (
+          {recents.length > 0 && !shown.length && <p className="home-none muted">No projects match “{query}”.</p>}
+
+          {shown.length > 0 && view === 'grid' && (
             <div className="home-grid">
-              {shownRecents.map((r) => {
-                const resume = r === latest;
-                const name = r.name || 'Untitled';
+              {shown.map((r) => {
+                const resume = r === latest, name = r.name || 'Untitled';
                 return (
                   <div key={r.slotId || r.path} className={`home-card${resume ? ' home-card-latest' : ''}`}>
-                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name}
-                      aria-label={`${resume ? 'Resume' : 'Open'} ${name}`}>
-                      <span className="home-card-thumb">
-                        <RecentThumb r={r} />
-                        {resume && <span className="home-card-latest-tag">Jump back in</span>}
-                        <span className="home-card-ratio">{r.ratio || '16:9'}</span>
-                        <span className="home-card-open-cta"><Play size={12} fill="currentColor" /> {resume ? 'Resume' : 'Open'}</span>
-                      </span>
+                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name} aria-label={`${resume ? 'Resume' : 'Open'} ${name}`}>
+                      <span className="home-card-thumb"><RecentThumb r={r} /></span>
                       <span className="home-card-body">
                         <b className="home-card-name" dir="auto">{name}</b>
-                        <span className="home-card-meta">{relDate(r.modifiedAt)}{r.slotId && !r.path ? ' · Auto-saved' : ''}</span>
+                        <span className="home-card-meta">{[r.ratio || '16:9', relDate(r.modifiedAt), r.slotId && !r.path ? 'Auto-saved' : ''].filter(Boolean).join(' · ')}</span>
                       </span>
                     </button>
-                    <button type="button" className="icon-btn home-card-x" aria-label={`Remove ${name} from recents`} title="Remove from recents"
-                      onClick={() => onRemoveRecent(r)}><X size={14} /></button>
+                    <button type="button" className="icon-btn home-card-x" aria-label={`Remove ${name}`} title="Remove" onClick={() => setRemoving(r)}><X size={13} /></button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {shown.length > 0 && view === 'list' && (
+            <div className="home-list" role="table" aria-label="Projects">
+              <div className="home-row home-row-head" role="row">
+                <span role="columnheader">Name</span><span role="columnheader">Format</span><span role="columnheader">Modified</span><span role="columnheader">Location</span><span />
+              </div>
+              {shown.map((r) => {
+                const resume = r === latest, name = r.name || 'Untitled';
+                return (
+                  <div key={r.slotId || r.path} className={`home-row home-card${resume ? ' home-card-latest' : ''}`} role="row">
+                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name} aria-label={`${resume ? 'Resume' : 'Open'} ${name}`}>
+                      <span className="home-card-thumb"><RecentThumb r={r} placeholder={16} /></span>
+                      <b className="home-card-name" dir="auto">{name}</b>
+                    </button>
+                    <span className="home-row-cell" role="cell">{r.ratio || '16:9'}</span>
+                    <span className="home-row-cell home-card-meta" role="cell">{relDate(r.modifiedAt)}</span>
+                    <span className="home-row-cell home-row-place" role="cell" title={r.path || ''}>{placeOf(r)}</span>
+                    <button type="button" className="icon-btn home-card-x" aria-label={`Remove ${name}`} title="Remove" onClick={() => setRemoving(r)}><X size={13} /></button>
                   </div>
                 );
               })}
@@ -249,7 +246,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           )}
         </section>
       </main>
-
+      {removing && <RemoveDialog project={removing} onCancel={() => setRemoving(null)} onConfirm={() => { const r = removing; setRemoving(null); onRemoveRecent(r); }} />}
     </div>
   );
 }

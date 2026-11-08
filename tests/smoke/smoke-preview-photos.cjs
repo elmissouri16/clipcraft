@@ -15,34 +15,22 @@ module.exports = async (win, app, dir) => {
   win.webContents.on('console-message', (_e, level, message) => {
     if (level >= 3 && /Uncaught|TypeError|ReferenceError/.test(message)) result.errors.push(message);
   });
-  const ready = `document.querySelectorAll('.home-frame-img').length === 5 && [...document.querySelectorAll('.home-frame-img')].every(img => img.complete && img.naturalWidth > 0)`;
   try {
     await until('!!window.__fve && !!document.querySelector(".home-frame-card")');
-    await until(ready);
-    result.homePhotos = await q(`[...document.querySelectorAll('.home-frame-img')].map(img => ({url:img.getAttribute('src'),width:img.naturalWidth,height:img.naturalHeight}))`);
-    assert.ok(result.homePhotos.every((photo) => photo.url.startsWith('./preview/') && photo.width === 640));
+    // The bundled preview photos (used by effect, mask and title previews) all decode.
     result.decodedPhotos = await q(`Promise.all(${JSON.stringify(PHOTO_IDS)}.map(id => new Promise(resolve => {
       const img = new Image(); img.onload = () => resolve({id,width:img.naturalWidth,height:img.naturalHeight});
       img.onerror = () => resolve({id,error:'Image failed to decode'}); img.src='./preview/p'+id+'.jpg';
     })))`);
     assert.ok(result.decodedPhotos.every((photo) => photo.width === 640 && photo.height === 400));
-    await q('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
-    fs.writeFileSync(path.join(dir, 'home-photos.png'), (await win.capturePage()).toPNG());
-
-    // Force a failed local image without removing the user's cached files.
-    await q(`document.querySelector('.home-frame-img').src='./preview/missing-preview-for-test.jpg'`);
-    await until(`document.querySelector('.home-frame-img').src.startsWith('data:image/jpeg') && document.querySelector('.home-frame-img').naturalWidth === 320`);
-    result.fallbackDecoded = true;
-    fs.writeFileSync(path.join(dir, 'home-fallback.png'), (await win.capturePage()).toPNG());
+    // A format on Home starts a project in that format, and Projects returns to Home.
     await q(`document.querySelector('.home-frame-card').click()`);
     await until(`!!document.querySelector('.topbar')`);
     await q(`document.querySelector('.welcome-go')?.click()`);
     assert.equal(await q('window.__fve.exportData().project.ratio'), '16:9');
     await q(`document.querySelector('button[aria-label="Projects"]').click()`);
-    await until(ready);
-    assert.ok(await q(`[...document.querySelectorAll('.home-frame-img')].every(img => img.getAttribute('src').startsWith('./preview/'))`));
+    await until(`document.querySelectorAll('.home-frame-card').length === 5`);
     result.presetNavigation = true;
-    result.photosRestoredOnReturn = true;
     result.ok = result.errors.length === 0;
   } catch (error) {
     result.ok = false; result.error = error.stack;
