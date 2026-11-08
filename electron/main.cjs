@@ -1,11 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, net, nativeImage, powerSaveBlocker, Menu, screen } = require('electron');
 
+const { scopedFetch, checkAbort, activityTimeout } = require("./system/cancel.cjs");
 app.setName('ClipCraft');
-// Videos are decoded on the CPU, not the graphics chip. On some PCs (seen with an Intel HD 530 and its 2022
-// driver) the graphics process crashed again and again while playing, and the player went black for a moment
-// each time. The player only plays H.264 / VP9 / AV1 up to 1080p (heavier files get a light preview copy), which
-// any CPU decodes easily. FVE_GPU_VIDEO=1 turns hardware decoding back on.
-if (process.env.FVE_GPU_VIDEO !== '1') app.commandLine.appendSwitch('disable-accelerated-video-decode');
+// Keep the Windows driver workaround; macOS/Linux use Chromium's normal decode
+// policy. FVE_GPU_VIDEO=0/1 explicitly disables/allows GPU video on any platform.
+if (require('./system/videoPolicy.cjs').disableGpuVideo()) app.commandLine.appendSwitch('disable-accelerated-video-decode');
 // The screen recording UI test uses Chromium's fake camera and microphone, never the real ones.
 if (process.env.FVE_SMOKE && process.env.FVE_SMOKE_MODE === 'screenrec') {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream');
@@ -14,11 +13,12 @@ if (process.env.FVE_SMOKE && process.env.FVE_SMOKE_MODE === 'screenrec') {
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { FxJobs } = require('./fxjobs.cjs');
-const { probe, runExport, exportAudio, toM4a, renderTimelineAudio, detectSilences, makeVisuals, needsProxy, makeProxy, makeQualityProxy, hasLibx265 } = require('./ffmpeg.cjs');
-const { qualityTargetSize } = require('./quality.cjs');
-const whisper = require('./whisper.cjs');
-const cloudCaptions = require('./cloudCaptions.cjs');
+const { FxJobs } = require("./export/fxjobs.cjs");
+const { probe, runExport, exportAudio, toM4a, renderTimelineAudio, detectSilences, makeVisuals, needsProxy, makeProxy, makeQualityProxy, hasLibx265, pickEncoder } = require("./media/ffmpeg.cjs");
+const { qualityTargetSize } = require("./media/quality.cjs");
+const { mediaWorkBudget } = require('./media/workBudget.cjs');
+const whisper = require("./audio/whisper.cjs");
+const cloudCaptions = require("./audio/cloudCaptions.cjs");
 
 // Whisper lived under the old app name; move it instead of downloading ~150 MB again.
 const whisperDir = () => {
@@ -38,15 +38,42 @@ const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 let win;
 let currentExport = null;
+let exportSleepBlocker = null;
+let exportBackgroundThrottle = null;
+function exportActivity(active,progress=0) {
+  if (active && exportSleepBlocker===null) exportSleepBlocker=powerSaveBlocker.start('prevent-app-suspension');
+  if (!active && exportSleepBlocker!==null) {powerSaveBlocker.stop(exportSleepBlocker);exportSleepBlocker=null;}
+  if (win && !win.isDestroyed()) {
+    if (active && exportBackgroundThrottle===null) {exportBackgroundThrottle=win.webContents.getBackgroundThrottling();win.webContents.setBackgroundThrottling(false);}
+    if (!active && exportBackgroundThrottle!==null) {win.webContents.setBackgroundThrottling(exportBackgroundThrottle);exportBackgroundThrottle=null;}
+    win.setProgressBar(active?Math.max(0,Math.min(1,Number(progress)||0)):-1);
+  }
+}
+ipcMain.handle('export:activity',(_event,state)=>exportActivity(state?.active===true,state?.progress));
+function stopExportWork(){currentExport?.cancel();fxJobs.clear();for(const stream of textStreams.values())stream.kill();}
+app.on('will-quit',()=>{exportActivity(false);stopExportWork();});
 
+// Restore the last window placement when it is still on a connected display.
+function savedBounds() {
+  const saved = !process.env.FVE_SMOKE && settings.getWindowState();
+  if (!saved || saved.x === null || saved.y === null) return saved ? { width: saved.width, height: saved.height, maximized: saved.maximized } : null;
+  const visible = screen.getAllDisplays().some(d => { const a = d.workArea; return saved.x < a.x + a.width - 80 && saved.x + saved.width > a.x + 80 && saved.y >= a.y - 20 && saved.y < a.y + a.height - 80; });
+  return visible ? saved : { width: saved.width, height: saved.height, maximized: saved.maximized };
+}
 function createWindow() {
+  const placement = savedBounds();
+  const mac = process.platform === 'darwin';
   win = new BrowserWindow({
-    width: 1400,
-    height: 860,
+    width: placement?.width || 1400,
+    height: placement?.height || 860,
+    ...(Number.isFinite(placement?.x) ? { x: placement.x, y: placement.y } : {}),
     minWidth: 1000,
     minHeight: 640,
-    backgroundColor: '#0b0d12',
+    backgroundColor: '#07070e',
     title: 'ClipCraft',
+    show: false,
+    // macOS: the window buttons sit inside ClipCraft's own top bar (one bar, not two).
+    ...(mac ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 22, y: 24 } } : {}),
     // The .ico carries 16-256 px versions, so the title bar and taskbar stay sharp on Windows.
     icon: path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     autoHideMenuBar: true,
@@ -62,7 +89,38 @@ function createWindow() {
   });
   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
   else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
-  if (!process.env.FVE_SMOKE) win.maximize();
+  // Show once painted (no blank frame), at the remembered size; first launch opens maximized.
+  let shown = false;
+  const showWindow = () => {
+    if (shown || !win || win.isDestroyed()) return; shown = true;
+    if (process.env.FVE_SMOKE) return; // UI tests show and size their own window
+    if (!placement || placement.maximized) win.maximize();
+    win.show();
+  };
+  win.once('ready-to-show', showWindow);
+  setTimeout(showWindow, 3000);
+  // A desktop app does not zoom like a web page (pinch or Ctrl+wheel).
+  win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
+  win.webContents.on('zoom-changed', () => win.webContents.setZoomFactor(1));
+  const rememberPlacement = () => {
+    if (process.env.FVE_SMOKE || !win || win.isDestroyed()) return;
+    try { settings.setWindowState({ ...win.getNormalBounds(), maximized: win.isMaximized(), fullScreen: win.isFullScreen() }); } catch {}
+  };
+  win.on('close', rememberPlacement);
+  // Native right-click menu for text fields and selected text (cut, copy, paste, spelling).
+  win.webContents.on('context-menu', (_e, params) => {
+    if (!params.isEditable && !params.selectionText) return;
+    const items = [];
+    if (params.misspelledWord) {
+      for (const word of (params.dictionarySuggestions || []).slice(0, 5)) items.push({ label: word, click: () => win.webContents.replaceMisspelling(word) });
+      if (params.dictionarySuggestions?.length) items.push({ type: 'separator' });
+    }
+    if (params.isEditable) items.push({ role: 'undo', enabled: params.editFlags.canUndo }, { role: 'redo', enabled: params.editFlags.canRedo }, { type: 'separator' },
+      { role: 'cut', enabled: params.editFlags.canCut }, { role: 'copy', enabled: params.editFlags.canCopy }, { role: 'paste', enabled: params.editFlags.canPaste },
+      { type: 'separator' }, { role: 'selectAll', enabled: params.editFlags.canSelectAll });
+    else items.push({ role: 'copy', enabled: params.editFlags.canCopy });
+    Menu.buildFromTemplate(items).popup({ window: win });
+  });
   win.on('close', (e) => {
     if (allowClose) return;
     e.preventDefault();
@@ -82,6 +140,7 @@ function createWindow() {
     reloadSoon();
   });
   win.webContents.on('render-process-gone', (_e, d) => {
+    exportActivity(false);stopExportWork();
     if (d.reason === 'clean-exit') return;
     logCrash('interface crashed', { reason: d.reason, exitCode: d.exitCode });
     recovered = true; // the interface reloads and restores the project it autosaved
@@ -100,7 +159,7 @@ function createWindow() {
     }, 4000);
   });
   if (process.env.FVE_SMOKE) {
-    win.webContents.once('did-finish-load', () => require('./smoke.cjs')(win, app, process.env.FVE_SMOKE));
+    win.webContents.once('did-finish-load', () => require("../tests/smoke/index.cjs")(win, app, process.env.FVE_SMOKE));
   }
 }
 
@@ -167,14 +226,36 @@ const visualsQueue = [];
 const visualsQueued = new Set();
 let visualsActive = 0;
 const VISUALS_CONCURRENCY = { 'low-end': 1, balanced: 2, 'high-performance': 3 };
+const visualTasks = new Map();
+const backgroundVisuals = (item, cache, emit) => {
+  if (!visualTasks.has(item.path)) {
+    const task = makeVisuals(item, cache, emit).catch(() => {}).finally(() => visualTasks.delete(item.path));
+    visualTasks.set(item.path, task);
+  }
+  // Do not occupy a proxy-preparation slot while optional visuals are deferred.
+  return Promise.resolve();
+};
+ipcMain.handle('media:foregroundWork', (_event, state) => {
+  mediaWorkBudget.setState({ playing: state?.playing === true, exporting: state?.exporting === true,
+    limit: VISUALS_CONCURRENCY[settings.getPerfMode()] || 2 });
+});
 
 function queueVisuals(items) {
   for (const it of items) {
     if (visualsQueued.has(it.path)) continue;
+    if (visualTasks.has(it.path) && !needsPreviewWork(it)) continue;
     visualsQueued.add(it.path);
     visualsQueue.push(it);
   }
   pumpVisuals();
+}
+
+function needsPreviewWork(item) {
+  if (item.type !== 'video') return false;
+  if (!item.vcodec || item.pixFmt === undefined || item.hdr === undefined) return true;
+  const quality = settings.getQuality(), scaled = quality !== 'full' && qualityTargetSize(item.width, item.height, quality);
+  if (scaled && item.proxies?.[quality] == null) return true;
+  return needsProxy(item) && !item.proxy && !item.proxyFailed && (quality === 'full' || quality === 'high' || !scaled);
 }
 
 // Thumbnails, waveforms and preview proxies. Not "cache": on Windows that is the same folder as Chromium's own
@@ -208,41 +289,18 @@ function pumpVisuals() {
 }
 
 async function processVisualItem(it) {
-    const send = (v) => { if (win && !win.isDestroyed()) win.webContents.send('media:visuals', { path: it.path, ...v }); };
-    const cache = mediaCacheDir();
-    await makeVisuals(it, cache, send).catch(() => {});
-    // Preview proxy for video the player cannot decode well (projects saved earlier lack the codec details).
-    try {
-      const info = it.pixFmt === undefined || it.hdr === undefined ? { ...it, ...(await probe(it.path)) } : it;
-      let proxyPath = it.proxy;
-      if (needsProxy(info)) {
-        if (!it.proxy || !fs.existsSync(it.proxy)) send({ optimizing: true });
-        proxyPath = await makeProxy(info, cache);
-        send({ proxy: proxyPath, optimizing: false });
-      }
-      // Playback quality below Full: the level's scaled copy (see quality.cjs). While it is missing the
-      // player falls back to smaller copies / the original; the patch swaps it in when ready. A source
-      // that already fits the level needs no copy: the level resolves to the full-quality chain itself.
-      const quality = settings.getQuality();
-      if (info.type === 'video' && quality !== 'full') {
-        const prev = it.proxies && typeof it.proxies === 'object' ? it.proxies : {};
-        if (prev[quality] == null) {
-          if (!qualityTargetSize(info.width, info.height, quality)) {
-            send({ proxies: { ...prev, [quality]: proxyPath && fs.existsSync(proxyPath) ? proxyPath : it.path } });
-          } else {
-            send({ optimizing: true });
-            try {
-              send({ proxies: { ...prev, [quality]: await makeQualityProxy(info, cache, quality) }, optimizing: false });
-            } catch {
-              send({ proxies: { ...prev, [quality]: false }, optimizing: false }); // not retried until re-import
-            }
-          }
-        }
-      }
-    } catch {
-      send({ optimizing: false });
-    }
+  const quality = settings.getQuality();
+  let latest = it;
+  try {
+    latest = await require('./media/preparePreview.cjs').preparePreview(it, quality, mediaCacheDir(),
+      patch => { if (win && !win.isDestroyed()) win.webContents.send('media:visuals', { path: it.path, ...patch }); },
+      { probe, needsProxy, makeProxy, makeQualityProxy, makeVisuals: backgroundVisuals });
+  } finally {
     visualsQueued.delete(it.path);
+    // A quality switch during an encode must not get lost behind deduplication.
+    // Completed paths travel into the next job so its metadata merge retains them.
+    if (settings.getQuality() !== quality) queueVisuals([latest]);
+  }
 }
 
 // Playback quality: the current level, the space the scaled copies take, and deleting them
@@ -274,6 +332,7 @@ ipcMain.handle('proxy:setQuality', (_e, q) => {
 ipcMain.handle('perf:getMode', () => settings.getPerfMode());
 ipcMain.handle('perf:setMode', (_e, mode) => {
   const m = settings.setPerfMode(mode);
+  mediaWorkBudget.setState({ limit: VISUALS_CONCURRENCY[m] || 2 });
   if (m === 'low-end') settings.setQuality('low');
   if (m === 'high-performance') settings.setQuality('full');
   pumpVisuals(); // a wider or narrower gate applies to the queue right away
@@ -291,11 +350,11 @@ ipcMain.handle('proxy:clear', () => {
   return { ...proxyStatus(), deleted };
 });
 
-// Adjust > Auto: a few small frames of the clip (the analysis itself runs in the renderer, src/fx/autocolor.js).
+// Adjust > Auto: a few small frames of the clip (the analysis itself runs in the renderer, src/features/effects/autocolor.js).
 ipcMain.handle('color:sample', async (_e, item, from, to) => {
   try {
     if (!item || !fs.existsSync(item.path)) return { error: 'The video file was not found.' };
-    const frames = await require('./ffmpeg.cjs').sampleFrames(item, from, to);
+    const frames = await require("./media/ffmpeg.cjs").sampleFrames(item, from, to);
     return frames.length ? { frames } : { error: 'Could not read pictures from this clip.' };
   } catch (e) {
     return { error: e.message };
@@ -337,7 +396,7 @@ ipcMain.handle('media:saveRecording', async (_e, bytes) => {
 });
 
 // ---- Your fonts: .ttf / .otf / .woff / .woff2 kept in <userData>/fonts for every project. ----
-const userFonts = require('./fonts.cjs');
+const userFonts = require('./export/fonts.cjs');
 const fontDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'fonts-test') : path.join(app.getPath('userData'), 'fonts'));
 const fontList = () => userFonts.list(fontDir()).map(({ id, name }) => ({ id, name }));
 ipcMain.handle('fonts:list', () => fontList());
@@ -371,7 +430,7 @@ ipcMain.handle('fonts:remove', (_e, id) => {
 });
 
 // ---- Favorites (sounds, videos, photos), kept across projects. UI tests use their own file. ----
-const favorites = require('./favorites.cjs');
+const favorites = require("./project/favorites.cjs");
 const favDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'favorites-test') : app.getPath('userData'));
 ipcMain.handle('favorites:list', () => favorites.list(favDir()));
 ipcMain.handle('favorites:toggle', (_e, entry) => {
@@ -383,8 +442,8 @@ ipcMain.handle('favorites:toggle', (_e, entry) => {
 });
 
 // ---- Audio library (Openverse / SFXMint / MyInstants + Soundza). Files live in <userData>/library. ----
-const library = require('./library.cjs');
-const soundza = require('./soundza.cjs');
+const library = require("./library/library.cjs");
+const soundza = require("./library/soundza.cjs");
 const libraryDir = () => path.join(app.getPath('userData'), 'library');
 // The Soundza key only ever comes from the encrypted settings. Local-fixture override for
 // tests/development (cf. CLIPCRAFT_PACK_URL): while CLIPCRAFT_SOUNDZA_URL points the client
@@ -392,17 +451,17 @@ const libraryDir = () => path.join(app.getPath('userData'), 'library');
 // OS keyring to save one into. In normal runs the environment is never consulted.
 const soundzaKey = () => settings.getServiceKey('soundza')
   || (process.env.CLIPCRAFT_SOUNDZA_URL ? process.env.CLIPCRAFT_SOUNDZA_KEY || '' : '');
-const libraryPath = (item) => (String(item?.id || '').startsWith('soundza-')
-  ? soundza.download(net.fetch, libraryDir(), item, soundzaKey())
-  : library.download(net.fetch, libraryDir(), item));
+const libraryPath = (item, fetchImpl = net.fetch) => (String(item?.id || '').startsWith('soundza-')
+  ? soundza.download(fetchImpl, libraryDir(), item, soundzaKey())
+  : library.download(fetchImpl, libraryDir(), item));
 
-ipcMain.handle('library:search', async (_e, opts) => {
+ipcMain.handle('library:search', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    return await library.search(net.fetch, opts || {});
+    return await library.search(scopedFetch(net.fetch, signal), opts || {});
   } catch (e) {
     return { error: /fetch|ENOTFOUND|ERR_INTERNET|network/i.test(e.message) ? 'No internet connection.' : e.message };
   }
-});
+}));
 ipcMain.handle('library:file', async (_e, item) => {
   try {
     return { path: await libraryPath(item) };
@@ -411,9 +470,9 @@ ipcMain.handle('library:file', async (_e, item) => {
   }
 });
 // Adds a library sound as a media item; online sounds keep their license and credit line.
-ipcMain.handle('library:add', async (_e, item) => {
+ipcMain.handle('library:add', (event, item, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    const file = await libraryPath(item);
+    const file = await libraryPath(item, scopedFetch(net.fetch, signal));
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
     const credit = {
@@ -425,7 +484,7 @@ ipcMain.handle('library:add', async (_e, item) => {
   } catch (e) {
     return { error: e.message };
   }
-});
+}));
 
 // ---- Sound effects (Soundza). The key stays in this process. ----
 ipcMain.handle('soundza:status', () => ({ hasKey: !!soundzaKey() }));
@@ -457,16 +516,12 @@ ipcMain.handle('soundza:preview', async (_e, item) => {
 
 // Project files the user picked in a Save or Open dialog: only these are written without asking (auto save).
 const projectFiles = new Set();
-// Written through a temporary file, so a crash while saving never leaves half a project.
-const writeProject = (file, json) => {
-  fs.writeFileSync(`${file}.part`, json, 'utf8');
-  fs.renameSync(`${file}.part`, file);
-};
+const persistence = new (require('./project/persistence.cjs').ProjectPersistence)();
 // Saves to the project's file, or asks where the first time (and for "Save as").
 ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
   try {
     if (file && projectFiles.has(file) && !opts.saveAs) {
-      writeProject(file, json);
+      await persistence.writeProject(file, json);
       return file;
     }
     const name = String(opts.name || 'project').replace(/[\\/:*?"<>|]+/g, '').trim() || 'project';
@@ -476,7 +531,7 @@ ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
       filters: [{ name: 'Project', extensions: ['json'] }],
     });
     if (res.canceled) return null;
-    writeProject(res.filePath, json);
+    await persistence.writeProject(res.filePath, json);
     projectFiles.add(res.filePath);
     return res.filePath;
   } catch (e) {
@@ -484,10 +539,10 @@ ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
   }
 });
 // Auto save: rewrites an already chosen project file.
-ipcMain.handle('project:autosave', (_e, file, json) => {
+ipcMain.handle('project:autosave', async (_e, file, json) => {
   if (!projectFiles.has(file)) return false;
   try {
-    writeProject(file, json);
+    await persistence.writeProject(file, json);
     return true;
   } catch {
     return false;
@@ -501,7 +556,7 @@ ipcMain.handle('project:open', async () => {
     filters: [{ name: 'Project', extensions: ['json'] }],
   });
   if (res.canceled) return null;
-  const pf = require('./projectfile.cjs');
+  const pf = require("./project/projectfile.cjs");
   const file = res.filePaths[0];
   projectFiles.add(file);
   return { file, json: await pf.refreshSizes(pf.checkGenerated(fs.readFileSync(file, 'utf8'), mediaCacheDir()), probe) };
@@ -512,7 +567,7 @@ ipcMain.handle('project:open', async () => {
 ipcMain.handle('project:openPath', async (_e, filePath) => {
   try {
     if (!filePath || !fs.existsSync(filePath)) return null;
-    const pf = require('./projectfile.cjs');
+    const pf = require("./project/projectfile.cjs");
     projectFiles.add(filePath);
     return { file: filePath, json: await pf.refreshSizes(pf.checkGenerated(fs.readFileSync(filePath, 'utf8'), mediaCacheDir()), probe) };
   } catch {
@@ -520,12 +575,12 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
   }
 });
 
-// ---- Per-project autosave slots (electron/autosave.cjs): one slot per project id under
+// ---- Per-project autosave slots (electron/project/autosave.cjs): one slot per project id under
 // <userData>/autosave, so Home is a switchboard — leaving a project (Home, another open,
 // a new project) flushes its slot, and every project the user touched is listed there.
-const autosaveStore = require('./autosave.cjs');
+const autosaveStore = require("./project/autosave.cjs");
 const autosaveDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'autosave-test') : path.join(app.getPath('userData'), 'autosave'));
-ipcMain.handle('slots:write', (_e, record) => autosaveStore.writeSlot(autosaveDir(), record));
+ipcMain.handle('slots:write', (_e, record) => persistence.writeSlot(autosaveDir(), record));
 ipcMain.handle('slots:list', () => autosaveStore.listSlots(autosaveDir()));
 ipcMain.handle('slots:forFile', (_e, filePath) => autosaveStore.slotForFile(autosaveDir(), filePath));
 ipcMain.handle('slots:read', (_e, id) => {
@@ -540,7 +595,7 @@ ipcMain.handle('slots:delete', (_e, id) => autosaveStore.deleteSlot(autosaveDir(
 // Closing the window: the interface saves the project, or asks (in its own dialog) about a project that never had
 // a file. If it does not answer (frozen), the window closes anyway after a few seconds; the next start offers the
 // autosaved copy.
-let allowClose = !!process.env.FVE_SMOKE && process.env.FVE_SMOKE_MODE !== 'autosave';
+let allowClose = !!process.env.FVE_SMOKE && !['autosave','persistence-performance'].includes(process.env.FVE_SMOKE_MODE);
 let closeTimer = null;
 const closeNow = () => {
   clearTimeout(closeTimer);
@@ -553,6 +608,25 @@ ipcMain.handle('app:closeCancel', () => clearTimeout(closeTimer));
 // Export happens in two steps: the UI renders the text layer to PNG frames (export:frame / export:blanks),
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
 const frameDirs = new Set();
+const agentExportTargets = new Map();
+const agentExportOutputs = new Map();
+
+ipcMain.handle('agent:exportBegin', (event, req = {}) => {
+  try {
+    if (currentExport || agentExportTargets.size) throw Error('Another export is already running.');
+    const key = agentRequestKey(event, req.requestId);
+    if (agentRequests.has(key)) throw Error('This assistant request is already running.');
+    const target = require('./agents/editorExport.cjs').createEditorExportTarget(req, {
+      outputDir: process.env.FVE_SMOKE || app.getPath('downloads'), cacheDir: path.join(mediaCacheDir(), 'agent-reviews'),
+    });
+    const controller = new AbortController(), destroyed = () => { controller.abort();dropFrames(target.frameDir); };
+    controller.signal.addEventListener('abort', () => stopExportWork(), { once: true });
+    event.sender.once('destroyed', destroyed);
+    agentRequests.set(key, controller);frameDirs.add(target.frameDir);
+    agentExportTargets.set(target.frameDir, { ...target, key, controller, sender: event.sender, destroyed });
+    return target;
+  } catch (error) { return { error: error.message }; }
+});
 
 ipcMain.handle('export:begin', async (_e, suggested) => {
   let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'ui-export.mp4') : null;
@@ -572,80 +646,117 @@ ipcMain.handle('export:begin', async (_e, suggested) => {
 });
 
 // Text layer: raw frames from the interface, packed by FFmpeg into <frameDir>/text.mov as they come (textstream.cjs).
-const { TextStream } = require('./textstream.cjs');
+const { TextStream } = require("./export/textstream.cjs");
+const { SparseTextStream } = require('./export/sparseText.cjs');
+const textRenderCache = new (require('./export/renderCache.cjs').RenderCache)();
+const textCacheKeys = new Map();
 const textStreams = new Map(); // frameDir -> TextStream
 const textStream = (dir) => {
   const s = textStreams.get(dir);
   if (!s) throw new Error('Unknown text layer');
   return s;
 };
-ipcMain.handle('export:textBegin', (_e, dir, width, height, fps) => {
+ipcMain.handle('export:textCached', async (_event, dir, width, height, fps, count, signature) => {
+  if (!frameDirs.has(dir)) throw new Error('Unknown frame folder');
+  const key = textRenderCache.key({signature,width,height,fps,count});
+  const file = textRenderCache.get(key);if (!file) return false;
+  try { await fs.promises.copyFile(file,path.join(dir,'text.mov'));return true; }
+  catch { return false; }
+});
+ipcMain.handle('export:textBegin', (_e, dir, width, height, fps, options) => {
   if (!frameDirs.has(dir)) throw new Error('Unknown frame folder');
   textStreams.get(dir)?.kill();
-  textStreams.set(dir, new TextStream(require('./ffmpeg.cjs').ffmpegPath, dir, width, height, fps));
+  const Stream = options?.sparse ? SparseTextStream : TextStream;
+  if (options?.cacheKey) textCacheKeys.set(dir,textRenderCache.key({signature:options.cacheKey,width,height,fps,count:options.count}));
+  textStreams.set(dir, new Stream(require("./media/ffmpeg.cjs").ffmpegPath, dir, width, height, fps));
 });
 ipcMain.handle('export:textFrame', (_e, dir, frame) => textStream(dir).add(frame));
 ipcMain.handle('export:textEnd', async (_e, dir) => {
   const s = textStream(dir);
   await s.finish();
+  await textRenderCache.put(textCacheKeys.get(dir),s.file,{immutable:true}).catch(() => {});
   return s.count;
 });
 
 const dropFrames = (dir) => {
   if (!frameDirs.has(dir)) return;
+  const owned = agentExportTargets.get(dir);
+  if (owned) {
+    agentExportTargets.delete(dir);agentRequests.delete(owned.key);
+    if (!owned.sender.isDestroyed()) owned.sender.removeListener('destroyed', owned.destroyed);
+  }
   frameDirs.delete(dir);
   textStreams.get(dir)?.kill();
   textStreams.delete(dir);
+  textCacheKeys.delete(dir);
   fs.rmSync(dir, { recursive: true, force: true });
 };
 
 ipcMain.handle('export:abort', (_e, dir) => dropFrames(dir));
 
-// Animated effects pass (see electron/fxjobs.cjs): frames go to the interface's WebGL shaders and back.
+// Animated effects pass (see electron/export/fxjobs.cjs): frames go to the interface's WebGL shaders and back.
 const fxJobs = new FxJobs();
 const fxCall = (fn) => async (...args) => {
   try {
     return { ok: true, value: await fn(...args) };
   } catch (e) {
+    logCrash('effect export failed',{message:String(e.message).slice(0,3000)});
     return { ok: false, error: e.message };
   }
 };
 ipcMain.handle('fx:begin', fxCall((_e, project, spec) => fxJobs.begin(project, spec)));
-ipcMain.handle('fx:read', fxCall((_e, id) => fxJobs.read(id)));
+ipcMain.handle('fx:read', fxCall((_e, id, count) => fxJobs.read(id, count)));
 ipcMain.handle('fx:write', fxCall((_e, id, bytes) => fxJobs.write(id, bytes)));
 ipcMain.handle('fx:end', fxCall((_e, id) => fxJobs.end(id)));
+ipcMain.handle('fx:lut', fxCall((_e, size, bytes) => fxJobs.lut(size, bytes)));
 ipcMain.handle('fx:clear', () => fxJobs.clear());
-app.on('will-quit', () => fxJobs.clear());
+app.on('will-quit', () => { fxJobs.clear();fxJobs.cache.clear();textRenderCache.clear(); });
 
 // What the bundled FFmpeg can do, for the export-quality UI (H.265 availability drives the summary's
 // stated fallback). Cached: the encoder list does not change at runtime.
 let exportCapsCache = null;
 ipcMain.handle('export:caps', async () => {
-  exportCapsCache ||= { libx265: hasLibx265() };
+  exportCapsCache ||= (async () => ({ libx265: hasLibx265(), h265Hardware: (await pickEncoder('h265')) === 'hevc_videotoolbox' }))();
   return exportCapsCache;
 });
 
-ipcMain.handle('export:run', async (_e, projectIn, target, textFrames) => {
+ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
+  let exportJob, ownsFrames = false;
   try {
+    const owned = agentExportTargets.get(target?.frameDir);
+    if ((owned || target?.requestId) && (!owned || owned.sender.id !== event.sender.id || owned.requestId !== target.requestId || owned.file !== target.file)) throw Error('This assistant export target is not valid.');
+    ownsFrames = frameDirs.has(target?.frameDir);
+    if (owned?.controller.signal.aborted) return { canceled: true };
+    if (currentExport) throw Error('Another video is already being encoded.');
     const project = fxJobs.resolve(projectIn);
+    if (owned && fs.existsSync(target.file) && project.media.some(m => m.path && fs.existsSync(m.path) && fs.realpathSync(m.path) === fs.realpathSync(target.file))) throw Error('Choose an output path different from source media.');
     const textFile = path.join(target.frameDir, 'text.mov');
     const withText = textFrames > 0 && frameDirs.has(target.frameDir) && fs.existsSync(textFile)
       ? { ...project, textOverlay: { file: textFile, count: textFrames } }
       : project;
     // Low-End mode: the export yields CPU to the rest of the PC (nice +10). Other modes
     // run at normal priority. Priority never changes the encoder settings or output.
-    currentExport = runExport(withText, target.file, (p) => win.webContents.send('export:progress', p), { nice: settings.getPerfMode() === 'low-end' ? 10 : 0 });
-    await currentExport.promise;
+    exportJob = runExport(withText, target.file, (p,detail) => {if(!win.isDestroyed())win.webContents.send('export:progress',p,detail);}, { nice: settings.getPerfMode() === 'low-end' ? 10 : 0, noOverwrite: !!owned?.noOverwrite });
+    currentExport = exportJob;
+    await exportJob.promise;
     let size = 0;
     try { size = fs.statSync(target.file).size; } catch { /* the done card shows no size */ }
-    return { ok: true, file: target.file, size };
+    let metadata;
+    if (owned) {
+      const probe = await require('./media/ffmpeg.cjs').probe(target.file);
+      if (probe.type !== 'video' || !probe.width || !(probe.duration > 0) || !size) throw Error('The rendered file could not be verified as a video.');
+      metadata = { duration_sec: probe.duration, width: probe.width, height: probe.height, fps: probe.fps, video_codec: probe.vcodec, audio_codec: probe.acodec, has_audio: probe.hasAudio };
+      agentExportOutputs.set(target.file, { owner: event.sender.id, requestId: owned.requestId, revision: owned.revision, timelineStart: owned.timelineStart || 0, metadata, fingerprint: fileFingerprint(target.file) });
+      while (agentExportOutputs.size > 64) agentExportOutputs.delete(agentExportOutputs.keys().next().value);
+    }
+    return { ok: true, file: target.file, size, ...(metadata ? { metadata } : {}) };
   } catch (e) {
-    if (currentExport?.canceled) return { canceled: true };
+    if (exportJob?.canceled) return { canceled: true };
     return { ok: false, error: e.message };
   } finally {
-    currentExport = null;
-    dropFrames(target.frameDir);
-    fxJobs.clear();
+    if (currentExport === exportJob) currentExport = null;
+    if (ownsFrames) dropFrames(target.frameDir);
+    if (exportJob) fxJobs.clear();
   }
 });
 
@@ -654,7 +765,7 @@ ipcMain.handle('export:run', async (_e, projectIn, target, textFrames) => {
 // frame). Cached per file+position; the cache keeps only the newest few grabs.
 ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
   const { execFile } = require('child_process');
-  const { ffmpegPath } = require('./ffmpeg.cjs');
+  const { ffmpegPath } = require("./media/ffmpeg.cjs");
   try {
     if (!mediaPath || !fs.existsSync(mediaPath)) return { ok: false, error: 'missing file' };
     const st = fs.statSync(mediaPath);
@@ -682,25 +793,28 @@ ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
 // Embed the chosen poster frame as the MP4's attached cover picture: grab the frame from the source
 // media, then a stream-copy remux adds it as attached_pic (the original file is only replaced once
 // the remux succeeds, so a failure leaves the export untouched).
-ipcMain.handle('export:cover', async (_e, file, mediaPath, at) => {
+ipcMain.handle('export:cover', async (event, file, mediaPath, at) => {
   const { execFile } = require('child_process');
-  const { ffmpegPath } = require('./ffmpeg.cjs');
+  const { ffmpegPath } = require("./media/ffmpeg.cjs");
   const run = (args) => new Promise((resolve, reject) => execFile(ffmpegPath, args, (e) => (e ? reject(e) : resolve())));
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-cover-'));
+  let tmp;
   try {
     if (!fs.existsSync(file) || !fs.existsSync(mediaPath)) throw new Error('missing file');
+    tmp = fs.mkdtempSync(path.join(path.dirname(file), '.clipcraft-cover-'));
     const cover = path.join(tmp, 'cover.jpg');
     await run(['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-q:v', '3', cover]);
     const out = path.join(tmp, 'with-cover.mp4');
     await run(['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-i', cover, '-map', '0', '-map', '1', '-c', 'copy', '-disposition:v:1', 'attached_pic', out]);
-    fs.copyFileSync(out, file);
+    fs.renameSync(out, file);
+    const output = agentExportOutputs.get(file);
+    if (output?.owner === event.sender.id) output.fingerprint = fileFingerprint(file);
     let size = 0;
     try { size = fs.statSync(file).size; } catch { /* ignore */ }
     return { ok: true, size };
   } catch (e) {
     return { ok: false, error: e.message };
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    if(tmp)fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
@@ -728,14 +842,19 @@ ipcMain.handle('export:audio', async (_e, project, format, name) => {
 });
 
 ipcMain.handle('export:cancel', () => {
-  if (!currentExport) return;
-  currentExport.canceled = true;
-  currentExport.cancel();
+  // Stop preprocessing too: it may be awaiting a decoder or encoder pipe.
+  stopExportWork();
 });
 // ---- Settings and AI. API keys stay in this process; the renderer only ever sees a hint like "…abcd". ----
-const settings = require('./settings.cjs');
-const ai = require('./ai.cjs');
-const localAgents = require('./localAgents.cjs');
+const settings = require("./system/settings.cjs");
+const ai = require("./agents/ai.cjs");
+const localAgents = require("./agents/localAgents.cjs");
+const agentRuntimes = require('./agents/agentRuntime.cjs').createAgentRuntimes({
+  root: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'agent-runtimes'),
+  fetchImpl: (...args) => net.fetch(...args),
+  onProgress: (progress, owner) => { const sender = require('electron').webContents.fromId(owner); if (sender && !sender.isDestroyed()) sender.send('ai:runtimeProgress', progress); },
+});
+localAgents.setRuntimeDirectory(agentRuntimes.root);
 
 // Opens a help page in the browser. Only a short allowlist of known sites is accepted.
 const HELP_HOSTS = new Set(['www.slaycamera.com', 'www.instagram.com', 'elevenlabs.io', 'try.elevenlabs.io', 'pixabay.com', 'aistudio.google.com', 'console.developers.google.com', 'console.cloud.google.com', 'ollama.com', 'console.anthropic.com', 'platform.openai.com', 'developers.openai.com', 'learn.chatgpt.com', 'code.claude.com', 'console.groq.com', 'github.com', 'hamzaabika.com', 'www.hamzaabika.com', 'paypal.me']);
@@ -751,26 +870,35 @@ ipcMain.handle('app:openHelp', (_e, url) => {
 
 ipcMain.handle('settings:get', () => settings.getPublic());
 // ---- MCP servers: external tool servers (stdio) whose tools CraftAI may call. ----
-const mcp = require('./mcp.cjs');
+const mcp = require("./agents/mcp.cjs");
 const mcpRegistry = mcp.createRegistry(() => settings.getMcpServers());
 ipcMain.handle('settings:setMcpServers', (_e, list) => settings.setMcpServers(list));
-ipcMain.handle('mcp:tools', async () => {
+ipcMain.handle('settings:setShortcuts', (_e, map) => settings.setShortcuts(map));
+ipcMain.handle('mcp:tools', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    const { decls, problems } = await mcpRegistry.declarations();
+    const { decls, problems } = await mcpRegistry.declarations({ signal });
     // The renderer/agent only needs the Gemini declaration shape; _mcp routing stays server-side.
     return { ok: true, tools: decls.map(({ _mcp, ...d }) => d), problems };
   } catch (e) {
     return { ok: false, error: e.message, tools: [], problems: [] };
   }
-});
-ipcMain.handle('mcp:call', async (_e, { name, args }) => {
+}));
+ipcMain.handle('mcp:call', (event, { name, args, requestId, revision }) => withAgentJob(event, requestId, async signal => {
   try {
-    const { result } = await mcpRegistry.call(name, args || {});
-    return { ok: true, result };
+    const { result } = await mcpRegistry.call(name, args || {}, { signal });
+    const normalized = await require("./agents/mcpResult.cjs").prepareMcpResult(result, async block => {
+      checkAbort(signal);
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(block.mimeType) || typeof block.data !== 'string' || block.data.length > 12 * 1024 * 1024) throw new Error('Unsupported or oversized MCP image.');
+      const image = nativeImage.createFromBuffer(Buffer.from(block.data, 'base64'));
+      if (image.isEmpty()) throw new Error('MCP returned an unreadable image.');
+      const size = image.getSize(), scale = Math.min(1, 1024 / Math.max(size.width, size.height));
+      return agentFrames.addExternal(event.sender.id, image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)) }).toJPEG(88), { revision, label: `Image returned by external tool ${name}` });
+    });
+    return { ok: true, result: normalized };
   } catch (e) {
     return { ok: false, error: e.message };
   }
-});
+}));
 ipcMain.handle('mcp:test', async (_e, server) => mcpRegistry.test(server));
 ipcMain.handle('settings:save', (_e, patch) => {
   try {
@@ -809,7 +937,7 @@ ipcMain.handle('settings:clearServiceKey', (_e, name) => settings.clearServiceKe
 
 // ---- About and updates: the version, and (only when the user asks in About) whether the
 // update feed on clipcrafts.pages.dev has a newer one — see updates.cjs. ----
-const updates = require('./updates.cjs');
+const updates = require("./system/updates.cjs");
 ipcMain.handle('app:version', () => app.getVersion());
 // Manual checks only (the About dialog); nothing checks automatically at startup.
 ipcMain.handle('updates:check', async () => { lastCheck = await updates.check(); return lastCheck; });
@@ -852,13 +980,13 @@ ipcMain.handle('updates:install', async () => {
 });
 
 // ---- Anonymous usage statistics: opt-in, see telemetry.cjs. ----
-const telemetry = require('./telemetry.cjs');
+const telemetry = require("./system/telemetry.cjs");
 ipcMain.handle('telemetry:status', () => telemetry.getStatus());
 ipcMain.handle('telemetry:setConsent', (_e, on) => telemetry.setConsent(on === true));
 
 // ---- Text to speech: Piper, ElevenLabs and Gemini. Keys stay in the main process. ----
-const tts = require('./tts.cjs');
-const geminiTts = require('./geminiTts.cjs');
+const tts = require("./audio/tts.cjs");
+const geminiTts = require("./audio/geminiTts.cjs");
 const ttsDir = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'tts');
 const ttsOut = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'voiceovers');
 ipcMain.handle('tts:status', () => ({ ...tts.piperStatus(ttsDir()), elevenKey: !!settings.getServiceKey('elevenlabs'),
@@ -867,13 +995,13 @@ ipcMain.handle('tts:geminiTestKey', async (_e, key) => {
   try { return await geminiTts.testKey(net.fetch, String(key || '').trim() || settings.getServiceKey('gemini-tts')); }
   catch (e) { return { ok: false, text: e.message }; }
 });
-ipcMain.handle('tts:elevenVoices', async () => {
+ipcMain.handle('tts:elevenVoices', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    return { voices: await tts.elevenVoices(net.fetch, settings.getServiceKey('elevenlabs')) };
+    return { voices: await tts.elevenVoices(scopedFetch(net.fetch, signal), settings.getServiceKey('elevenlabs')) };
   } catch (e) {
     return { error: e.message };
   }
-});
+}));
 ipcMain.handle('tts:elevenUsage', async () => {
   try {
     return { usage: await tts.elevenUsage(net.fetch, settings.getServiceKey('elevenlabs')) };
@@ -894,21 +1022,21 @@ ipcMain.handle('tts:testKey', async (_e, key) => {
   }
 });
 // Speaks the text and returns a media item (the file stays in <userData>/voiceovers).
-ipcMain.handle('tts:speak', async (_e, req) => {
+ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, async signal => {
   try {
     if (!req || !['piper', 'eleven', 'gemini'].includes(req.engine)) return { error: 'Choose a supported speech engine.' };
     const send = (stage, fraction) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction }); };
     let file;
     if (req.engine === 'gemini') {
       send('speech', 0);
-      file = await geminiTts.speak(net.fetch, settings.getServiceKey('gemini-tts'), ttsOut(), req);
+      file = await geminiTts.speak(scopedFetch(net.fetch, signal), settings.getServiceKey('gemini-tts'), ttsOut(), { ...req, signal });
     } else if (req.engine === 'eleven') {
       send('voice', 0);
-      file = await tts.elevenSpeak(net.fetch, settings.getServiceKey('elevenlabs'), ttsOut(), req);
+      file = await tts.elevenSpeak(scopedFetch(net.fetch, signal), settings.getServiceKey('elevenlabs'), ttsOut(), { ...req, signal });
     } else {
-      await tts.piperPrepare(net.fetch, ttsDir(), req.voiceId, send);
+      await tts.piperPrepare(scopedFetch(net.fetch, signal), ttsDir(), req.voiceId, send, { signal });
       send('voice', 1);
-      file = await tts.piperSpeak(ttsDir(), ttsOut(), req);
+      file = await tts.piperSpeak(ttsDir(), ttsOut(), { ...req, signal });
     }
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
@@ -922,11 +1050,11 @@ ipcMain.handle('tts:speak', async (_e, req) => {
   } catch (e) {
     return { error: e.message };
   }
-});
+}));
 
 // ---- AI video and photo generation (ElevenLabs, the user's key; the API needs a Pro plan). Files stay in
 // <userData>/generated with a small .json describing each one. ----
-const gen = require('./gen.cjs');
+const gen = require("./library/gen.cjs");
 const genDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'generated-test') : path.join(app.getPath('userData'), 'generated'));
 const genJobs = new Map(); // job id -> AbortController
 ipcMain.handle('gen:status', async () => {
@@ -944,7 +1072,7 @@ const speechFile = async (file) => {
   const out = path.join(genDir(), 'speech', `${path.basename(file, path.extname(file))}.mp3`);
   if (fs.existsSync(out)) return out;
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  await new Promise((resolve, reject) => require('child_process').execFile(require('./ffmpeg.cjs').ffmpegPath,
+  await new Promise((resolve, reject) => require('child_process').execFile(require("./media/ffmpeg.cjs").ffmpegPath,
     ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '128k', out],
     { windowsHide: true }, (e) => (e ? reject(new Error('Could not read this audio.')) : resolve())));
   return out;
@@ -972,9 +1100,9 @@ ipcMain.handle('gen:run', async (_e, jobId, kind, opts = {}) => {
 });
 ipcMain.handle('gen:stop', (_e, jobId) => genJobs.get(jobId)?.abort());
 
-// ---- Asset pack library: folder-backed (electron/assets.cjs). The folder is created on
+// ---- Asset pack library: folder-backed (electron/library/assets.cjs). The folder is created on
 // first read so the panels can name a real path in their empty state. ----
-const assets = require('./assets.cjs');
+const assets = require("./library/assets.cjs");
 ipcMain.handle('assets:list', () => {
   const root = assets.assetsRoot(app.getPath('userData'), process.env);
   assets.ensureRoot(root);
@@ -982,7 +1110,7 @@ ipcMain.handle('assets:list', () => {
 });
 
 // ---- First run: the Welcome card, shown once (flags in settings.json —
-// electron/settings.cjs). ----
+// electron/system/settings.cjs). ----
 ipcMain.handle('firstrun:get', () => settings.getFirstRun());
 ipcMain.handle('firstrun:set', (_e, patch) => settings.setFirstRun(patch));
 
@@ -1013,8 +1141,8 @@ ipcMain.handle('avatars:remove', (_e, file) => {
 });
 
 // ---- Templates: the remote store, and the package flow. ----
-const templates = require('./templates.cjs');
-const bundledTemplates = require('./bundledTemplates.cjs');
+const templates = require("./library/templates.cjs");
+const bundledTemplates = require("./library/bundledTemplates.cjs");
 const tplCache = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'templates-test') : path.join(app.getPath('userData'), 'templates'));
 const tplCall = (fn) => async (...args) => {
   try {
@@ -1028,7 +1156,7 @@ ipcMain.handle('templates:list', tplCall((_e, params) => templates.list(net.fetc
 ipcMain.handle('templates:bundledList', () => bundledTemplates.list(path.join(__dirname, '..')));
 ipcMain.handle('templates:bundledUse', tplCall(async (_e, slug) => {
   const { json } = bundledTemplates.use(path.join(__dirname, '..'), slug);
-  const pf = require('./projectfile.cjs');
+  const pf = require("./project/projectfile.cjs");
   return { json: await pf.refreshSizes(pf.checkGenerated(json, mediaCacheDir()), probe) };
 }));
 ipcMain.handle('templates:thumb', (_e, t) => templates.thumb(net.fetch, tplCache(), t));
@@ -1038,7 +1166,7 @@ ipcMain.handle('templates:use', tplCall(async (_e, id) => {
   const send = (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('templates:progress', { id, fraction }); };
   const { json } = await templates.download(net.fetch, tplCache(), id, send);
   templates.use(net.fetch, id);
-  const pf = require('./projectfile.cjs');
+  const pf = require("./project/projectfile.cjs");
   return { json: await pf.refreshSizes(pf.checkGenerated(json, mediaCacheDir()), probe) };
 }));
 // Export > Template package: asks for a folder and writes the package into a new subfolder.
@@ -1050,12 +1178,12 @@ ipcMain.handle('templates:pack', tplCall(async (_e, projectJson, meta) => {
     parent = res.filePaths[0];
   }
   fs.mkdirSync(parent, { recursive: true });
-  return templates.pack(JSON.parse(projectJson), meta, parent, { ffmpegPath: require('./ffmpeg.cjs').ffmpegPath });
+  return templates.pack(JSON.parse(projectJson), meta, parent, { ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath });
 }));
 ipcMain.handle('shell:openFolder', (_e, dir) => (fs.existsSync(dir) && fs.statSync(dir).isDirectory() ? shell.openPath(dir) : false));
 
 // ---- Stock photos and videos (Pixabay). The key stays in this process. ----
-const stock = require('./stock.cjs');
+const stock = require("./library/stock.cjs");
 // UI tests keep their (fake) downloads apart from the real library.
 const stockDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'library-test') : path.join(app.getPath('userData'), 'library'));
 // Tests a typed key (or the saved one) with a tiny search.
@@ -1068,13 +1196,13 @@ ipcMain.handle('stock:test', async (_e, key) => {
     return { ok: false, text: e.message };
   }
 });
-ipcMain.handle('stock:search', async (_e, opts) => {
+ipcMain.handle('stock:search', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    return await stock.search(net.fetch, settings.getServiceKey('pixabay'), opts || {});
+    return await stock.search(scopedFetch(net.fetch, signal), settings.getServiceKey('pixabay'), opts || {});
   } catch (e) {
     return { error: e.message };
   }
-});
+}));
 ipcMain.handle('stock:thumb', async (_e, url) => {
   try {
     return { path: await stock.thumbnail(net.fetch, stockDir(), url) };
@@ -1082,42 +1210,10 @@ ipcMain.handle('stock:thumb', async (_e, url) => {
     return { error: e.message };
   }
 });
-// AI background removal (Remove BG > Auto removal): the model is downloaded once, then each video gets a matte
-// (electron/matting.cjs), one job at a time. Progress goes to the interface as matting:progress.
-const matting = require('./matting.cjs');
-const mattingDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'matting-test') : path.join(app.getPath('userData'), 'matting'));
-const matteCache = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'mattes-test') : path.join(app.getPath('userData'), 'mattes'));
-let mattingJob = null; // { path, canceled }
-ipcMain.handle('matting:status', () => matting.status(mattingDir()));
-ipcMain.handle('matting:run', async (_e, item) => {
-  if (mattingJob) return { error: 'Another video is being processed. Wait for it to finish.' };
-  if (!item || !item.path || !fs.existsSync(item.path)) return { error: 'The video file was not found.' };
-  const job = { path: item.path, canceled: false };
-  mattingJob = job;
-  const send = (stage, fraction) => { if (win && !win.isDestroyed()) win.webContents.send('matting:progress', { path: item.path, stage, fraction }); };
-  try {
-    if (!matting.status(mattingDir()).installed) {
-      send('download', 0);
-      await matting.install(mattingDir(), (f) => send('download', f), net.fetch);
-    }
-    send('matte', 0);
-    const { ffmpegPath, toSdr } = require('./ffmpeg.cjs');
-    const file = await matting.makeMatte(item, {
-      dir: mattingDir(), cacheDir: matteCache(), ffmpegPath, toSdr, onProgress: (f) => send('matte', f), isCanceled: () => job.canceled,
-    });
-    return { matte: file };
-  } catch (e) {
-    return e.canceled ? { canceled: true } : { error: e.message };
-  } finally {
-    mattingJob = null;
-  }
-});
-ipcMain.handle('matting:cancel', () => { if (mattingJob) mattingJob.canceled = true; });
-
 // Background pictures for scenes without footage (CraftAI's add_scene), kept with the library downloads.
 ipcMain.handle('scene:make', async (_e, opts) => {
   try {
-    const file = await require('./ffmpeg.cjs').makeScene(opts || {}, path.join(stockDir(), 'scenes'));
+    const file = await require("./media/ffmpeg.cjs").makeScene(opts || {}, path.join(stockDir(), 'scenes'));
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
     const o = opts || {};
@@ -1127,8 +1223,8 @@ ipcMain.handle('scene:make', async (_e, opts) => {
   }
 });
 
-// Stabilization (vid.stab, electron/stabilize.cjs): one clip at a time; the stabilized copy comes back as a media item.
-const { stabilize } = require('./stabilize.cjs');
+// Stabilization (vid.stab, electron/media/stabilize.cjs): one clip at a time; the stabilized copy comes back as a media item.
+const { stabilize } = require("./media/stabilize.cjs");
 let stabJob = null;
 ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
   if (stabJob) return { error: 'Another clip is being stabilized.' };
@@ -1137,7 +1233,7 @@ ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
   stabJob = job;
   try {
     const out = await stabilize(item, {
-      from, to, level, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath, toSdr: require('./ffmpeg.cjs').toSdr,
+      from, to, level, cacheDir: mediaCacheDir(), ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath, toSdr: require("./media/ffmpeg.cjs").toSdr,
       isCanceled: () => job.canceled,
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('stabilize:progress', { path: item.path, fraction }); },
     });
@@ -1152,9 +1248,9 @@ ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
 });
 ipcMain.handle('stabilize:cancel', () => { if (stabJob) stabJob.canceled = true; });
 
-// Motion tracking (electron/track.cjs): one job at a time; the path comes back to the renderer, which
+// Motion tracking (electron/media/track.cjs): one job at a time; the path comes back to the renderer, which
 // stores it on the clip. The render is cached by file, range, pick and box, like the other derivatives.
-const { trackMotion } = require('./track.cjs');
+const { trackMotion } = require("./media/track.cjs");
 let trackJob = null;
 ipcMain.handle('track:run', async (_e, item, from, to, pick, box) => {
   if (trackJob) return { error: 'Another clip is being tracked.' };
@@ -1164,7 +1260,7 @@ ipcMain.handle('track:run', async (_e, item, from, to, pick, box) => {
   trackJob = job;
   try {
     const res = await trackMotion(item, {
-      from, to, pick, box: box || { w: 0.055, h: 0.095 }, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath,
+      from, to, pick, box: box || { w: 0.055, h: 0.095 }, cacheDir: mediaCacheDir(), ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath,
       isCanceled: () => job.canceled,
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('track:progress', { path: item.path, fraction }); },
     });
@@ -1178,7 +1274,7 @@ ipcMain.handle('track:run', async (_e, item, from, to, pick, box) => {
 ipcMain.handle('track:cancel', () => { if (trackJob) trackJob.canceled = true; });
 
 // Reverse (context menu, item 12): same one-job-at-a-time derivative-render pattern.
-const { reverse } = require('./reverse.cjs');
+const { reverse } = require("./media/reverse.cjs");
 let revJob = null;
 ipcMain.handle('reverse:run', async (_e, item, from, to) => {
   if (revJob) return { error: 'Another clip is being reversed.' };
@@ -1187,7 +1283,7 @@ ipcMain.handle('reverse:run', async (_e, item, from, to) => {
   revJob = job;
   try {
     const out = await reverse(item, {
-      from, to, hasVideo: item.type !== 'audio', cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath, toSdr: require('./ffmpeg.cjs').toSdr,
+      from, to, hasVideo: item.type !== 'audio', cacheDir: mediaCacheDir(), ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath, toSdr: require("./media/ffmpeg.cjs").toSdr,
       isCanceled: () => job.canceled,
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('reverse:progress', { path: item.path, fraction }); },
     });
@@ -1204,7 +1300,7 @@ ipcMain.handle('reverse:cancel', () => { if (revJob) revJob.canceled = true; });
 
 // Detach audio (clip menu): render a video clip's sound into its own audio file, cached
 // like the reverse renders. The project then holds it as a linked audio clip.
-const { detach } = require('./detach.cjs');
+const { detach } = require("./media/detach.cjs");
 let detachJob = null;
 ipcMain.handle('detach:run', async (_e, item, from, to) => {
   if (detachJob) return { error: 'Another clip is being detached.' };
@@ -1213,7 +1309,7 @@ ipcMain.handle('detach:run', async (_e, item, from, to) => {
   detachJob = job;
   try {
     const out = await detach(item, {
-      from, to, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath,
+      from, to, cacheDir: mediaCacheDir(), ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath,
       isCanceled: () => job.canceled,
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('detach:progress', { path: item.path, fraction }); },
     });
@@ -1228,9 +1324,9 @@ ipcMain.handle('detach:run', async (_e, item, from, to) => {
 });
 ipcMain.handle('detach:cancel', () => { if (detachJob) detachJob.canceled = true; });
 
-// Voice Enhancer (clip Audio tab): render the clip's sound cleaned (electron/enhance.cjs,
+// Voice Enhancer (clip Audio tab): render the clip's sound cleaned (electron/media/enhance.cjs,
 // cached like the detach renders). The clip then plays / exports the enhanced file.
-const { enhance } = require('./enhance.cjs');
+const { enhance } = require("./media/enhance.cjs");
 let enhanceJob = null;
 ipcMain.handle('enhance:run', async (_e, item, from, to, strength) => {
   if (enhanceJob) return { error: 'Another clip is being enhanced.' };
@@ -1239,7 +1335,7 @@ ipcMain.handle('enhance:run', async (_e, item, from, to, strength) => {
   enhanceJob = job;
   try {
     const res = await enhance(item, {
-      from, to, strength, cacheDir: mediaCacheDir(), ffmpegPath: require('./ffmpeg.cjs').ffmpegPath,
+      from, to, strength, cacheDir: mediaCacheDir(), ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath,
       isCanceled: () => job.canceled,
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('enhance:progress', { path: item.path, fraction }); },
     });
@@ -1256,7 +1352,7 @@ ipcMain.handle('enhance:cancel', () => { if (enhanceJob) enhanceJob.canceled = t
 // project can hold. Cached by file + time; the file lands in the media cache like other stills.
 ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
   const { execFile } = require('child_process');
-  const { ffmpegPath } = require('./ffmpeg.cjs');
+  const { ffmpegPath } = require("./media/ffmpeg.cjs");
   try {
     if (!fs.existsSync(mediaPath)) return { error: 'The media file was not found.' };
     const st = fs.statSync(mediaPath);
@@ -1275,9 +1371,9 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
   }
 });
 
-ipcMain.handle('stock:add', async (_e, item) => {
+ipcMain.handle('stock:add', (event, item, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    const file = await stock.download(net.fetch, stockDir(), item);
+    const file = await stock.download(scopedFetch(net.fetch, signal), stockDir(), item);
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
     const name = `${(item.tags || 'pixabay').split(',')[0].trim() || 'pixabay'} ${item.id}.${path.extname(file).slice(1)}`;
@@ -1285,15 +1381,27 @@ ipcMain.handle('stock:add', async (_e, item) => {
   } catch (e) {
     return { error: e.message };
   }
-});
+}));
 // Tests the typed (not yet saved) values when given, otherwise the saved configuration.
 const draftConfig = (draft = {}) => {
   return ai.resolveDraft(settings.getActive(draft.provider), draft);
 };
 ipcMain.handle('ai:test', (_e, draft) => ai.testConnection(draftConfig(draft)));
-ipcMain.handle('ai:models', (_e, draft) => ai.listModels(draftConfig(draft)));
+ipcMain.handle('ai:models', (_e, draft) => ai.listModels(draftConfig(draft),{refresh:!!draft?.refresh}));
 ipcMain.handle('ai:modelCapabilities', (_e, draft) => ai.modelCapabilities(draftConfig(draft), { refresh: !!draft?.refresh }));
-ipcMain.handle('ai:sdkStatus', (_e, draft) => localAgents.status(draftConfig(draft)));
+ipcMain.handle('ai:sdkStatus', async (_e, draft) => {
+  const cfg = draftConfig(draft);
+  return { ...await localAgents.status(cfg), runtime: agentRuntimes.describe(cfg.provider) };
+});
+ipcMain.handle('ai:runtimeInstall', async (event, provider) => {
+  if (!localAgents.isProvider(provider)) return { ok:false, error:'Unknown agent provider.' };
+  const owner = event.sender.id;
+  const gone = () => agentRuntimes.cancelOwner(owner);
+  event.sender.once('destroyed', gone);
+  try { return await agentRuntimes.install(provider, owner); }
+  finally { if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', gone); }
+});
+ipcMain.handle('ai:runtimeCancel', (event, provider) => { if (localAgents.isProvider(provider)) agentRuntimes.cancel(provider, event.sender.id); });
 ipcMain.handle('ai:pickExecutable', async (_e, provider) => {
   if (!localAgents.isProvider(provider)) return null;
   const res = await dialog.showOpenDialog(win, { title: `Choose the installed ${localAgents.PROVIDERS[provider].cli} executable`, properties: ['openFile'] });
@@ -1330,6 +1438,8 @@ ipcMain.handle('lut:import', async () => {
 // If the provider fails, the step goes to the next one with a saved key (Gemini, Groq, OpenAI-compatible).
 // req.provider: the provider that answered the previous step of this request, so a run stays on it.
 const agentRequests = new Map();
+const nativeRuns = new Map();
+const nativeOwners = new Set();
 const frameRenderJobs = new Map();
 ipcMain.handle('agent:frameJob',event=>{
   const job=frameRenderJobs.get(event.sender.id);
@@ -1344,7 +1454,7 @@ ipcMain.handle('agent:frameReady',(event,error)=>{
 async function captureTimelineFrame(plan,signal){
   if(signal?.aborted)throw Object.assign(new Error('Frame inspection stopped.'),{name:'AbortError'});
   const renderer=new BrowserWindow({width:plan.width,height:plan.height,useContentSize:true,show:false,frame:false,
-    webPreferences:{preload:path.join(__dirname,'framePreload.cjs'),contextIsolation:true,nodeIntegration:false,
+    webPreferences:{preload:path.join(__dirname,"./agents/framePreload.cjs"),contextIsolation:true,nodeIntegration:false,
       webSecurity:!process.env.VITE_DEV_SERVER_URL,offscreen:true,backgroundThrottling:false}});
   const id=renderer.webContents.id;
   let timer,abort;
@@ -1369,13 +1479,40 @@ async function captureTimelineFrame(plan,signal){
     if(!renderer.isDestroyed())renderer.destroy();
   }
 }
-const {AgentFrames}=require('./agentFrames.cjs');
+const {AgentFrames}=require("./agents/agentFrames.cjs");
 const agentFrames=new AgentFrames(captureTimelineFrame);
+const { ChatImages, EXTENSIONS: CHAT_IMAGE_EXTENSIONS } = require('./agents/chatImages.cjs');
+const chatImages = new ChatImages(path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'chat-images'), { nativeImage, BrowserWindow });
+ipcMain.handle('agent:attachImages', async (event, items) => {
+  const controller = new AbortController(), stop = () => controller.abort();
+  event.sender.once('destroyed', stop);
+  try {
+    if (items == null) {
+      const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+        title: 'Attach images to CraftAI', properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Images', extensions: CHAT_IMAGE_EXTENSIONS }, { name: 'All files', extensions: ['*'] }],
+      });
+      if (result.canceled) return { images: [], errors: [] };
+      items = result.filePaths.map(file => ({ path: file }));
+    }
+    return await chatImages.add(items, controller.signal);
+  } catch (error) { return { images: [], errors: [{ name: '', error: error.message }] }; }
+  finally { if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', stop); }
+});
+ipcMain.handle('agent:imagePreview', async (_event, id) => { try { return { url: await chatImages.preview(id) }; } catch (error) { return { error: error.message }; } });
+ipcMain.handle('agent:validateImages', async (_event, ids) => { try { await chatImages.validate(ids); return { ok: true }; } catch (error) { return { error: error.message }; } });
 const agentRequestKey = (event, id) => `${event.sender.id}:${String(id || 'legacy').slice(0, 100)}`;
 ipcMain.handle('agent:cancel', (event, requestId) => {
-  agentRequests.get(agentRequestKey(event, requestId))?.abort();
+  const key = agentRequestKey(event, requestId);
+  nativeRuns.get(key)?.controller.abort();
+  agentRequests.get(key)?.abort();
 });
-app.on('before-quit', () => { for (const controller of agentRequests.values()) controller.abort(); agentFrames.dispose(); });
+app.on('before-quit', () => { agentRuntimes.close(); for (const job of nativeRuns.values()) job.controller.abort(); for (const controller of agentRequests.values()) controller.abort(); localAgents.closeNativeSessions(); agentFrames.dispose(); });
+// Tile 2–6 already captured frames into one numbered contact sheet (see agentFrames.cjs).
+ipcMain.handle('agent:frameSheet',async(event,req={})=>{
+  try{return await agentFrames.sheet(event.sender.id,req.frame_ids,{revision:req.revision});}
+  catch(error){return {error:error.message};}
+});
 ipcMain.handle('agent:inspectFrames',async(event,req)=>{
   const key=agentRequestKey(event,req?.requestId);
   if(agentRequests.has(key))return {error:'This assistant request is already running.'};
@@ -1386,7 +1523,7 @@ ipcMain.handle('agent:inspectFrames',async(event,req)=>{
   catch(error){return {error:error.message,...(controller.signal.aborted?{canceled:true}:{})};}
   finally{agentRequests.delete(key);if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',onDestroyed);}
 });
-const { MediaAnalysis, fileFingerprint } = require('./mediaAnalysis.cjs');
+const { MediaAnalysis, fileFingerprint } = require("./media/mediaAnalysis.cjs");
 const sceneAnalysis = new MediaAnalysis(path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'scene-analysis'));
 ipcMain.handle('agent:analyzeScenes', async(event,req)=>{
   const key=agentRequestKey(event,req?.requestId);
@@ -1401,7 +1538,7 @@ ipcMain.handle('agent:analyzeScenes', async(event,req)=>{
       const index=await sceneAnalysis.analyze(media,req.options,controller.signal);analyses.push({media_id:id,...index});
     }
     let audio_key;
-    if(req.audio_selection)try{audio_key=require('./ffmpeg.cjs').audioAnalysisKey(req.project,req.audio_selection);}catch{}
+    if(req.audio_selection)try{audio_key=require("./media/ffmpeg.cjs").audioAnalysisKey(req.project,req.audio_selection);}catch{}
     return {analyses,audio_key};
   }catch(error){return {error:error.message,...(controller.signal.aborted?{canceled:true}:{})};}
   finally{agentRequests.delete(key);if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',destroyed);}
@@ -1425,18 +1562,21 @@ ipcMain.handle('agent:step', async (event, req) => {
   const onDestroyed = () => controller.abort();
   event.sender.once('destroyed', onDestroyed);
   try {
-    const fb = require('./aifallback.cjs');
+    const fb = require("./agents/aifallback.cjs");
     const active = settings.getActive();
     const first = fb.TOOL_PROVIDERS.includes(req.provider) || localAgents.isProvider(req.provider) ? req.provider : active.provider;
+    if (localAgents.isProvider(first)) throw new Error('SDK editing now uses native tools. Restart ClipCraft to load the updated editor.');
     const keys = settings.getPublic().keys || {};
     const order = fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
     // SDK choices are explicit: never silently send their conversations to an API
     // provider (or launch a local SDK as an API provider's fallback).
     const images=agentFrames.images(event.sender.id,req.frameIds||[]);
+    await chatImages.validate(req.chatImageIds || []);
+    const contents = await chatImages.hydrate(req.contents);
     const onSearch = search => {
       if (!event.sender.isDestroyed()) event.sender.send('agent:search', { ...search, requestId: req.requestId });
     };
-    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, images, onSearch, signal: controller.signal }));
+    const { result, provider, failed } = await fb.withFallback(order, (p) => settings.getActive(p), (cfg) => ai.agentStep(cfg, { ...req, contents, images, onSearch, signal: controller.signal }));
     agentFrames.markPresented(event.sender.id,req.frameIds,req.requestId,provider,settings.getActive(provider).model);
     return {
       ok: true, ...result, provider, model: settings.getActive(provider).model,
@@ -1450,6 +1590,99 @@ ipcMain.handle('agent:step', async (event, req) => {
     if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
   }
 });
+// Native SDK tasks keep their provider loop in the main process. Editor tools
+// are routed back to exactly the renderer/request that owns the transaction.
+ipcMain.handle('agent:nativeToolResult', (event, req) => {
+  const job = nativeRuns.get(agentRequestKey(event, req?.requestId));
+  const pending = job?.pending.get(req?.callId);
+  if (!pending || job.controller.signal.aborted) return false;
+  job.pending.delete(req.callId); job.lifetime.touch(); pending.resolve(req.result); return true;
+});
+ipcMain.handle('agent:runNative', async (event, req) => {
+  const key = agentRequestKey(event, req?.requestId);
+  if (nativeRuns.has(key) || agentRequests.has(key)) return { ok:false, error:'This assistant request is already running.' };
+  if (!localAgents.isProvider(req?.provider) || typeof req.requestId !== 'string' || !req.requestId || typeof req.sessionKey !== 'string' || !req.sessionKey || !Array.isArray(req.tools) || req.tools.length > 120) return { ok:false, error:'Invalid native editor request.' };
+  const job = { controller:new AbortController(), pending:new Map(), calls:0 };
+  nativeRuns.set(key, job);
+  const stop = () => job.controller.abort();
+  event.sender.once('destroyed', stop);
+  const ownerId = event.sender.id;
+  if (!nativeOwners.has(ownerId)) {
+    nativeOwners.add(ownerId);
+    event.sender.once('destroyed', () => { nativeOwners.delete(ownerId); localAgents.closeNativeOwner(`${ownerId}:`); });
+  }
+  job.lifetime = activityTimeout(() => {
+    job.failure = { code:'edit_timeout', error:'The assistant made no tool progress for 30 minutes. Completed edits were kept. Continue from the current timeline.' };
+    stop();
+  }, 30 * 60 * 1000);
+  const onAbort = () => {
+    agentRequests.get(key)?.abort();
+    for (const pending of job.pending.values()) pending.reject(Object.assign(new Error('Stopped.'), {name:'AbortError'}));
+    job.pending.clear();
+    if (!event.sender.isDestroyed()) event.sender.send('agent:nativeStop', {requestId:req.requestId, ...(job.failure ? {error:job.failure} : {})});
+  };
+  job.controller.signal.addEventListener('abort', onAbort, {once:true});
+  const invoke = (name,args) => {
+    checkAbort(job.controller.signal);
+    job.lifetime.touch();
+    if (event.sender.isDestroyed()) throw new Error('The editor window closed.');
+    if (++job.calls > 240) { job.failure = {code:'edit_limit',error:'The assistant reached its tool-call limit. Completed edits were kept. Continue from the current timeline.'}; job.controller.abort(); throw new Error(job.failure.error); }
+    const callId = require('node:crypto').randomUUID();
+    return new Promise((resolve,reject) => {
+      job.pending.set(callId,{resolve,reject});
+      event.sender.send('agent:nativeTool',{requestId:req.requestId,callId,name,args});
+    });
+  };
+  try {
+    const {validateToolCall} = await import('../shared/toolArguments.mjs');
+    const aliases = new Map();
+    const tools = req.tools.map(tool => {
+      const schema = ai.toJsonSchema(tool.parameters || {type:'object'});
+      const name = /^[A-Za-z0-9_-]{1,64}$/.test(tool.name) ? tool.name : `${String(tool.name).replace(/[^A-Za-z0-9_-]/g,'_').slice(0,48)}_${require('node:crypto').createHash('sha256').update(String(tool.name)).digest('hex').slice(0,8)}`;
+      if (aliases.has(name)) throw new Error('Two native tools have the same name. Rename the configured external tools.');
+      aliases.set(name,tool.name);
+      return {name,description:tool.description || '',parameters:{...schema,properties:{...schema.properties,retry_of:{type:'string'}}}};
+    });
+    const cfg = settings.getActive(req.provider);
+    job.cfg = cfg;
+    const attached = await chatImages.native(req.prompt, req.history, req.chatImageIds || []);
+    const result = await localAgents.runEditorNative(cfg, {
+      sessionKey:`${event.sender.id}:${req.sessionKey}`, tools, system:req.system, ...attached,
+      signal:job.controller.signal,
+      onSearch:search=>{if(!event.sender.isDestroyed())event.sender.send('agent:nativeProgress',{requestId:req.requestId,event:{type:'tool',id:`native-web-${search.id}`,name:'web_search',label:search.query?`Searching web: ${search.query}`:'Searching the web',status:search.status}});},
+      onTool:async(name,args)=>{
+        const error = validateToolCall({name,args},tools);
+        if(error)return {isError:true,content:[{type:'text',text:error}]};
+        const result = await invoke(aliases.get(name),args);
+        checkAbort(job.controller.signal);
+        // A contact sheet replaces its cells as the one image sent for overview checks.
+        const ids = ['inspect_frames','get_storyboard','review_section','export_video','complete_edit'].includes(aliases.get(name)) ? (result.sheet_id ? [result.sheet_id] : result.frames?.map(frame=>frame.id)) : result.host_frames?.map(frame=>frame.id);
+        const images = agentFrames.images(event.sender.id,ids || []);
+        const content = [{type:'text',text:JSON.stringify(result)}];
+        for (const image of require("./agents/agentImages.cjs").readImages(images)) content.push({type:'text',text:image.label},{type:'image',mimeType:'image/jpeg',data:image.data});
+        agentFrames.markPresented(event.sender.id,ids,req.requestId,cfg.provider,cfg.model);
+        return {isError:!!result.error,content};
+      },
+      isComplete:async()=>!!(await invoke('__native_status',{})).ready,
+    });
+    checkAbort(job.controller.signal);
+    return {ok:true,...result,provider:cfg.provider,model:cfg.model};
+  } catch(error) {
+    if(job.failure)return {ok:false,...job.failure};
+    if(job.controller.signal.aborted || error.name === 'AbortError')return {ok:false,canceled:true};
+    return {ok:false,error:error.message};
+  } finally {
+    job.lifetime.dispose();
+    // Provider failure/cleanup is not a user pressing Stop. Preserve the error
+    // response while canceling any unfinished editor jobs.
+    job.controller.signal.removeEventListener('abort',onAbort);
+    if (job.pending.size || agentRequests.has(key)) { agentRequests.get(key)?.abort(); job.controller.abort(); }
+    nativeRuns.delete(key);
+    for(const pending of job.pending.values())pending.reject(new Error('The native task ended.'));
+    job.pending.clear();
+    if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',stop);
+  }
+});
 ipcMain.handle('agent:openSource', async (_event, value) => {
   const { webSourceUrl } = await import('../shared/webSource.mjs');
   const url = webSourceUrl(value);
@@ -1457,8 +1690,8 @@ ipcMain.handle('agent:openSource', async (_event, value) => {
   await shell.openExternal(url);
   return { ok: true };
 });
-const { runImageJobs } = require('./imageJobs.cjs');
-const { fitImageFrame, validateImageFrame } = require('./imageFrame.cjs');
+const { runImageJobs } = require("./agents/imageJobs.cjs");
+const { fitImageFrame, validateImageFrame } = require("./media/imageFrame.cjs");
 async function generateSceneImage(cfg, req, signal) {
   if (!req || !/^\d{1,4}:\d{1,4}$/.test(req.ratio || '')) return { error: 'Provide the project aspect ratio for the scene image.' };
   validateImageFrame(req.width, req.height);
@@ -1479,20 +1712,35 @@ async function generateSceneImage(cfg, req, signal) {
 function registerImageHandler(channel, batch = false) {
   ipcMain.handle(channel, async (event, req) => {
     const key = agentRequestKey(event, req?.requestId);
+    if (nativeRuns.get(key)?.controller.signal.aborted) return { canceled:true, error:'Image generation stopped.' };
     if (agentRequests.has(key)) return { error: 'This assistant request is already running.' };
     const controller = new AbortController();
     agentRequests.set(key, controller);
     const onDestroyed = () => controller.abort();
     event.sender.once('destroyed', onDestroyed);
+    const started = Date.now();
+    let latest = { completed:0, failed:0, active:0, total:batch ? req?.scenes?.length || 0 : 1 };
+    const progress = value => {
+      const { result, ...summary } = value;
+      latest = summary;
+      if (!controller.signal.aborted && !event.sender.isDestroyed()) event.sender.send('agent:imageProgress', {
+        requestId:req?.requestId, batchId:req?.batchId, ...summary, elapsed_sec:Math.floor((Date.now()-started)/1000), ...(result ? { result } : {}),
+      });
+    };
+    const heartbeat = setInterval(() => progress(latest), 1000);
     try {
-      const cfg = settings.getActive();
+      const cfg = nativeRuns.get(key)?.cfg || settings.getActive();
       if (cfg.provider !== 'codex-sdk') return { error: 'Choose Codex SDK in Settings to generate images with its installed imagegen skill.' };
-      if (batch) return { results: await runImageJobs(req?.scenes, scene => generateSceneImage(cfg, scene, controller.signal), controller.signal) };
-      return await generateSceneImage(cfg, req, controller.signal);
+      if (batch) return { results: await runImageJobs(req?.scenes, scene => generateSceneImage(cfg, scene, controller.signal), controller.signal, progress) };
+      progress({ ...latest, index:0, status:'running', active:1 });
+      const result = await generateSceneImage(cfg, req, controller.signal);
+      progress({ ...latest, index:0, status:result.error?'error':'done', completed:1, failed:result.error?1:0, active:0 });
+      return result;
     } catch (e) {
       if (controller.signal.aborted || e.name === 'AbortError') return { canceled: true, error: 'Image generation stopped.' };
       return { error: e.message };
     } finally {
+      clearInterval(heartbeat);
       agentRequests.delete(key);
       if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onDestroyed);
     }
@@ -1502,31 +1750,73 @@ registerImageHandler('agent:generateImage');
 registerImageHandler('agent:generateImages', true);
 // All editor analysis jobs share the request's cancellation owner, including
 // FFmpeg decoding, downloads, Whisper inference and cloud transcription.
-async function withAudioAnalysis(event, requestId, run) {
-  const key = agentRequestKey(event, requestId || `audio-${require('crypto').randomUUID()}`);
+async function withAgentJob(event, requestId, run) {
+  const key = agentRequestKey(event, requestId || `job-${require('crypto').randomUUID()}`);
+  if (nativeRuns.get(key)?.controller.signal.aborted) return {ok:false,canceled:true,error:'Editing stopped.'};
   if (agentRequests.has(key)) return { ok: false, error: 'This assistant request is already running.' };
   const controller = new AbortController(); agentRequests.set(key, controller);
   const destroyed = () => controller.abort(); event.sender.once('destroyed', destroyed);
-  try { return await run(controller.signal); }
+  try { const result = await run(controller.signal); checkAbort(controller.signal); return result; }
   catch (error) {
-    return { ok: false, error: controller.signal.aborted ? 'Audio analysis stopped.' : error.message,
+    return { ok: false, error: controller.signal.aborted ? 'Assistant job stopped.' : error.message,
       ...(controller.signal.aborted || error.name === 'AbortError' ? { canceled: true } : {}) };
   } finally {
     agentRequests.delete(key);
     if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', destroyed);
   }
 }
-ipcMain.handle('agent:silences', (event, project, opts = {}) => withAudioAnalysis(event, opts.requestId,
-  async signal => ({ ok: true, silences: await detectSilences(project, { ...opts, signal }) })));
+ipcMain.handle('agent:silences', (event, project, opts = {}) => withAgentJob(event, opts.requestId,
+  async signal => ({ ok: true, silences: await detectSilences(project, { ...opts, signal }),
+    audible: require('./media/ffmpeg.cjs').audibleIntervals(project, { source: opts.source || 'all', clip_ids: opts.clip_ids }) })));
+// Beat grid and loudness of the rendered timeline mix (or selected sources), timeline seconds.
+const rhythm = () => require('./audio/rhythm.cjs').createRhythmService({ renderAudio: renderTimelineAudio, ffmpegPath: require('./media/ffmpeg.cjs').ffmpegPath });
+ipcMain.handle('agent:beats', (event, project, opts = {}) => withAgentJob(event, opts.requestId, signal => rhythm().beats(project, { ...opts, signal })));
+ipcMain.handle('agent:refineCuts', (event, project, opts = {}) => withAgentJob(event, opts.requestId, signal => require('./audio/speechCuts.cjs').refineCuts(project,
+  { spans: opts.spans, source: opts.source, clip_ids: opts.clip_ids, signal, renderAudio: renderTimelineAudio, ffmpegPath: require('./media/ffmpeg.cjs').ffmpegPath,
+    // Each candidate sound is recognized on its own to confirm it is a hesitation.
+    verify: (files, jobSignal) => whisper.transcribeClips(whisperDir(), files, { language: opts.language && opts.language !== 'auto' ? opts.language : 'en', signal: jobSignal }) })));
+ipcMain.handle('agent:loudness', (event, project, opts = {}) => withAgentJob(event, opts.requestId, signal => rhythm().loudness(project, { ...opts, signal })));
+ipcMain.handle('agent:mediaJob', (event, req = {}) => withAgentJob(event, req.requestId, signal => {
+  if (req.action === 'track') {
+    const frames = agentFrames.evidence(event.sender.id, req.frame_ids, req.requestId);
+    if (frames.some(f => f.presentedVia)) throw Error('Tracking needs the starting frame inspected on its own (inspect_frames source clip), not a contact-sheet cell.');
+    if (frames.length !== 1 || frames.some(f => f.source === 'timeline' || f.media_id !== req.item?.id || f.fingerprint !== fileFingerprint(req.item.path)
+      || Math.abs(f.source_time_sec - req.from) > .05)) throw Error('Inspect and present the raw source at this clip’s starting frame in the current request before tracking.');
+  }
+  return require('./agents/editorMedia.cjs').runEditorMediaJob(req, { signal, cacheDir: mediaCacheDir(), probeAll });
+}));
+ipcMain.handle('agent:fileJob', (event, req = {}) => withAgentJob(event, req.requestId, signal =>
+  require('./agents/editorFiles.cjs').runEditorFileJob(req, { signal, probeAll, outputDir: app.getPath('downloads'),
+    choosePaths: async pick => {
+      const result = await dialog.showOpenDialog(win, { title: pick === 'folder' ? 'Choose media folder for CraftAI' : 'Choose media for CraftAI',
+        properties: pick === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+        ...(pick === 'folder' ? {} : { filters: [{ name: 'Media', extensions: [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT] }] }),
+      });
+      return result.canceled ? [] : result.filePaths;
+    },
+  })));
+
+ipcMain.handle('agent:reviewRendered', (event, req = {}) => withAgentJob(event, req.requestId, async signal => {
+  const output = agentExportOutputs.get(req.file);
+  if (!output || output.owner !== event.sender.id || output.requestId !== req.requestId || output.revision !== req.revision) throw Error('Review requires a rendered output from this editor request and revision.');
+  if (output.fingerprint !== fileFingerprint(req.file)) throw Error('The rendered file changed before review. Render the section again.');
+  const result = await require('./agents/renderReview.cjs').inspectRenderedVideo(req.file, { signal, sampleTimes: req.sample_times });
+  if (output.fingerprint !== fileFingerprint(req.file)) throw Error('The rendered file changed during review.');
+  const frames = result.frames.map(frame => agentFrames.addRendered(event.sender.id, frame.bytes, {
+    revision: req.revision, time_sec: output.timelineStart + frame.render_time_sec, render_time_sec: frame.render_time_sec,
+    label: `Encoded section image at timeline ${output.timelineStart + frame.render_time_sec}s; sampled still, not continuous playback or audio.`,
+  }));
+  return { ...result, frames, revision: req.revision, semantic_audio_review: false, continuous_semantic_video_review: false };
+}));
 
 ipcMain.handle('captions:status', () => whisper.status(whisperDir()));
 let transcriptService;
-const getTranscriptService = () => transcriptService ||= require('./audioAnalysis.cjs').createTranscriptService({
+const getTranscriptService = () => transcriptService ||= require("./audio/audioAnalysis.cjs").createTranscriptService({
   cacheDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'transcript-cache'), whisperDir: whisperDir(),
   whisper, cloud: cloudCaptions, fetchImpl: net.fetch, getKey: service => settings.getServiceKey(service),
 });
 function runCaptionAnalysis(event, project, opts) {
-  return withAudioAnalysis(event, opts.requestId, signal => getTranscriptService().run(project, opts, { signal,
+  return withAgentJob(event, opts.requestId, signal => getTranscriptService().run(project, opts, { signal,
     onProgress: (stage, progress) => { if (!event.sender.isDestroyed()) event.sender.send('captions:progress', { stage, progress }); },
   }));
 }
@@ -1553,12 +1843,62 @@ ipcMain.handle('captions:testCloud', async (_e, provider, keyOverride) => {
   }
 });
 
+// Native menus. macOS gets a standard menu bar (app, File, Edit, View, Window) whose
+// editor commands go to the renderer; Windows and Linux use ClipCraft's own top bar,
+// so the default developer menu (Reload, DevTools) is removed.
+function sendCommand(command) { if (win && !win.isDestroyed()) win.webContents.send('app:command', command); }
+function installMenu() {
+  if (process.platform !== 'darwin') { Menu.setApplicationMenu(null); return; }
+  const dev = !!process.env.VITE_DEV_SERVER_URL;
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: app.name, submenu: [
+      { label: 'About ClipCraft', click: () => sendCommand('about') },
+      { type: 'separator' },
+      { label: 'Settings…', accelerator: 'Command+,', click: () => sendCommand('settings') },
+      { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
+    ] },
+    { label: 'File', submenu: [
+      { label: 'Home', click: () => sendCommand('home') },
+      { label: 'Open Project…', click: () => sendCommand('open') },
+      { type: 'separator' },
+      // Shown without registering: the editor's own (remappable) shortcuts handle these keys.
+      { label: 'Save', accelerator: 'Command+S', registerAccelerator: false, click: () => sendCommand('save') },
+      { label: 'Save As…', accelerator: 'Command+Alt+S', registerAccelerator: false, click: () => sendCommand('saveAs') },
+      { type: 'separator' },
+      { label: 'Import Media…', click: () => sendCommand('import') },
+      { label: 'Export…', click: () => sendCommand('export') },
+      { type: 'separator' }, { role: 'close' },
+    ] },
+    { label: 'Edit', submenu: [
+      { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+    ] },
+    { label: 'View', submenu: [
+      { role: 'togglefullscreen' },
+      ...(dev ? [{ type: 'separator' }, { role: 'reload' }, { role: 'toggleDevTools' }] : []),
+    ] },
+    { role: 'windowMenu' },
+  ]));
+}
+// Native message boxes replace the page's alert/confirm. UI tests stub the page
+// functions, so in test runs the renderer falls back to them.
+ipcMain.on('dialog:messageSync', (event, req = {}) => {
+  if (process.env.FVE_SMOKE || !win || win.isDestroyed()) { event.returnValue = { unavailable: true }; return; }
+  const text = String(req.message || '').slice(0, 4000), [first, ...rest] = text.split('\n');
+  const confirm = req.kind === 'confirm';
+  const choice = dialog.showMessageBoxSync(win, { type: confirm ? 'question' : 'warning', message: first, detail: rest.join('\n').trim() || undefined,
+    buttons: confirm ? [String(req.confirmLabel || 'OK').slice(0, 40), 'Cancel'] : ['OK'], defaultId: 0, cancelId: confirm ? 1 : 0, noLink: true });
+  event.returnValue = { confirmed: confirm ? choice === 0 : true };
+});
+
 app.whenReady().then(() => {
+  installMenu();
   createWindow();
   telemetry.start();
   // Find the graphics card's video encoder now (a short test encode), so the first export does not wait for it.
-  setTimeout(() => require('./ffmpeg.cjs').pickEncoder(), 4000);
+  setTimeout(() => require("./media/ffmpeg.cjs").pickEncoder(), 4000);
   // Screen recording (Media > Record screen).
-  require('./screenrec.cjs').install({ app, getWin: () => win, ffmpegPath: require('./ffmpeg.cjs').ffmpegPath, probeAll });
+  require("./recording/screenrec.cjs").install({ app, getWin: () => win, ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath, probeAll });
 });
 app.on('window-all-closed', () => app.quit());

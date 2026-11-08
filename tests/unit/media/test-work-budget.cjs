@@ -1,0 +1,22 @@
+const assert=require('node:assert/strict');
+const {MediaWorkBudget}=require('../../../electron/media/workBudget.cjs');
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+(async()=>{
+ const budget=new MediaWorkBudget(2),started=[],finish={};
+ const work=id=>()=>{started.push(id);return new Promise(resolve=>finish[id]=resolve);};
+ budget.setState({exporting:true});
+ const visual=budget.run('visual',work('visual')),proxy=budget.run('proxy',work('proxy'));
+ await tick();assert.deepEqual(started,[],'exports defer all queued background subprocesses');
+ budget.setState({exporting:false,playing:true});await tick();assert.deepEqual(started,['proxy'],'playback prioritizes its selected proxy');
+ finish.proxy();await proxy;await tick();assert.deepEqual(started,['proxy'],'optional visuals remain deferred during playback');
+ budget.setState({playing:false});await tick();assert.deepEqual(started,['proxy','visual']);finish.visual();await visual;await tick();
+ budget.setState({exporting:true});
+ const jobs=[budget.run('visual',work('v1')),budget.run('visual',work('v2')),budget.run('proxy',work('p1')),budget.run('proxy',work('p2'))];
+ budget.setState({exporting:false});await tick();assert.deepEqual(started.slice(-2),['p1','p2']);assert.equal(budget.active,2);
+ finish.p1();await tick();assert.equal(started.at(-1),'v1');assert.equal(budget.active,2,'one global limit spans both work types');
+ budget.setState({exporting:true});finish.p2();finish.v1();await tick();assert.ok(!started.includes('v2'),'an export starting mid-job stops the next stage');
+ budget.setState({exporting:false});await tick();finish.v2();await Promise.all(jobs);await tick();
+ await assert.rejects(budget.run('visual',()=>{throw Error('failed');}),/failed/);await tick();
+ assert.equal(await budget.run('proxy',()=>42),42,'failed work releases its budget');
+ console.log('Background budget prioritizes proxies, defers optional playback/export work, limits concurrency and recovers from errors.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

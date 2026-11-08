@@ -89,7 +89,7 @@ ClipCraft is a free, open-source desktop video editor and covers what people act
 
 ## Edit
 
-**A timeline you already know.** Drag media in, trim on the track, stack text and overlays above the picture. Per-clip keyframes, masks, chroma key, background removal, a custom removal brush, stabilization, motion tracking and speed control are all there, and the player previews the real render pipeline — transitions, effects and text included.
+**A timeline you already know.** Drag media in, trim on the track, stack text and overlays above the picture. Per-clip keyframes, masks, chroma key, a custom removal brush, stabilization, motion tracking and speed control are all there, and the player previews the real render pipeline — transitions, effects and text included.
 
 The speaker button in the player opens preview volume and mute controls, shared
 with media previews. Clip volumes, export audio and the mix meter stay unchanged;
@@ -118,7 +118,7 @@ its native libraries remain available.
 
 ## Effects
 
-Glitch & digital, film looks, light leaks and more — stack effects on any clip, or stretch one across the effects track over any part of the video. Per-clip color, chroma key with an in-app color sampler, masks (including a freehand custom mask), AI background removal and a voice enhancer round out the toolkit.
+Glitch & digital, film looks, light leaks and more — stack effects on any clip, or stretch one across the effects track over any part of the video. Per-clip color, chroma key with an in-app color sampler, masks (including a freehand custom mask), and a voice enhancer round out the toolkit.
 
 ## Text templates
 
@@ -134,13 +134,15 @@ Glitch & digital, film looks, light leaks and more — stack effects on any clip
 
 CraftAI is an AI editing assistant inside the editor: one-click looks, or just say what to do — cut the filler, style the captions, apply a look — and watch it work on your timeline. It works with **your provider and your key** — Gemini, OpenAI, Anthropic, Groq, OpenRouter, Ollama and more — and it shows its work: you stay in control of every change.
 
-## Installed AI agents
+## Native AI agents
 
-CraftAI can also use **Codex SDK** or **Claude Agent SDK** with an installed
-`codex` or `claude` executable and that CLI's existing authentication. In
-**Settings → AI assistant**, select **Codex SDK (installed)** or
-**Claude Agent SDK (installed)**. The app detects the installation and sign-in
-state; use **Browse** if the executable is in a custom location, then press
+CraftAI can also use **Codex** or **Claude** with their native executables and
+existing authentication. In **Settings → AI assistant**, select **Codex (native)**
+or **Claude (native)**. ClipCraft reuses an installed agent or offers a one-time
+native download. Node and npm are not required. Downloads show progress, support
+cancellation and retry, and verify pinned checksums before installation. The
+native runtimes are excluded from ClipCraft's installer. Use **Browse** for an
+executable in a custom location, then press
 **Test connection** and **Save**. No API key needs to be copied into ClipCraft
 for these choices.
 
@@ -149,7 +151,7 @@ Install and sign in using the provider's own instructions:
 [Claude](https://code.claude.com/docs/en/quickstart). Leave **Model** blank to
 use the installed CLI's configured default, or choose a specific model from the
 **Model** dropdown. Choices load automatically from Claude's SDK catalog or
-Codex's cached CLI catalog. **Refresh models** reloads the list; **Custom model
+Codex's live CLI catalog, with a cached fallback. **Refresh models** reloads the list; **Custom model
 ID…** lets you enter an ID that is not listed. Click **Save** to use the selected
 model in CraftAI.
 
@@ -161,7 +163,7 @@ installed agent or provider metadata, with documented fallbacks for known API
 models. Unsupported or unknown models keep **Default** available. Choose an
 explicit model when using a CLI default to see model-specific levels. Preferences
 are saved separately for each provider/model; clearing a choice restores the
-existing default behavior. See [thinking controls](docs/ai-thinking.md).
+existing default behavior. See [thinking controls](docs/agents/ai-thinking.md).
 
 Chat sessions, completed conversation context, and drafts are saved with each
 project and its autosave. Use **New chat** to start another conversation, then
@@ -188,8 +190,8 @@ as cloud transcription, image generation, stock search, and paid voice services
 keep their existing engines and credentials; CraftAI can orchestrate them through
 its normal editor tools.
 
-For contributors, `node scripts/test-local-agents.cjs`,
-`node scripts/test-agent-runner.mjs`, and `node scripts/test-ai-cancel.cjs` run
+For contributors, `node tests/unit/agents/test-local-agents.cjs`,
+`node tests/unit/agents/test-agent-runner.mjs`, and `node tests/unit/agents/test-ai-cancel.cjs` run
 without real accounts. The opt-in live editor check is
 `FVE_SMOKE=<temporary directory> FVE_SMOKE_MODE=local-agents npm run dev`;
 it uses the installed CLI logins for small connection/edit prompts and keeps
@@ -239,14 +241,14 @@ Codex workspace is removed. They support the usual Undo, Redo and export.
 does not insert placeholder art. Editor changes use structured tools;
 native image generation runs in a separate session.
 
-Contributor checks: `node scripts/test-codex-images.cjs` and the default
+Contributor checks: `node tests/unit/agents/test-codex-images.cjs` and the default
 `FVE_SMOKE_MODE=codex-images` Electron smoke are offline. Opt into a real native
 generation with `FVE_CODEX_IMAGES_LIVE=1`; optionally supply an existing character
 image through `FVE_CODEX_IMAGE_REFERENCE`. Use an isolated `FVE_SMOKE` directory.
-Parallel checks: `node scripts/test-image-jobs.cjs`,
-`node scripts/test-parallel-images.mjs`, and
+Parallel checks: `node tests/unit/agents/test-image-jobs.cjs`,
+`node tests/unit/agents/test-parallel-images.mjs`, and
 `FVE_SMOKE_MODE=codex-images-parallel` (same live opt-in).
-Frame checks: `node scripts/test-scene-frame.mjs` and
+Frame checks: `node tests/unit/preview/test-scene-frame.mjs` and
 `FVE_SMOKE_MODE=codex-images-portrait` (same live opt-in).
 
 ### Codex visual inspection
@@ -271,7 +273,7 @@ the app exits; saved chat history stores frame handles and metadata. A later
 chat request must inspect again to obtain fresh visual evidence. **Stop** cancels
 capture and closes its renderer.
 
-Checks: `node scripts/test-agent-frames.mjs` and
+Checks: `node tests/unit/agents/test-agent-frames.mjs` and
 `FVE_SMOKE_MODE=agent-vision` in an isolated Electron smoke profile. The default
 smoke verifies real frame captures with a simulated model response. Set
 `FVE_CODEX_VISION_LIVE=1` to also test actual Codex image understanding using
@@ -289,7 +291,7 @@ sources, then update the script.” Research alone does not create an Undo entry
 requested editor changes still use the usual tools and history. **Stop** cancels
 an active search. Shell and direct file editing remain disabled for the agent.
 
-Checks: `node scripts/test-codex-web-search.mjs` and
+Checks: `node tests/unit/agents/test-codex-web-search.mjs` and
 `FVE_SMOKE_MODE=agent-web-search` in an isolated Electron smoke profile. Set
 `FVE_CODEX_WEB_LIVE=1` to test an actual native search and source reply.
 
@@ -311,7 +313,7 @@ and support the usual Undo and export. Each speech passage is limited to 5000
 characters; use separate clips for longer scripts. API access and usage are
 managed through your Google account. See [Google's TTS documentation](https://ai.google.dev/gemini-api/docs/speech-generation).
 
-Contributor checks: `node scripts/test-gemini-tts.cjs` and the isolated
+Contributor checks: `node tests/unit/audio/test-gemini-tts.cjs` and the isolated
 `FVE_SMOKE_MODE=gemini-tts` Electron smoke use simulated provider responses, so
 they require no real key or paid generation.
 
@@ -365,6 +367,18 @@ Public release builds are produced by GitHub Actions (`.github/workflows/release
 | Captions | Whisper, on-device |
 | AI | CraftAI — your provider, your key |
 
+## Contributor layout
+
+Renderer code lives in `src/features/`, with the application shell in `src/app/`
+and project history in `src/state/`. Electron services are grouped by feature
+under `electron/`; tests live in `tests/unit/`, `tests/smoke/` and `tests/fixtures/`.
+Development and maintenance commands stay in `scripts/`.
+
+See the [project structure guide](docs/architecture/project-structure.md) and
+[documentation index](docs/README.md). Run `npm run test:structure` to check moved
+imports, `npm test -- --list` to list suites, or `npm test -- agents` for agent
+regressions.
+
 ## Updates
 
 ClipCraft checks for updates manually from **About → Check for updates** and downloads new versions in-app. Nothing auto-installs and nothing phones home.
@@ -386,7 +400,7 @@ ClipCraft is an original application created by Hamza Abika, and it is open sour
 You may use, copy, modify, and distribute the code under the MIT terms — the license and copyright notice must be preserved in all copies. Presenting this project as your own work (including removing the copyright notice) violates the license.
 The ClipCraft name and logo are not covered by the MIT grant: they remain the author's brand and may not be used to brand another product.
 
-See [LICENSE](LICENSE) for the full MIT text.
+See [LICENSE](./LICENSE) for the full MIT text.
 
 ---
 

@@ -1,0 +1,40 @@
+const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const ffmpeg = require('../../../electron/media/ffmpeg.cjs');
+const { runEditorMediaJob } = require('../../../electron/agents/editorMedia.cjs');
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-agent-media-'));
+const input = path.join(dir, 'source.mp4'), cacheDir = path.join(dir, 'cache');
+const probeAll = async files => Promise.all(files.map(async file => ({ ...await ffmpeg.probe(file), path: file })));
+const pixel = file => [...execFileSync(ffmpeg.ffmpegPath, ['-v', 'error', '-ss', file.endsWith('.png') ? '0' : '0.1', '-i', file, '-vf', 'scale=1:1', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])];
+const pcm = file => execFileSync(ffmpeg.ffmpegPath, ['-v', 'error', '-ss', '0.1', '-i', file, '-t', '0.2', '-f', 'f32le', '-ac', '1', '-ar', '16000', 'pipe:1']);
+const rms = bytes => { let sum = 0;for (let i = 0; i < bytes.length; i += 4) sum += bytes.readFloatLE(i) ** 2;return Math.sqrt(sum / (bytes.length / 4)); };
+(async () => {
+  execFileSync(ffmpeg.ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=red:s=96x64:r=10:d=1', '-f', 'lavfi', '-i', 'color=blue:s=96x64:r=10:d=1',
+    '-f', 'lavfi', '-i', "aevalsrc='if(lt(t,1),0.1,0.5)*sin(2*PI*440*t)':s=48000:d=2",
+    '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-map', '2:a', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', input]);
+  const options = { cacheDir, probeAll, signal: new AbortController().signal };
+  const item = { ...await ffmpeg.probe(input), path: input };
+  const reversed = await runEditorMediaJob({ action: 'reverse', item, from: 0, to: 2 }, options);
+  assert.equal(reversed.type, 'video');assert.ok(reversed.hasAudio);assert.ok(Math.abs(reversed.duration - 2) < .1);
+  const sourcePixel = pixel(input), reversedPixel = pixel(reversed.path);
+  assert.ok(sourcePixel[0] > 180 && sourcePixel[2] < 50);
+  assert.ok(reversedPixel[2] > 180 && reversedPixel[0] < 50, 'actual video frames reverse order');
+  assert.ok(rms(pcm(reversed.path)) > rms(pcm(input)) * 3, 'actual audio reverses with the picture');
+  const frame = await runEditorMediaJob({ action: 'frame', item, at: 1.2 }, options);
+  assert.equal(frame.type, 'image');assert.ok(pixel(frame.path)[2] > 180);
+  const again = await runEditorMediaJob({ action: 'frame', item, at: 1.2 }, options);assert.equal(again.path, frame.path);
+  const hdr = path.join(dir, 'hdr.mp4');
+  execFileSync(ffmpeg.ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=gray:s=96x64:r=10:d=1', '-color_trc', 'smpte2084', '-color_primaries', 'bt2020', '-colorspace', 'bt2020nc', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', hdr]);
+  const hdrItem = { ...await ffmpeg.probe(hdr), path: hdr };assert.equal(hdrItem.hdr, true);
+  const hdrFrame = await runEditorMediaJob({ action: 'frame', item: hdrItem, at: .2 }, options);
+  const expectedSdr = [...execFileSync(ffmpeg.ffmpegPath, ['-v', 'error', '-ss', '0.2', '-i', hdr, '-vf', ffmpeg.toSdr(hdrItem).replace(/^,/, '') + ',scale=1:1', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])];
+  assert.ok(pixel(hdrFrame.path).every((value, i) => Math.abs(value - expectedSdr[i]) <= 2), 'HDR frame holds use the same SDR conversion as export');
+  const tracked = await runEditorMediaJob({ action: 'track', item, from: 0, to: 1, pick: { x: .5, y: .5 } }, options);
+  assert.ok(tracked.points.length > 0 && tracked.points.every(p => [p.t, p.x, p.y, p.c].every(Number.isFinite)));
+  await assert.rejects(runEditorMediaJob({ action: 'frame', item, at: -1 }, options), /source time/);
+  await assert.rejects(runEditorMediaJob({ action: 'reverse', item, from: 0, to: 200 }, options), /inside/);
+  await assert.rejects(runEditorMediaJob({ action: 'track', item, from: 0, to: 1, pick: { x: 2, y: .5 } }, options), /normalized/);
+  const controller = new AbortController();controller.abort();
+  await assert.rejects(runEditorMediaJob({ action: 'reverse', item, from: 0, to: 2 }, { ...options, signal: controller.signal }), /stopped/);
+  console.log('Real FFmpeg reverse/audio, frame extraction/cache, tracking and cancellation passed; evidence: ' + dir);
+})().catch(error => { console.error(error);process.exitCode = 1; });

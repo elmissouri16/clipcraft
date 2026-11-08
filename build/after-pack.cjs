@@ -7,21 +7,21 @@
 // future package built from this tree:
 //   directories -> 755, plain files -> 644, executables -> 755.
 // A file counts as executable when it already carries an exec bit OR is an ELF binary/shared
-// object (magic bytes) — the second rule rescues payloads staged without any exec bit (the
-// bundled ffmpeg/ffprobe, onnxruntime .so files). Special bits already present (e.g. the
+// object, or a Mach-O binary (magic bytes) — this rescues payloads staged without any exec bit (the
+// bundled ffmpeg/ffprobe and native SDK executables). Special bits already present (e.g. the
 // chrome-sandbox helper's setuid) are preserved.
 const fs = require('fs');
 const path = require('path');
 
-const ELF_MAGIC = Buffer.from([0x7f, 0x45, 0x4c, 0x46]); // \x7f 'E' 'L' 'F'
+const NATIVE_MAGIC = new Set(['7f454c46','feedface','feedfacf','cefaedfe','cffaedfe','cafebabe','bebafeca','cafebabf','bfbafeca']);
 
-function isElf(file) {
+function isNativeCode(file) {
   try {
     const fd = fs.openSync(file, 'r');
     const buf = Buffer.alloc(4);
     fs.readSync(fd, buf, 0, 4, 0);
     fs.closeSync(fd);
-    return buf.equals(ELF_MAGIC);
+    return NATIVE_MAGIC.has(buf.toString('hex'));
   } catch {
     return false;
   }
@@ -35,7 +35,7 @@ function normalize(dir) {
       normalize(p);
     } else if (ent.isFile()) {
       const mode = fs.statSync(p).mode;
-      const executable = (mode & 0o111) !== 0 || isElf(p);
+      const executable = (mode & 0o111) !== 0 || isNativeCode(p);
       fs.chmodSync(p, (mode & 0o7000) | (executable ? 0o755 : 0o644));
     }
     // Symlinks are left alone: their targets live inside the same tree and are normalized

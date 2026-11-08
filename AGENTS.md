@@ -38,10 +38,20 @@ the MIT license grant and may not be used to brand another product.
 
 ## Layout
 
-- `src/` — React renderer (store + dispatch, panels, timeline, preview).
-- `electron/` — main process: export engine (`ffmpeg.cjs`, `layers.cjs`),
-  captions, templates, pack and update feeds (host-gated, renderer never
-  supplies URLs).
+- `src/app/` — application shell, project loading and shared app UI.
+- `src/features/` — renderer features: agent, audio, effects, export,
+  inspector, library, preview, recording, templates, text and timeline.
+- `src/components/ui/` — reusable UI controls; `src/state/` — project/history
+  reducer; `src/styles/` — application and frame-inspection styles.
+- `electron/main.cjs` and `electron/preload.cjs` — process entry points.
+  Services live in `electron/{agents,audio,export,library,media,project,recording,system}/`.
+  Update and pack feeds remain host-gated; the renderer never supplies URLs.
+- `tests/unit/<feature>/` — standalone Node suites; `tests/smoke/` — Electron
+  UI checks; `tests/fixtures/` — test-only executable and service fixtures.
+- `scripts/` — development, validation and content-maintenance commands.
+- `docs/` — contributor index and grouped architecture, agent, design, export
+  and update documentation. Read `docs/architecture/project-structure.md`
+  before adding a new module. Run `npm run test:structure` after moving files.
 - `shared/` — LUTs and shared data. `bundled-templates/` — generated template
   packages (regenerate with `scripts/make-bundled-templates.cjs`, never
   hand-edit the media).

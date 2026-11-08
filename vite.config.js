@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import fontFormats from './build/font-formats.cjs';
 
 // The page's strict CSP blocks Vite's inline hot-reload client, so it is only applied to builds.
 const prodOnlyCsp = {
@@ -10,6 +11,7 @@ const prodOnlyCsp = {
 
 export default defineConfig({
   plugins: [react(), prodOnlyCsp],
+  css: { postcss: { plugins: [fontFormats] } },
   server: { port: 5173, strictPort: true },
   // Only the app's page: otherwise the dependency scan also crawls build output such as android/build.
   optimizeDeps: { entries: ['index.html'] },

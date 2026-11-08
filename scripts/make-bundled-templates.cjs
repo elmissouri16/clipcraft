@@ -12,8 +12,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const ff = require('../electron/ffmpeg.cjs');
-const { pack } = require('../electron/templates.cjs');
+const ff = require("../electron/media/ffmpeg.cjs");
+const { pack } = require("../electron/library/templates.cjs");
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'bundled-templates');

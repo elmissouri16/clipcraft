@@ -15,8 +15,7 @@ delete cfg.extraResources;
 // The .deb keeps electron-builder's Debian-policy default (clipcraft_<version>_amd64.deb).
 if (cfg.win) cfg.win.artifactName = 'ClipCraft-Setup-${version}.${ext}';
 if (cfg.mac) cfg.mac.artifactName = 'ClipCraft-${version}.${ext}';
-// Universal merge rule: the unpacked native binaries (ffmpeg / ffprobe /
-// onnxruntime) are byte-identical in the x64 and arm64 trees — one installed
+// Universal merge rule: the unpacked native binaries (ffmpeg / ffprobe) are byte-identical in the x64 and arm64 trees — one installed
 // copy serves both — so the merger must be told to take them from the x64
 // tree instead of failing on the undeclared duplicate. electron-builder
 // 26.18.0's schema takes this as ONE Minimatch string, not an array — an

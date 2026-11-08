@@ -1,0 +1,92 @@
+// Exercise shared editor lifetimes through real Electron UI, with deterministic reasoning.
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+module.exports = async (win, app, dir) => {
+  const q = code => win.webContents.executeJavaScript(code), wait = ms => new Promise(r => setTimeout(r, ms));
+  const until = async code => { for(let i=0;i<200;i++){if(await q(code))return;await wait(50);}throw Error('Timeout: '+code); };
+  const result = { checks: [], errors: [] };
+  const check = (name, value) => { assert.ok(value, name); result.checks.push(name); };
+  const click = selector => q(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const mode = name => click(`.workspace-switch button:nth-child(${name === 'agent' ? 2 : 1})`);
+  const type = text => q(`(()=>{const e=document.querySelector('.pilot-input textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,${JSON.stringify(text)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  const settings = require('../../electron/system/settings.cjs'), local = require('../../electron/agents/localAgents.cjs');
+  const dialog = require('electron').dialog;
+  const original = {run:local.runEditorNative,status:local.status,dialog:dialog.showOpenDialog};let calls=0;
+  const imageFile = path.join(dir, 'source.png');
+  require('node:child_process').execFileSync(require('../../electron/media/ffmpeg.cjs').ffmpegPath, ['-v','error','-y','-f','lavfi','-i','color=blue:s=320x180','-frames:v','1',imageFile]);
+  dialog.showOpenDialog = async () => ({canceled:false,filePaths:[imageFile]});
+  settings.setFirstRun({tourSeen:true,packPromptSeen:true});settings.save({provider:'codex-sdk'});
+  local.status = async () => ({ok:true,authenticated:true});
+  local.runEditorNative = async (_config, options) => {
+    calls++;await wait(1400);
+    if(options.signal?.aborted)throw new Error('Request stopped');
+    const output=await options.onTool('set_project',{name:'Agent workspace result'});
+    assert.ok(!JSON.parse(output.content[0].text).error);await wait(500);
+    return {text:'Workspace edit completed.'};
+  };
+  win.webContents.setBackgroundThrottling(false);
+  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)result.errors.push(message);});
+  try {
+    await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');await click('.home-frame-card');
+    await until('!!document.querySelector(".topbar")');await q('document.querySelector(".welcome-go")?.click()');
+    check('existing installations start in Edit',await q('!!document.querySelector(".mode-edit")'));
+    await mode('agent');await until('!!document.querySelector(".is-docked textarea")');
+    check('empty project offers import and brief',await q('document.querySelector(".pilot-welcome").textContent.includes("Import media")'));
+    await click('.pilot-welcome > .btn');await until('window.__fve.rawProject().media.length===1');
+    check('real importer adds media without automatic placement',await q('!window.__fve.rawProject().videoClips.length'));
+    await until('document.querySelector(".pilot-welcome").textContent.includes("Your media is ready")');
+    await click('.pilot-action');await wait(100);
+    check('brief suggestion fills draft without sending',await q('document.querySelector("textarea[aria-label=Message]").value.includes("first cut")&&!document.querySelector(".pilot-msg")'));
+    await q(`window.__fve.load({id:'workspace-fixture',name:'Workspace fixture',ratio:'16:9',media:[{id:'source',type:'image',path:${JSON.stringify(imageFile)},width:320,height:180}],videoClips:[{id:'v',mediaId:'source',in:0,out:30}],audioClips:[],textClips:[{id:'title',text:'A real preview',start:0,duration:30}]})`);
+    await until('!!document.querySelector(".is-docked textarea")');await type('Keep this draft');
+    await q(`window.__workspaceNodes={chat:document.querySelector('.pilot-shell'),player:document.querySelector('.player'),timeline:document.querySelector('.timeline')};`);
+    await mode('edit');await click('.pilot-fab');await until('!!document.querySelector(".pilot-input textarea")');
+    check('draft survives mode change',await q('document.querySelector("textarea[aria-label=Message]").value==="Keep this draft"'));
+    await click('button[title="Expand to Agent mode"]');await until('!!document.querySelector(".mode-agent")');
+    check('editor surfaces retain DOM identity',await q('Object.entries(window.__workspaceNodes).every(([key,node])=>node===document.querySelector({chat:".pilot-shell",player:".player",timeline:".timeline"}[key]))'));
+    for(const [width,height] of [[1400,860],[1000,640]]){
+      win.setContentSize(width,height);await wait(200);
+      const geometry=await q(`(()=>{const box=s=>{const r=document.querySelector(s).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}};return {chat:box('.pilot-shell'),player:box('.player'),tl:box('.timeline'),bar:box('.topbar'),buttons:[...document.querySelectorAll('.topbar button')].filter(e=>e.getBoundingClientRect().width).map(e=>{const r=e.getBoundingClientRect();return {l:r.left,r:r.right}}),width:innerWidth,height:innerHeight}})()`);
+      check('chat and preview stay separate at '+width,geometry.chat.r<=geometry.player.l&&geometry.chat.h>300&&geometry.player.h>=200);
+      check('timeline remains below preview at '+width,geometry.tl.t>=geometry.player.b&&geometry.tl.b<=height);
+      check('header buttons fit at '+width,geometry.buttons.every(r=>r.l>=geometry.bar.l&&r.r<=geometry.bar.r));
+      await click('.agent-workspace-tools button:nth-child(1)');await wait(100);
+      check('media panel docks beside preview at '+width,await q('(()=>{const p=document.querySelector(".player").getBoundingClientRect(),d=document.querySelector(".left").getBoundingClientRect();return d.left>=p.right-1&&Math.abs(d.top-p.top)<1&&Math.abs(d.bottom-p.bottom)<1&&p.width>=320})()'));
+      await click('.agent-workspace-tools button:nth-child(2)');await wait(100);
+      check('only properties drawer is shown at '+width,await q('getComputedStyle(document.querySelector(".left")).display==="none"&&document.querySelector(".inspector").getBoundingClientRect().width>0'));
+      check('properties panel does not cover preview at '+width,await q('(()=>{const p=document.querySelector(".player").getBoundingClientRect(),d=document.querySelector(".inspector").getBoundingClientRect();return d.left>=p.right-1&&Math.abs(d.top-p.top)<1&&Math.abs(d.bottom-p.bottom)<1&&d.right<=innerWidth&&p.width>=320})()'));
+      check('playback controls fit beside docked tools at '+width,await q('(()=>{const p=document.querySelector(".player").getBoundingClientRect();return [...document.querySelectorAll(".transport button")].filter(e=>e.getBoundingClientRect().width).every(e=>{const r=e.getBoundingClientRect();return r.left>=p.left&&r.right<=p.right})})()'));
+      await wait(200);fs.writeFileSync(path.join(dir,'docked-properties-'+width+'.png'),(await win.capturePage()).toPNG());
+      await click('.agent-workspace-tools button:last-child');await until('document.querySelector(".app").classList.contains("drawer-none")');await wait(200);
+      fs.writeFileSync(path.join(dir,'agent-'+width+'.png'),(await win.capturePage()).toPNG());
+    }
+    await q('window.__fve.dispatch({type:"setProject",patch:{ratio:"9:16",width:180,height:320},transient:true})');await wait(200);
+    check('portrait composition fits preview',await q('document.querySelector(".stage").getBoundingClientRect().height<=document.querySelector(".player").getBoundingClientRect().height'));
+    fs.writeFileSync(path.join(dir,'agent-portrait.png'),(await win.capturePage()).toPNG());
+    await q('window.__fve.dispatch({type:"setProject",patch:{ratio:"16:9",width:320,height:180},transient:true})');
+    await q('window.__fve.select({track:"text",id:"title"});window.__fve.seek(3)');await wait(100);
+    await click('.pilot-context-actions button');await until('!!document.querySelector(".pilot-context-chip")');
+    await mode('edit');await mode('agent');
+    check('selection, playhead, attachment survive switching',await q('!document.querySelector(".pilot-context-actions button").disabled&&window.__fve.currentTime()===3&&!!document.querySelector(".pilot-context-chip")'));
+    await q('document.querySelector(".pilot-context-chip .icon-btn").click()');
+    await type('Rename this project');await until('!document.querySelector("button[aria-label=Send]").disabled');await click('button[aria-label=Send]');
+    await until('!!document.querySelector("button[aria-label=Stop]")');await mode('edit');await mode('agent');
+    check('Stop remains available after switching during request',await q('!!document.querySelector("button[aria-label=Stop]")'));
+    await until('!document.querySelector("button[aria-label=Stop]")');
+    check('request runs exactly once',calls===1);
+    check('request completes and keeps one Undo checkpoint',await q('window.__fve.rawProject().name==="Agent workspace result"&&window.__fve.history().past.length===1'));
+    await click('.pilot-undo');await wait(100);
+    check('Undo restores previous project',await q('window.__fve.rawProject().name==="Workspace fixture"'));
+    check('mode persisted outside document',await q('localStorage.getItem("clipcraft.workspaceMode")==="agent"&&!Object.hasOwn(window.__fve.rawProject(),"workspaceMode")'));
+    await type('Stop this request');await click('button[aria-label=Send]');await until('!!document.querySelector("button[aria-label=Stop]")');
+    await mode('edit');await click('button[aria-label=Stop]');await until('!document.querySelector("button[aria-label=Stop]")');
+    check('Stop in Edit prevents a late mutation',await q('window.__fve.rawProject().name==="Workspace fixture"'));
+    await mode('agent');await type('Restored draft');
+    await q('document.querySelector(".splitter.row").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true}))');await wait(100);
+    const savedLayout=await q('localStorage.getItem("clipcraft.layout.agent")');
+    await win.webContents.reload();await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');await click('.home-frame-card');await until('!!document.querySelector(".mode-agent")');
+    check('mode and independent layout restore after reload',await q('localStorage.getItem("clipcraft.layout.agent")==='+JSON.stringify(savedLayout)));
+    check('no renderer errors',!result.errors.length);
+  } catch(error){result.error=error.stack;fs.writeFileSync(path.join(dir,'failure.png'),(await win.capturePage()).toPNG());}
+  finally{local.runEditorNative=original.run;local.status=original.status;dialog.showOpenDialog=original.dialog;}
+  fs.writeFileSync(path.join(dir,'result.json'),JSON.stringify(result,null,2));app.exit(result.error?1:0);
+};

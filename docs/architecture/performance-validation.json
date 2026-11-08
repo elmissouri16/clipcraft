@@ -1,0 +1,656 @@
+{
+  "date": "2026-11-06",
+  "scope": "Original nine performance findings and follow-up editing/export findings",
+  "benchmark": {
+    "beforeFile": "/tmp/clipcraft-performance-before-final/result.json",
+    "afterFile": "/tmp/clipcraft-performance-verified-after/result.json",
+    "baselineSourceUnchanged": true,
+    "font": "Arial in both workloads",
+    "encoder": "libx264 in both workloads; hardware tested separately",
+    "runs": 1,
+    "before": {
+      "timeline_mounted_clips": 801,
+      "playback": {
+        "elapsed_ms": 3068,
+        "frames": 81,
+        "transport_updates": 79,
+        "max_frame_gap_ms": 63.29999992847445,
+        "p95_frame_gap_ms": 50.09999999999991
+      },
+      "store": {
+        "clips": 1200,
+        "edits": 30,
+        "manual_ms": 115.70000004768372,
+        "agent_ms": 476.7000000476837
+      },
+      "static_text": {
+        "elapsed_ms": 682,
+        "readbacks": 180,
+        "encoded_frames": 180,
+        "timeline_frames": 180,
+        "stream": "TextStream"
+      },
+      "effect_export": {
+        "elapsed_ms": 9697,
+        "jobs": [
+          {
+            "id": "fx1",
+            "width": 1280,
+            "height": 720,
+            "frames": 360,
+            "fps": 60,
+            "len": 6
+          }
+        ],
+        "read_ipc": 360,
+        "write_ipc": 360,
+        "output": {
+          "width": 480,
+          "height": 270,
+          "fps": 24,
+          "duration": 6
+        },
+        "pixel_errors": [
+          {
+            "time": 0.5,
+            "mean_absolute_rgb_error": 7.515547839506173
+          },
+          {
+            "time": 2.5,
+            "mean_absolute_rgb_error": 8.51144547325103
+          },
+          {
+            "time": 5.5,
+            "mean_absolute_rgb_error": 8.288595679012346
+          }
+        ]
+      },
+      "gpuIntermediateReadbacks": 180
+    },
+    "after": {
+      "timeline_mounted_clips": 308,
+      "playback": {
+        "elapsed_ms": 3000.399999976158,
+        "frames": 180,
+        "transport_updates": 178,
+        "max_frame_gap_ms": 73.6000000476837,
+        "p95_frame_gap_ms": 17.59999999999991
+      },
+      "store": {
+        "clips": 1200,
+        "edits": 30,
+        "manual_ms": 3.100000023841858,
+        "agent_ms": 49.200000047683716
+      },
+      "static_text": {
+        "elapsed_ms": 302,
+        "readbacks": 17,
+        "encoded_frames": 17,
+        "timeline_frames": 180,
+        "stream": "SparseTextStream"
+      },
+      "effect_export": {
+        "elapsed_ms": 475,
+        "jobs": [
+          {
+            "id": "fx1",
+            "width": 480,
+            "height": 270,
+            "frames": 24,
+            "fps": 24,
+            "len": 1,
+            "from": 2,
+            "to": 3
+          }
+        ],
+        "read_ipc": 6,
+        "write_ipc": 6,
+        "output": {
+          "width": 480,
+          "height": 270,
+          "fps": 24,
+          "duration": 6
+        },
+        "pixel_errors": [
+          {
+            "time": 0.5,
+            "mean_absolute_rgb_error": 2.855272633744856
+          },
+          {
+            "time": 2.5,
+            "mean_absolute_rgb_error": 2.8291203703703705
+          },
+          {
+            "time": 5.5,
+            "mean_absolute_rgb_error": 2.737255658436214
+          }
+        ]
+      },
+      "gpuIntermediateReadbacks": 0
+    },
+    "gpuSampleMaxByteDifference": 0,
+    "textDecodedFramesCompared": 180,
+    "textDecodedFramesIdentical": true
+  },
+  "battery": {
+    "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/results.json",
+    "previousFile": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-KVLU8y/results.json",
+    "total": 126,
+    "passed": 113,
+    "failed": 13,
+    "introducedFailingSuites": [],
+    "newSuites": [
+      {
+        "file": "tests/unit/editor/test-performance-contracts.mjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/editor/test-project-persistence.cjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/editor/test-project-serialization.mjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/editor/test-time-index.mjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/editor/test-timeline-rows.mjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/effects/test-shader-parameters.mjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/export/test-effect-ranges.mjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/export/test-frame-reader.cjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/export/test-hardware-export.cjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/export/test-render-cache.cjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/media/test-preview-preparation.cjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/media/test-work-budget.cjs",
+        "status": "PASS"
+      },
+      {
+        "file": "tests/unit/text/test-sparse-text.cjs",
+        "status": "PASS"
+      }
+    ],
+    "previouslyFailingNowPassing": [
+      "tests/unit/export/test-textanim-export.cjs",
+      "tests/unit/export/test-textanim-word-export.cjs",
+      "tests/unit/export/test-textsmooth-export.cjs",
+      "tests/unit/export/test-tplmotion-export.cjs",
+      "tests/unit/media/test-tracking.cjs"
+    ],
+    "remainingFailures": [
+      {
+        "file": "tests/unit/agents/test-agent-frames.mjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-agent-frames.mjs.log"
+      },
+      {
+        "file": "tests/unit/agents/test-codex-web-search.mjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-codex-web-search.mjs.log"
+      },
+      {
+        "file": "tests/unit/audio/test-audiofx.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-audiofx.cjs.log"
+      },
+      {
+        "file": "tests/unit/audio/test-captions.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-captions.cjs.log"
+      },
+      {
+        "file": "tests/unit/audio/test-captions-linux.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-captions-linux.cjs.log"
+      },
+      {
+        "file": "tests/unit/editor/test-fonts.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-fonts.cjs.log"
+      },
+      {
+        "file": "tests/unit/audio/test-tts.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-tts.cjs.log"
+      },
+      {
+        "file": "tests/unit/library/test-assets.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-assets.cjs.log"
+      },
+      {
+        "file": "tests/unit/library/test-bundled-templates.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-bundled-templates.cjs.log"
+      },
+      {
+        "file": "tests/unit/library/test-library.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-library.cjs.log"
+      },
+      {
+        "file": "tests/unit/export/test-transition-packs-export.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-transition-packs-export.cjs.log"
+      },
+      {
+        "file": "tests/unit/system/test-telemetry.cjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-telemetry.cjs.log"
+      },
+      {
+        "file": "tests/unit/text/test-srt.mjs",
+        "status": "FAIL",
+        "code": 1,
+        "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pc9tF5/test-srt.mjs.log"
+      }
+    ]
+  },
+  "ui": {
+    "clockAndTimeline": {
+      "file": "/tmp/clipcraft-performance-final-events-ui/result.json",
+      "checks": [
+        "parameterized shaders retain literal-reference pixels across adjustments, LUT chains, resize and transitions",
+        "slider changes reuse programs and keep expression cache bounded",
+        "shader eviction releases old GPU programs",
+        "GPU calls report no errors",
+        "GPU keying, spill and combined masks match the CPU reference",
+        "transport stepping during playback uses the live clock",
+        "marker uses the live playback clock",
+        "split uses the live playback clock",
+        "pause publishes and holds the latest playback position",
+        "keyboard stepping uses the paused clock",
+        "explicit seeks update the shared clock",
+        "production project load 0 stops playback and resets the clock",
+        "production project load 1 stops playback and resets the clock",
+        "production project load 2 stops playback and resets the clock",
+        "production project load 3 stops playback and resets the clock",
+        "late timeline clip starts unmounted",
+        "scrolling mounts clips beyond the initial viewport",
+        "a clip mounted after scrolling can be selected and deleted",
+        "Undo restores the scrolled clip",
+        "preview mounts nearby media instead of the whole project",
+        "seeking mounts and positions a distant pooled clip",
+        "GPU keying reaches the actual preview canvas",
+        "inspector keyframes use the live event time between display updates",
+        "masked playback avoids CPU canvas readback",
+        "a seek during playback replaces the pool and releases old media",
+        "vertical virtualization bounds clip and layer-control DOM",
+        "vertical scrolling mounts the matching layer and controls",
+        "no renderer exceptions"
+      ],
+      "passed": true
+    },
+    "gpuCatalog": {
+      "file": "/tmp/clipcraft-performance-complete-contracts-ui/result.json",
+      "checks": [
+        "parameterized shaders retain literal-reference pixels across adjustments, LUT chains, resize and transitions",
+        "slider changes reuse programs and keep expression cache bounded",
+        "shader eviction releases old GPU programs",
+        "GPU calls report no errors",
+        "GPU keying, spill and combined masks match the CPU reference",
+        "complete effect and transition catalog retains the literal-shader reference results",
+        "transport stepping during playback uses the live clock",
+        "marker uses the live playback clock",
+        "split uses the live playback clock",
+        "pause publishes and holds the latest playback position",
+        "keyboard stepping uses the paused clock",
+        "explicit seeks update the shared clock",
+        "project loading resets the clock",
+        "late timeline clip starts unmounted",
+        "scrolling mounts clips beyond the initial viewport",
+        "a clip mounted after scrolling can be selected and deleted",
+        "Undo restores the scrolled clip",
+        "preview mounts nearby media instead of the whole project",
+        "seeking mounts and positions a distant pooled clip",
+        "GPU keying reaches the actual preview canvas",
+        "masked playback avoids CPU canvas readback",
+        "a seek during playback replaces the pool and releases old media",
+        "vertical virtualization bounds clip and layer-control DOM",
+        "vertical scrolling mounts the matching layer and controls",
+        "no renderer exceptions"
+      ],
+      "passed": true
+    },
+    "compiledExport": {
+      "file": "/tmp/clipcraft-performance-compiled-export-ui/result.json",
+      "checks": [
+        "Low playback creates its selected copy before a separate Full fallback",
+        "Low proxy uses its requested resolution",
+        "Full switch builds compatibility while retaining Low",
+        "proxy switch creates exactly one Low and one compatibility encode",
+        "Full proxy lands on the existing playhead",
+        "capped text export completes",
+        "early scaling preserves logical text placement",
+        "unchanged text reuses its completed render without canvas readback",
+        "disjoint effect ranges with an animated transition export successfully",
+        "transition uses bounded output frames and preserves total duration",
+        "disjoint effect and unaffected spans retain source timing",
+        "unchanged effects and transitions reuse completed renders without frame IPC",
+        "changing one effect invalidates its range and reuses unaffected ranges and transition",
+        "revised effect intensity reaches exported pixels",
+        "full-clip LUT export loads and fingerprints the actual LUT data",
+        "full-clip shader output retains its requested dimensions, FPS and duration",
+        "cached and blank spans yield promptly to Cancel",
+        "no renderer exceptions"
+      ],
+      "passed": true
+    },
+    "compiledPersistence": {
+      "file": "/tmp/clipcraft-performance-compiled-worker-proof/result.json",
+      "checks": [
+        "compiled module worker executes with normal file-origin security",
+        "worker recovery serialization preserves Unicode, quotes, newlines and complete project data",
+        "autosave slot is durable before reporting completion",
+        "manual Save waits for the full atomic worker write",
+        "edits made during a pending Save remain scheduled and reach disk",
+        "file autosave updates the chosen project",
+        "closing flushes the latest file before the window exits",
+        "closing flushes the matching project slot",
+        "no renderer exceptions"
+      ],
+      "passed": true
+    },
+    "agentEditing": {
+      "file": "/tmp/clipcraft-performance-completion-agent-ui/result.json",
+      "checks": [
+        "repeated cuts retain unique IDs",
+        "range cuts preserve detached audio pairs",
+        "captions and overlays follow both cuts",
+        "one Undo restores entire agent request",
+        "locked edit is reported as an error and does not mutate",
+        "invalid retained range does not delete footage",
+        "agent reads live playhead and selection",
+        "manual edits revoke in-flight agent writes",
+        "one Undo restores request at full history capacity",
+        "transition range cut exports the measured duration",
+        "speed edits retime captions overlays and markers",
+        "speed edits preserve detached audio synchronization",
+        "speed retiming is one Undo checkpoint",
+        "linked duplication keeps original sound and creates a new pair",
+        "linked duplication is one Undo checkpoint",
+        "splitting detached sound introduces no fades at the cut",
+        "caption trim crops and rebases measured word timestamps",
+        "transition cues and narration follow the same clock",
+        "overlay audio and look tools work through the agent UI",
+        "animated opacity exports from the actual app",
+        "fade-in overlay is visible in exported pixels",
+        "title beyond old end is covered by output timeline",
+        "real renderer text export completes",
+        "late title is present in actual exported pixels",
+        "no renderer exceptions"
+      ],
+      "passed": true
+    },
+    "nativeCodexFixture": {
+      "file": "/tmp/clipcraft-performance-verified-native-ui/result.json",
+      "checks": [
+        "codex-sdk: native editor tools add the requested title",
+        "codex-sdk: native task finishes without an error",
+        "codex-sdk: editor maintains one Undo step",
+        "codex-sdk: saved history contains no transported image bytes",
+        "codex-sdk: the second request reuses the conversation and preserves the title",
+        "native task reaches the cancellable voice job",
+        "native cancellation aborts child speech and applies no late media"
+      ],
+      "passed": true
+    }
+  },
+  "catalog": {
+    "cases": 429,
+    "literalReferenceMetricsIdentical": true,
+    "existingCpuReferencePrecisionFailures": [
+      "fx_prismleak@0.25",
+      "fx_prismleak@0.75",
+      "fx_mosaic60@0.05",
+      "fx_mosaic60@0.4",
+      "fx_mosaic60@1.3",
+      "fx_kaleido4@0.05",
+      "fx_kaleido4@0.4",
+      "fx_kaleido4@1.3",
+      "fx_kaleido6@0.05",
+      "fx_kaleido6@0.4",
+      "fx_kaleido6@1.3",
+      "fx_kaleido8@0.05",
+      "fx_kaleido8@0.4",
+      "fx_kaleido8@1.3"
+    ]
+  },
+  "checks": {
+    "rendererBuild": "/tmp/clipcraft-performance-final-compile.log",
+    "structure": "/tmp/clipcraft-performance-final-layout-check.log",
+    "whitespace": "/tmp/clipcraft-performance-final-whitespace-check.log"
+  },
+  "limits": [
+    "One final GPU readback and process transfer remains for new effect frames; no native zero-copy encoder bridge.",
+    "Existing background subprocesses finish before yielding; queued optional work is deferred.",
+    "The complete legacy battery still has pre-existing fixture/platform/network and functional assertion failures.",
+    "Native SDK UI verification used the Codex protocol fixture, not live paid providers.",
+    "Benchmark results describe one isolated synthetic workload per version, not all real projects."
+  ],
+  "sourceHashes": {
+    "electron/agents/agentFrames.cjs": "76c4fe2bd1cfce915f94e207efdc7c0da354542160aa3d90067d5667fef89e71",
+    "electron/agents/agentImages.cjs": "9c59c97cba37b7e8d8f2648edcd9fd27b9b212a69c73c7fc7a1a803a87141d76",
+    "electron/agents/ai.cjs": "73e4ea2442663914d62283142037c72e90d86346f64107dacb69799a044df635",
+    "electron/agents/aifallback.cjs": "51640df5d9807087fe91fc60afe8e3d34165e2dd506a815811adeffdde6099c1",
+    "electron/agents/codexNative.cjs": "015433a965ef933b59b08e28bb3bde6ec56a409e41613bf597a25515a6b3fb43",
+    "electron/agents/framePreload.cjs": "394d2efa5c788b84b04ee4c592048029caa5e917caf3438b16eb954f14c90651",
+    "electron/agents/imageJobs.cjs": "fa218a0319e421dba06ab6b4cb09a79b4cdbaa7ba9ba4eea9ff7f22f718efa76",
+    "electron/agents/localAgents.cjs": "7d47f04883fa35e772fd89bc47ab84e051b7d29e64c9d9785733f307e9d4c3a1",
+    "electron/agents/mcp.cjs": "62120b3d1b5366ce7a4d325c1f2651e78ab770861b3e88b4dcf25f3c71976926",
+    "electron/agents/mcpResult.cjs": "bff863a5cf2f5ec4deacc1adfb3bbcfb213a4239feb1c6f99fde76b20008381e",
+    "electron/agents/nativeAgents.cjs": "67375f676067a7073210534431cde95498e62b6329d5859cd8147d9022acaef2",
+    "electron/agents/thinking.cjs": "2b46b4db9ba01bc84d902ec4a0495c0d8fa6a99710f0de21d98f5e10da7f8eb0",
+    "electron/audio/audioAnalysis.cjs": "70e58673bf16a8844b080e4e46a6d1b5f0e5118c9af5e17b3a754b1eb024e74e",
+    "electron/audio/audiofx.cjs": "a6f441ee7f56c2c7735bc5c0eadc7e0286c1f1ebc647a65f2b6006bb176f3905",
+    "electron/audio/cloudCaptions.cjs": "1466522dc02cfba557e857dd9f392374d0580f75124d06aef2cf04234e1ac153",
+    "electron/audio/fades.cjs": "2084469c560d7f50bad644cd1a3313922fbbf3b1c094eea58222555c35f1e235",
+    "electron/audio/geminiTts.cjs": "15411ca26390f91ebae966c2fe29ce99073914a237cd3e5827dca4117a9f1701",
+    "electron/audio/transcriptCache.cjs": "53194a9374425ea5012721371cfa7d7179e5eaada6a2df5101629b357986f176",
+    "electron/audio/tts.cjs": "d1327e87682d612bdddf26b35e06ad4c914a175df890e330aa385036571fff44",
+    "electron/audio/whisper.cjs": "108f23aac9ef25e8e64b5e31b89ddf8fa2437136e013c2fa12af201bcd3a4b47",
+    "electron/export/fonts.cjs": "9fd85ae8fb0f46d7dc803d120a893895c7975e3210dbcb1d98847c988864d696",
+    "electron/export/fxjobs.cjs": "4e8235ffe58ffc71821b9e94a2908f2ac75d8132ec1935670f4ca1103a0c304e",
+    "electron/export/layers.cjs": "b07ac31e48f96d156bb689ec0cb95a4d14af91a6822221920b97d14cbec986d4",
+    "electron/export/renderCache.cjs": "2af5ded441cd05f81c948bc8a49bd66d58fb4c62f2c65c237fdcecbcf35536e5",
+    "electron/export/sparseText.cjs": "e62612242700a229aefcfa012bdd1cb9a97e8843be64de2d6171495d6d882b13",
+    "electron/export/textstream.cjs": "38264d30dad165609fc81ca43b5d509ab147d6f860b0e4c8a143e8a19ed5f7ab",
+    "electron/library/assets.cjs": "1281e151f090d447013452cbad9fe63fdfd5046a98c19c93347e8e20c38c7fb8",
+    "electron/library/bundledTemplates.cjs": "79bff1ee41fc1e4c1f415d8acb17200ad27078fe1130a2e3206019d1b6ab3422",
+    "electron/library/gen.cjs": "2d89a31ad742c5806441b798662961dd8e6aa8f8d2d7217dc9fb9c04af2baf00",
+    "electron/library/library.cjs": "598832e237012cff1fe8ad7300fcba1b336448f6c7d6fa8027c15ea4f1069c50",
+    "electron/library/soundza.cjs": "5514499902b89522d1225c4abc91ba6930158e033bb3df379fd717c76d2e9c13",
+    "electron/library/stock.cjs": "5fc36bb4d9eca741e99f9888f8a9a3211fd8f64ea32899ba92ca0934f3a77870",
+    "electron/library/templates.cjs": "229773eb02ce2d16da99cf3f2b9ee5fcd86a5335188ad05ce0a6a5e0a528f6b2",
+    "electron/main.cjs": "a564cebc3a43d632c4e09c2b6c77ac64b6839cdd48ee76f36e307b2dcd871278",
+    "electron/media/detach.cjs": "8f9f0879e1dba6ea215791720629f7736317b01f9341545bfc76933d5c9e4a77",
+    "electron/media/enhance.cjs": "c89052d7fc29b04ff5681b745fa9ce9f501278bd357f2c42959a888bc7fb8c74",
+    "electron/media/ffmpeg.cjs": "dea6b28e1b3d5c0c546199152258cd9b1880a44982e898de1b502cab4654dfb2",
+    "electron/media/imageFrame.cjs": "dcde0e9a3d4103e71a62f1e3a981f33dc899d1184f5c12811d124bc154cc6e61",
+    "electron/media/matting.cjs": "b5634c3c021f0964ac9b48500fbcb9cbe0d5bd81346b3d32d459b6de9274317b",
+    "electron/media/mediaAnalysis.cjs": "8f82886c3ecd8fff0fdd9fae865392ce8fe1b8b536ed9c75e1909dcdb42ebe1d",
+    "electron/media/preparePreview.cjs": "362ca315e3d020b060cfbe750fac480564637850ed239ed053b0812944a970ea",
+    "electron/media/quality.cjs": "0da21cef6f81f1df37d80a5e9c649a1c453b6d2ac66e074cbcf0ac53e00d2f27",
+    "electron/media/reverse.cjs": "dcde977fef2d1f0d75cdfe1adba57b3587825162d2e7f8d4a23a41b538cebce6",
+    "electron/media/stabilize.cjs": "e40b8dcb28e2fbb999966eb5e05e97edc8471bfc62160d9659221536025c1d15",
+    "electron/media/track.cjs": "26b6f681a504ce6e31fa6f5d4d2dbc1f63383c066d9b971ba754e544d07aeb16",
+    "electron/media/workBudget.cjs": "04c83e5575766952b0a515c17e737bb75e06520a8cd3bdf9b8444ad335ac8161",
+    "electron/preload.cjs": "8d132e387f7e6e435c3b24bfcebd6847632710b549affedecbbba5956b5f46a9",
+    "electron/project/autosave.cjs": "ef8a06cc71c2bc5daabdf24f91459d6500bfd98c3e1ba1e262e4e965455dd234",
+    "electron/project/favorites.cjs": "7f9923559722b4b2d6ad9f47501ec7702b13c4fef9d2c442d1c2257178fc93e3",
+    "electron/project/persistence.cjs": "a4c0573c5da6c6863210015c443e048671a07b770d1dbfd73d8a157e6765d9a9",
+    "electron/project/projectfile.cjs": "a0948bb1e77b604519a1c3d5a7a848fdb3a3bdb397cb50a6b2dfcf6ed1944aa1",
+    "electron/recording/cambubble-preload.cjs": "de588a06cf35a922b4ec8ca2200c4f940bed7eb78d90610653906da0295e68f6",
+    "electron/recording/cambubble.js": "170e5473dbf925ad63041a186aa1cfb016637782be8c76ce8e9d9a6c2ae1a64b",
+    "electron/recording/recbar-preload.cjs": "cf469a2d82e067378811ff8bf666fbe883f8f6e417a19efdd38b37455f2b294e",
+    "electron/recording/recbar.js": "2600970b85cbacedaf8570b318836dd39564afe70692cd6c977d3d4a37e1e91d",
+    "electron/recording/screenrec.cjs": "8399cf77e14b5c6f7b497a1b86aa8176b02fd3f7b95685d2022130e0fdbd8fe4",
+    "electron/system/cancel.cjs": "6d68d207de67f380ddded6e7e45998218b9ca72374881f2cf3145866eeac0000",
+    "electron/system/settings.cjs": "8b688b65d563416f00d6155194d7f3483b7a08f9e6c6c3faf25f77889f083ee2",
+    "electron/system/telemetry.cjs": "3be5e82696d322b7e49f86552b89d85e19817f5213d505204254523952f2e361",
+    "electron/system/updates.cjs": "dc2a27794b3c30427e1b58437870e83767cd3bc7579ea53a94038a984f0becb2",
+    "electron/system/videoPolicy.cjs": "6fb273fb47449e1cc5612fdffe64024fcb587abc7948f31b7fc71305045adcf8",
+    "shared/toolArguments.mjs": "a8a54156e238a910231ca41d8c6d6fd5bfc6ed7b38b3cd44bec5a5ded40fc6c1",
+    "shared/webSource.mjs": "34881060cd744e33e6677b0c76e7311f0da5da61f479f95321cad9f510a308f9",
+    "src/app/App.jsx": "d071a33711103c336d261e0feeba78f4120b89ced2c061f2dae93f7d69570234",
+    "src/app/components/About.jsx": "1b78ab4acfc45b26f29e36c0d538e5360aeff2f48c20212f411d7f20fe2f1bb5",
+    "src/app/components/CloseDialog.jsx": "b88c13653244feef56e6278b5f38a73477dc85736a6df5504ed191218883b031",
+    "src/app/components/HomeScreen.jsx": "375f3570edd3f4b53f744fb30ee85ff2cce520ff46f576e526923dde2e3d7e16",
+    "src/app/components/SettingsDialog.jsx": "6653f9c0932044455934bcc915bc95915a3ebfeb7fb6beec4e8e988d154fb0c6",
+    "src/app/components/TopBar.jsx": "933d1617d09873d9322740499c66801c032dcfd51866dd2f9c162ee3a87f0435",
+    "src/app/components/WelcomeCard.jsx": "3ffafb26d8b9c73907336721645e87d634470bba49ff6b80881dbdb9bc92a0ff",
+    "src/app/favorites.jsx": "d48823d61a90348ea40e7c3df47b3d9ed0198a6c3d99dd94e133b6d0932a43c9",
+    "src/app/recents.js": "76b2d87ae9f60ceb5409baab1cd4c2c9ae363e0ea7e677b578b183e83441be35",
+    "src/app/useLayout.js": "ce8461f5f46f6fad1c36a90583f940cc0257838bd678f7a1c33fc73f713d799c",
+    "src/components/ui/ContextMenu.jsx": "cb5b641b1e5259ff7de3116f29c8c8650cb56a74d29887ed14b1a805d37bcb8b",
+    "src/components/ui/Dropdown.jsx": "a7ada54955fc278490b505fda9011b02ca3b99f0b80fdc5fdbb2faf0d67c622e",
+    "src/components/ui/KeyNav.jsx": "b3e9f31e979a4670763e5c77c53435e5bcedc11fa9d3b9f5391719e8881d1de8",
+    "src/components/ui/NumBox.jsx": "74649f34bf3a41a09bfd2bf550bf7ba245242ccedb342016a71f99d25a97c7dd",
+    "src/components/ui/SearchBox.jsx": "732efca0ec9bee647c594f3170adb86c104f758ea28275a66f340bd026013f94",
+    "src/components/ui/Slider.jsx": "76ae5e32aebef3b2409548283d0e422fa28b3fe9a97b65be58bc67117abf0841",
+    "src/features/agent/chatSessions.js": "4b47583180bfd36d3f2075b0802fd71b3c04cdfb022649000d2e8545d72584ee",
+    "src/features/agent/components/CraftModelPicker.jsx": "dad55438b3a6fb2bc898528550340d6510215cf3bf6f93374ef03e98e22563fe",
+    "src/features/agent/components/CraftPilot.jsx": "0d14a0987bef804cb03a57b395da5be7179159536eb7fce17ee743201873c52f",
+    "src/features/agent/components/ToolCallIcon.jsx": "c0c88f5550929d472998840ce69ee40e1a32799ab2617fd9e858d2d15ed76aff",
+    "src/features/agent/context.js": "202ae3da54d26ef6652eb511d05fcfdbf4fc933cc6ecd213ca12885154d347f3",
+    "src/features/agent/motionGuide.js": "9ab9f6ae3bea658e539b98cba9e321def131feacd1f1d82a5d9150b27457b09b",
+    "src/features/agent/runAgent.js": "c753c2a941267c9ceecc4a32da04ac78690b4a253c2020ea109d93f9c566fb31",
+    "src/features/agent/runNativeAgent.js": "ff6f403e00919cce2726d9428c8ed085f450041cbeeb55547ed647ca9585490a",
+    "src/features/agent/sceneMap.js": "a12826dbc6498515f313ac74f360f8aca5489c40ac3a91e0bb8ba00fe6b788e7",
+    "src/features/agent/toolCatalog.js": "315dec7905b48faba65498d684897808b57cf6341d248568ad840824757df0c0",
+    "src/features/agent/tools.js": "abcb566f09456230b280f46aacf990c0e592a4fccb1afa75c49a48f3d8f3ee2d",
+    "src/features/agent/validation.js": "a93201544af16f1ab1042925cedbf2c939f90faa3eaeefb6b2185690a9f397a6",
+    "src/features/agent/visualVerification.js": "fc7076f492242d88630e99a583935920433c30a5950ea02b1f23568f897fec81",
+    "src/features/audio/audioTap.js": "228a98e0aeee61df9905cc932ac844f3b06eef53f0dd5b5fc79d5def4764af10",
+    "src/features/audio/components/AudioFx.jsx": "53a6888580ec04ea421f1ba2742f6c536775fc99d8d54f7e0234864e7b69de5b",
+    "src/features/audio/components/AudioLibrary.jsx": "36f680787c45163c6ac7601df0d28c55515cbcd6b938734a91b248040ee5721e",
+    "src/features/audio/components/AudioMeter.jsx": "5d0ece3e5a2d9447baa545249f3665f2c1ef743690d877b62e4cbe52b5845af2",
+    "src/features/audio/components/EnhanceVoice.jsx": "4354559e6983e84b506e2622cd36457a184a7b5ed89965beab7eb4a91b404922",
+    "src/features/audio/components/PackMusic.jsx": "c598cb907f2f75d20093a40af6698f95edf645bcdeed608f1eddd21391349c22",
+    "src/features/audio/components/PreviewVolume.jsx": "15aa4242dfe7a8880e3d1b1bf25d1a34cc39d10ad271bc8ce2e286e42f3cdf54",
+    "src/features/audio/components/TextToSpeech.jsx": "b3ef219c9d0d043f99915b4776448ab4e1dbeb22f9c0e2b22ad517378a8692bd",
+    "src/features/audio/fades.js": "f13835dad6bef268c0b1ad68aba6cbbe09826435ad927dcae81b6ae67a39119c",
+    "src/features/audio/meterMath.js": "e9e66224c2c2f21e9e1bec23ae5e0cb9e6571bcb63b2084ce827bc75214c15aa",
+    "src/features/effects/apply.js": "0211b77bf13d1c0c9da146739e83177a9f7e638201b9a67a658762b7e8ba598f",
+    "src/features/effects/audioPresets.js": "2cd03a1d62a8011ab146f1f0a06687007a46c2c29ed4d32e0bd0c1a8a0949c9e",
+    "src/features/effects/autocolor.js": "63993f5e0428730eecde7161733e3cb6477e1fa6a65b85797b7bc25ccc99f75e",
+    "src/features/effects/catalog.js": "f37850ac123c7906d461806a7800d5238ea449611047c801d9456df01b8d1ea9",
+    "src/features/effects/catalog135.js": "571b525cc2b5111e822431d59e303ae9b92dfff83c970d46dbbc68bbcf1b1d5a",
+    "src/features/effects/catalog135.json": "d928467bea453d5a92b58496cb0889eb03a2882b0cdb199797876fc3d1cdf233",
+    "src/features/effects/collections.js": "6953f5ba40c296355d6c994d3ceb5b705efa057392b1802382cbdff40a35223c",
+    "src/features/effects/components/FilterThumbs.jsx": "5931683159b45722a2b23ab028f0f68a7627e527867918bba988f512b698f2cc",
+    "src/features/effects/components/GradePanel.jsx": "c9ddea3a10627caa6dfafb531c7ef6ad5756bb254f1c0670d31ea27c1ff7a0e0",
+    "src/features/effects/components/HslCurves.jsx": "a2ca8674c4a33e6165a6f63452d1db4d87ea2d7146a8642430ddcadf7bd410c2",
+    "src/features/effects/components/Scopes.jsx": "ca35bcede04c24cb987c464489af026361a6e32b42c95e39077b9a56ee71983c",
+    "src/features/effects/easing.js": "588c9577d218aa658f41b971d1c4959ca248d07030b23ba449be851f0fbddbc7",
+    "src/features/effects/effects.js": "836a273ce7f85a8b8da584beb486ed65c9fd5be79ab5a3eefba362b62b59aa93",
+    "src/features/effects/expr.js": "3454f6a684be95c220f3985c025093b3912d9a294dbf90bb61ae05247d8faeb5",
+    "src/features/effects/filters.js": "8d1cbf6a217652f7c61d461187310446c9f9afc741aa96248bc9b7a6d139d5d1",
+    "src/features/effects/gl.js": "c327c7764593205b077f46d8c60600df75ff8bf564939d16e318771f8498f2f2",
+    "src/features/effects/grade.js": "b267c7b55323102405bac8a2f61ecd013226bbf09879a3b80d77249dc35a86ef",
+    "src/features/effects/look.js": "00e927254b71370a1c96e403efe51d021d23423835da82dd1db35e5141286174",
+    "src/features/effects/lut.js": "e8489ea24279b0520f94bdaca1b59305ef73a2c83d3993de9282bbe9e2d95ade",
+    "src/features/effects/lutlib.js": "88e272c90dff3166c159506f923dff925e4484aeb93b4f3c646e99d4c6919b10",
+    "src/features/effects/presets.js": "81f0d04bda526c60b20038e96913769679f9d4d38a483edc45f5805048dcb0be",
+    "src/features/effects/previews.jsx": "80e49cfd9d1157ed02661d8d3e30aa620bf541746f61e18b3a855b517ff9e009",
+    "src/features/effects/run.js": "967b213166d03ed833920e1e0eb53cdf453519786f48a3f695715ba2bfd9ddb8",
+    "src/features/effects/selftest.js": "c889f90a0cb4aff4f82cf7d7828a3434f7f8cccf88d6f69860baf55de9f27a76",
+    "src/features/effects/textAnim.js": "876efef4c0d0a7a98a292cb60a1ad2a2db333f91ca79a2e9655ee8a5e15782e1",
+    "src/features/export/components/ExportDialog.jsx": "f24027d72ebccb0f7125c9926bf31cc7618e3bbc421079a2a826e4e63b4be2fb",
+    "src/features/export/exportQuality.js": "b5d41ef8411727dfa7478dab1014d2e1f0f0c2af3494bef5ce873c2f42978b9f",
+    "src/features/export/exportText.js": "6ebb606d77bd3aac2f3347b135298780c1f65f54c167fdffa81c52b4601144bf",
+    "src/features/export/fxExport.js": "e0d15e0eb6d890cb0d2b2ac66d7e98295b8d950aecca364b115e53ccb79c736e",
+    "src/features/export/renderPlan.js": "cc591de07b24ff189313554531da676eb01844f31b833996688d0d8b813cb64f",
+    "src/features/inspector/components/AnimationPanel.jsx": "6ff704d60ffcc0c4f14edbaaffaa964c55ff5faa6c8853a4d9c7f41cfb6df1a6",
+    "src/features/inspector/components/ClipInspector.jsx": "f74c9d1314bac720d7dd7eeeffca614eb7a43535044d8b07675e08555887726a",
+    "src/features/inspector/components/CurveEditor.jsx": "ec82d003b0e1b3a80d5690b55def01f040dded1ae67023a2368e45aaef8ed511",
+    "src/features/inspector/components/CustomMaskEditor.jsx": "e79c9d84bbde69773f4e4656295c1d47a6415316a063aa8f2e6673834113df89",
+    "src/features/inspector/components/Inspector.jsx": "0699acfbb67c76ab9f402c63bb19c319576871cad31979734d8bc9d94c91575f",
+    "src/features/library/assetsLib.js": "10f1cbef04e0c4e70e05a17fd4a81c1bc619334a220675e49c303ad398782046",
+    "src/features/library/components/AssetsPanel.jsx": "1d44d0da01b193ae1c9945beca06ea2fed4cf22e232292eda8bd7f3042709ea0",
+    "src/features/library/components/LeftPanel.jsx": "22bf0fa377c00548b5aebac1599b2dbcfd7f470ea9e8251b36654e68898b2fd2",
+    "src/features/library/components/MediaFavorites.jsx": "8fdb40f7aefe1a34c5ed5d60ae86584d0342b41032ee8676a3788b79603385ec",
+    "src/features/library/components/StockLibrary.jsx": "d5382ed22f2dd48058a22c4bef7de48bff190acde9800208d831cfd18cbb2a70",
+    "src/features/library/components/TabFrame.jsx": "014b0024e01fff76a0ca6ebcce200aa9d58d567fc04c10981397a09f4da1e62f",
+    "src/features/library/useAssets.js": "39bb84e3f7ca78df2d9eb49d74b6a699bb11186d1c66d35074bb6d379d00b8e4",
+    "src/features/preview/FrameInspection.jsx": "d556374c8cf50cfd4e189da675200a6a7b9b76a670922eb78eb19239eb526f6c",
+    "src/features/preview/components/MediaPeek.jsx": "06ad296ff62b8a6cb344f672dd7fa1356292f62e9bd652b5a73b6fdf856c0fc6",
+    "src/features/preview/components/PlaybackMediaPool.jsx": "768412f8fe8495526d6dd791a1bcdf00f6b02cadfee05961ae0658db44353fb3",
+    "src/features/preview/components/Preview.jsx": "f95be284457f142ad9bc40d4349c3eb21f9a7fe2650df88ea20a807196d7ba45",
+    "src/features/preview/components/TransformBox.jsx": "68cc0d4197278179bbf72da6ea43137bf08dc5a85c0e93d949c8ace9cdb5b633",
+    "src/features/preview/cropMath.js": "b7856437eb788aae342eedbff30739d1e8fd8e1f6768ee451005dfc1ef76c766",
+    "src/features/preview/customMask.js": "5d6cae8eab2d706ba431894b6218b0410a213b0a34d19c0525915c972b90e0fb",
+    "src/features/preview/frameDiff.js": "122045f2a21c6fc65ccb0554f16035bd526b09000602b51c47713a2e224d69ed",
+    "src/features/preview/pictureGeometry.js": "2b091ff22f05f2c60979c5051bb3330a698bf612d6ef5b7375d81ffcaabb47fd",
+    "src/features/preview/playbackClock.js": "ee3786f99217a9337c107e81a087871e51fd46e7a9bd0cc94d7da44949da5d48",
+    "src/features/preview/useClockTime.js": "c52f542f694ac7ab1721c38f9df4751667d0f4bcc1ce95fa6618c9239e4c75f4",
+    "src/features/preview/visual.js": "00ea4a1212b930ba52a4bc68cfae602056dd97df13f9095502596c34836408db",
+    "src/features/recording/components/ScreenRecordDialog.jsx": "4d9a511f3447208ae32eda68d404938ede90d447262f4a3f0007c4f784df708e",
+    "src/features/recording/useRecorder.js": "d0c1e9b68f5677d7bec026d89f90c9f32a11317082eff97418c3689cc2d27c92",
+    "src/features/recording/useScreenRecorder.js": "f7d27200da2dd3be02af465b24678dd5dc570aaa51ecf7f0fa058c75057c53a8",
+    "src/features/templates/components/SlotStrip.jsx": "2b66b9bf6c4b1c1f9c11127b0e36832228675148c26991cb30bf11d8637fe7a7",
+    "src/features/templates/templates.js": "85781ab834e927d4b17f7a1fb46dbafca4d31243f661d5d6b6a46cdc0310e27f",
+    "src/features/text/catalog.js": "1fc4e1e51d615db22e518510d6f8ada1810d8cf805037bc345ccfec36777140b",
+    "src/features/text/components/FontPicker.jsx": "5aecb7e41e8e36958558b6bec228ccd3ef459c3ff13dc6a8a8aa2eef2a8514d5",
+    "src/features/text/components/TextAnimBrowser.jsx": "caa6de607c86b3b837a7d60d93108cc0ec126ee910f62189e9cde2e2e9269f98",
+    "src/features/text/components/TextInspector.jsx": "e5d69a0c4ac7aacf41cb0e6049834b92dd7f988b2fb53b0ddf1542019a232994",
+    "src/features/text/components/TextPreview.jsx": "4a9bf6bf8e7137c07c7c83923c54cf134feb4088b3aec314b92f31d81eeb1e04",
+    "src/features/text/fonts.js": "267933e8da86f066899fbd946b9cf330eb469de5eee04df14a9920dfa701beea",
+    "src/features/text/frameState.js": "e4e7df26a678e55f80a164209c7ddf811a3924bd705c1efedd89a31829d219fe",
+    "src/features/text/render.js": "8477d01738073c2980752088a1a8483387afafe31388ad71e1838484941483fc",
+    "src/features/text/style.js": "3e37bd3e24f74f406cd9986df2b802aae4d86af0e835e62f35c8449fdaa3600d",
+    "src/features/text/subtitles.js": "e2a09be12c09fe7d48bae21c607c58de60460503c9ca9984391cfbe425a18987",
+    "src/features/text/timing.js": "946d35a2b3b1bfce4e4fccccc38c896e04a085e46b19c4e4e50113b968d43b9a",
+    "src/features/text/units.js": "224a1c4d124c5135780f9c40ac27c668577e043196c9f5922122d17908937bb3",
+    "src/features/timeline/anim.js": "9d1df2db5600e8ff2b7e55b0e6f8db399684445e5a05ccecf413e352e4aacc01",
+    "src/features/timeline/components/SequenceDialog.jsx": "4e3eabca9a7b063a78a24d6486d2c9bb683835a7ea2b323a9f7d22eae56c1975",
+    "src/features/timeline/components/SpeedDialog.jsx": "8e526fa812a953a8c82c97f6d193bc7a9a6c302fc465c0d9d26129a9b73156b7",
+    "src/features/timeline/components/Timeline.jsx": "725305a81879fea2032ac2ae44b9c2d2f92d565c45a12056f2e826d5847d7bb0",
+    "src/features/timeline/dnd.js": "a0e9d25a0213df0f5188065274b242211f41ddc7a436558a68a218e70adda374",
+    "src/features/timeline/rows.js": "6a37d80103f173703b8e3c3fcb4f2f83223f5063094e851298e6eef683d3357e",
+    "src/features/timeline/sequence.js": "5d44411cb45049b360d1a88ac768dc9b3b4b11c1960c088db94cf5f89a759508",
+    "src/features/timeline/timeIndex.js": "6a71a1ee7e78d16e139680525659d85e2cc6b1d948eb24c15d3a10c8c7387c36",
+    "src/features/timeline/track.js": "03d084a1bf61356a7b521fd88a1cbd5add7e57d877d77c3ec32bf0aa61e9ffb9",
+    "src/features/timeline/viewport.js": "5f2e39207a25d49c9cf077ed1b1927b0a25e5cd56e61e7949873491cfadbde25",
+    "src/main.jsx": "de911086cf18c81cc75548c68efc19466bede852f95453d1ae8fbc3265c51161",
+    "src/state/projectIdentity.js": "009f4857ee22b7c1b9a5a1ac55b5faa0d65d293eca6c8d657e43c5f1e8e19547",
+    "src/state/projectSerialization.js": "f91f3862fcd5a1fb4affd84d312b1a8e264ac4065636eb75a317801f07abff41",
+    "src/state/projectSerializer.worker.js": "010dac740fc3c6e1a31be5ebf61b0b905e15c33edf6b3eae28d916346c25fc01",
+    "src/state/store.js": "a55a00d14ff59a123b77b262619fc9c767d03394859903e936e7840bdd1cf357"
+  }
+}

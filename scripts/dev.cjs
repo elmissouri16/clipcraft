@@ -2,6 +2,7 @@
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 
 // POSIX children lead their own process groups; Windows uses taskkill /T.
 function stopChild(child, { platform = process.platform, spawnImpl = spawn, killImpl = process.kill } = {}) {
@@ -57,7 +58,7 @@ async function startDev() {
   vite.once('exit', (code) => { if (!quitting) shutdown(code || 1); });
   process.once('SIGINT', () => shutdown());
   process.once('SIGTERM', () => shutdown());
-  watcher = fs.watch(path.join(root, 'electron'), () => {
+  watcher = watchTree(path.join(root, 'electron'), () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       if (quitting || restarting || !app) return;
@@ -86,5 +87,36 @@ async function startDev() {
   }
 }
 
+// Watch nested service folders on platforms where fs.watch is not recursive.
+// New folders are picked up from their parent's rename notification.
+function watchTree(root, onChange) {
+  const watchers = new Map();
+  let closed = false;
+  const handle = new EventEmitter();
+  handle.close = () => { closed = true; for (const entry of watchers.values()) entry.watcher.close(); watchers.clear(); };
+  const refresh = () => {
+    for (const [dir, entry] of watchers) {
+      if (!fs.existsSync(dir) || fs.statSync(dir).ino !== entry.inode) { entry.watcher.close(); watchers.delete(dir); }
+    }
+    scan(root);
+  };
+  const scan = dir => {
+    if (closed || !fs.existsSync(dir)) return;
+    if (!watchers.has(dir)) {
+      const watcher = fs.watch(dir, event => {
+        if (event === 'rename') {
+          try { refresh(); } catch (error) { if (error.code !== 'ENOENT') handle.emit('error', error); }
+        }
+        onChange();
+      });
+      watcher.on('error', error => { handle.close(); handle.emit('error', error); });
+      watchers.set(dir, { watcher, inode:fs.statSync(dir).ino });
+    }
+    for (const entry of fs.readdirSync(dir, { withFileTypes:true })) if (entry.isDirectory()) scan(path.join(dir, entry.name));
+  };
+  scan(root);
+  return handle;
+}
+
 if (require.main === module) startDev().catch((err) => { console.error(err); process.exitCode = 1; });
-module.exports = { stopChild };
+module.exports = { stopChild, watchTree };

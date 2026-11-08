@@ -1,0 +1,261 @@
+{
+  "validatedAt": "2026-11-06T16:19:26.956Z",
+  "full": {
+    "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-6pA0aQ/results.json",
+    "passed": 124,
+    "failed": 12,
+    "newFailures": []
+  },
+  "focused": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-Xo1agh/results.json",
+  "completion": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-jlzdjB/results.json",
+  "uiDir": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-ux-ui-9PN0i5",
+  "ui": {
+    "checks": [
+      "Cancel stops effect preprocessing without an error modal",
+      "Cancel preserves an existing destination file",
+      "progress has an accessible value",
+      "ETA and elapsed time are visible",
+      "keyboard focus remains within the export dialog",
+      "technical details can be expanded",
+      "export suppresses background throttling",
+      "export completes after minimizing",
+      "completed export reports its elapsed time",
+      "Dock receives export progress and clears afterward",
+      "sleep prevention is released after completion",
+      "normal background throttling is restored",
+      "the saved video is valid",
+      "the cover is embedded without altering the main video",
+      "no unfinished output is left in the destination"
+    ],
+    "cancelMs": 35,
+    "timing": "Less than 10 seconds remainingElapsed 0:01",
+    "output": {
+      "type": "video",
+      "duration": 12,
+      "hasVideo": true,
+      "hasAudio": true,
+      "fps": 30,
+      "width": 640,
+      "height": 360,
+      "rotation": 0,
+      "hdr": false,
+      "vcodec": "h264",
+      "acodec": "aac",
+      "pixFmt": "yuv420p",
+      "profile": "High",
+      "channels": 2
+    },
+    "dockUpdates": 37,
+    "blockers": 2
+  },
+  "benchmark": {
+    "runs": [
+      {
+        "name": "before",
+        "ms": 2888.1580000000004
+      },
+      {
+        "name": "after",
+        "ms": 2235.0209170000003
+      },
+      {
+        "name": "before",
+        "ms": 2725.1303339999995
+      },
+      {
+        "name": "after",
+        "ms": 2266.598
+      },
+      {
+        "name": "before",
+        "ms": 2767.6290419999987
+      },
+      {
+        "name": "after",
+        "ms": 2313.9467090000016
+      },
+      {
+        "name": "before",
+        "ms": 2703.890375000001
+      },
+      {
+        "name": "after",
+        "ms": 2247.9606669999994
+      }
+    ],
+    "sameFrames": true,
+    "beforeMedianMs": 2746.379687999999,
+    "afterMedianMs": 2257.2793334999997,
+    "reductionPercent": 17.808912461633362,
+    "fixture": "4 seconds, 720x1280, 24 fps, ten brief screen-blended image overlays, libx264 veryfast; four runs per version"
+  },
+  "codex": {
+    "version": "codex-cli 0.167.0",
+    "threadStarted": true,
+    "models": [
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6.1-terra",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna"
+    ],
+    "nativeToolsAccepted": true,
+    "inferenceRequests": 0
+  },
+  "liveCatalog": {
+    "ok": true,
+    "fromCache": false,
+    "count": 8,
+    "models": [
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6.1-terra",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna"
+    ],
+    "capabilities": {
+      "gpt-6.1-sol": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "defaultReasoningEffort": "low",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6-astra": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "defaultReasoningEffort": "medium",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6.1-terra": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "defaultReasoningEffort": "low",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6-sol": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "defaultReasoningEffort": "medium",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6-luna": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultReasoningEffort": "medium",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6-sol": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "defaultReasoningEffort": "low",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6-terra": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "defaultReasoningEffort": "medium",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6-luna": {
+        "reasoningEfforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultReasoningEffort": "medium",
+        "inputModalities": [
+          "text",
+          "image"
+        ]
+      }
+    }
+  },
+  "sourceHashes": {
+    "src/features/export/exportProgress.js": "212d035608879e32efb063170679b04dd3f3fe08bf6bd3522716ec4904d5d335",
+    "src/features/export/components/ExportDialog.jsx": "d0b7c0b61571f796274eee04a655b11899af47b1050de2f3ade63c0f1a5b4b6c",
+    "src/features/export/exportText.js": "b9830869e2d3a2b345b2689301b06b7bfa647b81d25cde96c68ceb5d45087233",
+    "src/features/export/fxExport.js": "cc723d869150ec04b2455e91319f0b478faec9179520c659b39985a3c4192446",
+    "src/app/App.jsx": "2e7e24befb5a285d3a3f59005c2e06d6bbd0bdf2c70f5b668b3d18fa1eacc05b",
+    "src/styles/styles.css": "e3df42fc530aa6313907bb5738451a9aa8f221532795b74a4ec97424fca71ed6",
+    "electron/main.cjs": "f432d3dd20eaccc5c6f16f4433b93a58534c6ce2d697d14776016ba50026a459",
+    "electron/preload.cjs": "ae9e799c9fe74977c37ff5471f948831280fdf6a2bcb29d5132c665745435ec4",
+    "electron/media/ffmpeg.cjs": "539224d679c0f5bab677cc2ff89cd32c5b4c43ce1faf49feb44c4fda7b9500a8",
+    "electron/export/layers.cjs": "3ad15a6aa7950337891ac95abc9ff56c0c87f51daaa2896227401de8c5de86e0",
+    "electron/export/ffmpegProgress.cjs": "50bf863d32fcf415dd631fab3f77937ba16bafb89a11514b8b2c9a561fbc2d03",
+    "electron/agents/localAgents.cjs": "7615af5a17d8cd7ac83021a26d44709af04c78b39c8d7a9605b289b2b741d9ba",
+    "electron/agents/codexNative.cjs": "00448c0f27061d02dbea9a2ae88aa8e7eccac03218affa73cd65adc0372b9537",
+    "build/after-pack.cjs": "00014a8b0b492c4d7319fd9f9b5dd4e2d6545eff45984ed3bcdbbbae44301287",
+    "package.json": "f8abac0b7c102b57507e20e4989da881ccd92b09f28c8205e2290d39dc947a90",
+    "package-lock.json": "0bc3436b2b24701b629b72857f5a37e73c4a4f7eb9911ba3d90f92a86a6eb985"
+  }
+}

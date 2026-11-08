@@ -1,0 +1,134 @@
+{
+  "validatedAt": "2026-11-06T15:20:30.616Z",
+  "suites": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/results.json",
+  "passed": 119,
+  "failed": 12,
+  "newFailuresComparedWithPriorBattery": [],
+  "failures": [
+    {
+      "file": "tests/unit/agents/test-agent-frames.mjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-agent-frames.mjs.log"
+    },
+    {
+      "file": "tests/unit/agents/test-codex-web-search.mjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-codex-web-search.mjs.log"
+    },
+    {
+      "file": "tests/unit/audio/test-audiofx.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-audiofx.cjs.log"
+    },
+    {
+      "file": "tests/unit/audio/test-captions.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-captions.cjs.log"
+    },
+    {
+      "file": "tests/unit/audio/test-captions-linux.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-captions-linux.cjs.log"
+    },
+    {
+      "file": "tests/unit/editor/test-fonts.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-fonts.cjs.log"
+    },
+    {
+      "file": "tests/unit/audio/test-tts.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-tts.cjs.log"
+    },
+    {
+      "file": "tests/unit/library/test-assets.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-assets.cjs.log"
+    },
+    {
+      "file": "tests/unit/library/test-bundled-templates.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-bundled-templates.cjs.log"
+    },
+    {
+      "file": "tests/unit/library/test-library.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-library.cjs.log"
+    },
+    {
+      "file": "tests/unit/system/test-telemetry.cjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-telemetry.cjs.log"
+    },
+    {
+      "file": "tests/unit/text/test-srt.mjs",
+      "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-IyE3MX/test-srt.mjs.log"
+    }
+  ],
+  "uiDir": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-effect-parity-ui-SbvaRF",
+  "uiChecks": 22,
+  "gpu": {
+    "failures": [],
+    "maxKeyError": 0,
+    "count": 62
+  },
+  "measurements": [
+    {
+      "effects": [
+        "grain"
+      ],
+      "error": 5.076932870370371
+    },
+    {
+      "effects": [
+        "pixel"
+      ],
+      "error": 3.7896006944444443
+    },
+    {
+      "effects": [
+        "blur",
+        "mirror",
+        "vignette"
+      ],
+      "error": 3.0096122685185187
+    },
+    {
+      "effects": [
+        "fx_invert"
+      ],
+      "error": 3.575150462962963
+    },
+    {
+      "type": "fx_zoomin",
+      "styledTransition": 0.6,
+      "error": 4.967395833333334
+    },
+    {
+      "type": "fx_zoomin",
+      "styledTransition": 0.8,
+      "error": 4.075486111111111
+    },
+    {
+      "type": "fx_zoomin",
+      "styledTransition": 0.9,
+      "error": 4.182042824074074
+    },
+    {
+      "type": "dissolve",
+      "styledTransition": 0.6,
+      "error": 3.0791666666666666
+    },
+    {
+      "type": "dissolve",
+      "styledTransition": 0.8,
+      "error": 7.77963088768116
+    },
+    {
+      "type": "dissolve",
+      "styledTransition": 0.9,
+      "error": 5.509380661231884
+    }
+  ],
+  "sourceHashes": {
+    "src/features/effects/apply.js": "3413ab09e7635d463d0b8624226e4fee1fc2216ebf2cae4b61ec81e409249a7a",
+    "src/features/effects/effects.js": "91dab432303a306d5472a88e88f786757e79f15907f526fe0914d5a6b23bdaf8",
+    "src/features/effects/catalog.js": "3cb400dfff90d092970eabfc42b1b7019c71a2f56c2b3b7fb5b1d35087653ab9",
+    "src/features/effects/gl.js": "eb2ac11c59686845ff064382ead3201c4ef0034d20c7697e2d855e2e114ee058",
+    "src/features/effects/run.js": "d1377fc6be26a0eb1f3ea596dc4e849d20aec704558128b65113c827a0ae596e",
+    "src/features/export/fxExport.js": "7882a0a1fc2b933f635036bf23639031284d5b3ea25cb742360846b9c5f36da8",
+    "src/features/preview/components/Preview.jsx": "c18ec45fa3871e7cb411f4b3c6f7c25fe68ac401158916b038f6024e1d35771e",
+    "src/features/preview/transitionFrame.js": "72363740bc66b84556f6f5db6de6b999d8c6a49c71cbd71aecdb3a3adbf2dcf9",
+    "electron/export/fxjobs.cjs": "07759a07a0e58a1e973c34f4d6c47850a675b1f1d2e61853470090fc74b2083a",
+    "electron/media/ffmpeg.cjs": "15414da43b5931fdb7863fac5671e86662c49c4f70a522c2f561a854d1373303"
+  }
+}

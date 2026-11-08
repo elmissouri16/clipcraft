@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { createProjectSerializer } from '../../../src/state/projectSerialization.js';
+import { emptyProject, historyReducer } from '../../../src/state/store.js';
+
+const messages = [], worker = { postMessage: message => messages.push(message), terminate() {} };
+const serialize = createProjectSerializer(() => worker), first = { id:'first',name:'Quotes " and newline\n',media:[] }, second = {id:'second'}, third = {id:'third'};
+const a=serialize(first),shared=serialize(first),b=serialize(second);
+assert.equal(a,shared);assert.equal(messages.length,2,'concurrent destinations share one snapshot request');
+for(const message of [...messages].reverse())worker.onmessage({data:{id:message.id,value:{compact:JSON.stringify(message.project),pretty:JSON.stringify(message.project,null,2)}}});
+assert.deepEqual(JSON.parse((await a).compact),first);assert.deepEqual(JSON.parse((await b).pretty),second,'out-of-order responses retain their own snapshots');
+assert.equal(serialize(first),a,'recent snapshot is reused');
+const c=serialize(third);worker.onmessage({data:{id:messages.at(-1).id,value:{compact:'{}',pretty:'{}'}}});await c;
+const again=serialize(first);assert.notEqual(again,a,'old snapshots leave the bounded string cache');
+worker.onmessage({data:{id:messages.at(-1).id,error:'serialization failed'}});await assert.rejects(again,/serialization failed/);
+const retry=serialize(first);worker.onmessage({data:{id:messages.at(-1).id,value:{compact:'{}',pretty:'{}'}}});await retry;
+const fallback=createProjectSerializer(()=>{throw Error('no Worker');});assert.deepEqual(JSON.parse((await fallback(first)).compact),first);
+const media=Array.from({length:100},(_,id)=>({id,path:'/media/'+id}));
+let state={past:[],present:{...emptyProject(),media},future:[]};
+for(let i=0;i<20;i++)state=historyReducer(state,{type:'setProject',patch:{name:'Edit '+i}});
+const previous=state;
+state=historyReducer(state,{type:'mediaVisuals',path:'/media/10',patch:{poster:'/poster.png'}});
+assert.equal(new Set([...state.past,state.present].map(p=>p.media)).size,1,'metadata keeps shared media arrays across history');
+assert.equal(previous.present.media[10].poster,undefined,'old immutable snapshots are untouched');
+assert.ok([...state.past,state.present].every(p=>p.media[10].poster==='/poster.png'));
+const undo=historyReducer(state,{type:'undo'});assert.equal(undo.present.media[10].poster,'/poster.png','Undo retains completed metadata');
+console.log('Persistence shares immutable snapshots, routes responses, bounds caches, retries errors and preserves Undo metadata.');

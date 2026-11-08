@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { activityEvidence, renderActivityProgress } from '../../../src/features/agent/activityEvidence.js';
+import { normalizeToolActivity, safeLocalPath } from '../../../src/features/agent/activityData.js';
+import { normalizeChatSessions } from '../../../src/features/agent/chatSessions.js';
+const p={media:[{id:'m',name:'Opening scene',type:'image',path:'/tmp/opening.png'},{id:'a',type:'audio',path:'/tmp/speech.wav'}],
+ videoClips:[{id:'v1',mediaId:'m',in:0,out:4},{id:'v2',mediaId:'m',in:0,out:4}],audioClips:[{id:'a1',mediaId:'a',in:0,out:8,start:0}],textClips:[{id:'c',caption:true,text:'Caption in the cut',start:.5,duration:2}],overlayClips:[]};
+const change=activityEvidence('cut_range',{start_sec:1,end_sec:2},p,{changed:true});
+assert.equal(change.change.duration_sec,1);assert.deepEqual(change.change.tracks,{Video:1,Audio:1,Captions:1});assert.equal(change.change.applied,true);assert.equal(change.visuals[0].src,'/tmp/opening.png');
+assert.equal(activityEvidence('cut_range',{start_sec:1,end_sec:2},p,{error:'Locked'}).change.applied,false);
+assert.equal(activityEvidence('keep_ranges',{ranges:[{start_sec:1,end_sec:3},{start_sec:2,end_sec:4}]},p,{changed:true}).change.duration_sec,3,'overlapping kept ranges are displayed as their union');
+const after={...p,media:[...p.media,{id:'new',type:'image',name:'New scene',path:'/tmp/new.png'}],overlayClips:[{id:'new-clip',mediaId:'new',start:3,in:0,out:2}]};
+assert.equal(activityEvidence('generate_image',{},p,{clip_id:'new-clip',changed:true},after).visuals[0].src,'/tmp/new.png','insertions resolve the new media from the post-edit project');
+assert.equal(activityEvidence('generate_images',{},p,undefined,after).visuals[0].label,'New scene','streamed insertions are visible before the batch ends');
+const artifact=activityEvidence('export_video',{},p,{file:'/tmp/done.mp4',size:100,metadata:{duration_sec:7,width:320,height:180}}).artifact;
+assert.equal(artifact.duration_sec,7);assert.ok(!activityEvidence('export_video',{},p,{file:'/tmp/partial.mp4',error:'Failed'}).artifact);
+for(const src of ['https://external.test/image.jpg','data:image/png;base64,secret','javascript:alert(1)','file:///tmp/image.png'])assert.equal(safeLocalPath(src),'');
+assert.ok(safeLocalPath('C:\\Videos\\my scene.png'));
+const normalized=normalizeToolActivity({title:'Work',visuals:[{src:'https://external.test/pixel.png'},{src:'/tmp/new.png',label:{bad:true}}],render:{progress:5,remainingSeconds:-1},artifact:{file:'https://external.test/video.mp4'},secret:'drop'});
+assert.equal(normalized.visuals.length,1);assert.equal(normalized.visuals[0].label,'');assert.equal(normalized.render.progress,1);assert.equal(normalized.render.remainingSeconds,null);assert.ok(!normalized.secret&&!normalized.artifact);
+const chat=normalizeChatSessions({activeSessionId:'s',sessions:[{id:'s',messages:[{role:'assistant',text:'Done',steps:[{id:'export',name:'export_video',label:'Exporting',status:'done',activity:{artifact,...change,render:renderActivityProgress({progress:.4,stage:'Encoding video',remainingSeconds:3,project:{private:true}})}}]}]}]});
+const saved=chat.sessions[0].messages[0].steps[0].activity;assert.equal(saved.artifact.file,'/tmp/done.mp4');assert.equal(saved.change.duration_sec,1);assert.ok(!JSON.stringify(saved).includes('private'));
+console.log('Activity evidence: actual affected tracks, post-edit thumbnails, streamed insertion, verified outputs and safe saved display data passed');

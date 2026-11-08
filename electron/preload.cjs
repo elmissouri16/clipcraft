@@ -48,11 +48,15 @@ contextBridge.exposeInMainWorld('api', {
   soundzaTest: (key) => ipcRenderer.invoke('soundza:test', key),
   soundzaPreview: (item) => ipcRenderer.invoke('soundza:preview', item),
   libraryFile: (item) => ipcRenderer.invoke('library:file', item),
-  libraryAdd: (item) => ipcRenderer.invoke('library:add', item),
+  libraryAdd: (item, opts) => ipcRenderer.invoke('library:add', item, opts),
   ensureVisuals: (items) => ipcRenderer.invoke('media:ensureVisuals', items),
   colorSample: (item, from, to) => ipcRenderer.invoke('color:sample', item, from, to),
   stabilizeRun: (item, from, to, level) => ipcRenderer.invoke('stabilize:run', item, from, to, level),
   reverseRun: (item, from, to) => ipcRenderer.invoke('reverse:run', item, from, to),
+  agentMediaJob: (req) => ipcRenderer.invoke('agent:mediaJob', req),
+  agentExportBegin: (req) => ipcRenderer.invoke('agent:exportBegin', req),
+  agentReviewRendered: (req) => ipcRenderer.invoke('agent:reviewRendered', req),
+  agentFileJob: (req) => ipcRenderer.invoke('agent:fileJob', req),
   reverseCancel: () => ipcRenderer.invoke('reverse:cancel'),
   detachRun: (item, from, to) => ipcRenderer.invoke('detach:run', item, from, to),
   detachCancel: () => ipcRenderer.invoke('detach:cancel'),
@@ -88,6 +92,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('track:progress', handler);
   },
   proxyStatus: () => ipcRenderer.invoke('proxy:status'),
+  foregroundWork: (state) => ipcRenderer.invoke('media:foregroundWork', state),
   proxySet: (on) => ipcRenderer.invoke('proxy:set', on === true),
   qualitySet: (q) => ipcRenderer.invoke('proxy:setQuality', q),
   perfGetMode: () => ipcRenderer.invoke('perf:getMode'),
@@ -119,34 +124,56 @@ contextBridge.exposeInMainWorld('api', {
   frameGrab: (mediaPath, at) => ipcRenderer.invoke('media:frame', mediaPath, at),
   exportCaps: () => ipcRenderer.invoke('export:caps'),
   // Text layer: begin, then one call per frame (pixels, or { blank: n } / { same: n }), then end (frame count).
-  exportTextBegin: (dir, width, height, fps) => ipcRenderer.invoke('export:textBegin', dir, width, height, fps),
+  exportTextBegin: (dir, width, height, fps, options) => ipcRenderer.invoke('export:textBegin', dir, width, height, fps, options),
+  exportTextCached: (dir, width, height, fps, count, key) => ipcRenderer.invoke('export:textCached', dir, width, height, fps, count, key),
   exportTextFrame: (dir, frame) => ipcRenderer.invoke('export:textFrame', dir, frame),
   exportTextEnd: (dir) => ipcRenderer.invoke('export:textEnd', dir),
   exportAbort: (dir) => ipcRenderer.invoke('export:abort', dir),
   exportRun: (project, target, textFrames) => ipcRenderer.invoke('export:run', project, target, textFrames),
   cancelExport: () => ipcRenderer.invoke('export:cancel'),
+  exportActivity: (state) => ipcRenderer.invoke('export:activity',state),
   fxBegin: (project, spec) => ipcRenderer.invoke('fx:begin', project, spec),
-  fxRead: (id) => ipcRenderer.invoke('fx:read', id),
+  fxRead: (id, count) => ipcRenderer.invoke('fx:read', id, count),
   fxWrite: (id, bytes) => ipcRenderer.invoke('fx:write', id, bytes),
   fxEnd: (id) => ipcRenderer.invoke('fx:end', id),
+  fxLut: (size, bytes) => ipcRenderer.invoke('fx:lut', size, bytes),
+  fxTransfer: true, // effect frames also travel by transfer: see "Effect frames" below
   fxClear: () => ipcRenderer.invoke('fx:clear'),
   exportAudio: (project, format, name) => ipcRenderer.invoke('export:audio', project, format, name),
   showInFolder: (file) => ipcRenderer.invoke('shell:show', file),
   openFile: (file) => ipcRenderer.invoke('shell:open', file),
   openHelp: (url) => ipcRenderer.invoke('app:openHelp', url),
   agentStep: (req) => ipcRenderer.invoke('agent:step', req),
+  agentAttachImages: files => ipcRenderer.invoke('agent:attachImages', files ? files.map(file => ({ path: webUtils.getPathForFile(file) })) : null),
+  agentPasteImages: items => ipcRenderer.invoke('agent:attachImages', items),
+  agentImagePreview: id => ipcRenderer.invoke('agent:imagePreview', id),
+  agentValidateImages: ids => ipcRenderer.invoke('agent:validateImages', ids),
+  agentRunNative: req => ipcRenderer.invoke('agent:runNative', req),
+  agentNativeToolResult: req => ipcRenderer.invoke('agent:nativeToolResult', req),
+  onAgentNativeTool: cb => { const handler = (_event, req) => cb(req); ipcRenderer.on('agent:nativeTool', handler); return () => ipcRenderer.removeListener('agent:nativeTool', handler); },
+  onAgentNativeStop: cb => { const handler = (_event, req) => cb(req); ipcRenderer.on('agent:nativeStop', handler); return () => ipcRenderer.removeListener('agent:nativeStop', handler); },
+  onAgentNativeProgress: cb => { const handler = (_event, req) => cb(req); ipcRenderer.on('agent:nativeProgress', handler); return () => ipcRenderer.removeListener('agent:nativeProgress', handler); },
   onAgentSearch: (cb) => { const handler = (_e, value) => cb(value); ipcRenderer.on('agent:search', handler); return () => ipcRenderer.removeListener('agent:search', handler); },
   openWebSource: (url) => ipcRenderer.invoke('agent:openSource', url),
   agentAnalyzeScenes: req => ipcRenderer.invoke('agent:analyzeScenes', req),
   agentAnnotateScene: req => ipcRenderer.invoke('agent:annotateScene', req),
   agentInspectFrames: (req) => ipcRenderer.invoke('agent:inspectFrames', req),
+  agentFrameSheet: (req) => ipcRenderer.invoke('agent:frameSheet', req),
   agentGenerateImage: (req) => ipcRenderer.invoke('agent:generateImage', req),
   agentGenerateImages: (req) => ipcRenderer.invoke('agent:generateImages', req),
+  onAgentImageProgress: cb => { const handler = (_event, progress) => cb(progress); ipcRenderer.on('agent:imageProgress', handler); return () => ipcRenderer.removeListener('agent:imageProgress', handler); },
   agentCancel: (requestId) => ipcRenderer.invoke('agent:cancel', requestId),
   agentSilences: (project, opts) => ipcRenderer.invoke('agent:silences', project, opts),
+  agentBeats: (project, opts) => ipcRenderer.invoke('agent:beats', project, opts),
+  agentLoudness: (project, opts) => ipcRenderer.invoke('agent:loudness', project, opts),
+  agentRefineCuts: (project, opts) => ipcRenderer.invoke('agent:refineCuts', project, opts),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
+  platform: process.platform,
+  messageBoxSync: (req) => ipcRenderer.sendSync('dialog:messageSync', req),
+  onAppCommand: (cb) => { const handler = (_e, command) => cb(command); ipcRenderer.on('app:command', handler); return () => ipcRenderer.removeListener('app:command', handler); },
   settingsSetMcpServers: (list) => ipcRenderer.invoke('settings:setMcpServers', list),
-  mcpTools: () => ipcRenderer.invoke('mcp:tools'),
+  settingsSetShortcuts: (map) => ipcRenderer.invoke('settings:setShortcuts', map),
+  mcpTools: (opts) => ipcRenderer.invoke('mcp:tools', opts),
   mcpCall: (req) => ipcRenderer.invoke('mcp:call', req),
   mcpTest: (server) => ipcRenderer.invoke('mcp:test', server),
   settingsSave: (patch) => ipcRenderer.invoke('settings:save', patch),
@@ -165,7 +192,7 @@ contextBridge.exposeInMainWorld('api', {
   telemetrySetConsent: (on) => ipcRenderer.invoke('telemetry:setConsent', on),
   stockTest: (key) => ipcRenderer.invoke('stock:test', key),
   ttsStatus: () => ipcRenderer.invoke('tts:status'),
-  ttsElevenVoices: () => ipcRenderer.invoke('tts:elevenVoices'),
+  ttsElevenVoices: (opts) => ipcRenderer.invoke('tts:elevenVoices', opts),
   ttsElevenUsage: () => ipcRenderer.invoke('tts:elevenUsage'),
   ttsTestKey: (key) => ipcRenderer.invoke('tts:testKey', key),
   ttsGeminiTestKey: (key) => ipcRenderer.invoke('tts:geminiTestKey', key),
@@ -206,20 +233,18 @@ contextBridge.exposeInMainWorld('api', {
   firstRunSet: (patch) => ipcRenderer.invoke('firstrun:set', patch),
   stockSearch: (opts) => ipcRenderer.invoke('stock:search', opts),
   stockThumb: (url) => ipcRenderer.invoke('stock:thumb', url),
-  stockAdd: (item) => ipcRenderer.invoke('stock:add', item),
+  stockAdd: (item, opts) => ipcRenderer.invoke('stock:add', item, opts),
   makeScene: (opts) => ipcRenderer.invoke('scene:make', opts),
-  // AI background removal: run(item) -> { matte } | { canceled } | { error }; progress: { path, stage, fraction }.
-  mattingStatus: () => ipcRenderer.invoke('matting:status'),
-  mattingRun: (item) => ipcRenderer.invoke('matting:run', item),
-  mattingCancel: () => ipcRenderer.invoke('matting:cancel'),
-  onMattingProgress: (cb) => {
-    const handler = (_e, p) => cb(p);
-    ipcRenderer.on('matting:progress', handler);
-    return () => ipcRenderer.removeListener('matting:progress', handler);
-  },
   aiTest: (draft) => ipcRenderer.invoke('ai:test', draft),
   aiModels: (draft) => ipcRenderer.invoke('ai:models', draft),
   aiModelCapabilities: (draft) => ipcRenderer.invoke('ai:modelCapabilities', draft),
+  aiRuntimeInstall: (provider) => ipcRenderer.invoke('ai:runtimeInstall', provider),
+  aiRuntimeCancel: (provider) => ipcRenderer.invoke('ai:runtimeCancel', provider),
+  onAiRuntimeProgress: (cb) => {
+    const handler = (_e, progress) => cb(progress);
+    ipcRenderer.on('ai:runtimeProgress', handler);
+    return () => ipcRenderer.removeListener('ai:runtimeProgress', handler);
+  },
   aiSdkStatus: (draft) => ipcRenderer.invoke('ai:sdkStatus', draft),
   aiPickExecutable: (provider) => ipcRenderer.invoke('ai:pickExecutable', provider),
   captionsStatus: () => ipcRenderer.invoke('captions:status'),
@@ -232,8 +257,36 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('captions:progress', handler);
   },
   onExportProgress: (cb) => {
-    const handler = (_e, p) => cb(p);
+    const handler = (_e, p, detail) => cb(p,detail);
     ipcRenderer.on('export:progress', handler);
     return () => ipcRenderer.removeListener('export:progress', handler);
   },
+});
+
+// Effect frames (src/features/export/fxChannel.js). contextBridge copies every typed array
+// it passes, so a 1080p frame was copied twice more on its way through the effects pass
+// (~6 ms each way). Here the page and this preload hand frames over as transferred buffers
+// in window messages (same process: no copy); only the IPC call itself serializes them.
+// Only the two frame calls of the effects pass are served, for this window's own page.
+const FX_TAG = 'clipcraft:fx-frames';
+const buffersOf = (value) => {
+  const out = new Set();
+  const add = (v) => { if (ArrayBuffer.isView(v)) out.add(v.buffer); else if (v && typeof v === 'object') Object.values(v).forEach(add); };
+  add(value);
+  return [...out];
+};
+window.addEventListener('message', async (event) => {
+  const m = event.data;
+  if (event.source !== window || !m || m.tag !== FX_TAG || m.dir !== 'call' || typeof m.seq !== 'number' || typeof m.id !== 'string') return;
+  let result, returned = [];
+  try {
+    if (m.op === 'read') result = await ipcRenderer.invoke('fx:read', m.id, Number(m.count) || 1);
+    else if (m.op === 'write') {
+      const pending = ipcRenderer.invoke('fx:write', m.id, m.bytes); // serialized here: the buffers are free again
+      returned = Array.isArray(m.bytes) ? m.bytes : [m.bytes];
+      result = await pending;
+    } else return;
+  } catch (error) { result = { ok: false, error: error.message }; }
+  const reply = { tag: FX_TAG, dir: 'reply', seq: m.seq, result, returned };
+  window.postMessage(reply, '*', buffersOf([result, returned]));
 });
