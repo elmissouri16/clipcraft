@@ -13,7 +13,7 @@ export const SUPPORT_URL = 'https://paypal.me/hamzaAbika';
 // no slogans; the projects are the main content.
 
 // ratio -> the sizeFor() short side that yields the labelled pixel size.
-const PRESETS = [
+export const PRESETS = [
   { ratio: '16:9', label: 'Landscape', use: 'YouTube, desktop', size: '1920 × 1080', short: 1080 },
   { ratio: '9:16', label: 'Vertical', use: 'Reels, TikTok, Shorts', size: '1080 × 1920', short: 1080 },
   { ratio: '1:1', label: 'Square', use: 'Feed posts', size: '1080 × 1080', short: 1080 },
@@ -108,7 +108,7 @@ function RemoveDialog({ project, onCancel, onConfirm }) {
 
 const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; } };
 
-export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved }) {
+export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved, agentBadge = null }) {
   const [fps, setFps] = useState(30);
   // The version reads the real app version (package.json via app:version).
   const [version, setVersion] = useState('');
@@ -132,6 +132,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           <span className="home-ver">{version ? `Version ${version}` : 'ClipCraft'}</span>
         </div>
         <nav className="home-actions" aria-label="Start">
+          {agentBadge}
           <button type="button" className="btn home-action" onClick={onOpen}><FolderOpen size={15} /><span>Open project</span></button>
           <button type="button" className="btn home-action" onClick={onImportMedia}><Import size={15} /><span>Import media</span></button>
           <button type="button" className="btn home-action" onClick={() => onRecordStart?.(fps)}><Monitor size={15} /><span>Record screen</span></button>

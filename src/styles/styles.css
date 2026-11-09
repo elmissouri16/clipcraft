@@ -2830,3 +2830,17 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 @media (prefers-reduced-motion: reduce) {
   .home-frame-card, .home-grid .home-card, .home-card-x, .home-format-shape > span { transition: none; }
 }
+
+/* ---- External agents over MCP (docs/design/external-agent-mcp.md) ---- */
+.external-badge { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--primary-soft); border: 1px solid var(--border-strong); color: var(--text); font-size: 12px; max-width: 220px; }
+.external-badge .external-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.external-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.pilot-external { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--primary-soft); color: var(--text-2); font-size: 12px; line-height: 1.4; }
+.pilot-external > span { flex: 1; min-width: 0; }
+.pilot-external b { color: var(--text); margin-right: 4px; }
+.pilot-external .btn { flex: none; }
+.external-settings-command { display: block; width: 100%; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-1); border: 1px solid var(--border); font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); white-space: pre-wrap; word-break: break-all; user-select: text; }
+.external-settings-row { display: flex; align-items: flex-start; gap: 8px; }
+.external-settings-row .external-settings-command { flex: 1; min-width: 0; }
+.set2-field-block { display: grid; gap: 4px; }
+.set2-field-block + .set2-field-block { margin-top: 12px; }

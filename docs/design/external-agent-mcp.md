@@ -1,6 +1,17 @@
 # External agents over MCP: ClipCraft as a tool server
 
-Status: plan (2026-11-08). Nothing implemented yet.
+Status: phases 0–4 implemented on `feat/external-mcp` (2026-11-09); user guide in
+[`docs/agents/external-mcp.md`](../agents/external-mcp.md). Not yet done: a run with a real Claude
+Code or Codex session, and a packaged build check that the unpacked bridge runs in Node mode.
+The four decisions below were taken as recommended.
+
+Changes from the plan while building it:
+
+- `open_project` with a path does not ask again: allowing the agent covers opening its files.
+- The tool list check is its own suite (`test-external-contract.mjs`) instead of an extension of
+  `test-agent-parity.mjs`, which skips when no agent is installed.
+- A read that leaves nothing to validate closes its edit at once, so the user's own edits between
+  an agent's reads never count as interruptions.
 
 ## Goal
 
@@ -142,7 +153,7 @@ first (`flushAutosave`), as when the user leaves it.
 | `get_status` | screen (home/editor), open project (id, name, file, revision, save state), connected client, running export | first call an agent should make |
 | `list_projects` | Home's merged list: autosave slots and file recents, newest first (id, name, format, file, modified, open) | the same list Home shows |
 | `create_project` | `{ format, fps?, name? }`, format being one of Home's five presets | `startNewProject` |
-| `open_project` | `{ id }` from `list_projects`, or `{ path }` to an existing `*.clipcraft.json` | `pickSlot` / `openRecent`; a path joins the known project files only after the user allows it |
+| `open_project` | `{ id }` from `list_projects`, or `{ path }` to an existing `*.clipcraft.json` | `loadSlot` / `loadFile` (Home's open, returning errors instead of dialogs) |
 | `save_project` | saves to the project's file; `{ path }` saves to a new `.clipcraft.json` (parent folder must exist, never overwrites another file) | no dialog: the agent gives the path |
 | `close_project` | back to Home | flushes autosave |
 
@@ -193,8 +204,8 @@ Deleting projects stays a user action on Home.
 - **Real agents** (manual, needs accounts): the same small request through Claude Code and Codex
   connected over the bridge, compared in `agent-runs.jsonl` with the in-app native run of the same
   request. Acceptance: no failure class that occurs on the external path only.
-- Battery: the new suites pass, so the baseline moves from 79/6 to 81 PASS / 6 FAIL (87 files).
-  The commit says so.
+- Battery: three new suites (`test-external-bridge`, `test-external-contract`,
+  `test-external-agents-ui`). The commit states the battery result.
 
 ## Acceptance
 

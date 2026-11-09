@@ -29,6 +29,7 @@ electron/
   preload.cjs              Sandboxed renderer bridge
   agents/                  Providers, native runtimes, MCP and frame tools
     adapters/              One wire adapter per native agent (Codex, Claude) over contract.cjs
+    external/              MCP for outside agents: stdio bridge, app endpoint, one-agent lock
   audio/                   Speech, transcription and audio processing
   export/                  Layers, text streaming, render jobs and fonts
   graphics/                Motion graphics sandbox, runtime and renderer

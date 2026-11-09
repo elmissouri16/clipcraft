@@ -24,6 +24,8 @@ export function normalizeChatSessions(value) {
     seen.add(s.id); return true;
   }).map((s) => ({
     id: s.id, title: typeof s.title === 'string' ? s.title : 'New chat',
+    // Activity of an outside agent (external MCP): shown read-only, named after the agent.
+    ...(typeof s.external === 'string' && s.external.trim() ? { external: s.external.trim().slice(0, 60) } : {}),
     timelineAttachments: normalizeTimelineAttachments(s.timelineAttachments),
     images: normalizeChatImages(s.images),
     videos: normalizeChatVideos(s.videos),

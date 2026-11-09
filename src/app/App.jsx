@@ -2,7 +2,9 @@ import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'r
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
 import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
-import HomeScreen from './components/HomeScreen.jsx';
+import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
+import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
+import { useExternalAgent } from './useExternalAgent.js';
 import SequenceDialog from "../features/timeline/components/SequenceDialog.jsx";
 import { mismatchFor, sequencePatchFor } from "../features/timeline/sequence.js";
 import { sizeFor } from "../features/effects/effects.js";
@@ -56,6 +58,8 @@ import { graphicOutdated, isGraphicMedia, redrawGraphicAction, renderGraphicMedi
 export default function App() {
   const [state, reduceDispatch] = useReducer(historyReducer, { past: [], present: emptyProject(), future: [] });
   const [projectLoadVersion, setProjectLoadVersion] = useState(0);
+  const loadVersionRef = useRef(projectLoadVersion);
+  loadVersionRef.current = projectLoadVersion;
   const dispatch = useCallback((action) => {
     // Opening a saved file can replace the same project id. Remount its chat too,
     // so the file's conversations win over the previous in-memory copy.
@@ -101,6 +105,8 @@ export default function App() {
   const [exporting, setExporting] = useState(null);
   const [agentRendering,setAgentRendering] = useState(false);
   const [agentRun, setAgentRun] = useState(null);
+  const agentRunRef = useRef(agentRun);
+  agentRunRef.current = agentRun;
   const exportBusy = agentRendering || (!!exporting && !exporting.ready && !exporting.done && !exporting.error);
   useEffect(() => {
     window.api.foregroundWork?.({ playing, exporting: exportBusy }).catch(() => {});
@@ -176,6 +182,8 @@ export default function App() {
   const [closeAsk, setCloseAsk] = useState(null); // { name, resolve }: the "Save before closing?" question
   // ---- Home screen + recent projects (localStorage 'clipcraft.recents') ----
   const [screen, setScreen] = useState('home'); // 'home' | 'editor'
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
   // W6 deferred welcome trigger: the first entry into the editor with the first-run
   // surface unseen opens the welcome card (declared here, after `screen`). The pack
   // prompt is NOT moved — it still chains off closeWelcome, exactly as before.
@@ -185,6 +193,8 @@ export default function App() {
   const [recents, setRecents] = useState(() => {
     try { return JSON.parse(localStorage.getItem('clipcraft.recents') || '[]'); } catch { return []; }
   });
+  const recentsRef = useRef(recents);
+  recentsRef.current = recents;
   const [seqAsk, setSeqAsk] = useState(null); // { media, mismatch, proceed }: sequence mismatch waiting for the user
   const storeRecents = (list) => {
     setRecents(list);
@@ -1456,10 +1466,10 @@ export default function App() {
   };
 
   // ---- Home screen actions ----
-  const startNewProject = async (preset, fps) => {
+  const startNewProject = async (preset, fps, name = 'Untitled') => {
     await flushAutosave(); // the project being left keeps everything, slot included
     const p = {
-      ...emptyProject(), name: 'Untitled', ratio: preset.ratio,
+      ...emptyProject(), name, ratio: preset.ratio,
       ...sizeFor(preset.ratio, preset.short), resolution: preset.short, fps, ratioLocked: true,
     };
     autosave.current.file = null;
@@ -1482,17 +1492,17 @@ export default function App() {
   // Open a project from its autosave slot (the card may be slot-only or merged with the
   // file recent for the same project). The current project is flushed first, then the
   // slot's state is restored whole — media paths included, exactly like a file open.
-  const openSlot = async (entry) => {
+  // Returns { error } instead of showing it, for external agents (open_project); openSlot shows it.
+  const loadSlot = async (slotId) => {
     await flushAutosave(); // whatever is in the editor right now keeps its latest state
-    const slot = await window.api.slotRead(entry.slotId);
+    const slot = await window.api.slotRead(slotId);
     if (!slot) {
       refreshSlots();
-      showAlert('That auto-saved project could not be found any more, so it was removed from the list.');
-      return;
+      return { error: 'That auto-saved project could not be found any more, so it was removed from the list.' };
     }
     let p;
     try { p = { ...normalizeProject(slot.project), id: slot.id }; }
-    catch (e) { showAlert('Invalid auto-saved project: ' + e.message); return; }
+    catch (e) { return { error: 'Invalid auto-saved project: ' + e.message }; }
     autosave.current.file = slot.file || null;
     autosave.current.pendingRestore = false;
     dispatch({ type: 'load', project: p });
@@ -1501,15 +1511,16 @@ export default function App() {
     setTime(0);
     setSelection(null);
     setScreen('editor');
+    return { opened: p.id };
   };
+  const openSlot = async (entry) => { const r = await loadSlot(entry.slotId); if (r?.error) showAlert(r.error); };
 
-  const openRecent = async (r) => {
-    if (r.slotId) return openSlot(r);
-    const res = await window.api.openProjectPath?.(r.path);
+  // A project file by path (Home recents, external agents). Returns { error } instead of showing it.
+  const loadFile = async (filePath) => {
+    const res = await window.api.openProjectPath?.(filePath);
     if (!res) {
-      storeRecents(recents.filter((x) => x.path !== r.path));
-      showAlert('That project file could not be found any more, so it was removed from recents.');
-      return;
+      storeRecents(recentsRef.current.filter((x) => x.path !== filePath));
+      return { error: 'That project file could not be found any more, so it was removed from recents.' };
     }
     try {
       const p = await adoptFileBinding(normalizeProject(JSON.parse(res.json)), res.file);
@@ -1523,9 +1534,15 @@ export default function App() {
       pushRecent(recentOf(p, res.file));
       writeSlotNow(p, res.file); // the slot syncs to the file's content under the shared id
       setScreen('editor');
+      return { opened: p.id };
     } catch (e) {
-      showAlert('Invalid project file: ' + e.message);
+      return { error: 'Invalid project file: ' + e.message };
     }
+  };
+  const openRecent = async (r) => {
+    if (r.slotId) return openSlot(r);
+    const res = await loadFile(r.path);
+    if (res?.error) showAlert(res.error);
   };
 
   const importFromHome = async () => {
@@ -1886,6 +1903,78 @@ export default function App() {
   // After the assistant dispatches edits, wait for React to render them so the next tool reads the new project.
   const settle = useCallback(() => new Promise((r) => setTimeout(r, 60)), []);
 
+  // ---- External agents over MCP (docs/design/external-agent-mcp.md): the project tools run through
+  // the same functions Home and the top bar use, and return errors instead of showing them. ----
+  const agentProjects = {
+    status: () => ({ file: autosave.current.file || null, save_state: saveState }),
+    list: async (query) => {
+      const slots = await window.api.slotList?.().catch(() => []) || [];
+      const list = (Array.isArray(slots) ? slots : []).map((x) => ({ id: x.id, name: x.title || 'Untitled', format: x.ratio || '', file: x.file || null, modified: x.updatedAt || 0 }));
+      for (const r of recentsRef.current) {
+        const same = list.find((e) => e.file && e.file === r.path);
+        if (same) same.modified = Math.max(same.modified, r.modifiedAt || 0);
+        else list.push({ id: r.path, name: r.name || 'Untitled', format: r.ratio || '', file: r.path, modified: r.modifiedAt || 0 });
+      }
+      const open = screen === 'editor' ? projectRef.current.id : null, q = String(query || '').trim().toLowerCase();
+      return list.filter((e) => !q || e.name.toLowerCase().includes(q)).sort((a, b) => b.modified - a.modified).slice(0, 100)
+        .map((e) => ({ ...e, modified: e.modified ? new Date(e.modified).toISOString() : null, open: e.id === open }));
+    },
+    create: async ({ format, fps = 30, name }) => {
+      const preset = PRESETS.find((p) => p.ratio === format);
+      if (!preset) return { error: `format must be one of ${PRESETS.map((p) => p.ratio).join(', ')}.` };
+      setPlaying(false);
+      await startNewProject(preset, fps, String(name || '').trim().slice(0, 120) || 'Untitled');
+      await settle();
+      return { created: projectRef.current.id };
+    },
+    open: async ({ id, path: filePath }) => {
+      if (!id && !filePath) return { error: 'Give the id from list_projects, or the path of a .clipcraft.json file.' };
+      setPlaying(false);
+      const slots = await window.api.slotList?.().catch(() => []) || [];
+      const result = id && slots.some?.((x) => x.id === id) ? await loadSlot(id)
+        : await loadFile(filePath || id);
+      await settle();
+      return result;
+    },
+    save: async (target) => {
+      const a = autosave.current;
+      if (!target) {
+        if (!a.file) return { error: 'This project has no file yet. Call save_project with path: an absolute path ending in .clipcraft.json. It is auto-saved for Home either way.' };
+        const ok = await writeFile();
+        await writeSlotNow();
+        return ok ? { saved: true, file: a.file } : { error: 'Could not write the project file.' };
+      }
+      const p = projectRef.current;
+      clearTimeout(a.fileTimer); a.fileTimer = null;
+      const { pretty } = await serializeProject(p);
+      await a.writing?.catch(() => {});
+      const res = await window.api.saveProjectAgent(pretty, target, a.file);
+      if (res?.error) return { error: res.error };
+      a.file = res.file;
+      setSaveState('saved');
+      pushRecent(recentOf(p, res.file));
+      await keepRecovery(false);
+      await writeSlotNow(p, res.file);
+      return { saved: true, file: res.file };
+    },
+    close: async () => {
+      setPlaying(false);
+      await flushAutosave();
+      refreshSlots();
+      setScreen('home');
+      await settle();
+      return { screen: 'home' };
+    },
+  };
+  const externalApp = useRef(null);
+  externalApp.current = {
+    screen: () => screenRef.current, project: () => projectRef.current, loadVersion: () => loadVersionRef.current,
+    dispatch, settle, pilotApp, craftBusy: () => !!agentRunRef.current, projects: agentProjects,
+  };
+  const external = useExternalAgent(externalApp, settingsVersion);
+  const externalBadge = <ExternalAgentBadge holder={external.holder} onDisconnect={external.disconnect} />;
+  const externalApproval = <ExternalAgentApproval approval={external.approval} onAnswer={external.answer} />;
+
   // Keyboard shortcuts.
   const keys = useRef({});
   keys.current = { togglePlay, split, remove, duplicate, seek, readTime, trimSide, toggleMarker, setTool, copy, cut, paste, extractAudio: detachAudio, save };
@@ -1927,7 +2016,8 @@ export default function App() {
           onRecordStart={startRecording}
           unsavedNote={unsavedNote}
           onRestoreUnsaved={restoreUnsaved}
-          onDiscardUnsaved={discardUnsaved} />
+          onDiscardUnsaved={discardUnsaved} agentBadge={externalBadge} />
+        {externalApproval}
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
         {settingsOpen && <SettingsDialog onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
           onAbout={() => setAboutOpen('settings')} updateReady={!!update?.newer} />}
@@ -1942,7 +2032,7 @@ export default function App() {
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
-      <TopBar workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
+      <TopBar agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
         onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }}
         updateReady={!!update?.newer} />
 
@@ -2042,7 +2132,8 @@ export default function App() {
         timelineContextRequest={timelineContextRequest?.projectId === project.id && timelineContextRequest.loadVersion === projectLoadVersion ? timelineContextRequest : null}
         presentation={agentMode ? 'docked' : 'floating'} onExpand={() => setWorkspaceMode('agent')}
         onImport={importMedia} onAttachSelection={() => selection && attachTimelineContext({ kind: 'clips', clip_refs: selection.items || [{ track: selection.track, id: selection.id }] })} hasSelection={!!selection}
-        app={pilotApp} />
+        app={pilotApp} external={{ holder: external.holder, onDisconnect: external.disconnect, subscribe: external.subscribe }} />
+      {externalApproval}
       {dragOver && <div className="drop-overlay"><div>Drop files to import them</div></div>}
       {renderJob && (
         <div className="render-job" role="status">

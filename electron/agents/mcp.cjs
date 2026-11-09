@@ -10,9 +10,10 @@ const CLIENT_INFO = { name: 'ClipCraft', version: '2.0.0' };
 class McpError extends Error {}
 
 class McpClient {
-  constructor(server, { timeoutMs = 20000 } = {}) {
-    this.server = server; // { name, command, args }
+  constructor(server, { timeoutMs = 20000, clientInfo = CLIENT_INFO } = {}) {
+    this.server = server; // { name, command, args, env? }
     this.timeoutMs = timeoutMs;
+    this.clientInfo = clientInfo;
     this.proc = null;
     this.buffer = '';
     this.nextId = 1;
@@ -25,7 +26,7 @@ class McpClient {
     this.started = (async () => {
       const { command, args = [] } = this.server;
       if (!command) throw new McpError('This MCP server has no command.');
-      const proc = this.proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      const proc = this.proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], ...(this.server.env ? { env: { ...process.env, ...this.server.env } } : {}) });
       this.buffer = '';
       this.proc.stdout.setEncoding('utf8');
       this.proc.stdout.on('data', (chunk) => { if (this.proc === proc) this.onData(chunk); });
@@ -42,7 +43,7 @@ class McpClient {
       const init = await this.request('initialize', {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: CLIENT_INFO,
+        clientInfo: this.clientInfo,
       });
       this.notify('notifications/initialized', {});
       return init;

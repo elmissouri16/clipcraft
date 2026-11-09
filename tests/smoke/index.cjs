@@ -50,6 +50,7 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'persistence-performance') return require('./smoke-persistence-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'structure') return require('./smoke-structure.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'native-agents') return require('./smoke-native-agents.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'external-agents') return require('./smoke-external-agents.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-loop') return require('./smoke-agent-loop.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-audio') return require('./smoke-agent-audio.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-scenes') return require('./smoke-agent-scenes.cjs')(win, app, dir);

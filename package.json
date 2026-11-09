@@ -128,6 +128,8 @@
     ],
     "asarUnpack": [
       "bundled-templates/**",
+      "electron/agents/external/bridge.cjs",
+      "electron/agents/external/protocol.cjs",
       "node_modules/ffmpeg-static/**",
       "node_modules/ffprobe-static/**",
       "node_modules/@ffprobe-installer/**"

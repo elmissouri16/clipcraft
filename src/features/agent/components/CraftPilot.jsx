@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, Settings, Square, Undo2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, Settings, Square, Undo2, X } from 'lucide-react';
 import { runAgent } from "../runAgent.js";
 import { makeAgentCtx } from "../agentCtx.js";
 import { addTimelineAttachment, resolveTimelineAttachments, timelineAttachmentLabel, timelineContextPart } from '../timelineContext.js';
@@ -42,7 +42,7 @@ function Rich({ text }) {
   });
 }
 
-export default function CraftAI({ getProject, getHistoryLength, dispatch, settle, onOpenSettings, settingsVersion, timelineContextRequest, presentation = 'floating', onExpand, onImport, onAttachSelection, hasSelection, onRunStateChange, runKey, onAttachmentDrag, app = {} }) {
+export default function CraftAI({ getProject, getHistoryLength, dispatch, settle, onOpenSettings, settingsVersion, timelineContextRequest, presentation = 'floating', onExpand, onImport, onAttachSelection, hasSelection, onRunStateChange, runKey, onAttachmentDrag, app = {}, external = null }) {
   const [floatingOpen, setOpen] = useState(false);
   const docked = presentation === 'docked';
   const open = docked || floatingOpen;
@@ -64,6 +64,10 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     return structuredClone(saved);
   });
   const chatRef = useRef(chat);
+  // An outside agent (external MCP) holding the editor pauses CraftAI (docs/design/external-agent-mcp.md).
+  const externalRef = useRef(external);
+  externalRef.current = external;
+  const holder = external?.holder || null;
   const session = chat.sessions.find((s) => s.id === chat.activeSessionId);
   const { messages, draft: input } = session;
   const [busy, setBusy] = useState(false);
@@ -260,7 +264,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const startTurn = async (item, queued = false, preserveComposer = false) => {
     const msg = item.text.trim();
     // Claim synchronously: two Enter presses cannot start concurrent requests.
-    if (!msg || activeRequest.current || preparingRequest.current || modelSaving || !config?.ready || !isCurrent()) return;
+    if (!msg || activeRequest.current || preparingRequest.current || modelSaving || !config?.ready || !isCurrent() || externalRef.current?.holder) return;
     preparingRequest.current = true;setPreparing(true);
     followLatest.current=true;setAwayFromLatest(false);
     let attached, contextPart;
@@ -347,7 +351,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const send = (text) => {
     const current = chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId);
     const msg = text.trim() || (current.videos?.length ? 'Edit my footage in the style of the attached reference video.' : current.images.length ? 'Review the attached images.' : '');
-    if (!msg || modelSaving || preparingRequest.current || importingImages.current || !config?.ready || !isCurrent()) return;
+    if (!msg || modelSaving || preparingRequest.current || importingImages.current || !config?.ready || !isCurrent() || externalRef.current?.holder || current.external) return;
     const item = { id: crypto.randomUUID(), text: msg, images: structuredClone(current.images), ...(current.videos?.length ? { videos: structuredClone(current.videos) } : {}), timelineAttachments: structuredClone(current.timelineAttachments || []) };
     if (activeRequest.current || current.queue.length) {
       updateSession(s => ({ queue: [...s.queue, item], queuePaused: s.queue.length ? s.queuePaused : !!canceled.current, draft: '', timelineAttachments: [], images: [], videos: [] }));
@@ -357,8 +361,51 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   };
 
   useEffect(() => {
-    if (!busy && !preparing && !activeRequest.current && !session.queuePaused && session.queue.length && config?.ready && !modelSaving) startTurn(session.queue[0], true);
-  }, [busy, preparing, session.queue, session.queuePaused, chat.activeSessionId, config?.ready, modelSaving]);
+    if (!busy && !preparing && !activeRequest.current && !session.queuePaused && session.queue.length && config?.ready && !modelSaving && !holder) startTurn(session.queue[0], true);
+  }, [busy, preparing, session.queue, session.queuePaused, chat.activeSessionId, config?.ready, modelSaving, holder]);
+
+  // An outside agent's steps, in a read-only session named after it: one reply per edit, with the
+  // same activity rows CraftAI shows. Reads before an edit join the reply that follows.
+  useEffect(() => external?.subscribe?.((event) => {
+    if (!isCurrent() || !['edit-start', 'tool', 'edit-end', 'agent-released'].includes(event.type)) return;
+    const client = event.client || 'External agent', current = chatRef.current;
+    let target = current.sessions.find((s) => s.external === client), sessions = current.sessions, activeSessionId = current.activeSessionId;
+    if (!target) {
+      if (event.type !== 'edit-start' && event.type !== 'tool') return;
+      target = { ...newChatSession(), title: `${client} (external agent)`, external: client };
+      sessions = [...sessions, target];
+    }
+    let messages = target.messages;
+    const open = messages.at(-1)?.pending;
+    if (event.type === 'edit-start' || event.type === 'tool') {
+      if (!open) messages = [...messages, { role: 'assistant', text: '', steps: [], pending: true }];
+      if (event.type === 'tool') {
+        const { editId, client: _client, ...rest } = event, step = { ...rest, id: `${editId}:${event.id}` };
+        messages = messages.map((m, i) => {
+          if (i !== messages.length - 1) return m;
+          const steps = [...m.steps], at = steps.findIndex((s) => s.id === step.id);
+          if (at >= 0) steps[at] = step; else steps.push(step);
+          return { ...m, steps };
+        });
+      }
+    } else if (open && (event.type === 'agent-released' || event.reason !== 'read')) {
+      const changed = !!event.changed;
+      const text = event.type === 'agent-released' ? 'Disconnected.'
+        : event.reason === 'validated' ? changed ? 'Edit complete and validated.' : 'Checked. Nothing changed.'
+        : event.reason === 'interrupted' ? 'Interrupted: the project was changed in ClipCraft. Changes made before that were kept.'
+        : event.reason === 'canceled' ? 'Stopped by the agent.'
+        : event.reason === 'released' ? changed ? 'Disconnected. Changes were kept but not validated.' : 'Disconnected.'
+        : changed ? 'Changes kept; the agent moved on without validating them.' : 'Done.';
+      messages = messages.map((m, i) => i !== messages.length - 1 ? m : { ...m, pending: false, text,
+        steps: m.steps.map((s) => s.status === 'running' ? { ...s, status: 'error', detail: 'Interrupted.' } : s),
+        changed, undoRevision: changed ? projectRevision(getProject()) : null });
+    } else return;
+    sessions = sessions.map((s) => s.id === target.id ? { ...s, messages } : s);
+    // Show the agent's session when it starts work, unless the user is writing in another chat.
+    const active = sessions.find((s) => s.id === activeSessionId);
+    if (event.type === 'edit-start' && activeSessionId !== target.id && !activeRequest.current && !active?.draft?.trim()) { activeSessionId = target.id; contents.current = []; }
+    saveChat({ ...current, sessions, activeSessionId });
+  }), [external?.subscribe]);
 
   const newChat = () => {
     if (activeRequest.current || preparingRequest.current || importingImages.current) return;
@@ -417,7 +464,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
           </div>
 
           <div className="pilot-list" ref={listRef} onScroll={event=>{const e=event.currentTarget;followLatest.current=e.scrollHeight-e.scrollTop-e.clientHeight<80;setAwayFromLatest(!followLatest.current);}}>
-            {config && !config.ready && (
+            {config && !config.ready && !session.external && (
               <div className="pilot-callout">
                 <b>Connect an AI first</b>
                 <p>{config.error || 'Choose an installed Codex or Claude agent, a local Ollama model, or an API provider in Settings.'}</p>
@@ -454,7 +501,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                   </div>
                 ) : (
                   <div className="reply">
-                    <div className="pilot-reply-heading"><Zap size={13} /><b>CraftAI</b><span>{m.pending ? 'Working' : m.error ? 'Needs attention' : m.text === 'Stopped.' ? 'Stopped' : 'Complete'}</span></div>
+                    <div className="pilot-reply-heading">{session.external ? <Bot size={13} /> : <Zap size={13} />}<b>{session.external || 'CraftAI'}</b><span>{m.pending ? 'Working' : m.error ? 'Needs attention' : m.text === 'Stopped.' ? 'Stopped' : 'Complete'}</span></div>
                     {m.steps?.length > 0 && (
                       <details className="pilot-turn-activity" open={!docked || m.pending || m.steps.some(s => s.status === 'error') ? true : undefined}>
                         <summary>{m.pending ? <Loader2 size={12} className="spin" /> : <Check size={12} />}{m.pending ? 'Work in progress' : 'View activity'}<span>{m.steps.length} {m.steps.length === 1 ? 'step' : 'steps'}</span></summary>
@@ -508,6 +555,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
 
           {awayFromLatest&&<div className="pilot-latest"><button type="button" onClick={()=>{followLatest.current=true;setAwayFromLatest(false);if(listRef.current)listRef.current.scrollTop=listRef.current.scrollHeight;}}><ArrowDown size={13} />{busy ? 'Latest activity' : 'Latest messages'}</button></div>}
           <div className="pilot-composer">
+            {holder && <div className="pilot-external" role="status"><span><b>{holder} is connected</b> CraftAI is paused while an outside agent edits this project.</span><button type="button" className="btn btn-sm" onClick={external.onDisconnect}>Disconnect</button></div>}
+            {!holder && session.external && <div className="pilot-external" role="status"><span>What <b>{session.external}</b> did in ClipCraft. Start a new chat to use CraftAI.</span><button type="button" className="btn btn-sm" onClick={newChat}><MessageSquarePlus size={13} /> New chat</button></div>}
             {busy && <div className="pilot-run-status"><Loader2 size={14} className="spin" /><span role="status">{stopping ? 'Stopping…' : runningStep?.label || 'Working on your request…'}</span><button className="pilot-text-btn" onClick={stopRequest} disabled={stopping} aria-label="Stop"><Square size={11} />{stopping ? 'Stopping' : 'Stop'}</button></div>}
             <MessageQueue key={session.id} items={session.queue} paused={session.queuePaused} busy={busy} disabled={!config?.ready || modelSaving || stopping || preparing}
               onPause={() => updateSession({ queuePaused: true })}
@@ -534,8 +583,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
               <textarea ref={inputRef} rows={2} value={input} dir="auto"
                 placeholder={busy || session.queue.length ? 'Add the next instruction…' : 'Describe your next edit…'}
                 onPaste={event => { const files = [...event.clipboardData.files];if (files.length) { event.preventDefault();attachFiles(files); } }}
-                onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready} aria-label="Message" />
-              <button className="send" onClick={() => send(chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId).draft)} disabled={modelSaving || preparing || imagesLoading || (!input.trim() && !session.images.length && !session.videos?.length) || !config?.ready} aria-label={busy || session.queue.length ? 'Queue message' : 'Send'} title={busy || session.queue.length ? 'Add to queue (Enter)' : 'Send (Enter)'}>{preparing ? <Loader2 size={17} className="spin" /> : busy || session.queue.length ? <ListPlus size={17} /> : <ArrowUp size={17} />}</button>
+                onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready || !!holder || !!session.external} aria-label="Message" />
+              <button className="send" onClick={() => send(chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId).draft)} disabled={modelSaving || preparing || imagesLoading || (!input.trim() && !session.images.length && !session.videos?.length) || !config?.ready || !!holder || !!session.external} aria-label={busy || session.queue.length ? 'Queue message' : 'Send'} title={busy || session.queue.length ? 'Add to queue (Enter)' : 'Send (Enter)'}>{preparing ? <Loader2 size={17} className="spin" /> : busy || session.queue.length ? <ListPlus size={17} /> : <ArrowUp size={17} />}</button>
             </div>
             <div className="pilot-composer-hint"><span>{busy || session.queue.length ? 'Enter to queue · Shift+Enter for a new line' : 'Enter to send · Shift+Enter for a new line'}</span><span>Edits can be undone</span></div>
           </div>

@@ -11,7 +11,7 @@ const SAVE_STATES = {
   error: ['Not saved', 'The project file could not be written. Click Save to choose another place'],
 };
 
-export default function TopBar({ workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, updateReady = false }) {
+export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, updateReady = false }) {
   const [menu, setMenu] = useState(null);
   const set = (patch) => dispatch({ type: 'setProject', patch, transient: true });
   return (
@@ -52,6 +52,7 @@ export default function TopBar({ workspaceMode = 'edit', onWorkspaceModeChange, 
         </div>
       </div>
       <div className="top-workspace-actions">
+        {agentBadge}
         <div className="workspace-switch" role="group" aria-label="Workspace mode">
           {['edit', 'agent'].map(mode => <button key={mode} type="button" aria-pressed={workspaceMode === mode} onClick={() => onWorkspaceModeChange(mode)}>{mode === 'edit' ? 'Edit' : 'Agent'}</button>)}
         </div>

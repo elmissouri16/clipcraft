@@ -150,6 +150,8 @@ function createWindow() {
   win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     if (level >= 3) logCrash('interface error', { message: String(message).slice(0, 500), at: `${path.basename(sourceId || '')}:${line}` });
   });
+  win.webContents.on('did-start-loading', () => externalAgents.rendererGone());
+  win.webContents.on('render-process-gone', () => externalAgents.rendererGone());
   win.webContents.on('did-finish-load', () => {
     // An empty page (index.html written but the scripts not yet): check that the interface started.
     setTimeout(() => {
@@ -534,6 +536,23 @@ ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
     await persistence.writeProject(res.filePath, json);
     projectFiles.add(res.filePath);
     return res.filePath;
+  } catch (e) {
+    return { error: `Could not save the project: ${e.message}` };
+  }
+});
+// An external agent's save_project with a path (docs/design/external-agent-mcp.md): no dialog, so only a
+// new *.clipcraft.json in an existing folder, or the project's own file; never another existing file.
+ipcMain.handle('project:saveAgent', async (_e, json, target, current) => {
+  try {
+    if (typeof target !== 'string' || !path.isAbsolute(target)) return { error: 'Give an absolute path ending in .clipcraft.json.' };
+    const file = path.resolve(target);
+    if (!/\.clipcraft\.json$/i.test(file)) return { error: 'The path must end in .clipcraft.json.' };
+    if (!fs.existsSync(path.dirname(file)) || !fs.statSync(path.dirname(file)).isDirectory()) return { error: `The folder ${path.dirname(file)} does not exist.` };
+    const own = typeof current === 'string' && current && path.resolve(current) === file;
+    if (fs.existsSync(file) && !own) return { error: `${file} already exists. Choose a new file name; existing files are never overwritten.` };
+    await persistence.writeProject(file, json);
+    projectFiles.add(file);
+    return { file };
   } catch (e) {
     return { error: `Could not save the project: ${e.message}` };
   }
@@ -1532,7 +1551,7 @@ ipcMain.handle('agent:cancel', (event, requestId) => {
   nativeRuns.get(key)?.controller.abort();
   agentRequests.get(key)?.abort();
 });
-app.on('before-quit', () => { agentRuntimes.close(); for (const job of nativeRuns.values()) job.controller.abort(); for (const controller of agentRequests.values()) controller.abort(); localAgents.closeNativeSessions(); agentFrames.dispose(); });
+app.on('before-quit', () => { externalAgents.stop().catch(() => {}); agentRuntimes.close(); for (const job of nativeRuns.values()) job.controller.abort(); for (const controller of agentRequests.values()) controller.abort(); localAgents.closeNativeSessions(); agentFrames.dispose(); });
 // Tile 2–6 already captured frames into one numbered contact sheet (see agentFrames.cjs).
 ipcMain.handle('agent:frameSheet',async(event,req={})=>{
   try{return await agentFrames.sheet(event.sender.id,req.frame_ids,{revision:req.revision});}
@@ -1651,6 +1670,7 @@ ipcMain.handle('agent:annotateScene',async(event,req)=>{
 });
 ipcMain.handle('agent:step', async (event, req) => {
   const key = agentRequestKey(event, req?.requestId);
+  if (externalHolder()) return { ok: false, error: externalHolder() };
   if (agentRequests.has(key)) return { ok: false, error: 'This assistant request is already running.' };
   const controller = new AbortController();
   agentRequests.set(key, controller);
@@ -1696,6 +1716,7 @@ ipcMain.handle('agent:nativeToolResult', (event, req) => {
 ipcMain.handle('agent:runNative', async (event, req) => {
   const key = agentRequestKey(event, req?.requestId);
   if (nativeRuns.has(key) || agentRequests.has(key)) return { ok:false, error:'This assistant request is already running.' };
+  if (externalHolder()) return { ok:false, error:externalHolder() };
   if (!localAgents.isProvider(req?.provider) || typeof req.requestId !== 'string' || !req.requestId || typeof req.sessionKey !== 'string' || !req.sessionKey || !Array.isArray(req.tools) || req.tools.length > 120) return { ok:false, error:'Invalid native editor request.' };
   const job = { controller:new AbortController(), pending:new Map(), calls:0 };
   nativeRuns.set(key, job);
@@ -1764,6 +1785,16 @@ ipcMain.handle('agent:runNative', async (event, req) => {
     if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',stop);
   }
 });
+// ---- External agents over MCP (docs/design/external-agent-mcp.md): an outside agent edits through
+// the stdio bridge while ClipCraft is open; one agent at a time, never together with CraftAI. ----
+const externalDir = () => process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'mcp') : require('./agents/external/protocol.cjs').endpointDir(app.getPath('userData'));
+const externalLaunch = () => {
+  const bridge = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'agents', 'external', 'bridge.cjs') : path.join(__dirname, 'agents', 'external', 'bridge.cjs');
+  return { command: process.execPath, args: [bridge, '--dir', externalDir()], env: { ELECTRON_RUN_AS_NODE: '1' } };
+};
+const externalAgents = require('./agents/external/host.cjs').createExternalAgents({ ipcMain, getWindow: () => win, settings, dir: externalDir(),
+  version: app.getVersion(), agentFrames, reportDir: crashDir, launch: externalLaunch });
+const externalHolder = () => { const name = externalAgents.holder(); return name ? `${name} is connected to ClipCraft and editing. Disconnect it (top bar) to use CraftAI.` : null; };
 ipcMain.handle('agent:openSource', async (_event, value) => {
   const { webSourceUrl } = await import('../shared/webSource.mjs');
   const url = webSourceUrl(value);
@@ -2033,6 +2064,7 @@ ipcMain.on('dialog:messageSync', (event, req = {}) => {
 app.whenReady().then(() => {
   installMenu();
   createWindow();
+  externalAgents.start().then((r) => { if (!r.ok) logCrash('external agents', { message: r.error }); });
   telemetry.start();
   // Find the graphics card's video encoder now (a short test encode), so the first export does not wait for it.
   setTimeout(() => require("./media/ffmpeg.cjs").pickEncoder(), 4000);

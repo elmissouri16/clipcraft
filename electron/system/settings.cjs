@@ -78,6 +78,7 @@ function getPublic() {
     encryption: safeStorage.isEncryptionAvailable(),
     serviceKeys: Object.fromEntries(SERVICES.filter((n) => read().services?.[n]).map((n) => [n, read().services[n].hint])),
     mcpServers: getMcpServers(),
+    externalAgents: getExternalAgents(),
     shortcuts: getShortcuts(),
   };
 }
@@ -117,6 +118,22 @@ function setMcpServers(list) {
     .map((s) => ({ name: String(s.name).trim(), command: String(s.command).trim(), args: Array.isArray(s.args) ? s.args.map(String) : [] }));
   const data = read();
   data.mcpServers = clean;
+  write(data);
+  return getPublic();
+}
+
+// ---- External agents (docs/design/external-agent-mcp.md): off by default; the agents (by the name
+// their MCP client reports) the user allowed to edit once.
+function getExternalAgents() {
+  const value = read().externalAgents || {};
+  return { enabled: value.enabled === true,
+    approved: [...new Set((Array.isArray(value.approved) ? value.approved : []).filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim().slice(0, 60)))].slice(0, 20) };
+}
+function setExternalAgents(patch) {
+  const data = read(), current = getExternalAgents();
+  const approved = Array.isArray(patch?.approved) ? patch.approved : current.approved;
+  data.externalAgents = { enabled: typeof patch?.enabled === 'boolean' ? patch.enabled : current.enabled,
+    approved: [...new Set(approved.filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim().slice(0, 60)))].slice(0, 20) };
   write(data);
   return getPublic();
 }
@@ -300,4 +317,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };

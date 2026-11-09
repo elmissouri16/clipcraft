@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Dropdown from "../../components/ui/Dropdown.jsx";
-import { AudioLines, CircleAlert, CircleCheck, ExternalLink, Eye, EyeOff, Film, Gauge, Info, Keyboard, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
+import { AudioLines, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, Eye, EyeOff, Film, Gauge, Info, Keyboard, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import ShortcutSettings from './ShortcutSettings.jsx';
 import { SUPPORT_URL } from './HomeScreen.jsx';
 
@@ -214,6 +214,7 @@ const SECTION_GROUPS = [
   { label: 'AI', items: [
     { id: 'ai', label: 'Assistant', icon: Sparkles, title: 'AI assistant', description: 'The service CraftAI uses to understand and carry out your edits.' },
     { id: 'speech', label: 'Voice', icon: AudioLines, title: 'Voice generation', description: 'Narration from text, in Audio > Text to speech or through CraftAI. Independent of the assistant’s provider.' },
+    { id: 'external', label: 'External agents', icon: Bot, title: 'External agents (MCP)', description: 'Let an agent you run outside ClipCraft, such as Claude Code or Codex, edit through the same tools CraftAI uses while ClipCraft is open. One agent at a time; CraftAI pauses while it is connected.' },
     { id: 'mcp', label: 'Tool servers', icon: Server, title: 'Tool servers (MCP)', description: 'Local Model Context Protocol servers whose tools CraftAI can use while editing.' },
   ] },
   { label: 'Services', items: [
@@ -592,6 +593,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
 
         </SettingsPage>
         )}
+        {section === 'external' && <SettingsPage title={page.title} description={page.description}><ExternalAgentSettings /></SettingsPage>}
         {section === 'mcp' && <SettingsPage title={page.title} description={page.description}><McpSettings saved={saved} onSaved={(st) => setSaved(st)} /></SettingsPage>}
         {section === 'speech' && (
           <SettingsPage title={page.title} description={page.description}>
@@ -683,6 +685,86 @@ function McpSettings({ saved, onSaved }) {
           <div className="result-body"><span>{result.text}</span></div>
         </div>
       )}
+    </SettingsGroup>
+    </>
+  );
+}
+
+// External agents (docs/design/external-agent-mcp.md): on/off, who is connected, the agents the user
+// allowed, and the command each agent needs to start ClipCraft's MCP server.
+const quote = (value) => `"${String(value).replace(/(["\\$`])/g, '\\$1')}"`;
+export function externalCommands(launch) {
+  if (!launch?.command) return [];
+  const env = Object.entries(launch.env || {});
+  return [
+    { id: 'claude', label: 'Claude Code', hint: 'Run once in a terminal. -s user makes it available in every folder.',
+      text: `claude mcp add clipcraft -s user ${env.map(([k, v]) => `-e ${k}=${v}`).join(' ')} -- ${[launch.command, ...launch.args].map(quote).join(' ')}` },
+    { id: 'codex', label: 'Codex', hint: 'Add to ~/.codex/config.toml. Exports and renders can take minutes, so the tool timeout is raised.',
+      text: `[mcp_servers.clipcraft]\ncommand = ${JSON.stringify(launch.command)}\nargs = ${JSON.stringify(launch.args)}\nenv = { ${env.map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(', ')} }\ntool_timeout_sec = 900` },
+    { id: 'json', label: 'Other MCP clients', hint: 'The usual mcpServers JSON (Cursor, Claude Desktop and others).',
+      text: JSON.stringify({ mcpServers: { clipcraft: { command: launch.command, args: launch.args, env: launch.env } } }, null, 2) },
+  ];
+}
+function ExternalAgentSettings() {
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    window.api.externalStatus?.().then(setStatus).catch((e) => setError(e.message));
+    return window.api.onExternalStatus?.((s) => setStatus(s));
+  }, []);
+  if (!window.api.externalStatus) return <p className="set2-empty">Restart ClipCraft to use external agents.</p>;
+  if (!status) return <p className="set2-empty"><Loader2 size={14} className="spin" /> Loading…</p>;
+  const toggle = async (on) => {
+    setError('');
+    const r = await window.api.externalSetEnabled(on);
+    if (r?.status) setStatus(r.status);
+    if (r && !r.ok) setError(r.error);
+  };
+  const copy = async (item) => {
+    try { await navigator.clipboard.writeText(item.text); setCopied(item.id); setTimeout(() => setCopied((c) => (c === item.id ? '' : c)), 1600); }
+    catch { setError('Could not copy. Select the text and copy it instead.'); }
+  };
+  const holder = status.owner?.client?.name;
+  return (
+    <>
+    <SettingsGroup>
+      <label className="set2-switch-row">
+        <span className="set2-switch-text">
+          <b>Allow external agents</b>
+          <small className="muted">ClipCraft listens on a private connection only programs of this user on this computer can open. Each new agent asks for your permission once.</small>
+        </span>
+        <input type="checkbox" className="switch" aria-label="Allow external agents" checked={status.enabled} onChange={(e) => toggle(e.target.checked)} />
+      </label>
+      {status.enabled && (
+        <div className={`result ${status.running ? 'ok' : 'bad'}`} role="status">
+          {status.running ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
+          <div className="result-body"><span>{!status.running ? 'Not listening. Turn the switch off and on again.' : holder ? `${holder} is connected and editing.` : status.connections ? 'An agent is connected and has not made a call yet.' : 'Ready. Waiting for an agent to connect.'}</span></div>
+          {holder && <button className="btn btn-sm" type="button" onClick={() => window.api.externalDisconnect().then(setStatus)}>Disconnect</button>}
+        </div>
+      )}
+      {error && <p className="error-text" role="alert">{error}</p>}
+    </SettingsGroup>
+    <SettingsGroup label="Connect an agent" hint="The command starts ClipCraft's MCP server with this ClipCraft. It works while ClipCraft is open with the switch on.">
+      {externalCommands(status.launch).map((item) => (
+        <div key={item.id} className="set2-field-block">
+          <h5 className="set2-group-label">{item.label}</h5>
+          <p className="set2-group-hint">{item.hint}</p>
+          <div className="external-settings-row">
+            <code className="external-settings-command" aria-label={`${item.label} setup`}>{item.text}</code>
+            <button className="btn btn-sm" type="button" onClick={() => copy(item)} aria-label={`Copy the ${item.label} setup`}>{copied === item.id ? <Check size={13} /> : <Copy size={13} />}{copied === item.id ? 'Copied' : 'Copy'}</button>
+          </div>
+        </div>
+      ))}
+    </SettingsGroup>
+    <SettingsGroup label="Allowed agents" hint="Named as their MCP client reports itself. Removing one asks again on its next connection.">
+      {!status.approved.length && <p className="set2-empty">None yet.</p>}
+      {status.approved.map((name) => (
+        <div key={name} className="set2-item">
+          <span className="set2-item-text"><b>{name}</b>{holder === name && <span className="muted"> connected</span>}</span>
+          <button className="icon-btn" type="button" aria-label={`Remove ${name}`} title="Remove" onClick={() => window.api.externalForget(name).then(setStatus)}><Trash2 size={15} /></button>
+        </div>
+      ))}
     </SettingsGroup>
     </>
   );
