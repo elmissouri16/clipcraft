@@ -10,6 +10,7 @@ import { motionQuality } from '../timeline/motionQuality.js';
 import { stateAtPinned } from '../timeline/track.js';
 import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from "../preview/visual.js";
 import { MOTION_GUIDE, MOTION_TOPICS } from './motionGuide.js';
+import { ENGINE_NAMES, defaultSpeech, piperVoicesOf } from '../audio/voiceDefault.js';
 import { projectRevision, audioRevision } from './context.js';
 import { regroupSegments } from "../text/subtitles.js";
 import { validateAgentProject, verifyActionResults } from './validation.js';
@@ -66,7 +67,6 @@ const TEXT_LOOK = {
 };
 
 // Piper voices are optional downloads (Settings > Voice): only the downloaded ones are usable.
-const piperVoicesOf = (st) => (st?.installed ? (st.voices || []).filter((v) => v.downloaded) : []);
 const PIPER_MISSING = (st) => !st?.supported ? 'Piper voices are not available on this computer.'
   : 'No Piper voice is downloaded. Ask the user to download the voice engine and a voice in Settings > Voice; do not retry piper until then.';
 
@@ -1273,8 +1273,10 @@ export function createToolRunner(ctx) {
 
     async list_voices() {
       const st = await api.ttsStatus();
-      const piper = piperVoicesOf(st);
-      const out = { default_engine: st.geminiKey ? 'gemini' : piper.length ? 'piper' : st.elevenKey ? 'elevenlabs' : null,
+      const piper = piperVoicesOf(st), fallback = defaultSpeech(st);
+      // The user's default (Settings > Voice), or the automatic order when none is chosen or it is not set up.
+      const out = { default_engine: fallback.engine === 'eleven' ? 'elevenlabs' : fallback.engine, default_voice: fallback.voice || null, default_from: fallback.from,
+        ...(fallback.note ? { default_note: fallback.note } : {}),
         piper: piper.length ? piper.map((v) => ({ voice_id: v.id, name: v.name, language: v.lang, gender: v.gender })) : PIPER_MISSING(st),
         gemini: st.geminiKey ? { models: st.gemini?.models || [], default_voice: st.gemini?.defaultVoice || 'Kore',
           voices: (st.gemini?.voices || []).map((v) => ({ voice_id: v.id, name: v.name, delivery: v.style })),
@@ -1290,14 +1292,15 @@ export function createToolRunner(ctx) {
     async add_voiceover({ text, voice_id, engine, model, style, start_sec = 0, speed = 1, volume = 1 }) {
       if (!String(text || '').trim()) return { error: 'text is empty.' };
       const st = await api.ttsStatus();
-      const piper = piperVoicesOf(st);
-      const chosen = engine || (st.geminiKey ? 'gemini' : piper.length ? 'piper' : st.elevenKey ? 'elevenlabs' : null);
+      const piper = piperVoicesOf(st), fallback = defaultSpeech(st);
+      const chosen = engine || fallback.engine;
       if (!chosen) return { error: `No speech engine is set up. ${PIPER_MISSING(st)} Or add a Gemini or ElevenLabs key in Settings.` };
       const normalized = chosen === 'elevenlabs' ? 'eleven' : chosen;
       if (!['gemini', 'eleven', 'piper'].includes(normalized)) return { error: 'engine must be gemini, piper or elevenlabs.' };
       if (normalized === 'piper' && !piper.length) return { error: PIPER_MISSING(st) };
       if (normalized === 'piper' && voice_id && !piper.some((v) => v.id === voice_id)) return { error: `The Piper voice ${voice_id} is not downloaded. Downloaded: ${piper.map((v) => v.id).join(', ')}. Ask the user to download others in Settings > Voice.` };
-      const voiceId = voice_id || (normalized === 'gemini' ? 'Kore' : normalized === 'piper' ? piper[0].id : undefined);
+      const voiceId = voice_id || (normalized === fallback.engine && fallback.voice) || (normalized === 'gemini' ? st.gemini?.defaultVoice || 'Kore' : normalized === 'piper' ? piper[0].id : undefined);
+      if (normalized === 'eleven' && !voiceId) return { error: 'Pick an ElevenLabs voice_id from list_voices.' };
       const res = await api.ttsSpeak({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
       if (res.error) return speechFailure(res, model);
       const added = await place(addProbed({ ...res, origin: 'tts' }), { start_sec, name: res.name });
@@ -1312,7 +1315,10 @@ export function createToolRunner(ctx) {
       if (list.some((l) => !String(l.text || '').trim())) return { error: 'Every line needs text.' };
       const st = await api.ttsStatus();
       if (!st.geminiKey) return { error: 'add_narration uses Gemini TTS, which has no key in Settings > Speech generation. Use add_voiceover per line with piper or elevenlabs.' };
-      const res = await api.ttsSpeakLines({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), lines: list.map((l) => String(l.text).trim()), voiceId: voice_id, model, style });
+      // add_narration is Gemini only: a different default chosen in Settings wins.
+      const fallback = defaultSpeech(st);
+      if (fallback.from === 'settings' && fallback.engine !== 'gemini') return { error: `The user's default voice (Settings > Voice) is ${ENGINE_NAMES[fallback.engine]}. Speak each line with add_voiceover (it uses that default); use Gemini only if the user asks for it.` };
+      const res = await api.ttsSpeakLines({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), lines: list.map((l) => String(l.text).trim()), voiceId: voice_id || (fallback.engine === 'gemini' ? fallback.voice : undefined), model, style });
       if (res.error) return speechFailure(res, model);
       const gap = clamp(gap_sec, 0, 10, 0.3), clips = [];
       let at = Math.max(0, Number(start_sec) || 0);

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Download, ExternalLink, KeyRound, Loader2, Pause, Play, Plus, Type } from 'lucide-react';
 import { toFileUrl } from "../../../state/store.js";
+import { defaultSpeech } from "../voiceDefault.js";
 
 // Sign-up page for new ElevenLabs accounts.
 export const ELEVENLABS_SIGNUP_URL = 'https://elevenlabs.io';
@@ -22,8 +23,16 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
   const [playing, setPlaying] = useState(false);
   const audio = useRef(null);
 
-  const refresh = () => window.api.ttsStatus().then(setStatus).catch((e) => setError(e.message));
-  useEffect(() => { refresh(); }, [settingsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  const refresh = () => window.api.ttsStatus().then((st) => { setStatus(st); return st; }).catch((e) => setError(e.message));
+  // Opening (and coming back from Settings) starts on the default voice (Settings > Voice > Default voice).
+  useEffect(() => {
+    refresh().then((st) => {
+      const d = st && defaultSpeech(st);
+      if (!d?.engine) return;
+      setEngine(d.engine);
+      if (d.voice) setVoice((v) => ({ ...v, [d.engine]: d.voice }));
+    });
+  }, [settingsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     audio.current = new Audio();
     audio.current.onended = () => setPlaying(false);

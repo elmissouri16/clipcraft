@@ -25,11 +25,11 @@ const p = () => state.present;
 // The main process, faked: library / stock / voice files come back "probed" like media:probe does.
 const probed = (name, type, duration) => ({ name, type, duration, path: `C:/fake/${name}`, ...(type === 'audio' ? {} : { width: 1280, height: 720 }) });
 const calls = [];
-let geminiConfigured = false; let piperInstalled = true;
+let geminiConfigured = false; let piperInstalled = true; let voiceDefault = { engine: 'auto', voice: '' };
 const api = {
   librarySearch: async (o) => { calls.push(['librarySearch', o]); return { results: [{ id: 'freesound-1', title: 'Whoosh fast', duration: 1.2, creator: 'X', license: 'cc0', url: 'https://x' }, { id: 'jam-2', title: 'Happy', duration: 95, creator: 'Y', license: 'by' }] }; },
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
-  ttsStatus: async () => ({ supported: true, installed: piperInstalled, voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male', downloaded: true }, { id: 'en_US-joe-medium', name: 'Joe', lang: 'English (US)', gender: 'male', downloaded: false }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog() }),
+  ttsStatus: async () => ({ supported: true, installed: piperInstalled, voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male', downloaded: true }, { id: 'en_US-joe-medium', name: 'Joe', lang: 'English (US)', gender: 'male', downloaded: false }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog(), voiceDefault }),
   ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' }
     : req.text === 'Out of quota' ? { error: 'Gemini TTS daily request limit reached.', limit: { provider: 'gemini', kind: 'daily', model: 'gemini-3.8-flash-tts', resets: 'midnight Pacific time', other_model: 'gemini-3.8-flash-lite-tts' } }
     : req.text === 'Waited' ? { ...probed('Voice - waited.wav', 'audio', 1), waited_sec: 31 } : probed('Voice - hello.wav', 'audio', 2.5); },
@@ -137,6 +137,29 @@ assert.deepEqual(r.clips.map((c) => c.start_sec), [2, 4, 12], 'a line without st
 assert.ok(r.clips.every((c) => p().audioClips.find((a) => a.id === c.clip_id)?.volume === 0.7));
 assert.equal(p().audioClips.length, narrated + 3);
 err(await run('add_narration', { lines: [{ text: 'Only one' }] }), /two lines/, 'one line belongs to add_voiceover');
+// The default voice from Settings > Voice wins over the automatic order (Gemini first) when it is set up.
+voiceDefault = { engine: 'gemini', voice: 'Puck' };
+r = await run('list_voices');
+assert.deepEqual([r.default_engine, r.default_voice, r.default_from], ['gemini', 'Puck', 'settings']);
+ok(await run('add_voiceover', { text: 'Default Gemini voice' }), 'the saved Gemini voice');
+assert.equal(calls.at(-1)[1].voiceId, 'Puck');
+ok(await run('add_narration', { lines: [{ text: 'One' }, { text: 'Two' }] }), 'narration with the saved Gemini voice');
+assert.equal(calls.at(-1)[1].voiceId, 'Puck');
+voiceDefault = { engine: 'piper', voice: 'ar_JO-kareem-medium' };
+r = await run('list_voices');
+assert.deepEqual([r.default_engine, r.default_voice, r.default_from], ['piper', 'ar_JO-kareem-medium', 'settings'], 'Piper chosen over a configured Gemini');
+ok(await run('add_voiceover', { text: 'Default Piper' }), 'the default engine when none is named');
+assert.deepEqual([calls.at(-1)[1].engine, calls.at(-1)[1].voiceId], ['piper', 'ar_JO-kareem-medium']);
+ok(await run('add_voiceover', { engine: 'gemini', text: 'Asked for Gemini' }), 'a named engine still wins');
+assert.deepEqual([calls.at(-1)[1].engine, calls.at(-1)[1].voiceId], ['gemini', 'Kore'], 'with that engine\'s own default voice');
+err(await run('add_narration', { lines: [{ text: 'A' }, { text: 'B' }] }), /default voice \(Settings > Voice\) is Piper.*add_voiceover/, 'Gemini-only narration yields to the default');
+// A default that is not set up falls back to the automatic order, and says so.
+piperInstalled = false;
+r = await run('list_voices');
+assert.deepEqual([r.default_engine, r.default_from], ['gemini', 'automatic']); assert.match(r.default_note, /Piper\) is not set up \(no voice downloaded\)/);
+ok(await run('add_voiceover', { text: 'Fallback' }), 'falls back to Gemini');
+assert.equal(calls.at(-1)[1].engine, 'gemini');
+piperInstalled = true; voiceDefault = { engine: 'auto', voice: '' };
 err(await run('add_narration', { lines: [{ text: 'A' }, { text: ' ' }] }), /needs text/, 'empty line');
 r = await run('add_narration', { lines: ['Over the limit', 'Second'] });
 assert.equal(r.provider_limit.kind, 'per_minute'); assert.match(r.next, /one add_narration call/);

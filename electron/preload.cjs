@@ -207,6 +207,7 @@ contextBridge.exposeInMainWorld('api', {
   onAppCommand: (cb) => { const handler = (_e, command) => cb(command); ipcRenderer.on('app:command', handler); return () => ipcRenderer.removeListener('app:command', handler); },
   settingsSetMcpServers: (list) => ipcRenderer.invoke('settings:setMcpServers', list),
   settingsSetShortcuts: (map) => ipcRenderer.invoke('settings:setShortcuts', map),
+  settingsSetVoiceDefault: (value) => ipcRenderer.invoke('settings:setVoiceDefault', value),
   mcpTools: (opts) => ipcRenderer.invoke('mcp:tools', opts),
   mcpCall: (req) => ipcRenderer.invoke('mcp:call', req),
   mcpTest: (server) => ipcRenderer.invoke('mcp:test', server),

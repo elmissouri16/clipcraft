@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Dropdown from "../../components/ui/Dropdown.jsx";
 import { AudioLines, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, Eye, EyeOff, Film, Gauge, Info, Keyboard, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import ShortcutSettings from './ShortcutSettings.jsx';
+import { ENGINE_NAMES, defaultSpeech, piperVoicesOf, usableEngines } from '../../features/audio/voiceDefault.js';
 import { SUPPORT_URL } from './HomeScreen.jsx';
 
 const PROVIDERS = [
@@ -597,10 +598,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
         {section === 'mcp' && <SettingsPage title={page.title} description={page.description}><McpSettings saved={saved} onSaved={(st) => setSaved(st)} /></SettingsPage>}
         {section === 'speech' && (
           <SettingsPage title={page.title} description={page.description}>
-            <ServiceKey saved={saved} onSaved={setSaved} service="gemini-tts" title="Gemini voices" icon={AudioLines}
-              keyLabel="Gemini TTS API key" text="Gemini 3.8 Flash TTS and Flash-Lite TTS. The key is free from Google AI Studio."
-              url="https://aistudio.google.com/app/apikey" urlLabel="Get a Gemini API key" test={(key) => window.api.ttsGeminiTestKey(key)} />
-            <PiperSettings />
+            <VoiceSettings saved={saved} onSaved={setSaved} />
           </SettingsPage>
         )}
         {section === 'quality' && <SettingsPage title={page.title} description={page.description}><ProxySettings onCleared={onProxiesCleared} /></SettingsPage>}
@@ -691,18 +689,70 @@ function McpSettings({ saved, onSaved }) {
   );
 }
 
+// Settings > Voice: the default voice, the Gemini key and Piper downloads share one speech status, so the default
+// follows a key saved or a voice downloaded on the same page.
+function VoiceSettings({ saved, onSaved }) {
+  const [status, setStatus] = useState(null);
+  const refresh = () => window.api.ttsStatus?.().then(setStatus).catch(() => {});
+  useEffect(() => { refresh(); }, [JSON.stringify(saved.serviceKeys || {})]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      {status && <DefaultVoiceSettings status={status} onChanged={refresh} />}
+      <ServiceKey saved={saved} onSaved={onSaved} service="gemini-tts" title="Gemini voices" icon={AudioLines}
+        keyLabel="Gemini TTS API key" text="Gemini 3.8 Flash TTS and Flash-Lite TTS. The key is free from Google AI Studio."
+        url="https://aistudio.google.com/app/apikey" urlLabel="Get a Gemini API key" test={(key) => window.api.ttsGeminiTestKey(key)} />
+      {status && <PiperSettings status={status} setStatus={(next) => setStatus(typeof next === 'function' ? next : (s) => ({ ...s, ...next }))} />}
+    </>
+  );
+}
+
+// The speech engine and voice CraftAI and Text to speech use when none is named (src/features/audio/voiceDefault.js).
+function DefaultVoiceSettings({ status, onChanged }) {
+  const pref = status.voiceDefault || { engine: 'auto', voice: '' };
+  const [eleven, setEleven] = useState(null);
+  const usable = usableEngines(status), effective = defaultSpeech(status);
+  useEffect(() => {
+    if (pref.engine === 'eleven' && status.elevenKey && !eleven) window.api.ttsElevenVoices().then((r) => setEleven(r.voices || [])).catch(() => setEleven([]));
+  }, [pref.engine, status.elevenKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = async (next) => { await window.api.settingsSetVoiceDefault(next); onChanged(); };
+  const voices = pref.engine === 'gemini' ? (status.gemini?.voices || []).map((v) => [v.id, `${v.name}${v.style ? ` · ${v.style}` : ''}`])
+    : pref.engine === 'piper' ? piperVoicesOf(status).map((v) => [v.id, `${v.lang} · ${v.name}`])
+    : pref.engine === 'eleven' ? (eleven || []).map((v) => [v.id, v.name]) : [];
+  const needs = { gemini: ' (needs a key)', piper: ' (download a voice below)', eleven: ' (needs a key in Audio)' };
+  const now = effective.engine ? `${ENGINE_NAMES[effective.engine]}${effective.voice ? ` · ${(status.gemini?.voices || []).find((v) => v.id === effective.voice)?.name || piperVoicesOf(status).find((v) => v.id === effective.voice)?.name || (eleven || []).find((v) => v.id === effective.voice)?.name || effective.voice}` : ''}` : 'none set up yet';
+  return (
+    <SettingsGroup label="Default voice" hint="Used by CraftAI and as Text to speech's first choice when no engine or voice is named.">
+      <div className="set2-grid">
+        <label className="field"><span>Engine</span>
+          <select aria-label="Default voice engine" value={pref.engine} onChange={(e) => save({ engine: e.target.value, voice: '' })}>
+            <option value="auto">Automatic</option>
+            {['gemini', 'piper', 'eleven'].map((id) => <option key={id} value={id}>{ENGINE_NAMES[id]}{usable[id] ? '' : needs[id]}</option>)}
+          </select>
+        </label>
+        {pref.engine !== 'auto' && (
+          <label className="field"><span>Voice</span>
+            <select aria-label="Default voice" value={effective.from === 'settings' ? effective.voice : pref.voice} disabled={!voices.length} onChange={(e) => save({ engine: pref.engine, voice: e.target.value })}>
+              {!voices.length && <option value="">{pref.engine === 'eleven' && status.elevenKey && !eleven ? 'Loading…' : 'No voice available'}</option>}
+              {voices.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      <p className="set2-note" data-default-voice-note>{pref.engine === 'auto'
+        ? `Gemini when it has a key, otherwise a downloaded Piper voice, otherwise ElevenLabs. Now: ${now}.`
+        : effective.from === 'settings' ? `Now: ${now}. CraftAI uses it unless you ask for another voice.`
+        : `${effective.note} Now: ${now}.`}</p>
+    </SettingsGroup>
+  );
+}
+
 // Piper voices on this computer (electron/audio/tts.cjs): optional downloads, the engine first, then any voices.
 // Each can be removed again; one download runs at a time and can be canceled.
 const mb = (bytes) => `${Math.round((bytes || 0) / 1e6)} MB`;
-function PiperSettings() {
-  const [status, setStatus] = useState(null);
+function PiperSettings({ status, setStatus }) {
   const [job, setJob] = useState(null); // { target, fraction }
   const [message, setMessage] = useState(null); // { ok, text }
-  useEffect(() => {
-    window.api.ttsStatus?.().then(setStatus).catch(() => {});
-    return window.api.onTtsPiperProgress?.((p) => setJob((j) => (j?.target === p.target ? { ...j, fraction: p.fraction } : j)));
-  }, []);
-  if (!status) return null;
+  useEffect(() => window.api.onTtsPiperProgress?.((p) => setJob((j) => (j?.target === p.target ? { ...j, fraction: p.fraction } : j))), []);
   const download = async (target, label) => {
     setMessage(null); setJob({ target, fraction: 0 });
     const r = await window.api.ttsPiperDownload(target);

@@ -6,6 +6,21 @@ then the voices you want. Each one can be removed again. One download runs at a 
 progress and Cancel. Nothing downloads while speaking: Audio > Text to speech and CraftAI only
 use what is downloaded, and point to Settings otherwise.
 
+## Default voice
+
+**Settings > Voice > Default voice** picks the engine (Automatic, Gemini, Piper or ElevenLabs) and
+its voice. One rule (`src/features/audio/voiceDefault.js`) serves CraftAI and Audio > Text to speech:
+
+- The chosen engine is used whenever no engine or voice is named: CraftAI's `list_voices`
+  reports it (`default_engine`, `default_voice`, `default_from`), `add_voiceover` uses it, and
+  Text to speech opens on it.
+- A named engine still wins (the user asks CraftAI for Gemini, or picks another tab).
+- `add_narration` is Gemini only: with another default chosen it refuses, and CraftAI speaks line
+  by line with `add_voiceover` instead.
+- Automatic, or a chosen engine that is not set up (no key, or no Piper voice downloaded), uses the
+  order Gemini, then a downloaded Piper voice, then ElevenLabs; `list_voices` says why in
+  `default_note`. The choice stays saved and applies again once the engine is set up.
+
 ## One runtime per platform
 
 | Platform | Engine | Voices |
@@ -41,6 +56,9 @@ use what is downloaded, and point to Settings otherwise.
 - `tests/unit/audio/test-tts.cjs`: the platform table, the checksum refusal and the missing-download
   errors offline; then a real download, speech and removal on this platform (unless `--offline`).
 - `tests/unit/audio/test-piper-ui.cjs` (`FVE_SMOKE_MODE=tts`): the real app, downloading through
-  Settings, Cancel, speaking onto the timeline, removal. Needs the network (about 90 MB).
+  Settings, Cancel, choosing Piper as the default voice, speaking onto the timeline, removal. Needs
+  the network (about 90 MB).
+- `tests/unit/agents/test-agent-tools.mjs`: the default voice in `list_voices`, `add_voiceover` and
+  `add_narration`, and the fallback when it is not set up.
 - Verified on macOS arm64, macOS x64 (Rosetta), and Linux arm64 and x64 (Docker, Debian
   bookworm). Windows uses the unchanged Piper path and was not run here.

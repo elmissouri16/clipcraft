@@ -1010,7 +1010,8 @@ const ttsDir = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'),
 const ttsOut = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'voiceovers');
 const ttsWords = (text) => String(text || '').trim().split(/\s+/).slice(0, 5).join(' ').replace(/[\\/:*?"<>|]+/g, '');
 ipcMain.handle('tts:status', () => ({ ...tts.piperStatus(ttsDir()), elevenKey: !!settings.getServiceKey('elevenlabs'),
-  geminiKey: !!settings.getServiceKey('gemini-tts'), gemini: geminiTts.catalog() }));
+  geminiKey: !!settings.getServiceKey('gemini-tts'), gemini: geminiTts.catalog(), voiceDefault: settings.getVoiceDefault() }));
+ipcMain.handle('settings:setVoiceDefault', (_e, value) => settings.setVoiceDefault(value));
 ipcMain.handle('tts:geminiTestKey', async (_e, key) => {
   try { return await geminiTts.testKey(net.fetch, String(key || '').trim() || settings.getServiceKey('gemini-tts')); }
   catch (e) { return { ok: false, text: e.message }; }

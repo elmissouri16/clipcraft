@@ -59,8 +59,26 @@ module.exports = async (win, app, dir) => {
     await q(`document.querySelector('button[aria-label="Close settings"]').click()`);
     await until('!document.querySelector(\'[data-piper="engine"]\')');
 
-    // Speak with the downloaded voice onto the timeline.
+    // The default voice (Settings > Voice): the panel is on Gemini; choosing Piper as the default brings it back.
     await openTts();
+    await click('.tts .seg-tabs button', 'Gemini');
+    await until(`document.querySelector('.tts .seg-tabs button[aria-selected="true"]').textContent==='Gemini'`);
+    await q(`document.querySelector('button[aria-label="Settings"],.topbar button[title*="Settings"]').click()`);
+    await until('!!document.querySelector(\'[data-section="speech"]\')');
+    await q(`document.querySelector('[data-section="speech"]').click()`);
+    await until('!!document.querySelector(\'select[aria-label="Default voice engine"]\')');
+    check('the default starts automatic and names what it uses now', await q(`document.querySelector('select[aria-label="Default voice engine"]').value==='auto'&&document.querySelector('[data-default-voice-note]').textContent.includes('Now: Piper · Gilles')`));
+    check('engines that are not set up say what they need', await q(`[...document.querySelectorAll('select[aria-label="Default voice engine"] option')].find(o=>o.value==='gemini').textContent==='Gemini (needs a key)'`));
+    await q(`(()=>{const el=document.querySelector('select[aria-label="Default voice engine"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(el,'piper');el.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await until(`document.querySelector('select[aria-label="Default voice"]')?.value==='fr_FR-gilles-low'`);
+    check('choosing Piper saves it with its downloaded voice', (await q('window.api.ttsStatus()')).voiceDefault.engine === 'piper'
+      && await q(`document.querySelector('[data-default-voice-note]').textContent.startsWith('Now: Piper · Gilles. CraftAI uses it')`));
+    await shot('piper-2b-default.png');
+    await q(`document.querySelector('button[aria-label="Close settings"]').click()`);
+    await until(`document.querySelector('.tts .seg-tabs button[aria-selected="true"]')?.textContent.startsWith('Piper')`);
+    check('closing Settings puts the panel on the default voice', true);
+
+    // Speak with the downloaded voice onto the timeline.
     await until(`document.querySelectorAll('.tts select[aria-label="Voice"] option').length===1`);
     check('the panel offers only the downloaded voice', await q(`document.querySelector('.tts select[aria-label="Voice"]').value==='fr_FR-gilles-low'`));
     await q(`(() => { const t = document.querySelector('.tts textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, 'Bonjour, ceci est ClipCraft.'); t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
@@ -73,8 +91,10 @@ module.exports = async (win, app, dir) => {
     check('no error in the panel', !(await q(`document.querySelector('.tts .error-text')?.textContent||''`)));
     await shot('piper-3-spoken.png');
 
-    // Removing the voice: the panel points to Settings again.
+    // Removing the voice: the panel points to Settings again, and the default falls back (and says so).
     await q(`window.api.ttsPiperRemove('fr_FR-gilles-low')`);
+    const after = await q('window.api.ttsStatus()');
+    check('a default that is no longer set up stays saved but is not used', after.voiceDefault.engine === 'piper' && !after.voices.some((v) => v.downloaded));
     await q(`window.__fve.tab('media')`); await wait(200); await openTts();
     await until('!!document.querySelector(".tts [data-piper-missing]")');
     check('after removing the voice the panel asks for a voice', await q(`document.querySelector('.tts [data-piper-missing]').textContent.includes('Download at least one voice')`));

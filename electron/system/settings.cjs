@@ -79,6 +79,7 @@ function getPublic() {
     serviceKeys: Object.fromEntries(SERVICES.filter((n) => read().services?.[n]).map((n) => [n, read().services[n].hint])),
     mcpServers: getMcpServers(),
     externalAgents: getExternalAgents(),
+    voiceDefault: getVoiceDefault(),
     shortcuts: getShortcuts(),
   };
 }
@@ -118,6 +119,20 @@ function setMcpServers(list) {
     .map((s) => ({ name: String(s.name).trim(), command: String(s.command).trim(), args: Array.isArray(s.args) ? s.args.map(String) : [] }));
   const data = read();
   data.mcpServers = clean;
+  write(data);
+  return getPublic();
+}
+
+// ---- Default voice (Settings > Voice): the speech engine and voice used when none is named, by CraftAI and
+// as Text to speech's starting choice. 'auto' keeps the built-in order (Gemini, then Piper, then ElevenLabs).
+const VOICE_ENGINES = ['auto', 'gemini', 'piper', 'eleven'];
+function getVoiceDefault() {
+  const v = read().voiceDefault || {};
+  return { engine: VOICE_ENGINES.includes(v.engine) ? v.engine : 'auto', voice: typeof v.voice === 'string' ? v.voice.trim().slice(0, 100) : '' };
+}
+function setVoiceDefault(value) {
+  const data = read();
+  data.voiceDefault = { engine: VOICE_ENGINES.includes(value?.engine) ? value.engine : 'auto', voice: typeof value?.voice === 'string' ? value.voice.trim().slice(0, 100) : '' };
   write(data);
   return getPublic();
 }
@@ -327,4 +342,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
