@@ -1,15 +1,17 @@
 import React, { useEffect, useRef } from 'react';
 import { Bot, Unplug } from 'lucide-react';
 
-// The agent connected over MCP (docs/design/external-agent-mcp.md), shown in the top bar and on Home.
-export function ExternalAgentBadge({ holder, onDisconnect }) {
-  if (!holder) return null;
+// The agent holding the editor over MCP (docs/design/external-agent-mcp.md), in the top bar and on
+// Home. Green while it works (CraftAI paused); grey once idle (CraftAI or another agent may take over).
+export function ExternalAgentBadge({ owner, onDisconnect }) {
+  if (!owner) return null;
   return (
-    <div className="external-badge" role="status" title={`${holder} is editing through ClipCraft's MCP connection. CraftAI is paused.`}>
+    <div className={`external-badge ${owner.active ? 'is-active' : 'is-idle'}`} role="status"
+      title={owner.active ? `${owner.name} is working in ClipCraft. CraftAI is paused.` : `${owner.name} is connected and idle. CraftAI can be used.`}>
       <span className="external-dot" aria-hidden="true" />
       <Bot size={14} aria-hidden="true" />
-      <span className="external-name">{holder}</span>
-      <button type="button" className="icon-btn sm" onClick={onDisconnect} aria-label={`Disconnect ${holder}`} title="Disconnect"><Unplug size={13} /></button>
+      <span className="external-name">{owner.name}</span>
+      <button type="button" className="icon-btn sm" onClick={onDisconnect} aria-label={`Disconnect ${owner.name}`} title="Disconnect"><Unplug size={13} /></button>
     </div>
   );
 }
@@ -32,7 +34,7 @@ export function ExternalAgentApproval({ approval, onAnswer }) {
         <div className="modal-icon"><Bot size={24} /></div>
         <h3 id="external-approve-title">Allow “{name}” to edit in ClipCraft?</h3>
         <p id="external-approve-text" className="muted">
-          An agent on this computer connected through ClipCraft’s MCP server. If you allow it, it can open, create and save projects,
+          An agent on this computer connected to ClipCraft’s MCP server. If you allow it, it can open, create and save projects,
           import files and export videos, with the same tools CraftAI uses. CraftAI pauses while it is connected. You can disconnect it
           at any time, and remove it in Settings &gt; External agents.
         </p>

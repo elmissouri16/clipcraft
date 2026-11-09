@@ -1971,8 +1971,8 @@ export default function App() {
     screen: () => screenRef.current, project: () => projectRef.current, loadVersion: () => loadVersionRef.current,
     dispatch, settle, pilotApp, craftBusy: () => !!agentRunRef.current, projects: agentProjects,
   };
-  const external = useExternalAgent(externalApp, settingsVersion);
-  const externalBadge = <ExternalAgentBadge holder={external.holder} onDisconnect={external.disconnect} />;
+  const external = useExternalAgent(externalApp, settingsVersion, !!agentRun);
+  const externalBadge = <ExternalAgentBadge owner={external.owner} onDisconnect={external.disconnect} />;
   const externalApproval = <ExternalAgentApproval approval={external.approval} onAnswer={external.answer} />;
 
   // Keyboard shortcuts.

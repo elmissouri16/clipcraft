@@ -1786,15 +1786,15 @@ ipcMain.handle('agent:runNative', async (event, req) => {
   }
 });
 // ---- External agents over MCP (docs/design/external-agent-mcp.md): an outside agent edits through
-// the stdio bridge while ClipCraft is open; one agent at a time, never together with CraftAI. ----
-const externalDir = () => process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'mcp') : require('./agents/external/protocol.cjs').endpointDir(app.getPath('userData'));
-const externalLaunch = () => {
-  const bridge = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'agents', 'external', 'bridge.cjs') : path.join(__dirname, 'agents', 'external', 'bridge.cjs');
-  return { command: process.execPath, args: [bridge, '--dir', externalDir()], env: { ELECTRON_RUN_AS_NODE: '1' } };
-};
-const externalAgents = require('./agents/external/host.cjs').createExternalAgents({ ipcMain, getWindow: () => win, settings, dir: externalDir(),
-  version: app.getVersion(), agentFrames, reportDir: crashDir, launch: externalLaunch });
-const externalHolder = () => { const name = externalAgents.holder(); return name ? `${name} is connected to ClipCraft and editing. Disconnect it (top bar) to use CraftAI.` : null; };
+// ClipCraft's MCP server (HTTP on 127.0.0.1) while ClipCraft is open; one agent at a time, never
+// together with CraftAI. UI tests install into a temporary home, never the user's agents. ----
+const externalHome = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'agent-home') : require('node:os').homedir();
+const externalAgents = require('./agents/external/host.cjs').createExternalAgents({ ipcMain, getWindow: () => win, settings,
+  version: app.getVersion(), agentFrames, reportDir: crashDir,
+  installer: { home: externalHome, searchDirectories: localAgents.searchDirectories,
+    env: process.env.FVE_SMOKE ? { ...process.env, CLAUDE_CONFIG_DIR: path.join(externalHome, '.claude'), CODEX_HOME: path.join(externalHome, '.codex') } : process.env } });
+// CraftAI may start unless an outside agent is working; an idle one gives the editor back.
+const externalHolder = () => { const name = externalAgents.yieldToCraft(); return name ? `${name} is working in ClipCraft. Wait until it finishes, or disconnect it (top bar), to use CraftAI.` : null; };
 ipcMain.handle('agent:openSource', async (_event, value) => {
   const { webSourceUrl } = await import('../shared/webSource.mjs');
   const url = webSourceUrl(value);

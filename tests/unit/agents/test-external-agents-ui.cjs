@@ -1,11 +1,12 @@
 // External agents over MCP in the real app (FVE_SMOKE_MODE=external-agents, tests/smoke/smoke-external-agents.cjs):
-// an agent connects through the bridge, edits, saves, reopens, and is refused, paused and disconnected.
+// an agent connects over HTTP, edits, saves, reopens, is refused, paused and disconnected; Install for Claude Code.
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
 const {spawn}=require('node:child_process'),net=require('node:net');
 (async()=>{
  const root=path.resolve(__dirname,'../../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-external-agents-ui-'));
- fs.mkdirSync(path.join(dir,'settings-test'));fs.writeFileSync(path.join(dir,'settings-test/settings.json'),JSON.stringify({firstRun:{tourSeen:true,packPromptSeen:true},externalAgents:{enabled:true,approved:[]}}));
- const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+ const free=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+ const port=await free();let mcpPort=await free();while(mcpPort===port)mcpPort=await free();
+ fs.mkdirSync(path.join(dir,'settings-test'));fs.writeFileSync(path.join(dir,'settings-test/settings.json'),JSON.stringify({firstRun:{tourSeen:true,packPromptSeen:true},externalAgents:{enabled:true,approved:[],port:mcpPort}}));
  const fd=fs.openSync(path.join(dir,'runtime.log'),'w'),url='http://127.0.0.1:'+port;
  const vite=spawn(process.execPath,[path.join(root,'node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port',String(port),'--strictPort'],{cwd:root,stdio:['ignore',fd,fd]});let electron;
  try{

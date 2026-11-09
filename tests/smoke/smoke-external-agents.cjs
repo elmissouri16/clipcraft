@@ -1,10 +1,13 @@
-// External agents over MCP in the real app (docs/design/external-agent-mcp.md). An agent connects
-// through the stdio bridge, run by the app binary in Node mode exactly as Settings tells users to,
-// and edits: approval, project tools, an edit validated with complete_edit and undone as one step,
-// a user edit interrupting the agent, saving, closing and reopening, CraftAI paused while the agent
-// holds the editor, a second agent refused, Disconnect, and a denied agent.
+// External agents over MCP in the real app (docs/design/external-agent-mcp.md). An agent connects to
+// the app's MCP server over HTTP with the MCP SDK client, as Claude Code or Codex would, and edits:
+// approval, project tools, an edit validated with complete_edit and undone as one step, a user edit
+// interrupting the agent, saving, closing and reopening, CraftAI paused while the agent works, a
+// second agent refused, Disconnect, a denied agent, and Settings: Install for Claude Code (into a
+// temporary home) after which the real Claude Code reaches this app, and the switch turned off.
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const { McpClient } = require('../../electron/agents/mcp.cjs');
+const { execFile } = require('node:child_process');
+const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
 module.exports = async (win, app, dir) => {
   const q = (s) => win.webContents.executeJavaScript(s), wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -13,29 +16,33 @@ module.exports = async (win, app, dir) => {
   const until = async (code, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await q(code)) return; await wait(40); } throw Error('Timed out: ' + code); };
   const shot = async (name) => fs.writeFileSync(path.join(dir, name), (await win.capturePage()).toPNG());
   win.webContents.on('console-message', (_e, level, text) => { if (level >= 3 && !/ERR_FILE_NOT_FOUND|Failed to load resource/.test(text)) result.errors.push(text); });
-  const bridge = path.join(__dirname, '../../electron/agents/external/bridge.cjs');
-  const server = { name: 'clipcraft', command: process.execPath, args: [bridge, '--dir', path.join(dir, 'mcp')], env: { ELECTRON_RUN_AS_NODE: '1' } };
   const agents = [];
-  const agentNamed = (name) => { const a = new McpClient(server, { timeoutMs: 120000, clientInfo: { name, version: '1.0' } }); agents.push(a); return a; };
-  // Calls return parsed JSON; errors come back as { error } (McpClient throws on isError).
+  const endpoint = () => { const ext = JSON.parse(fs.readFileSync(path.join(dir, 'settings-test', 'settings.json'), 'utf8')).externalAgents; return { url: `http://127.0.0.1:${ext.port}/mcp`, token: ext.token }; };
+  const agentNamed = async (name) => {
+    const { url, token } = endpoint();
+    const client = new Client({ name, version: '1.0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+    agents.push(client);
+    return client;
+  };
+  // Calls return parsed JSON; tool errors come back as { error }.
   const call = async (agent, name, args = {}) => {
     try {
-      const res = await agent.callTool(name, args);
-      const value = JSON.parse(res.content[0].text);
-      result.calls.push({ name, ok: true, images: res.content.filter((c) => c.type === 'image').length });
-      return value;
+      const res = await agent.callTool({ name, arguments: args }, undefined, { timeout: 120000 });
+      const raw = res.content.find((c) => c.type === 'text')?.text || '';
+      result.calls.push({ name, ok: !res.isError, images: res.content.filter((c) => c.type === 'image').length, ...(res.isError ? { error: raw.slice(0, 300) } : {}) });
+      try { return JSON.parse(raw); } catch { return { error: raw }; }
     } catch (error) {
       result.calls.push({ name, ok: false, error: error.message.slice(0, 300) });
-      try { return JSON.parse(error.message); } catch { return { error: error.message }; }
+      return { error: error.message };
     }
   };
   try {
     win.setContentSize(1440, 900); win.show();
     await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');
-    const agent = agentNamed('Test agent');
-    const init = await agent.start();
-    check('the bridge started by the app binary answers initialize with the native instructions', init.serverInfo.name === 'clipcraft' && /complete_edit/.test(init.instructions) && /get_status first/.test(init.instructions));
-    const tools = (await agent.listTools()).map((t) => t.name);
+    const agent = await agentNamed('Test agent');
+    check('the app serves MCP over HTTP and sends the native instructions', agent.getServerVersion().name === 'clipcraft' && /complete_edit/.test(agent.getInstructions()) && /get_status first/.test(agent.getInstructions()));
+    const tools = (await agent.listTools()).tools.map((t) => t.name);
     result.tools = tools;
     check('the agent is offered the project tools and the native editor tools', ['get_status', 'list_projects', 'create_project', 'open_project', 'save_project', 'close_project', 'get_project', 'add_text', 'edit_text', 'complete_edit', 'export_video'].every((n) => tools.includes(n)) && tools.length > 60);
     check('no image generation without a Codex sign-in, and no re-exported MCP servers', !tools.includes('generate_image') && !tools.some((n) => n.startsWith('mcp_')));
@@ -59,9 +66,9 @@ module.exports = async (win, app, dir) => {
     await until('!!document.querySelector(".topbar")');
     await q(`[...document.querySelectorAll('.workspace-switch button')].find(b=>b.textContent==='Agent').click()`);
     await until('!!document.querySelector("#craft-ai-panel")');
-    check('CraftAI is paused while the agent holds the editor', await q(`!!document.querySelector('#craft-ai-panel .pilot-external')&&document.querySelector('#craft-ai-panel .pilot-external').textContent.includes('Test agent is connected')&&document.querySelector('#craft-ai-panel textarea').disabled`));
+    check('CraftAI is paused while the agent works', await q(`!!document.querySelector('#craft-ai-panel .pilot-external')&&document.querySelector('#craft-ai-panel .pilot-external').textContent.includes('Test agent is working')&&document.querySelector('#craft-ai-panel textarea').disabled`));
     const refused = await q(`window.api.agentStep({requestId:'smoke-step'})`);
-    check('the main process refuses CraftAI requests while the agent holds the editor', refused.ok === false && /Test agent is connected/.test(refused.error));
+    check('the main process refuses CraftAI requests while the agent works', refused.ok === false && /Test agent is working/.test(refused.error));
 
     // An edit: changes, then complete_edit until accepted; Undo removes it as one step.
     const pastBefore = await q('window.__fve.history().past.length');
@@ -121,9 +128,9 @@ module.exports = async (win, app, dir) => {
     check('opening a missing file reports an error instead of a dialog', /could not be found/.test(byPath.error || '') && !result.modals.after.includes('could not be found'));
 
     // One agent at a time.
-    const intruder = agentNamed('Second agent');
+    const intruder = await agentNamed('Second agent');
     const blocked = await call(intruder, 'get_status');
-    check('a second agent is refused while the first holds the editor', /connected to Test agent/.test(blocked.error || ''));
+    check('a second agent is refused while the first works', /being used by Test agent/.test(blocked.error || ''));
 
     // Disconnect from the top bar: CraftAI resumes, the panel records it, the other agent may ask.
     await until('!!document.querySelector(".topbar .external-badge")');
@@ -132,36 +139,50 @@ module.exports = async (win, app, dir) => {
     await until('!document.querySelector(".external-badge")');
     check('Disconnect frees the editor and CraftAI resumes', await q(`!document.querySelector('#craft-ai-panel .pilot-external')||!document.querySelector('#craft-ai-panel .pilot-external').textContent.includes('is connected')`));
     const stepAfter = await q(`window.api.agentStep({requestId:'smoke-step-2'})`);
-    check('the main process no longer refuses CraftAI', !/is connected to ClipCraft/.test(stepAfter?.error || ''));
+    check('the main process no longer refuses CraftAI', !/is working in ClipCraft/.test(stepAfter?.error || ''));
+    check('the disconnected agent\'s session is closed', /Session not found|404/.test((await call(agent, 'get_status')).error || ''));
     const denied = call(intruder, 'get_status');
     await until('!!document.querySelector(".external-approve")');
     await q(`[...document.querySelectorAll('.external-approve button')].find(b=>b.textContent.includes('allow')&&!b.classList.contains('btn-primary')).click()`);
     check('a denied agent cannot edit', /did not allow Second agent/.test((await denied).error || ''));
 
-    // Settings: on, the allowed agent listed, the launch commands for this install.
-    await q(`window.api.externalStatus()`).then((s) => { result.status = s; });
+    // Settings: on, the address, the agents found, Install for Claude Code, the allowed agent.
+    result.status = await q(`window.api.externalStatus()`);
     check('only the allowed agent is remembered', JSON.stringify(result.status.approved) === JSON.stringify(['Test agent']));
     await q(`document.querySelector('button[aria-label="Settings"],.topbar button[title*="Settings"]').click()`);
     await until('!!document.querySelector(\'[data-section="external"]\')');
     await q(`document.querySelector('[data-section="external"]').click()`);
-    await until('document.querySelectorAll(".external-settings-command").length===3');
-    const commands = await q(`[...document.querySelectorAll('.external-settings-command')].map(c=>c.textContent)`);
-    result.commands = commands;
-    check('Settings shows the switch on and the setup for Claude Code, Codex and other clients', await q(`document.querySelector('input[aria-label="Allow external agents"]').checked`)
-      && commands[0].startsWith('claude mcp add clipcraft -s user -e ELECTRON_RUN_AS_NODE=1 -- ') && commands[0].includes('bridge.cjs')
-      && commands[1].includes('[mcp_servers.clipcraft]') && commands[1].includes('tool_timeout_sec = 900') && JSON.parse(commands[2]).mcpServers.clipcraft.env.ELECTRON_RUN_AS_NODE === '1');
-    await shot('external-settings.png');
-    // Turning it off stops listening.
+    await until('document.querySelectorAll("[data-agent]").length===3');
+    result.agents = await q(`[...document.querySelectorAll('[data-agent]')].map(r=>({id:r.dataset.agent,text:r.textContent}))`);
+    check('Settings shows the switch on, the server address and Claude Code, Codex and OpenCode', await q(`document.querySelector('input[aria-label="Allow external agents"]').checked&&document.querySelector('.external-url').textContent===${JSON.stringify(endpoint().url)}`)
+      && result.agents.map((a) => a.id).join() === 'claude,codex,opencode');
+    const manual = JSON.parse(await q('window.api.externalManualConfig()'));
+    check('other clients get the address and key as mcpServers JSON', manual.mcpServers.clipcraft.url === endpoint().url && manual.mcpServers.clipcraft.headers.Authorization === `Bearer ${endpoint().token}`);
+    if (/Not set up/.test(result.agents[0].text)) {
+      await q(`document.querySelector('[data-agent="claude"] .btn-primary').click()`);
+      try { await until(`/Set up$/.test(document.querySelector('[data-agent="claude"] .muted').textContent)`, 90000); }
+      catch (error) { result.installMessage = await q(`[...document.querySelectorAll('.set2-page .result')].map(r=>r.textContent).join(' | ')`); throw error; }
+      const installed = JSON.parse(fs.readFileSync(path.join(dir, 'agent-home', '.claude', '.claude.json'), 'utf8')).mcpServers.clipcraft;
+      check('Install writes ClipCraft into Claude Code (temporary home)', installed.url === endpoint().url && installed.headers.Authorization === `Bearer ${endpoint().token}`);
+      await shot('external-settings.png');
+      // The real Claude Code health check reaches this running app with what Install wrote.
+      const claude = require('../../electron/agents/localAgents.cjs').searchDirectories().map((d) => path.join(d, 'claude')).find((f) => fs.existsSync(f));
+      result.claudeHealth = await new Promise((resolve) => execFile(claude, ['mcp', 'list'], { timeout: 90000, env: { ...process.env, HOME: path.join(dir, 'agent-home'), CLAUDE_CONFIG_DIR: path.join(dir, 'agent-home', '.claude') } }, (error, stdout) => resolve(String(stdout || error?.message))));
+      check('the real Claude Code connects to the app with that setup', /clipcraft: .*\(HTTP\) - ✔ Connected/.test(result.claudeHealth));
+      await q(`[...document.querySelectorAll('[data-agent="claude"] button')].find(b=>b.textContent==='Remove').click()`);
+      await until(`/Not set up/.test(document.querySelector('[data-agent="claude"] .muted').textContent)`, 60000);
+      check('Remove takes it out again', !JSON.parse(fs.readFileSync(path.join(dir, 'agent-home', '.claude', '.claude.json'), 'utf8')).mcpServers?.clipcraft);
+    } else { result.skipped = 'Claude Code not installed: Install not exercised'; await shot('external-settings.png'); }
+    // Turning it off stops serving.
     await q(`document.querySelector('input[aria-label="Allow external agents"]').click()`);
     await until(`window.api.externalStatus().then(s=>!s.running&&!s.enabled)`);
-    check('turning the switch off removes the endpoint', !fs.existsSync(path.join(dir, 'mcp', 'endpoint.json')));
-    const off = await call(agentNamed('Late agent'), 'get_status');
-    check('with the switch off agents are told to open ClipCraft and turn it on', /turn on Settings > External agents/.test(off.error || ''));
+    const off = await agentNamed('Late agent').then(() => 'connected', (error) => error.message);
+    check('with the switch off agents cannot connect', off !== 'connected');
     check('no interface errors', !result.errors.length);
   } catch (error) {
     result.error = error.stack || error.message;
   } finally {
-    for (const a of agents) a.stop();
+    for (const a of agents) await a.close().catch(() => {});
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     app.exit(result.error ? 1 : 0);
   }

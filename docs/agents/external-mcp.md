@@ -8,27 +8,24 @@ ClipCraft for these sessions. Design and decisions: [`docs/design/external-agent
 ## Turning it on
 
 1. Open **Settings > External agents** and switch on **Allow external agents** (off by default).
-2. Copy the setup for your agent from the same page. It names this install's binary and folder:
-   - **Claude Code:** `claude mcp add clipcraft -s user -e ELECTRON_RUN_AS_NODE=1 -- "<ClipCraft binary>" "<bridge.cjs>" "--dir" "<userData>/mcp"`
-   - **Codex:** a `[mcp_servers.clipcraft]` block for `~/.codex/config.toml`, with
-     `tool_timeout_sec = 900` because exports and renders can take minutes.
-   - **Other clients:** the usual `mcpServers` JSON.
+   ClipCraft then serves MCP at `http://127.0.0.1:39217/mcp`, for this computer only and only to
+   agents that send its key.
+2. Under **Agents on this computer**, press **Install** next to Claude Code, Codex or OpenCode
+   (shown when ClipCraft finds it). It adds ClipCraft to that agent's own user settings, for all its
+   projects. Start a new session of the agent to load the tools. **Remove** takes it out again.
+   For any other MCP client, **Copy setup** gives the address and key as `mcpServers` JSON.
 3. The first call from a new agent asks you in ClipCraft: **Allow** or **Don't allow**. Allowed
    agents are listed in Settings and can be removed there.
 
-The command runs ClipCraft's own binary in Node mode (`ELECTRON_RUN_AS_NODE=1`), so no separate
-Node install is needed. In development, `node electron/agents/external/bridge.cjs --dir <folder>`
-works too.
-
 ## How it behaves
 
-- **App closed:** the MCP server still starts and lists the tools ClipCraft last offered; every call
-  says to open ClipCraft. Open the app and the next call works without restarting the agent.
-- **One agent at a time:** the first agent that makes a call holds the editor until it disconnects,
-  you press **Disconnect** (top bar, Home, the CraftAI panel or Settings), or it makes no calls for
-  30 minutes. Another agent is refused with the name of the one connected.
-- **CraftAI pauses** while an outside agent holds the editor, and outside agents are refused while
-  CraftAI is running a request.
+- **App closed or switch off:** the agent cannot connect. Open ClipCraft, then reconnect the server
+  in the agent (Claude Code: `/mcp`) or start a new session.
+- **One agent at a time:** the agent that makes a call holds the editor. While it works (a call
+  running, or one in the last 2 minutes) other agents are refused with its name and CraftAI waits.
+  Once it has been idle for 2 minutes, another agent or CraftAI can take over. **Disconnect** (top
+  bar, Home, the CraftAI panel or Settings) ends its session at once.
+- **CraftAI comes first** while it is running a request: outside agents are refused until it ends.
 - **Edits:** an edit starts with the agent's first change and ends when `complete_edit` accepts it.
   Each accepted edit is one Undo step. If you change the project during an agent's edit, its next
   call is told so, and the call after that continues from the current timeline.
@@ -54,9 +51,10 @@ own MCP tool servers from Settings are not passed on; connect them to the outsid
 
 ## Where things live
 
-- `electron/agents/external/bridge.cjs`: the stdio MCP server the agent starts.
-- `electron/agents/external/endpoint.cjs`: the app's local socket (`<userData>/mcp`, user-only),
-  the token, the one-agent lock, approval and timeouts.
+- `electron/agents/external/endpoint.cjs`: the MCP server (Streamable HTTP on 127.0.0.1), the key,
+  host and browser checks, the one-agent lock, approval and timeouts.
+- `electron/agents/external/install.cjs`: finding Claude Code, Codex and OpenCode and writing
+  ClipCraft into their settings.
 - `electron/agents/external/host.cjs`: routes calls to the renderer and back through
   `electron/agents/toolResult.cjs`, the result builder native agents use.
 - `src/features/agent/externalHost.js`: project tools and edit boundaries, running editor calls
@@ -64,8 +62,10 @@ own MCP tool servers from Settings are not passed on; connect them to the outsid
 
 ## Tests
 
-- `tests/unit/agents/test-external-bridge.mjs`: bridge and endpoint in plain Node.
+- `tests/unit/agents/test-external-endpoint.mjs`: the server with the MCP SDK's HTTP client.
+- `tests/unit/agents/test-external-install.cjs`: the real agent CLIs in a temporary home, including
+  a real Claude Code health check against the server.
 - `tests/unit/agents/test-external-contract.mjs`: same tools, schemas, instructions and limit as
   the native agents; refusals on Home and while CraftAI runs.
 - `tests/unit/agents/test-external-agents-ui.cjs` (`FVE_SMOKE_MODE=external-agents`): the real app
-  with an agent connected through the bridge.
+  with an agent connected over HTTP, and Install for Claude Code.

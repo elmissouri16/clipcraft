@@ -122,20 +122,30 @@ function setMcpServers(list) {
   return getPublic();
 }
 
-// ---- External agents (docs/design/external-agent-mcp.md): off by default; the agents (by the name
-// their MCP client reports) the user allowed to edit once.
+// ---- External agents (docs/design/external-agent-mcp.md): off by default; the MCP port; the agents
+// (by the name their MCP client reports) the user allowed to edit once. The token outside agents
+// send lives here too, created once, and never goes to the renderer (getPublic).
+const EXTERNAL_PORT = 39217;
+const cleanNames = (list) => [...new Set((Array.isArray(list) ? list : []).filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim().slice(0, 60)))].slice(0, 20);
 function getExternalAgents() {
   const value = read().externalAgents || {};
-  return { enabled: value.enabled === true,
-    approved: [...new Set((Array.isArray(value.approved) ? value.approved : []).filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim().slice(0, 60)))].slice(0, 20) };
+  const port = Number.isInteger(value.port) && value.port >= 1024 && value.port <= 65535 ? value.port : EXTERNAL_PORT;
+  return { enabled: value.enabled === true, approved: cleanNames(value.approved), port };
 }
 function setExternalAgents(patch) {
-  const data = read(), current = getExternalAgents();
-  const approved = Array.isArray(patch?.approved) ? patch.approved : current.approved;
-  data.externalAgents = { enabled: typeof patch?.enabled === 'boolean' ? patch.enabled : current.enabled,
-    approved: [...new Set(approved.filter((n) => typeof n === 'string' && n.trim()).map((n) => n.trim().slice(0, 60)))].slice(0, 20) };
+  const data = read(), current = data.externalAgents || {};
+  data.externalAgents = { ...current,
+    enabled: typeof patch?.enabled === 'boolean' ? patch.enabled : current.enabled === true,
+    approved: cleanNames(Array.isArray(patch?.approved) ? patch.approved : current.approved) };
   write(data);
   return getPublic();
+}
+function externalToken() {
+  const data = read(), current = data.externalAgents || {};
+  if (typeof current.token === 'string' && /^[0-9a-f]{64}$/.test(current.token)) return current.token;
+  data.externalAgents = { ...current, token: require('node:crypto').randomBytes(32).toString('hex') };
+  write(data);
+  return data.externalAgents.token;
 }
 
 // ---- Keys of other services (stock media). Same encryption, same rules as the AI keys. ----
@@ -317,4 +327,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };

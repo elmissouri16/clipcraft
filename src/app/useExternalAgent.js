@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createExternalHost, externalInstructions } from '../features/agent/externalHost.js';
 
 // appRef.current: { screen(), project(), loadVersion(), dispatch, settle, pilotApp, craftBusy(), projects }
-export function useExternalAgent(appRef, settingsVersion) {
+export function useExternalAgent(appRef, settingsVersion, craftBusy) {
   const [status, setStatus] = useState(null);
   const [approval, setApproval] = useState(null); // { id, client }
   const listeners = useRef(new Set());
@@ -55,10 +55,15 @@ export function useExternalAgent(appRef, settingsVersion) {
     }).catch(() => {});
   }, [settingsVersion, announce]);
 
+  // CraftAI running: the main process refuses outside agents meanwhile.
+  useEffect(() => { window.api.externalCraftBusy?.(!!craftBusy).catch(() => {}); }, [craftBusy]);
+
   const subscribe = useCallback((listener) => { listeners.current.add(listener); return () => listeners.current.delete(listener); }, []);
   const answer = useCallback((allow) => {
     setApproval((a) => { if (a) window.api.externalApproval({ id: a.id, allow }).catch(() => {}); return null; });
   }, []);
   const disconnect = useCallback(() => window.api.externalDisconnect?.().then(setStatus).catch(() => {}), []);
-  return { status, holder: status?.owner?.client?.name || null, approval, answer, disconnect, subscribe, setStatus };
+  // holder: an agent working now (CraftAI pauses); owner: the agent holding the editor, even idle.
+  const owner = status?.owner?.client?.name ? { name: status.owner.client.name, active: !!status.owner.active } : null;
+  return { status, owner, holder: owner?.active ? owner.name : null, approval, answer, disconnect, subscribe, setStatus };
 }

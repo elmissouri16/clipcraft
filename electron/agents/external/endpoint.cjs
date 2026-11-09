@@ -1,190 +1,240 @@
-// The app side of external agents (docs/design/external-agent-mcp.md): a user-only local socket the
-// stdio bridge connects to, one token per app run, and the one-agent lock. No Electron imports, so
-// tests drive it in plain Node (tests/unit/agents/test-external-bridge.mjs).
+// The MCP server outside agents connect to (docs/design/external-agent-mcp.md): Streamable HTTP on
+// 127.0.0.1 inside the app, so an agent is configured with a URL and a token and nothing else.
+// No Electron imports: tests drive it in plain Node (tests/unit/agents/test-external-endpoint.mjs).
 //
-// Bridge -> app: hello { token, client: { name, version } }, call { id, name, args, progress },
-// cancel { id }. App -> bridge: welcome { tools, instructions, version } | refused { error },
-// tools { tools, instructions }, result { id, result }, progress { id, progress, message }.
+// One agent holds the editor at a time. HTTP sessions have no connection that ends when an agent
+// quits, so the holder keeps the editor while it works and can be replaced (by another agent or by
+// CraftAI) once it has been idle for limits.takeoverMs with no call running.
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const net = require('node:net');
-const path = require('node:path');
+const http = require('node:http');
 const { EventEmitter } = require('node:events');
-const { ENDPOINT_FILE, MANIFEST_FILE, socketPath, lineReader, frame, textResult } = require('./protocol.cjs');
+const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
+const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
+const { ListToolsRequestSchema, CallToolRequestSchema, isInitializeRequest } = require('@modelcontextprotocol/sdk/types.js');
 
-const HELLO_MS = 5000;
+const PATH = '/mcp';
+const MAX_BODY = 4 * 1024 * 1024;
+const textResult = (text, isError = false) => ({ ...(isError ? { isError: true } : {}), content: [{ type: 'text', text }] });
+const errorResult = (error) => textResult(JSON.stringify({ error }), true);
 
 // onCall(call, owner) -> MCP result, call: { id, name, args, signal, progress(value, message) }.
-// approve(client) -> true | false: may ask the user. limits: { toolCallTimeoutMs, idleMs }.
+// approve(client) -> boolean (may ask the user). isCraftBusy() -> boolean.
+// limits: { toolCallTimeoutMs, takeoverMs, sessionIdleMs }.
 class ExternalEndpoint extends EventEmitter {
-  constructor({ dir, version, onCall, approve = async () => true, limits }) {
+  constructor({ port, token, version, onCall, approve = async () => true, isCraftBusy = () => false, limits }) {
     super();
-    Object.assign(this, { dir, version, onCall, approve, limits });
-    this.server = null; this.token = null; this.socket = null;
-    this.connections = new Set();
-    this.owner = null; // { connection, client, since }
+    Object.assign(this, { port, token, version, onCall, approve, isCraftBusy, limits });
+    this.server = null;
+    this.sessions = new Map(); // session id -> session
+    this.owner = null; // a session
     this.manifest = { tools: [], instructions: '' };
-    this.idleTimer = null;
+    this.idleTimer = null; this.pruneTimer = null;
+    this.error = null;
   }
 
   get running() { return !!this.server; }
+  get url() { return `http://127.0.0.1:${this.port}${PATH}`; }
 
   async start() {
     if (this.server) return;
-    fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    try { fs.chmodSync(this.dir, 0o700); } catch { /* Windows */ }
-    this.token = crypto.randomBytes(32).toString('hex');
-    this.socket = socketPath(this.dir);
-    if (process.platform !== 'win32') {
-      // A socket left by a crashed run: in use means another ClipCraft is serving it.
-      if (fs.existsSync(this.socket)) {
-        const alive = await new Promise((resolve) => { const c = net.connect(this.socket); c.once('connect', () => { c.destroy(); resolve(true); }); c.once('error', () => resolve(false)); });
-        if (alive) throw new Error('Another ClipCraft window already serves external agents.');
-        fs.rmSync(this.socket, { force: true });
-      }
+    const server = http.createServer((req, res) => { this.handle(req, res).catch((error) => this.fail(res, 500, error.message)); });
+    try {
+      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(this.port, '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
+    } catch (error) {
+      this.error = error.code === 'EADDRINUSE' ? `Port ${this.port} is already in use (another ClipCraft, or another program).` : error.message;
+      this.emit('status');
+      throw new Error(this.error);
     }
-    const server = net.createServer((socket) => this.accept(socket));
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(this.socket, () => { server.off('error', reject); resolve(); }); });
-    if (process.platform !== 'win32') { try { fs.chmodSync(this.socket, 0o600); } catch { /* best effort: the folder is 0700 */ } }
+    this.error = null;
     this.server = server;
-    this.writeFile(ENDPOINT_FILE, { socket: this.socket, token: this.token, version: this.version, pid: process.pid });
-    this.writeFile(MANIFEST_FILE, this.manifest);
+    this.pruneTimer = setInterval(() => this.prune(), 5 * 60 * 1000); this.pruneTimer.unref?.();
     this.emit('status');
   }
 
   async stop() {
     const server = this.server;
     this.server = null;
-    for (const connection of this.connections) connection.socket.destroy();
-    this.connections.clear();
-    this.release();
-    if (server) await new Promise((resolve) => server.close(() => resolve()));
-    fs.rmSync(path.join(this.dir, ENDPOINT_FILE), { force: true });
-    if (this.socket && process.platform !== 'win32') fs.rmSync(this.socket, { force: true });
+    clearInterval(this.pruneTimer);
+    this.release('stopped');
+    for (const id of [...this.sessions.keys()]) await this.closeSession(id);
+    if (server) await new Promise((resolve) => { server.close(() => resolve()); server.closeAllConnections?.(); });
     this.emit('status');
   }
 
-  writeFile(name, value) {
-    const file = path.join(this.dir, name), tmp = `${file}.${process.pid}.part`;
-    fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 });
-    fs.renameSync(tmp, file);
-  }
-
-  // The tool list and instructions the renderer offers; bridges hear about changes.
+  // The tool list and instructions the renderer offers; open sessions hear about list changes.
   setManifest({ tools, instructions }) {
     const next = { tools: Array.isArray(tools) ? tools : [], instructions: String(instructions || '') };
     if (JSON.stringify(next) === JSON.stringify(this.manifest)) return;
+    const toolsChanged = JSON.stringify(next.tools) !== JSON.stringify(this.manifest.tools);
     this.manifest = next;
-    if (this.server) this.writeFile(MANIFEST_FILE, next);
-    for (const connection of this.connections) if (connection.ready) this.send(connection, { type: 'tools', ...next });
+    if (toolsChanged) for (const session of this.sessions.values()) session.server.sendToolListChanged().catch(() => {});
   }
+
+  active(session) { return !!session && (session.calls.size > 0 || Date.now() - session.lastCall < this.limits.takeoverMs); }
 
   status() {
-    return { running: this.running, connections: [...this.connections].filter((c) => c.ready).length,
-      owner: this.owner ? { client: this.owner.client, since: this.owner.since } : null };
+    const owner = this.owner;
+    return { running: this.running, url: this.url, error: this.error, sessions: [...this.sessions.values()].filter((s) => s.client).length,
+      owner: owner ? { client: owner.client, since: owner.since, active: this.active(owner) } : null };
   }
 
-  send(connection, message) { if (!connection.socket.destroyed) connection.socket.write(frame(message)); }
-
-  accept(socket) {
-    socket.setEncoding('utf8');
-    const connection = { id: crypto.randomUUID(), socket, ready: false, client: null, calls: new Map() };
-    this.connections.add(connection);
-    const hello = setTimeout(() => socket.destroy(), HELLO_MS);
-    socket.on('data', lineReader((message) => this.receive(connection, message, hello)));
-    socket.on('error', () => {});
-    socket.on('close', () => {
-      clearTimeout(hello);
-      this.connections.delete(connection);
-      for (const call of connection.calls.values()) call.controller.abort();
-      if (this.owner?.connection === connection) this.release();
-      this.emit('status');
-    });
+  fail(res, code, message) {
+    if (res.headersSent) { res.end(); return; }
+    res.writeHead(code, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null }));
   }
 
-  receive(connection, message, hello) {
-    if (!connection.ready) {
-      const token = Buffer.from(String(message.token || '')), expected = Buffer.from(this.token || '');
-      if (message.type !== 'hello' || token.length !== expected.length || !crypto.timingSafeEqual(token, expected)) {
-        this.send(connection, { type: 'refused', error: 'ClipCraft refused the connection (wrong or old token). Restart the MCP server.' });
-        connection.socket.end(); return;
-      }
-      clearTimeout(hello);
-      const name = String(message.client?.name || 'MCP client').replace(/[\u0000-\u001f]/g, '').slice(0, 60).trim() || 'MCP client';
-      connection.client = { name, version: String(message.client?.version || '').slice(0, 30) };
-      connection.ready = true;
-      this.send(connection, { type: 'welcome', version: this.version, ...this.manifest });
-      this.emit('status');
-      return;
+  async handle(req, res) {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname !== PATH) return this.fail(res, 404, 'Not found. ClipCraft serves MCP at /mcp.');
+    // Only local MCP clients: the Host must be this server (no DNS rebinding) and browsers, which
+    // always send Origin on these requests, are refused. Then the token.
+    if (![`127.0.0.1:${this.port}`, `localhost:${this.port}`].includes(req.headers.host)) return this.fail(res, 403, 'Forbidden host.');
+    if (req.headers.origin) return this.fail(res, 403, 'Browser requests are not accepted.');
+    const given = Buffer.from(String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')), expected = Buffer.from(this.token);
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return this.fail(res, 401, 'ClipCraft refused the token. Reinstall ClipCraft for this agent in ClipCraft Settings > External agents.');
+    const id = req.headers['mcp-session-id'];
+    if (id) {
+      const session = this.sessions.get(id);
+      if (!session) return this.fail(res, 404, 'Session not found (ClipCraft restarted). Start a new session.');
+      session.lastSeen = Date.now();
+      return session.transport.handleRequest(req, res);
     }
-    if (message.type === 'call' && message.id !== undefined) this.call(connection, message);
-    else if (message.type === 'cancel') connection.calls.get(message.id)?.controller.abort();
+    if (req.method !== 'POST') return this.fail(res, 400, 'Start a session with an initialize request.');
+    const body = await readJson(req);
+    if (body === undefined) return this.fail(res, 400, 'The request body is not JSON.');
+    if (!isInitializeRequest(body)) return this.fail(res, 400, 'Start a session with an initialize request.');
+    const session = await this.openSession();
+    return session.transport.handleRequest(req, res, body);
   }
 
-  async call(connection, message) {
-    const { id } = message;
-    const reply = (result) => { connection.calls.delete(id); this.send(connection, { type: 'result', id, result }); };
-    if (connection.calls.has(id)) return;
-    const controller = new AbortController();
-    connection.calls.set(id, { controller });
+  async openSession() {
+    const session = { id: null, client: null, calls: new Map(), lastCall: 0, lastSeen: Date.now(), since: 0 };
+    const server = new Server({ name: 'clipcraft', title: 'ClipCraft', version: this.version },
+      { capabilities: { tools: { listChanged: true } }, instructions: this.manifest.instructions });
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: this.manifest.tools }));
+    server.setRequestHandler(CallToolRequestSchema, (request, extra) => this.call(session, request, extra));
+    server.oninitialized = () => {
+      const info = server.getClientVersion() || {};
+      const name = String(info.title || info.name || 'MCP client').replace(/[\u0000-\u001f]/g, '').slice(0, 60).trim() || 'MCP client';
+      session.client = { name, version: String(info.version || '').slice(0, 30) };
+      this.emit('status');
+    };
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: (id) => { session.id = id; this.sessions.set(id, session); },
+      onsessionclosed: (id) => this.closeSession(id),
+    });
+    transport.onclose = () => { if (session.id) this.closeSession(session.id); };
+    Object.assign(session, { server, transport });
+    await server.connect(transport);
+    return session;
+  }
+
+  async closeSession(id) {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    this.sessions.delete(id);
+    for (const controller of session.calls.values()) controller.abort();
+    if (this.owner === session) this.release('disconnected');
+    await session.transport.close().catch(() => {});
+    this.emit('status');
+  }
+
+  // Sessions an agent left without closing (it quit): dropped after limits.sessionIdleMs.
+  prune() {
+    for (const [id, session] of this.sessions) if (!session.calls.size && Date.now() - session.lastSeen > this.limits.sessionIdleMs) this.closeSession(id);
+  }
+
+  async call(session, request, extra) {
+    session.lastSeen = Date.now();
+    const refusal = await this.claim(session);
+    if (refusal) return textResult(refusal, true);
+    const id = crypto.randomUUID(), controller = new AbortController();
+    const abort = () => controller.abort();
+    extra.signal?.addEventListener('abort', abort, { once: true });
+    session.calls.set(id, controller);
+    this.emit('status');
+    const token = request.params?._meta?.progressToken;
+    const progress = token === undefined ? () => {} : (value, message) => extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: value, ...(message ? { message: String(message).slice(0, 300) } : {}) } }).catch(() => {});
+    let timer;
     try {
-      const refusal = await this.claim(connection);
-      if (refusal) return reply(textResult(refusal, true));
-      this.touch();
-      let timer;
-      const timeout = new Promise((resolve) => { timer = setTimeout(() => { controller.abort(); resolve(textResult(JSON.stringify({ error: `${message.name} did not finish within ${this.limits.toolCallTimeoutMs / 60000} minutes.` }), true)); }, this.limits.toolCallTimeoutMs); });
-      const progress = message.progress ? (value, text) => this.send(connection, { type: 'progress', id, progress: value, ...(text ? { message: String(text).slice(0, 300) } : {}) }) : () => {};
-      const run = Promise.resolve().then(() => this.onCall({ id: `${connection.id}:${id}`, name: String(message.name || ''), args: message.args && typeof message.args === 'object' ? message.args : {}, signal: controller.signal, progress }, this.owner));
-      const result = await Promise.race([run, timeout]).finally(() => clearTimeout(timer));
-      reply(result || textResult(JSON.stringify({ error: 'The tool returned no result.' }), true));
+      const timeout = new Promise((resolve) => { timer = setTimeout(() => { controller.abort(); resolve(errorResult(`${request.params.name} did not finish within ${this.limits.toolCallTimeoutMs / 60000} minutes.`)); }, this.limits.toolCallTimeoutMs); });
+      const run = Promise.resolve().then(() => this.onCall({ id, name: String(request.params.name || ''), args: request.params.arguments || {}, signal: controller.signal, progress }, session));
+      return (await Promise.race([run, timeout])) || errorResult('The tool returned no result.');
     } catch (error) {
-      reply(textResult(JSON.stringify({ error: error.message || 'The call failed.' }), true));
-    } finally { this.touch(); }
+      return errorResult(error.message || 'The call failed.');
+    } finally {
+      clearTimeout(timer);
+      extra.signal?.removeEventListener('abort', abort);
+      session.calls.delete(id);
+      session.lastCall = Date.now();
+      this.scheduleIdle();
+      this.emit('status');
+    }
   }
 
-  // One agent at a time: the first connection that makes a call (and is approved) holds the editor
-  // until it disconnects, the user disconnects it, or it is idle for limits.idleMs.
-  async claim(connection) {
-    if (this.owner?.connection === connection) return null;
-    if (this.owner) return `ClipCraft is connected to ${this.owner.client.name}. Disconnect it in ClipCraft first, then retry.`;
-    if (connection.approving) return 'Waiting for the user to allow this agent in ClipCraft. Retry in a moment.';
-    connection.approving = true;
+  async claim(session) {
+    if (this.owner === session) return null;
+    if (this.isCraftBusy()) return 'CraftAI is editing in ClipCraft. Retry when it finishes.';
+    if (this.owner) {
+      if (this.active(this.owner)) return `ClipCraft is being used by ${this.owner.client.name}. Retry when it has been idle for ${Math.round(this.limits.takeoverMs / 60000)} minutes, or ask the user to disconnect it in ClipCraft.`;
+      this.release('replaced');
+    }
+    if (session.approving) return 'Waiting for the user to allow this agent in ClipCraft. Retry in a moment.';
+    session.approving = true;
     let allowed;
-    try { allowed = await this.approve(connection.client); } finally { connection.approving = false; }
-    if (!allowed) return `The user did not allow ${connection.client.name} to edit in ClipCraft.`;
-    if (connection.socket.destroyed) return 'The connection closed.';
-    if (this.owner && this.owner.connection !== connection) return `ClipCraft is connected to ${this.owner.client.name}. Disconnect it in ClipCraft first, then retry.`;
-    this.owner = { connection, client: connection.client, since: Date.now() };
-    this.emit('claimed', this.owner);
+    try { allowed = await this.approve(session.client || { name: 'MCP client', version: '' }); } finally { session.approving = false; }
+    if (!allowed) return `The user did not allow ${session.client?.name || 'this agent'} to edit in ClipCraft.`;
+    if (!this.sessions.has(session.id)) return 'The session closed.';
+    if (this.owner && this.owner !== session) return this.claim(session);
+    this.owner = session;
+    session.since = Date.now();
+    this.emit('claimed', { client: session.client });
     this.emit('status');
     return null;
   }
 
-  touch() {
+  // Status changes when the holder turns idle (CraftAI and other agents may then take over).
+  scheduleIdle() {
     clearTimeout(this.idleTimer);
     if (!this.owner) return;
-    this.idleTimer = setTimeout(() => {
-      if (this.owner && !this.owner.connection.calls.size) this.release('idle'); else this.touch();
-    }, this.limits.idleMs);
+    this.idleTimer = setTimeout(() => this.emit('status'), Math.max(0, this.owner.lastCall + this.limits.takeoverMs - Date.now()) + 50);
+    this.idleTimer.unref?.();
   }
 
-  // Frees the editor. The connection stays open; its next call claims again.
-  release(reason = 'released') {
+  release(reason) {
     clearTimeout(this.idleTimer);
-    if (!this.owner) return;
     const owner = this.owner;
+    if (!owner) return;
     this.owner = null;
-    for (const call of owner.connection.calls.values()) call.controller.abort();
+    for (const controller of owner.calls.values()) controller.abort();
     this.emit('released', { client: owner.client, reason });
     this.emit('status');
   }
 
-  // The user pressed Disconnect: free the editor and close that agent's connection.
-  disconnect() {
+  // CraftAI wants to start: refuses while the holder works, otherwise frees the editor.
+  yieldToCraft() {
+    if (this.active(this.owner)) return this.owner.client.name;
+    this.release('craftai');
+    return null;
+  }
+
+  // The user pressed Disconnect: the holder's session ends; its next call starts over.
+  async disconnect() {
     const owner = this.owner;
     this.release('disconnected');
-    owner?.connection.socket.end();
+    if (owner?.id) await this.closeSession(owner.id);
   }
 }
 
-module.exports = { ExternalEndpoint };
+function readJson(req) {
+  return new Promise((resolve) => {
+    let size = 0; const chunks = [];
+    req.on('data', (chunk) => { size += chunk.length; if (size > MAX_BODY) { req.destroy(); resolve(undefined); } else chunks.push(chunk); });
+    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { resolve(undefined); } });
+    req.on('error', () => resolve(undefined));
+  });
+}
+
+module.exports = { ExternalEndpoint, textResult, errorResult };

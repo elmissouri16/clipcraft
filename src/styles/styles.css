@@ -2839,8 +2839,7 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 .pilot-external > span { flex: 1; min-width: 0; }
 .pilot-external b { color: var(--text); margin-right: 4px; }
 .pilot-external .btn { flex: none; }
-.external-settings-command { display: block; width: 100%; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-1); border: 1px solid var(--border); font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); white-space: pre-wrap; word-break: break-all; user-select: text; }
-.external-settings-row { display: flex; align-items: flex-start; gap: 8px; }
-.external-settings-row .external-settings-command { flex: 1; min-width: 0; }
-.set2-field-block { display: grid; gap: 4px; }
-.set2-field-block + .set2-field-block { margin-top: 12px; }
+.external-badge.is-idle .external-dot { background: var(--text-3); }
+.external-agent-row { display: flex; align-items: center; gap: 10px; }
+.external-agent-row .set2-item-text { flex: 1; min-width: 0; }
+.external-url { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); user-select: text; }
