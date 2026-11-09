@@ -264,7 +264,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
         <span className="dim">{media?.width}×{media?.height}{graphic ? ' · graphic' : isVideo ? ` · ${formatTime(media.duration)}` : ' · photo'} · on timeline: {clipLen(clip).toFixed(2)}s</span>
       </div>
 
-      {tab === 'graphic' && graphic && <GraphicPanel key={media.id} clip={clip} media={media} project={project} track={track} dispatch={dispatch} />}
+      {tab === 'graphic' && graphic && <GraphicPanel key={clip.id} clip={clip} media={media} project={project} track={track} dispatch={dispatch} />}
 
       {tab === 'video' && (
         <>

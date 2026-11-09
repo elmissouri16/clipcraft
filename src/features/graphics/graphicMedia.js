@@ -41,7 +41,7 @@ export async function renderGraphicMedia({ api, project, code, inputs = {}, font
 // The clip shows the new render; the old render leaves the library when no other clip uses it; an
 // empty or shorter main track is padded to cover it. As one batch: one Undo step.
 export function swapGraphicActions(project, track, clip, media) {
-  const actions = [{ type: 'addMedia', items: [media] }, { type: 'update', track, id: clip.id, patch: { mediaId: media.id, in: 0, out: media.duration } }];
+  const actions = [{ type: 'addMedia', items: [media] }, { type: 'update', track, id: clip.id, patch: { mediaId: media.id, in: 0, out: media.duration, graphicDraft: undefined } }];
   const others = [...project.videoClips, ...(project.overlayClips || [])].some((c) => c.id !== clip.id && c.mediaId === clip.mediaId);
   if (!others && clip.mediaId !== media.id) actions.push({ type: 'removeMedia', id: clip.mediaId });
   if (track === 'overlay') actions.push({ type: 'extendVideoTo', end: clip.start + media.duration, gapId: uid() });

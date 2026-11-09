@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld('graphicsHost', {
   job: () => ipcRenderer.invoke('graphics:job'),
   frame: (token, index, pixels) => ipcRenderer.invoke('graphics:frame', token, index, pixels),
   done: (token, error, stats) => ipcRenderer.invoke('graphics:done', token, error ? String(error).slice(0, 2000) : null, stats || null),
+  liveReady: (token, error) => ipcRenderer.invoke('graphics:liveReady', token, error ? String(error).slice(0, 2000) : null),
+  liveResult: (token, index, result) => ipcRenderer.invoke('graphics:liveResult', token, index, result),
+  onLiveRequest: (callback) => ipcRenderer.on('graphics:liveRequest', (_event, request) => callback(request)),
 });

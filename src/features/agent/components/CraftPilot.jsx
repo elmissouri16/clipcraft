@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Bot, Check, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, Settings, Square, Undo2, X } from 'lucide-react';
 import { runAgent } from "../runAgent.js";
+import { graphicEdits } from '../../graphics/graphicEdits.js';
 import { makeAgentCtx } from "../agentCtx.js";
 import { addTimelineAttachment, resolveTimelineAttachments, timelineAttachmentLabel, timelineContextPart } from '../timelineContext.js';
 import { projectRevision, proposedPlanNote } from "../context.js";
@@ -279,6 +280,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         const validation = await window.api.agentValidateVideos(item.videos.map(video => video.id));
         if (validation?.error) throw Error(validation.error);
       }
+      await graphicEdits.flush();
       attached = resolveTimelineAttachments(getProject(), item.timelineAttachments);
       contextPart = timelineContextPart(attached);
     } catch (error) { setContextError(error.message);if (queued) updateSession({ queuePaused: true });return; }

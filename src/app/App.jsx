@@ -51,6 +51,7 @@ import { fxWork, renderFxPass } from "../features/export/fxExport.js";
 import { TEXT_TEMPLATES } from "../features/text/catalog.js";
 import { allFonts } from "../features/text/fonts.js";
 import { graphicOutdated, isGraphicMedia, redrawGraphicAction, renderGraphicMedia } from '../features/graphics/graphicMedia.js';
+import { graphicEdits } from '../features/graphics/graphicEdits.js';
 
 // (The emoji-to-PNG rasterizer that lived here served only the Stickers feature, removed
 // in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
@@ -400,6 +401,11 @@ export default function App() {
   const graphicCacheKeys = project.media.filter(isGraphicMedia).map((m) => m.graphic?.key).filter(Boolean).join(',');
   useEffect(() => { window.api.graphicsInUse?.(graphicCacheKeys ? graphicCacheKeys.split(',') : []); }, [graphicCacheKeys]);
   const redrawing = useRef(new Set());
+  useEffect(() => graphicEdits.connect({ getProject: () => projectRef.current, getGesture: () => !!historyRef.current.gestureStart,
+    dispatch, api: window.api }), []);
+  const graphicDraftKey = [...project.videoClips, ...(project.overlayClips || [])].filter(c => c.graphicDraft)
+    .map(c => `${c.id}:${c.mediaId}:${c.in}:${c.out}:${c.speed || 1}:${JSON.stringify(c.graphicDraft)}`).join('|');
+  useEffect(() => { graphicEdits.sync(); }, [project.id, projectLoadVersion, project.width, project.height, project.fps, graphicDraftKey, !!state.gestureStart]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1661,6 +1667,7 @@ export default function App() {
   // receives, so the summary IS the export configuration, not a description of it.
   const startExport = async () => {
     if (exportRunning.current) return;
+    try { await graphicEdits.flush(); } catch (error) { return showAlert(error.message); }
     const project = renderable(projectRef.current);
     if (!project.videoClips.length) return showAlert('Add a video or photo to the timeline before exporting.');
     setPlaying(false);
@@ -1810,6 +1817,7 @@ export default function App() {
     let target, watch;
     setAgentRendering(true);
     try {
+      await graphicEdits.flush();
       const caps = await window.api.exportCaps();
       const { project: snapshot, effective } = agentExportPlan(projectRef.current, options, caps);
       if (request.isCanceled?.()) return { canceled: true };
@@ -1849,7 +1857,7 @@ export default function App() {
         return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionDataPinned(p) } };
       },
       // Test hook: exports immediately (no summary gate), resolving settings the same way.
-      exportNow: () => { const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p)); },
+      exportNow: async () => { await graphicEdits.flush(); const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p)); },
       fxSelfTest: async () => (await import("../features/effects/selftest.js")).fxSelfTest(),
       duration: () => projectDuration(projectRef.current),
       // Test helper: give clips that name a template the template's full style (clip values win).

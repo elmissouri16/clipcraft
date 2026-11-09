@@ -466,9 +466,14 @@ export default function Preview({
       el.slot.classList.toggle('vignette', fx.includes('vignette') && !classicViaShader(c, 'vignette'));
       const flip = `scale(${fx.includes('mirror') && !classicViaShader(c, 'mirror') ? -1 : 1}, ${fx.includes('flipv') && !classicViaShader(c, 'flipv') ? -1 : 1})`;
       const chroma = chromaOf(c);
-      const src = m.type === 'image' ? el.img : el.v;
+      const live = !!(c.graphicDraft && el.live?.dataset.ready);
+      const src = live ? el.live : m.type === 'image' ? el.img : el.v;
+      el.v.style.display = m.type === 'video' && !live ? 'block' : 'none';
+      el.img.style.display = m.type === 'image' && !live ? 'block' : 'none';
+      if (el.live) el.live.style.display = live ? 'block' : 'none';
       src.style.transform = flip;
-      if (m.type === 'image') {
+      if (live) { if (!el.v.paused) el.v.pause(); }
+      else if (m.type === 'image') {
         const url = toFileUrl(m.path);
         if (el.img.dataset.src !== url) { el.img.dataset.src = url; el.img.src = url; }
       } else {
@@ -488,7 +493,7 @@ export default function Preview({
       src.style.visibility = processed ? 'hidden' : ''; // '' inherits: 'visible' would show through a hidden slot
       if (processed) {
         el.cv.style.transform = flip;
-        if (m.type === 'image') { if (el.img.complete) drawKeyed(el.cv, el.img, el.img.naturalWidth, el.img.naturalHeight, chroma, pfx, { crop, custom }); }
+        if (live || m.type === 'image') { if (src.complete) drawKeyed(el.cv, src, src.naturalWidth, src.naturalHeight, chroma, pfx, { crop, custom }); }
         else if (el.v.readyState >= 2) drawKeyed(el.cv, el.v, el.v.videoWidth, el.v.videoHeight, chroma, pfx, { crop, custom });
       }
     });

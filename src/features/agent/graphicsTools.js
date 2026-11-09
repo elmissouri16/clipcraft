@@ -15,7 +15,7 @@ const FONTS = { type: 'ARRAY', items: S, description: 'Bundled font families the
 export const GRAPHICS_DECLARATIONS = [
   { name: 'graphics_guide', description: `How to write motion graphics (custom charts, buttons, callouts, lower thirds, diagrams, anything drawable): component format, toolkit, design rules, reference examples. Read toolkit first. topic: ${GRAPHICS_TOPICS.join(', ')}.`,
     parameters: { type: 'OBJECT', properties: { topic: S }, required: ['topic'] } },
-  { name: 'add_graphic', description: 'Render a motion graphic you wrote (JavaScript component returning SVG per frame; see graphics_guide) and place it as a transparent overlay over the whole frame. Returns sample frames of the result: check them, and fix the code if anything is off. Errors name the component line.',
+  { name: 'add_graphic', description: 'Render a motion graphic you wrote (JavaScript component returning SVG per frame; see graphics_guide toolkit and inputs) and place it as a transparent overlay over the whole frame. Declare useful editable settings for motion, appearance and content. Returns those declarations and sample frames: check them, and fix the code if anything is off. Errors name the component line.',
     parameters: { type: 'OBJECT', properties: { code: S, inputs: { type: 'OBJECT', description: 'Values for the component inputs (data, text, colours)' }, fonts: FONTS,
       start_sec: N, duration_sec: N, name: S }, required: ['code', 'duration_sec'] } },
   { name: 'edit_graphic', description: 'Change a graphic added with add_graphic and render it again in place: new inputs (merged unless replace_inputs), new code, fonts or duration. The clip keeps its position, keyframes and effects.',
@@ -49,7 +49,7 @@ export function createGraphicsTools({ project, dispatch, after, api, requestId, 
   };
   const design = (result) => { const w = designWarnings(result); return w.length ? { design_warnings: w } : {}; };
   const report = async (out, extra) => after({ ...extra, media_id: out.media.id, duration_sec_graphic: r3(out.result.duration_sec), cached: out.result.cached,
-    render_ms: out.result.stats?.total_ms, ...design(out.result),
+    render_ms: out.result.stats?.total_ms, editable_inputs: out.result.schema || {}, ...design(out.result),
     ...(await evidence(out.result)),
     note: 'The attached frames show the graphic over grey (grey = transparent). Check sizes, overlaps, cut-off text and timing; fix design_warnings and anything else off with edit_graphic. Position/scale/fade it like any overlay.' });
 
@@ -77,7 +77,7 @@ export function createGraphicsTools({ project, dispatch, after, api, requestId, 
       const [track, clip] = found || [];
       const old = clip && p.media.find((m) => m.id === clip.mediaId);
       if (!clip || !old?.graphic) return { error: `Clip "${clip_id}" is not a graphic added with add_graphic. Call get_project to see the real ids.` };
-      const g = old.graphic;
+      const g = { ...old.graphic, inputs: clip.graphicDraft?.inputs || old.graphic.inputs };
       const out = await render({ code: code ?? g.code, inputs: replace_inputs ? inputs || {} : { ...g.inputs, ...(inputs || {}) }, fonts: fonts ?? g.fonts,
         duration_sec: duration_sec ?? clipLen(clip), start_sec: clip.start || 0, name: old.name });
       if (out.error) return out;

@@ -88,9 +88,20 @@ measurements: [motion graphics](../design/motion-graphics.md).
   - "+ Add", double-click and drops always place it over the whole frame at the playhead, never on
     the main track (enforced in the reducer).
   - The inspector opens on a Graphic tab showing the inputs the component declares. The sandbox
-    reports them; the editor never runs the code. Text, numbers, colours, on/off and data tables
-    get proper controls, alongside the duration. Update re-draws the graphic and swaps it in as
-    one Undo step.
+    reports them; the editor never runs the code. Text, numbers, colours, on/off, choices, X/Y
+    points and data tables get proper controls, alongside the duration. Numeric min/max/step,
+    units, labels, descriptions and groups are supported; bounded numbers also get sliders.
+    Choices keep their original value types. Invalid numbers, choices and JSON keep the last valid
+    settings. Valid changes are saved on the clip immediately and preview live in a persistent,
+    locked-down graphics sandbox; the editor never executes component code. Preview requests follow
+    the timeline clock, coalesce old input values, and reduce raster resolution for slow components.
+    After adjusting, a background job prepares the full-quality render and swaps it in without
+    another Undo step. A slider gesture or a short typing burst is one Undo step. Draft settings
+    survive saving/reopening, and export waits for their current full-quality renders.
+    `graphics_guide inputs` documents the contract: expose meaningful motion, appearance and
+    content settings for any generated graphic and wire each into the component. Internal
+    motion rate is separate from clip duration. Old components retain their fields; previously
+    hard-coded settings need a component revision before they can become controls.
   - A new canvas size or frame rate re-draws every graphic, and so does opening a project whose
     cached graphic files are gone. A re-draw is not an Undo step of its own, and during an agent
     request it belongs to the agent's edit.

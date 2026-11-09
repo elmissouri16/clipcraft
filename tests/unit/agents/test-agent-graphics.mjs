@@ -13,6 +13,7 @@ import { resolveGraphicFonts, bundledGraphicFamilies } from '../../../src/featur
 import { designWarnings } from '../../../src/features/agent/graphicsTools.js';
 import { swapGraphicActions, redrawGraphicAction, graphicOutdated } from '../../../src/features/graphics/graphicMedia.js';
 import { mediaTreeCounts, mediaTreeFilter } from '../../../src/features/library/assetsLib.js';
+import { graphicInputDefaults, graphicInputField, graphicInputError } from '../../../src/features/graphics/graphicInputs.js';
 
 const checks = [];
 const check = async (name, fn) => { await fn(); checks.push(name); };
@@ -75,6 +76,24 @@ await check('component errors reach the agent; bad arguments are refused before 
   assert.match((await run('add_graphic', { code: '', duration_sec: 2 })).error, /code/);
   assert.match((await run('edit_graphic', { clip_id: 'nope' })).error, /not a graphic/);
   assert.equal(renders.length, before + 1, 'only the valid-looking request rendered');
+});
+
+await check('arbitrary input declarations preserve legacy values and validate editable controls', () => {
+  const schema = { old: 2, object: { x: .2, y: .7 }, rate: { type: 'number', default: 1, min: .25, max: 4, step: .25, unit: 'turns/s' },
+    direction: { type: 'choice', default: 1, options: [{ value: 1, label: 'Forward' }, { value: -1, label: 'Reverse' }] },
+    flag: { type: 'choice', default: false, options: [false, true] }, anchor: { type: 'point', default: { x: .5, y: .5 } } };
+  const values = graphicInputDefaults(schema);
+  assert.deepEqual(values, { old: 2, object: { x: .2, y: .7 }, rate: 1, direction: 1, flag: false, anchor: { x: .5, y: .5 } });
+  const rate = graphicInputField('rate', schema.rate, 1), direction = graphicInputField('direction', schema.direction, 1);
+  assert.equal(graphicInputError(rate, 2), '');
+  for (const value of ['', '2', NaN, Infinity, 0, 5]) assert.ok(graphicInputError(rate, value), String(value));
+  assert.equal(graphicInputError(direction, -1), ''); assert.ok(graphicInputError(direction, '-1'), 'choices keep their declared types');
+  assert.equal(graphicInputError(graphicInputField('flag', schema.flag, false), false), '', 'false is a valid choice');
+  const point = graphicInputField('anchor', schema.anchor, values.anchor);
+  assert.equal(graphicInputError(point, { x: .4, y: .8 }), ''); assert.ok(graphicInputError(point, { x: .4 })); assert.ok(graphicInputError(point, { x: 2, y: .8 }));
+  const malformed = graphicInputField('n', { type: 'number', default: 2, min: 0, max: -1, step: -5 }, 2);
+  assert.equal(malformed.slider, false); assert.equal(malformed.max, undefined); assert.equal(malformed.step, 'any');
+  assert.equal(graphicInputField('old', 2, values.old).type, 'number');
 });
 
 await check('fonts come from the bundled @font-face rules, with missing ones named', async () => {

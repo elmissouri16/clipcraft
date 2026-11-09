@@ -25,10 +25,62 @@ function register() {
     const j = job(event);
     if (j.token) throw Error('The job was already taken.');
     j.token = crypto.randomBytes(16).toString('hex');
-    return { token: j.token, code: j.code, inputs: j.inputs, fonts: j.fonts, width: j.width, height: j.height, fps: j.fps, frames: j.frames };
+    return { token: j.token, code: j.code, inputs: j.inputs, fonts: j.fonts, width: j.width, height: j.height, fps: j.fps, frames: j.frames, live: !!j.live };
   });
   ipcMain.handle('graphics:frame', (event, token, index, pixels) => owned(event, token).onFrame(index, pixels));
   ipcMain.handle('graphics:done', (event, token, error, stats) => owned(event, token).onDone(error, stats));
+  ipcMain.handle('graphics:liveReady', (event, token, error) => owned(event, token).onReady(error));
+  ipcMain.handle('graphics:liveResult', (event, token, index, result) => owned(event, token).onResult(index, result));
+}
+
+// Both render paths use the same restrictions. A live component never runs in the editor process.
+function sandboxWindow(width, height) {
+  const win = new BrowserWindow({ show: false, width, height, useContentSize: true, frame: false, transparent: true, backgroundColor: '#00000000', enableLargerThanScreen: true,
+    webPreferences: { preload: path.join(DIR, 'sandboxPreload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, partition: PARTITION,
+      offscreen: true, backgroundThrottling: false, spellcheck: false, webgl: false, devTools: false, navigateOnDragDrop: false } });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  return win;
+}
+
+// A persistent sandbox imports the component/fonts once. Each request paints just one current
+// frame, with no video encoding, disk writes or full-resolution pixel copy through the editor.
+function createLiveGraphic(job) {
+  register(); secure();
+  const win = sandboxWindow(job.width, job.height), wc = win.webContents, id = wc.id;
+  let pending, sequence = 0, closed = false, bootTimer, settleReady, rejectReady;
+  const ready = new Promise((resolve, reject) => { settleReady = resolve; rejectReady = reject; });
+  ready.catch(() => {});
+  const close = (error = Error('Live graphic preview closed.')) => {
+    if (closed) return; closed = true;
+    clearTimeout(bootTimer); rejectReady(error);
+    if (pending) { clearTimeout(pending.timer); pending.reject(error); pending = null; }
+    jobs.delete(id); if (!win.isDestroyed()) win.destroy();
+  };
+  jobs.set(id, { ...job, live: true,
+    onReady: (error) => { clearTimeout(bootTimer); error ? close(Error(error)) : settleReady(); },
+    onDone: (error) => close(Error(error || 'Unexpected live preview completion.')),
+    onFrame: () => { throw Error('Not a video render.'); },
+    onResult: (index, result) => {
+      if (!pending || index !== pending.index) throw Error('Unexpected live preview frame.');
+      if (result?.error) { const p = pending; pending = null; clearTimeout(p.timer); p.reject(Error(String(result.error).slice(0, 2000))); return; }
+      if (typeof result?.image !== 'string' || !result.image.startsWith('data:image/png;base64,') || result.image.length > 12 * 1024 * 1024) { close(Error('Invalid live preview image.')); return; }
+      const p = pending; pending = null; clearTimeout(p.timer);
+      p.resolve({ image: result.image, render_ms: result.render_ms, session: id, width: result.width, height: result.height });
+    },
+  });
+  bootTimer = setTimeout(() => close(Error('The live graphic did not start.')), 15000);
+  wc.once('render-process-gone', () => close(Error('The live graphics renderer stopped.')));
+  win.loadFile(path.join(DIR, 'sandbox.html')).catch(close);
+  return { close, get closed() { return closed; }, async frame(request) {
+    await ready; if (closed) throw Error('Live preview closed.');
+    if (pending) throw Error('A live preview frame is already running.');
+    const index = sequence++;
+    return new Promise((resolve, reject) => {
+      pending = { index, resolve, reject, timer: setTimeout(() => close(Error('A live graphic frame exceeded 2000 ms.')), 2000) };
+      wc.send('graphics:liveRequest', { ...request, index });
+    });
+  } };
 }
 
 function secure() {
@@ -50,9 +102,7 @@ async function renderGraphic({ ffmpegPath, code, inputs = {}, fonts = [], width,
   register(); secure();
   fs.mkdirSync(dir, { recursive: true });
   const started = Date.now();
-  const win = new BrowserWindow({ show: false, width, height, useContentSize: true, frame: false, transparent: true, backgroundColor: '#00000000', enableLargerThanScreen: true,
-    webPreferences: { preload: path.join(DIR, 'sandboxPreload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, partition: PARTITION,
-      offscreen: true, backgroundThrottling: false, spellcheck: false, webgl: false, devTools: false, navigateOnDragDrop: false } });
+  const win = sandboxWindow(width, height);
   const wc = win.webContents, id = wc.id;
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('will-navigate', (e) => e.preventDefault());
@@ -92,4 +142,4 @@ async function renderGraphic({ ffmpegPath, code, inputs = {}, fonts = [], width,
   }
 }
 
-module.exports = { renderGraphic, PARTITION };
+module.exports = { renderGraphic, createLiveGraphic, PARTITION };

@@ -161,6 +161,32 @@
       const component = await load(job.code);
       if (typeof component.default !== 'function') throw Error('The graphic must `export default function render({ frame, fps, width, height, inputs, kit })`.');
       const defaults = Object.fromEntries(Object.entries(component.inputs || {}).map(([k, v]) => [k, v && typeof v === 'object' && 'default' in v ? v.default : v]));
+      if (job.live) {
+        const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+        let previous = '', image = '';
+        host.onLiveRequest(async (request) => {
+          const started = clock();
+          try {
+            const inputs = Object.freeze({ ...defaults, ...request.inputs });
+            const markup = String(component.default({ frame: request.frame, frames: request.frames, fps, time: request.frame / fps, width, height, inputs, kit }) ?? '');
+            if (!/^\s*<svg[\s>]/.test(markup)) throw Error('render must return SVG markup.');
+            const scale = Math.min(1, request.side / Math.max(width, height));
+            const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
+            const key = `${w}:${h}:${markup}`;
+            if (key !== previous) {
+              const sized = markup.replace(/^\s*<svg\b([^>]*)>/, (_open, attrs) => `<svg${/\bxmlns=/.test(attrs) ? '' : ' xmlns="http://www.w3.org/2000/svg"'}${/\bwidth=/.test(attrs) ? '' : ` width="${width}"`}${/\bheight=/.test(attrs) ? '' : ` height="${height}"`}${attrs}>${fontStyle}`);
+              const url = URL.createObjectURL(new Blob([sized], { type: 'image/svg+xml' }));
+              const img = new Image(); img.src = url;
+              try { await img.decode(); } finally { URL.revokeObjectURL(url); }
+              canvas.width = w; canvas.height = h; ctx.drawImage(img, 0, 0, w, h);
+              image = canvas.toDataURL('image/png'); previous = key;
+            }
+            await host.liveResult(token, request.index, { image, width: w, height: h, render_ms: clock() - started });
+          } catch (error) { await host.liveResult(token, request.index, { error: explain(error, request.frame) }); }
+        });
+        await host.liveReady(token, null);
+        return;
+      }
       // The declared inputs, as plain data, so the editor can show them as fields (it never runs the code).
       try { const schema = JSON.parse(JSON.stringify(component.inputs ?? null)); stats.schema = JSON.stringify(schema).length <= 65536 ? schema : null; } catch { stats.schema = null; }
       const inputs = Object.freeze({ ...defaults, ...(job.inputs || {}) });
@@ -190,7 +216,7 @@
         stats.frames++;
       }
       await host.done(token, null, stats);
-    } catch (error) { await host.done(token, explain(error, frame), stats); }
+    } catch (error) { if (job.live) await host.liveReady(token, explain(error, frame)); else await host.done(token, explain(error, frame), stats); }
   }
   main();
 })();

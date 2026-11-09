@@ -1968,6 +1968,37 @@ ipcMain.handle('agent:renderGraphic', (event, req = {}) => withAgentJob(event, r
 // The editor re-rendering a graphic (inspector fields, a new canvas size, missing cached files): the
 // same sandbox and cache, no sample frames. One render per window at a time; a newer one replaces it.
 const graphicJobs = new Map();
+ipcMain.handle('graphics:cancelRender', (event, requestId) => {
+  graphicJobs.get(`${event.sender.id}:${String(requestId).slice(0, 80)}`)?.abort();
+});
+const liveGraphics = new Map();
+ipcMain.handle('graphics:liveOpen', async (event, req = {}) => {
+  const owner = String(req.owner || '').slice(0, 120), id = event.sender.id, key = `${id}:${owner}`;
+  if (!owner) return { error: 'Missing live graphic owner.' };
+  try {
+    const job = require('./graphics/service.cjs').validate(req);
+    liveGraphics.get(key)?.renderer.close();
+    const renderer = require('./graphics/render.cjs').createLiveGraphic(job);
+    liveGraphics.set(key, { owner, renderer });
+    if (!event.sender.__liveGraphicCleanup) {
+      event.sender.__liveGraphicCleanup = true;
+      event.sender.once('destroyed', () => { for (const [key, live] of liveGraphics) if (key.startsWith(`${id}:`)) { live.renderer.close(); liveGraphics.delete(key); } });
+    }
+    return { ok: true };
+  } catch (error) { return { error: error.message }; }
+});
+ipcMain.handle('graphics:liveDraw', async (event, req = {}) => {
+  const live = liveGraphics.get(`${event.sender.id}:${String(req.owner || '').slice(0, 120)}`);
+  if (!live || req.owner !== live.owner) return { error: 'Live graphic preview closed.' };
+  if (!Number.isInteger(req.frame) || !Number.isInteger(req.frames) || req.frames < 1 || req.frames > 3600 || req.frame < 0 || req.frame >= req.frames
+    || !req.inputs || typeof req.inputs !== 'object' || Array.isArray(req.inputs) || JSON.stringify(req.inputs).length > 2 * 1024 * 1024) return { error: 'Invalid live graphic frame.' };
+  try { return { ok: true, ...await live.renderer.frame({ frame: req.frame, frames: req.frames, inputs: req.inputs, side: Math.min(960, Math.max(160, Number(req.side) || 960)) }) }; }
+  catch (error) { return { error: error.message }; }
+});
+ipcMain.handle('graphics:liveClose', (event, owner) => {
+  const key = `${event.sender.id}:${String(owner || '').slice(0, 120)}`, live = liveGraphics.get(key);
+  if (live?.owner === owner) { live.renderer.close(); liveGraphics.delete(key); }
+});
 ipcMain.handle('graphics:render', async (event, req = {}) => {
   // One render per window and purpose (the inspector, each automatic re-render): a newer one replaces it.
   const jobKey = `${event.sender.id}:${String(req.requestId || 'editor').slice(0, 80)}`;

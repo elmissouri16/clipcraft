@@ -2717,10 +2717,21 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 
 /* Inspector: a motion graphic's own fields (GraphicPanel.jsx) */
 .graphic-panel { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; }
+.graphic-group { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.graphic-group legend { padding: 8px 0; color: var(--text-1); font-size: 12px; font-weight: 600; }
 .graphic-field { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
 .graphic-field.wide { grid-template-columns: 1fr; }
-.graphic-field input[type="text"], .graphic-field input[type="number"], .graphic-field textarea, .graphic-series input, .graphic-json {
+.graphic-control { min-width: 0; }
+.graphic-field-help { grid-column: 1 / -1; margin: -3px 0 0; color: var(--text-3); font-size: 11px; line-height: 1.4; }
+.graphic-field input[type="text"], .graphic-field input[type="number"], .graphic-field textarea, .graphic-field select, .graphic-series input, .graphic-json {
   min-width: 0; width: 100%; padding: 5px 7px; border-radius: var(--r-s); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-1, #fff); font: inherit; }
+.graphic-number { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.graphic-number input[type="range"] { width: 100%; min-width: 0; margin: 0; }
+.graphic-number-value { display: flex; align-items: center; gap: 6px; }
+.graphic-number-value > span { flex-shrink: 0; color: var(--text-3); font-size: 11px; }
+.graphic-point { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.graphic-point label { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.graphic-field [aria-invalid="true"] { border-color: #e5484d; }
 .graphic-color { display: flex; gap: 6px; align-items: center; }
 .graphic-color input[type="color"] { width: 30px; height: 26px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-s); background: none; }
 .graphic-series { display: flex; flex-direction: column; gap: 4px; }

@@ -3,6 +3,7 @@ import { freeLen } from '../../../state/store.js';
 import { createTimeIndex } from '../../timeline/timeIndex.js';
 import { wireElement } from '../../audio/audioTap.js';
 import { useClockTime } from '../useClockTime.js';
+import LiveGraphicFrame from '../../graphics/LiveGraphicFrame.jsx';
 
 // Only nearby free-track media owns DOM/decoder resources. The active sets are
 // indexed, and a look-ahead keeps upcoming nodes mounted before their boundary.
@@ -38,6 +39,8 @@ export default function PlaybackMediaPool({ project, mediaById, layout, overlayI
         <div className="layer" ref={refFor('overlay',clip.id,'layer')}>
           <video ref={refFor('overlay',clip.id,'v')} preload="auto" playsInline onSeeked={redraw} onLoadedData={redraw} style={{display:media?.type==='video'?'block':'none'}} />
           <img ref={refFor('overlay',clip.id,'img')} alt="" onLoad={redraw} style={{display:media?.type==='image'?'block':'none'}} />
+          {clip.graphicDraft && media?.graphic && <LiveGraphicFrame project={project} clip={clip} media={media} time={time} clockRef={clockRef}
+            imageRef={refFor('overlay',clip.id,'live')} redraw={redraw} />}
           <canvas ref={refFor('overlay',clip.id,'cv')} className="keyed" />
         </div>
         <div className="layer deco" ref={refFor('overlay',clip.id,'deco')} />

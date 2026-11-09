@@ -33,6 +33,21 @@ and import it as an overlay. That needs nothing from us.
 
 ## How it works
 
+### Live input editing
+
+Valid Graphic inspector edits are stored on the clip as `graphicDraft` (inputs and timeline
+duration), so they survive saving or reopening before a render finishes. The player opens a
+persistent, restricted sandbox using the same runtime and fonts as export. It requests only the
+current source frame with the latest inputs; preview frames are PNGs with alpha, capped at a
+960-pixel side and reduced further if requests are slow. There is no video encoding or disk
+cache in this interactive path. Playback and seeking use the editor's clock.
+
+`src/features/graphics/graphicEdits.js` coalesces background video renders after a gesture or
+typing burst ends. Replaced jobs are canceled and late results are discarded by project, clip,
+media, canvas and draft identity. The cache swap is transient; the input edit already owns its
+Undo step. Failed jobs keep the last good video and offer Retry. Export flushes this queue before
+capturing its project snapshot. This is generic for all declared graphic inputs.
+
 ### The component
 
 ```js

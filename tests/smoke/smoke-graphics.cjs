@@ -97,13 +97,12 @@ module.exports = async (win, app, dir) => {
     check('selecting the graphic opens its Graphic tab with the fields it declares', panel.tab === 'Graphic' && ['Label', 'Color', 'Press At', 'Duration (s)'].every(f => panel.fields.includes(f)));
     const pastBefore = await q('window.__fve.history().past.length');
     await q('(()=>{const e=document.querySelector("input[aria-label=Label]");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,"JOIN");e.dispatchEvent(new Event("input",{bubbles:true}));})()');
-    await q('[...document.querySelectorAll(".graphic-actions button")].find(b=>b.textContent.includes("Update graphic")).click()');
     await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(x=>x.id===${JSON.stringify(added.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.label==='JOIN'})()`, 60000);
     const pastAfter = await q('window.__fve.history().past.length');
     await q('window.__fve.dispatch({type:"undo"})'); await wait(300);
     const undone = await q(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(x=>x.id===${JSON.stringify(added.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.label})()`);
     result.inspector = { pastBefore, pastAfter, undone };
-    check('Update re-draws the graphic in place, as one Undo step', pastAfter === pastBefore + 1 && undone === 'FOLLOW');
+    check('editing automatically re-draws the graphic in place, as one Undo step', pastAfter === pastBefore + 1 && undone === 'FOLLOW');
 
     // Graphics follow the canvas: a new resolution draws them again at the new size.
     await q('window.__fve.dispatch({type:"setProject",patch:{width:720,height:1280}})');
@@ -160,6 +159,116 @@ module.exports = async (win, app, dir) => {
     check('Clear removes graphics no open project uses and keeps the open project\'s', used.length > 0 && used.every((k) => cacheAfter.includes(k)) && cacheAfter.length === new Set(used).size && cacheBefore.length > cacheAfter.length);
     fs.writeFileSync(path.join(dir, 'settings-graphics-cache.png'), (await win.capturePage()).toPNG());
     await q('document.querySelector(\'button[aria-label="Close settings"]\').click()');
+
+    // 7. Arbitrary component settings, edited through real controls without calling the agent.
+    // Measure the rendered pixels as well as saved inputs: a control that merely saves a value
+    // but does not alter the animation must not pass.
+    await q(`window.__fve.load(${JSON.stringify({ ...fixture, id: 'editable-graphic', width: 360, height: 360, ratio: '1:1' })})`); await wait(300);
+    const orbit = await tool('add_graphic', { code: fs.readFileSync(path.join(__dirname, '../fixtures/graphics/editableOrbit.js'), 'utf8'), duration_sec: 2, name: 'Editable orbit' });
+    check('a new component declares arbitrary editable settings', orbit.ok && orbit.editable_inputs?.rate?.unit === 'turns/s');
+    await q(`window.__fve.select({ track: 'overlay', id: ${JSON.stringify(orbit.clip_id)} })`);
+    await until('!!document.querySelector(\'input[aria-label="Orbit rate"]\')');
+    const settings = await q(`(()=>{const e=document.querySelector('input[aria-label="Orbit rate"]');return {
+      min:e.min,max:e.max,step:e.step,slider:!!document.querySelector('input[aria-label="Orbit rate slider"]'),
+      groups:[...document.querySelectorAll('.graphic-group legend')].map(e=>e.textContent),
+      help:document.querySelector('.graphic-panel').textContent.includes('Changes the rotation rate, not the clip length.'),
+      choices:[...document.querySelector('select[aria-label="Direction"]').options].map(o=>o.textContent)
+    }})()`);
+    check('schema metadata creates bounded sliders, exact values, groups, hints and choices', settings.min === '0.25' && settings.max === '4' && settings.step === '0.25' && settings.slider && settings.help && settings.groups.join(',') === 'Motion,Appearance,Advanced' && settings.choices.join(',') === 'Clockwise,Counterclockwise');
+    const readOrbit = () => q(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(orbit.clip_id)}),m=p.media.find(m=>m.id===c.mediaId);return {clip:c,media:m}})()`);
+    const originalOrbit = await readOrbit();
+    check('the original rate renders a dot at its expected position', red(pixel(originalOrbit.media.path, .25, 180, 240)));
+    const changeField = (label, value, tag = 'input') => q(`(()=>{const e=document.querySelector(${JSON.stringify(`${tag}[aria-label="${label}"]`)});
+      Object.getOwnPropertyDescriptor(${tag === 'textarea' ? 'HTMLTextAreaElement' : tag === 'select' ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype,'value').set.call(e,${JSON.stringify(String(value))});
+      e.dispatchEvent(new Event(${JSON.stringify(tag === 'select' ? 'change' : 'input')},{bubbles:true}));})()`);
+    await changeField('Orbit rate', 8);
+    check('out-of-range values cannot start a render', await q('!window.__fve.rawProject().overlayClips.some(c=>c.graphicDraft?.inputs?.rate===8) && document.querySelector(".graphic-panel").textContent.includes("Use 4 or less.")'));
+    await changeField('Orbit rate', 2);
+    await changeField('Geometry', '{', 'textarea');
+    check('invalid JSON is identified without applying it', await q('document.querySelector(".graphic-panel").textContent.includes("Enter valid JSON.")'));
+    await q('[...document.querySelectorAll(".graphic-actions button")].find(b=>b.textContent.trim()==="Reset").click()');
+    check('Reset restores numeric and JSON drafts', await q('document.querySelector(\'input[aria-label="Orbit rate"]\').value === "1" && JSON.parse(document.querySelector(\'textarea[aria-label="Geometry"]\').value).radius === 60 && !document.querySelector(".graphic-json.bad")'));
+    await q('window.__fve.seek(.25)');
+    await q('document.querySelector(\'input[aria-label="Orbit rate slider"]\').dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))');
+    await changeField('Orbit rate slider', 2);
+    await until('document.querySelector("[data-live-graphic]")?.dataset.ready === "true"');
+    const liveSession = await q('document.querySelector("[data-live-graphic]").dataset.session');
+    const liveTimings = await q(`(async()=>{
+      const times=[],e=document.querySelector('input[aria-label="Orbit rate slider"]');
+      for(const value of [1.25,1.5,1.75,2.25,2]){
+        const image=document.querySelector('[data-live-graphic]'),old=image.src,start=performance.now();
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,String(value));e.dispatchEvent(new Event('input',{bubbles:true}));
+        await new Promise((resolve,reject)=>{const tick=()=>{if(image.src!==old&&image.complete)return resolve();if(performance.now()-start>5000)return reject(Error('Live frame did not change'));requestAnimationFrame(tick)};tick()});
+        times.push(performance.now()-start);
+      }
+      return times;
+    })()`);
+    check('slider changes reuse one live sandbox before the full render finishes', await q('document.querySelector("[data-live-graphic]").dataset.session') === liveSession && (await readOrbit()).media.path === originalOrbit.media.path);
+    check('controls remain usable during live preview, with no Update button', await q('!document.querySelector(\'input[aria-label="Orbit rate"]\').disabled && ![...document.querySelectorAll(".graphic-actions button")].some(b=>b.textContent.includes("Update graphic"))'));
+    // Scrubbing/playing use the same source clock, not a separate animation clock.
+    await q('window.__fve.play()');
+    await until('Number(document.querySelector("[data-live-graphic]")?.dataset.frame) > 12');
+    await q('window.__fve.pause()'); await q('window.__fve.seek(.25)');
+    await changeField('Direction', 1, 'select'); // second option = numeric -1, not a string
+    await changeField('Center X', .6);
+    await changeField('Accent value', '#00ccff');
+    await changeField('Note', 'Changed locally');
+    await q('document.querySelector(\'input[aria-label="Show Track"]\').click()');
+    const orbitPast = await q('window.__fve.history().past.length');
+    const pendingOrbit = await q('window.__fve.rawProject()');
+    await q('window.dispatchEvent(new PointerEvent("pointerup"))');
+    await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(orbit.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.rate===2})()`, 60000);
+    const updatedOrbit = await readOrbit(), values = updatedOrbit.media.graphic.inputs;
+    result.editable = { settings, inputs: values, liveSession, liveTimings, original: originalOrbit.media.path, updated: updatedOrbit.media.path,
+      dot: pixel(updatedOrbit.media.path, .25, 156, 180), oldDot: pixel(updatedOrbit.media.path, .25, 180, 240) };
+    check('local edits keep numeric choice types, coordinates, colours, toggles and text', values.rate === 2 && values.direction === -1 && values.center.x === .6 && values.accent === '#00ccff' && !values.showTrack && values.note === 'Changed locally');
+    check('rate and direction change the actual animation without changing clip duration', near(result.editable.dot, [0, 204, 255], 8) && !red(result.editable.oldDot) && updatedOrbit.clip.out - updatedOrbit.clip.in === 2);
+    check('multiple field edits apply in one undo step', await q('window.__fve.history().past.length') === orbitPast + 1);
+    await q('window.__fve.seek(.25)'); await wait(700);
+    fs.writeFileSync(path.join(dir, 'inspector-editable.png'), (await win.capturePage()).toPNG());
+    await q('window.__fve.dispatch({type:"undo"})'); await wait(200);
+    check('Undo restores the previous render and displayed settings', (await readOrbit()).media.path === originalOrbit.media.path && await q('document.querySelector(\'input[aria-label="Orbit rate"]\').value === "1"'));
+    await q('window.__fve.dispatch({type:"redo"})'); await wait(200);
+    const savedOrbit = await q('window.__fve.rawProject()');
+    await q(`window.__fve.load(${JSON.stringify(savedOrbit)})`); await wait(300);
+    await q(`window.__fve.select({ track: 'overlay', id: ${JSON.stringify(orbit.clip_id)} })`);
+    await until('document.querySelector(\'input[aria-label="Orbit rate"]\')?.value === "2"');
+    check('reopening preserves edited values and their control declarations', (await readOrbit()).media.graphic.schema.rate.max === 4);
+
+    // Export immediately after an edit, before its debounce/bake has finished.
+    await changeField('Orbit rate', .5);
+    await until('window.__fve.rawProject().overlayClips.some(c=>c.graphicDraft?.inputs?.rate===.5)');
+    await q('window.__fve.exportNow()');
+    await until('!!document.querySelector(".modal-icon.ok")', 120000);
+    const flushedOrbit = await readOrbit();
+    check('export waits for the newest graphic settings', !flushedOrbit.clip.graphicDraft && flushedOrbit.media.graphic.inputs.rate === .5 && near(pixel(path.join(dir, 'ui-export.mp4'), .25, 258, 138), [0, 204, 255], 20));
+    await q('[...document.querySelectorAll(".modal-backdrop button")].find(b=>b.textContent.trim()==="OK")?.click()');
+    await q(`window.__fve.load(${JSON.stringify(pendingOrbit)})`);
+    await until('window.__fve.rawProject().overlayClips.every(c=>!c.graphicDraft)', 60000);
+    check('reopening a saved pending edit automatically prepares its full-quality media', (await readOrbit()).media.graphic.inputs.rate === 2);
+
+    // A portrait HD chart with embedded fonts exercises a more representative live frame path.
+    result.liveHD = await q(`(async()=>{
+      const { resolveGraphicFonts }=await import('/src/features/graphics/graphicFonts.js');
+      const { GRAPHICS_EXAMPLES }=await import('/src/features/agent/graphicsGuide.js');
+      const fonts=await resolveGraphicFonts(['Montserrat 700','Montserrat 800','Montserrat 900']),owner='live-hd-check';
+      const opened=await window.api.openLiveGraphic({owner,code:GRAPHICS_EXAMPLES.chart,fonts:fonts.fonts,inputs:{},width:1080,height:1920,fps:30,duration_sec:5});
+      if(opened.error)throw Error(opened.error);
+      try{
+        const samples=[];let last;
+        for(const frame of [12,18,24,30,36,42,48,54]){
+          const t=performance.now(),out=await window.api.drawLiveGraphic({owner,frame,frames:150,inputs:{},side:960});
+          if(out.error)throw Error(out.error);
+          samples.push({frame,round_trip_ms:performance.now()-t,render_ms:out.render_ms,session:out.session});last=out;
+        }
+        const img=new Image();img.src=last.image;await img.decode();const cv=document.createElement('canvas');cv.width=img.width;cv.height=img.height;
+        const ctx=cv.getContext('2d');ctx.drawImage(img,0,0);
+        return {logical:[1080,1920],raster:[last.width,last.height],samples,corner:[...ctx.getImageData(0,0,1,1).data]};
+      }finally{await window.api.closeLiveGraphic(owner);}
+    })()`);
+    check('HD live preview reuses its sandbox, caps raster size and preserves transparency', new Set(result.liveHD.samples.map(s=>s.session)).size === 1 && result.liveHD.raster.join('x') === '540x960' && result.liveHD.corner[3] === 0);
+    await wait(200);
+    check('live graphics sandboxes are released after editing', require('electron').BrowserWindow.getAllWindows().length === 1);
     check('no renderer exceptions', !result.errors.length);
   } catch (error) { result.error = error.stack; try { fs.writeFileSync(path.join(dir, 'failure.png'), (await win.capturePage()).toPNG()); } catch {} }
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2)); app.exit(result.error ? 1 : 0);

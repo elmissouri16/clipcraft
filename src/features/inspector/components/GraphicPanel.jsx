@@ -1,15 +1,12 @@
 // The inspector's Graphic tab: a motion graphic's own fields, from the inputs its component declares
 // (electron/graphics/runtime.js reports them; the editor never runs the code). Text, numbers,
-// colours, on/off and data tables (series) get proper controls; anything else is JSON. Update
-// draws the graphic again with the new values and swaps it in as one Undo step.
-import React, { useEffect, useMemo, useState } from 'react';
+// colours, choices, points and data tables get proper controls; anything else is JSON. Valid edits
+// are saved immediately; the player renders them live and the shared queue bakes them after editing.
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
-import { clipLen } from '../../../state/store.js';
-import { renderGraphicMedia, swapGraphicActions } from '../../graphics/graphicMedia.js';
-
-const label = (key, spec) => spec?.label || key.replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
-const kindOf = (spec, value) => spec?.type || (typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean'
-  : typeof value === 'string' ? (/^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text') : Array.isArray(value) && value.every((r) => r && typeof r === 'object') ? 'series' : 'json');
+import { clipLen, uid } from '../../../state/store.js';
+import { graphicEdits } from '../../graphics/graphicEdits.js';
+import { graphicInputDefaults, graphicInputField, graphicInputError } from '../../graphics/graphicInputs.js';
 
 function SeriesField({ rows, onChange }) {
   const cols = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r)))].slice(0, 4), [rows]);
@@ -29,60 +26,102 @@ function SeriesField({ rows, onChange }) {
   );
 }
 
-function JsonField({ value, onChange }) {
+function JsonField({ value, onChange, onValidity, label }) {
   const [text, setText] = useState(() => JSON.stringify(value, null, 1));
   const [bad, setBad] = useState(false);
-  return <textarea className={`graphic-json ${bad ? 'bad' : ''}`} rows={4} value={text} spellCheck={false}
-    onChange={(e) => { setText(e.target.value); try { onChange(JSON.parse(e.target.value)); setBad(false); } catch { setBad(true); } }} />;
+  return <textarea aria-label={label} aria-invalid={bad} className={`graphic-json ${bad ? 'bad' : ''}`} rows={4} value={text} spellCheck={false}
+    onChange={(e) => { setText(e.target.value); try { onChange(JSON.parse(e.target.value)); setBad(false); onValidity(true); } catch { setBad(true); onValidity(false); } }} />;
 }
 
 export default function GraphicPanel({ clip, media, project, track, dispatch }) {
   const g = media.graphic, schema = g.schema && typeof g.schema === 'object' ? g.schema : null;
-  const current = useMemo(() => ({ ...Object.fromEntries(Object.entries(schema || {}).map(([k, v]) => [k, v && typeof v === 'object' && 'default' in v ? v.default : v])), ...(g.inputs || {}) }), [schema, g.inputs]);
-  const [draft, setDraft] = useState(current);
+  const current = useMemo(() => ({ ...graphicInputDefaults(schema), ...(g.inputs || {}) }), [schema, g.inputs]);
+  const [draft, setDraft] = useState(clip.graphicDraft?.inputs || current);
   const [duration, setDuration] = useState(() => Math.round(clipLen(clip) * 100) / 100);
-  const [busy, setBusy] = useState(null); // { done, total } while drawing
-  const [error, setError] = useState('');
-  useEffect(() => window.api.onGraphicProgress?.((p) => { if (p.requestId === 'editor') setBusy({ done: p.done, total: p.total }); }), []);
-  const changed = JSON.stringify(draft) !== JSON.stringify(current) || Math.abs(duration - clipLen(clip)) > 0.005;
+  const [status, setStatus] = useState(() => graphicEdits.status(clip.id));
+  const [invalidJson, setInvalidJson] = useState({});
+  const [resetKey, setResetKey] = useState(0);
+  const editing = useRef({ active: false, dragging: false, own: clip.graphicDraft });
+  const lastMedia = useRef(media.id);
+  const finish = () => { clearTimeout(editing.current.timer); if (editing.current.active) { editing.current.active = false; dispatch({ type: 'endGesture' }); } };
+  const begin = () => { if (!editing.current.active) { editing.current.active = true; dispatch({ type: 'beginGesture' }); } };
+  const changed = () => { begin(); clearTimeout(editing.current.timer); if (!editing.current.dragging) editing.current.timer = setTimeout(finish, 350); };
+  useEffect(() => graphicEdits.subscribe(() => setStatus(graphicEdits.status(clip.id))), [clip.id]);
+  useEffect(() => {
+    if (clip.graphicDraft === editing.current.own && lastMedia.current === media.id) return;
+    const ownBake = editing.current.own && !clip.graphicDraft && JSON.stringify(editing.current.own.inputs) === JSON.stringify(current)
+      && Math.abs(editing.current.own.duration_sec - clipLen(clip)) < .005;
+    lastMedia.current = media.id;
+    editing.current.own = clip.graphicDraft;
+    if (ownBake) return; // preserve focus and unfinished local input when the cache catches up
+    setDraft(clip.graphicDraft?.inputs || current); setDuration(Math.round(clipLen(clip) * 100) / 100); setInvalidJson({}); setResetKey(n => n + 1);
+  }, [clip.graphicDraft, media.id]);
+  useEffect(() => {
+    const up = () => { if (editing.current.dragging) { editing.current.dragging = false; finish(); } };
+    window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    return () => { window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); finish(); };
+  }, []);
   const keys = [...new Set([...Object.keys(schema || {}), ...Object.keys(current)])];
+  const fields = Object.fromEntries(keys.map((key) => [key, graphicInputField(key, schema?.[key], draft[key])]));
+  const errors = Object.fromEntries(keys.map((key) => [key, invalidJson[key] ? 'Enter valid JSON.' : graphicInputError(fields[key], draft[key])]));
+  const invalid = Object.values(errors).some(Boolean);
+  const validDuration = duration >= .2 && duration * (clip.speed || 1) >= .2 && duration * (clip.speed || 1) <= 60;
+  const groups = new Map();
+  for (const key of keys) { const group = fields[key].group; if (!groups.has(group)) groups.set(group, []); groups.get(group).push(key); }
 
-  const update = async () => {
-    setError(''); setBusy({ done: 0, total: 1 });
-    const out = await renderGraphicMedia({ api: window.api, project, code: g.code, inputs: draft, fonts: g.fonts || [], duration_sec: Number(duration), start_sec: clip.start || 0, name: media.name });
-    setBusy(null);
-    if (out.error) return setError(out.error);
-    dispatch(swapGraphicActions(project, track, clip, out.media));
-  };
+  const inputKey = JSON.stringify(draft);
+  useEffect(() => {
+    if (!editing.current.active || invalid || !validDuration) return;
+    const previous = clip.graphicDraft;
+    if (inputKey === JSON.stringify(previous?.inputs || current) && Math.abs(duration - clipLen(clip)) < .005) return;
+    const graphicDraft = { inputs: draft, duration_sec: duration };
+    editing.current.own = graphicDraft;
+    dispatch({ type: 'batch', actions: [{ type: 'update', track, id: clip.id, patch: { graphicDraft, in: 0, out: duration * (clip.speed || 1) } },
+      ...(track === 'overlay' ? [{ type: 'extendVideoTo', end: clip.start + duration, gapId: uid() }] : [])] });
+  }, [inputKey, duration, invalid]);
   const field = (key) => {
-    const value = draft[key], kind = kindOf(schema?.[key], value), set = (v) => setDraft((d) => ({ ...d, [key]: v }));
+    const value = draft[key], spec = fields[key], { type: kind, label, min, max, step } = spec;
+    const set = (v) => { changed(); setDraft((d) => ({ ...d, [key]: v })); };
+    const numeric = (e) => e.target.value === '' ? '' : Number(e.target.value);
+    const number = (n, change, name = label) => <input type="number" min={min} max={max} step={step} aria-label={name} aria-invalid={!!errors[key]} value={n ?? ''} onChange={(e) => change(numeric(e))} />;
     if (kind === 'series') return <SeriesField rows={Array.isArray(value) ? value : []} onChange={set} />;
-    if (kind === 'color') return <div className="graphic-color"><input type="color" aria-label={label(key, schema?.[key])} value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => set(e.target.value)} /><input type="text" value={value ?? ''} onChange={(e) => set(e.target.value)} /></div>;
-    if (kind === 'number') return <input type="number" step="any" aria-label={label(key, schema?.[key])} value={value ?? 0} onChange={(e) => set(e.target.value === '' ? 0 : Number(e.target.value))} />;
-    if (kind === 'boolean') return <input type="checkbox" aria-label={label(key, schema?.[key])} checked={!!value} onChange={(e) => set(e.target.checked)} />;
-    if (kind === 'text') return String(value ?? '').length > 48 ? <textarea rows={2} aria-label={label(key, schema?.[key])} value={value ?? ''} onChange={(e) => set(e.target.value)} />
-      : <input type="text" aria-label={label(key, schema?.[key])} value={value ?? ''} onChange={(e) => set(e.target.value)} />;
-    return <JsonField value={value} onChange={set} />;
+    if (kind === 'color') return <div className="graphic-color"><input type="color" aria-label={label} value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => set(e.target.value)} /><input type="text" aria-label={`${label} value`} value={value ?? ''} onChange={(e) => set(e.target.value)} /></div>;
+    if (kind === 'number') return <div className="graphic-number">
+      {spec.slider && <input type="range" aria-label={`${label} slider`} min={min} max={max} step={step} value={typeof value === 'number' ? value : min} onChange={(e) => set(numeric(e))} />}
+      <div className="graphic-number-value">{number(value, set)}{spec.unit && <span>{spec.unit}</span>}</div>
+    </div>;
+    if (kind === 'point') return <div className="graphic-point">{['x', 'y'].map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span>{number(value?.[axis], (n) => set({ ...value, [axis]: n }), `${label} ${axis.toUpperCase()}`)}</label>)}</div>;
+    if (kind === 'choice' || kind === 'select') return <select aria-label={label} value={spec.options.findIndex((option) => Object.is(option.value, value))} onChange={(e) => set(spec.options[Number(e.target.value)].value)}>
+      {!spec.options.some((option) => Object.is(option.value, value)) && <option value={-1} disabled>Choose…</option>}
+      {spec.options.map((option, index) => <option key={index} value={index}>{option.label}</option>)}
+    </select>;
+    if (kind === 'boolean') return <input type="checkbox" aria-label={label} checked={!!value} onChange={(e) => set(e.target.checked)} />;
+    if (kind === 'text' || kind === 'string') return String(value ?? '').length > 48 ? <textarea rows={2} aria-label={label} value={value ?? ''} onChange={(e) => set(e.target.value)} />
+      : <input type="text" aria-label={label} value={value ?? ''} onChange={(e) => set(e.target.value)} />;
+    return <JsonField key={resetKey} value={value} label={label} onChange={set} onValidity={(valid) => setInvalidJson((old) => ({ ...old, [key]: !valid }))} />;
   };
 
   return (
-    <div className="graphic-panel">
-      <p className="dim small">A motion graphic: change its text, data or look here and update it. Position, scale, fades and keyframes work like any overlay.</p>
+    <div className="graphic-panel" onPointerDownCapture={e => { if (e.target.type === 'range') { editing.current.dragging = true; begin(); } }}>
+      <p className="dim small">Changes preview live and save automatically. Position, scale, fades and keyframes work like any overlay.</p>
       {!keys.length && <p className="dim small">This graphic declares no editable fields. Ask CraftAI to change it.</p>}
-      {keys.map((key) => (
-        <label className={`graphic-field ${kindOf(schema?.[key], draft[key]) === 'series' ? 'wide' : ''}`} key={key}>
-          <span>{label(key, schema?.[key])}</span>{field(key)}
-        </label>
-      ))}
+      {[...groups].map(([group, groupKeys]) => <fieldset className="graphic-group" key={group}>
+        {group && <legend>{group}</legend>}
+        {groupKeys.map((key) => <div className={`graphic-field ${fields[key].type === 'series' ? 'wide' : ''}`} key={key}>
+          <span>{fields[key].label}</span><div className="graphic-control">{field(key)}</div>
+          {fields[key].description && <small className="graphic-field-help">{fields[key].description}</small>}
+          {errors[key] && <small className="graphic-field-help graphic-error" role="alert">{errors[key]}</small>}
+        </div>)}
+      </fieldset>)}
       <label className="graphic-field"><span>Duration (s)</span>
-        <input type="number" min="0.2" max="60" step="0.1" aria-label="Graphic duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))} /></label>
-      {error && <p className="graphic-error" role="alert">{error}</p>}
+        <input type="number" min={Math.max(.2, .2 / (clip.speed || 1))} max={60 / (clip.speed || 1)} step="0.1" aria-label="Graphic duration" value={duration} onChange={(e) => { changed(); setDuration(Number(e.target.value)); }} /></label>
+      {!validDuration && <p className="graphic-error" role="alert">Choose a duration within the supported range.</p>}
+      {(status.error || status.previewError) && <p className="graphic-error" role="alert">{status.error || status.previewError}</p>}
       <div className="graphic-actions">
-        <button type="button" className="btn btn-primary btn-sm" disabled={!changed || !!busy || !(duration >= 0.2 && duration <= 60)} onClick={update}>
-          <RefreshCw size={13} className={busy ? 'spin' : ''} /> {busy ? `Drawing ${busy.total > 1 ? Math.round(busy.done / busy.total * 100) : 0}%` : 'Update graphic'}
-        </button>
-        <button type="button" className="btn btn-sm" disabled={!changed || !!busy} onClick={() => { setDraft(current); setDuration(Math.round(clipLen(clip) * 100) / 100); setError(''); }}><RotateCcw size={13} /> Reset</button>
+        {status.error && <button type="button" className="btn btn-sm" onClick={() => graphicEdits.retry(clip.id)}><RefreshCw size={13} /> Retry update</button>}
+        <button type="button" className="btn btn-sm" onClick={() => { changed(); setDraft({ ...current, ...graphicInputDefaults(schema) }); setInvalidJson({}); setResetKey((n) => n + 1); }}><RotateCcw size={13} /> Reset</button>
       </div>
+      <small className="dim graphic-status" role="status">{invalid ? 'Fix the highlighted fields to apply changes.' : status.pending ? 'Live preview · preparing full quality…' : 'Up to date'}</small>
     </div>
   );
 }

@@ -15,6 +15,7 @@ export const GRAPHICS_TOOLKIT = `A graphic is a JavaScript module, rendered fram
 - Write markup with kit.svg\`…\`: numbers are rounded, text is escaped, nested kit.svg pieces and arrays are kept. Never build markup by string concatenation of user text.
 - Fonts: pass families to add_graphic fonts (e.g. ["Montserrat 800", "Inter"]) and use font-family="Montserrat" font-weight="800". Without fonts, use sans-serif/serif. No external images; draw icons as <path>.
 - Identical markup on consecutive frames costs nothing: let things settle and hold.
+- Expose useful settings in export const inputs so the user can adjust the result in the Graphic inspector without another agent request. Read graphics_guide topic inputs for the field contract. Wire every setting into render; do not hard-code adjustable appearance or animation values. This applies to any graphic, not a list of supported shapes.
 
 kit:
 - progress(frame, start, length, easing) -> 0..1. easing: linear, in, out, inout, back (overshoot), spring.
@@ -28,6 +29,23 @@ kit:
 - textWidth(text, { family, size, weight }), fitText(text, maxWidth, { family, weight, max, min }) -> size, wrapText(text, maxWidth, font) -> lines.
 - safeArea(width, height) -> { x, y, width, height } where content stays visible (vertical video keeps clear of the bottom buttons).
 - mix('#hex', '#hex', t) -> blended colour. raw(markup) -> trusted markup as is.`;
+
+export const GRAPHICS_INPUTS = `Every component declares its own editable settings in export const inputs. The editor creates controls from that schema; there is no shape-specific tool or preset requirement.
+
+Field contract (all fields need default):
+- text: string, color: SVG colour string, boolean: on/off, series: array of data rows, json: arbitrary JSON.
+- number: numeric default; optional min, max, step, unit. Finite min and max produce a slider plus exact number entry; control: 'number' keeps just number entry. Use positive min where zero would be invalid; integer step for counts.
+- choice: options as strings/numbers/booleans, or [{ value: 'forward', label: 'Forward' }, ...]. Values retain their declared type.
+- point: default { x: 0.5, y: 0.5 }, X/Y fields; defaults to normalized 0..1 bounds with step .01. Multiply x by width and y by height when drawing. Override min/max/step for other coordinate systems.
+- Any field: label, description, group (section heading). Choose concise names and explain units/meaning.
+
+For example, speed: { type: 'number', default: 1, min: 0.1, max: 4, step: 0.1, unit: '×', label: 'Motion speed', group: 'Animation', description: 'Changes the motion rate without changing clip duration.' }.
+
+Expose the settings a video editor would reasonably adjust for THIS graphic: motion rate/direction, reveal/exit timing, repeat behaviour, colours, dimensions/stroke, positions/anchors, text or data, where applicable. Choose what matters; do not add meaningless knobs or fake controls. The list is guidance, not required field names or special cases.
+- Separate internal motion speed from overlay duration. Use time * inputs.speed for continuous motion (e.g. angle = time * inputs.speed * 360 for turns per second), and seconds * fps for reveal times. Clip duration is already an editor control.
+- Read the supplied inputs in render, including booleans and choices; every exposed field must change the intended result. Preserve existing input names and user values when revising code unless asked to remove them.
+- Keep positions relative to width/height so graphics survive canvas changes. Declare separate anchors when parts need independent positioning.
+- The user's valid field edits preview live, with a full-quality render prepared automatically after adjusting, without a model call. Verify the controls by rendering at a changed value, not only at defaults. Existing graphics need a component revision to expose values previously hard-coded in their source.`;
 
 export const GRAPHICS_DESIGN = `Design so it reads on a phone:
 - Length: one graphic makes one point in 4-12 s. A viewer reads 5-8 items, not 50: show the top 5-10 (or the user's chosen few) unless asked for everything; for many items use a short race or quick pages (3-4 s each), never long static pages.
@@ -125,11 +143,12 @@ export default function render({ frame, fps, width, height, inputs, kit }) {
 }`;
 
 export const GRAPHICS_EXAMPLES = { chart: CHART, button: BUTTON, lower_third: LOWER_THIRD };
-export const GRAPHICS_TOPICS = ['toolkit', 'design', ...Object.keys(GRAPHICS_EXAMPLES)];
+export const GRAPHICS_TOPICS = ['toolkit', 'inputs', 'design', ...Object.keys(GRAPHICS_EXAMPLES)];
 
 export function graphicsGuide(topic = 'toolkit') {
-  if (topic === 'toolkit') return { topic, text: GRAPHICS_TOOLKIT, examples: Object.keys(GRAPHICS_EXAMPLES), next: 'Read design, and one example close to what you need; then write your own component and call add_graphic.' };
+  if (topic === 'toolkit') return { topic, text: GRAPHICS_TOOLKIT, examples: Object.keys(GRAPHICS_EXAMPLES), next: 'Read inputs, design, and one example close to what you need; then write your own component with useful editable settings and call add_graphic.' };
   if (topic === 'design') return { topic, text: GRAPHICS_DESIGN };
+  if (topic === 'inputs') return { topic, text: GRAPHICS_INPUTS };
   if (GRAPHICS_EXAMPLES[topic]) return { topic, fonts: ['Montserrat 500', 'Montserrat 700', 'Montserrat 800', 'Montserrat 900'], code: GRAPHICS_EXAMPLES[topic],
     note: 'A reference to learn from. Adapt it freely or write something new; pass the fonts it uses to add_graphic.' };
   return { error: `topic must be one of: ${GRAPHICS_TOPICS.join(', ')}.` };
