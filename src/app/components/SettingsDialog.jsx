@@ -223,8 +223,8 @@ const SECTION_GROUPS = [
 ];
 const SECTIONS = SECTION_GROUPS.flatMap(g => g.items);
 
-export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, updateReady = false }) {
-  const [section, setSection] = useState('ai');
+export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, updateReady = false, initialSection = 'ai' }) {
+  const [section, setSection] = useState(initialSection);
   const [saved, setSaved] = useState(null); // public settings from the main process
   const paneRef = useRef(null);
   const dialogRef = useRef(null);
@@ -600,6 +600,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
             <ServiceKey saved={saved} onSaved={setSaved} service="gemini-tts" title="Gemini voices" icon={AudioLines}
               keyLabel="Gemini TTS API key" text="Gemini 3.8 Flash TTS and Flash-Lite TTS. The key is free from Google AI Studio."
               url="https://aistudio.google.com/app/apikey" urlLabel="Get a Gemini API key" test={(key) => window.api.ttsGeminiTestKey(key)} />
+            <PiperSettings />
           </SettingsPage>
         )}
         {section === 'quality' && <SettingsPage title={page.title} description={page.description}><ProxySettings onCleared={onProxiesCleared} /></SettingsPage>}
@@ -687,6 +688,61 @@ function McpSettings({ saved, onSaved }) {
       )}
     </SettingsGroup>
     </>
+  );
+}
+
+// Piper voices on this computer (electron/audio/tts.cjs): optional downloads, the engine first, then any voices.
+// Each can be removed again; one download runs at a time and can be canceled.
+const mb = (bytes) => `${Math.round((bytes || 0) / 1e6)} MB`;
+function PiperSettings() {
+  const [status, setStatus] = useState(null);
+  const [job, setJob] = useState(null); // { target, fraction }
+  const [message, setMessage] = useState(null); // { ok, text }
+  useEffect(() => {
+    window.api.ttsStatus?.().then(setStatus).catch(() => {});
+    return window.api.onTtsPiperProgress?.((p) => setJob((j) => (j?.target === p.target ? { ...j, fraction: p.fraction } : j)));
+  }, []);
+  if (!status) return null;
+  const download = async (target, label) => {
+    setMessage(null); setJob({ target, fraction: 0 });
+    const r = await window.api.ttsPiperDownload(target);
+    setJob(null);
+    if (r.status) setStatus((s) => ({ ...s, ...r.status }));
+    setMessage(r.ok ? { ok: true, text: `${label} downloaded.` } : r.canceled ? { ok: true, text: 'Download canceled.' } : { ok: false, text: r.error });
+  };
+  const remove = async (target, label) => {
+    setMessage(null);
+    const r = await window.api.ttsPiperRemove(target);
+    if (r.status) setStatus((s) => ({ ...s, ...r.status }));
+    setMessage(r.ok ? { ok: true, text: `${label} removed.` } : { ok: false, text: r.error });
+  };
+  const row = (target, label, detail, downloaded, bytes, disabled) => {
+    const running = job?.target === target;
+    return (
+      <div key={target} className="set2-item piper-row" data-piper={target}>
+        <span className="set2-item-text"><b>{label}</b> <span className="muted">{detail}</span></span>
+        {running ? <>
+          <span className="piper-progress" role="status"><Loader2 size={13} className="spin" />{Math.round((job.fraction || 0) * 100)}%</span>
+          <button className="btn btn-sm" type="button" onClick={() => window.api.ttsPiperCancel(target)}>Cancel</button>
+        </> : downloaded
+          ? <button className="btn btn-sm" type="button" disabled={!!job} onClick={() => remove(target, label)}>Remove</button>
+          : <button className="btn btn-sm btn-primary" type="button" disabled={!!job || disabled} onClick={() => download(target, label)}>Download · {mb(bytes)}</button>}
+      </div>
+    );
+  };
+  return (
+    <SettingsGroup label="Piper voices on this computer" hint="Free voices that run offline, no account. Optional: download the engine, then the voices you want. Used in Audio > Text to speech and by CraftAI.">
+      {!status.supported ? <p className="set2-empty">Piper voices are not available on this computer.</p> : <>
+        {row('engine', 'Voice engine', status.runtime === 'sherpa' ? 'Runs the Piper voices (sherpa-onnx)' : 'Piper', status.installed, status.engineBytes, false)}
+        {status.voices.map((v) => row(v.id, `${v.name}`, `${v.lang} · ${v.gender} · ${v.license}${!status.installed && !v.downloaded ? ' · needs the engine' : ''}`, v.downloaded, v.bytes, false))}
+      </>}
+      {message && (
+        <div className={`result ${message.ok ? 'ok' : 'bad'}`} role="status">
+          {message.ok ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
+          <div className="result-body"><span>{message.text}</span></div>
+        </div>
+      )}
+    </SettingsGroup>
   );
 }
 

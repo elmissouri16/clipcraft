@@ -1029,39 +1029,8 @@ module.exports = async function smoke(win, app, dir) {
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }
-  if (process.env.FVE_SMOKE_MODE === 'tts') {
-    // Text to speech with the free voice (downloads Piper and the voice the first time), and the ElevenLabs key card.
-    try {
-      await wait(800);
-      await run(`window.__fve.load(${fs.readFileSync(path.join(dir, 'project.json'), 'utf8')})`);
-      await wait(400);
-      const q = (js) => run(js);
-      const until = async (js, ms = 30000) => { for (let t = 0; t < ms; t += 300) { if (await q(js)) return true; await wait(300); } return false; };
-      await q(`window.__fve.tab('audio')`);
-      await wait(300);
-      await q(`[...document.querySelectorAll('.side-btn')].find((b) => b.textContent.trim() === 'Text to speech').click()`);
-      await until(`document.querySelectorAll('.tts select option').length > 3`);
-      result.voices = await q(`[...document.querySelectorAll('.tts select option')].map((o) => o.textContent)`);
-      await q(`(() => { const t = document.querySelector('.tts textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, 'Welcome to ClipCraft, the free video editor.'); t.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-      await q('window.__fve.seek(1.5)');
-      const a0 = (await q('window.__fve.exportData().project')).audioClips.length;
-      await q(`[...document.querySelectorAll('.tts button')].find((b) => b.textContent.includes('Add to timeline')).click()`);
-      result.added = await until(`window.__fve.exportData().project.audioClips.length > ${a0}`, 400000);
-      const p = await q('window.__fve.exportData().project');
-      const c = p.audioClips[p.audioClips.length - 1];
-      const m = p.media.find((x) => x.id === c.mediaId);
-      result.clip = { start: c.start, len: +(c.out - c.in).toFixed(2), name: m.name, credit: m.credit && m.credit.line };
-      result.error2 = await q(`document.querySelector('.tts .error-text')?.textContent || null`);
-      await shot('tts-1.png');
-      await q(`[...document.querySelectorAll('.tts .seg-tabs button')].find((b) => b.textContent === 'ElevenLabs').click()`);
-      await wait(400);
-      result.elevenCard = await q(`document.querySelector('.tts .stock-key b')?.textContent || null`);
-    } catch (e) {
-      result.error = e.message;
-    }
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
-  }
+  // Piper voices as optional downloads (Settings > Voice), then Text to speech onto the timeline.
+  if (process.env.FVE_SMOKE_MODE === 'tts') return require('./smoke-piper-settings.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'trpanel') {
     // Click a transition on the timeline, change it in its panel, apply to all, delete it.
     try {

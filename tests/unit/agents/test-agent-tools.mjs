@@ -25,11 +25,11 @@ const p = () => state.present;
 // The main process, faked: library / stock / voice files come back "probed" like media:probe does.
 const probed = (name, type, duration) => ({ name, type, duration, path: `C:/fake/${name}`, ...(type === 'audio' ? {} : { width: 1280, height: 720 }) });
 const calls = [];
-let geminiConfigured = false;
+let geminiConfigured = false; let piperInstalled = true;
 const api = {
   librarySearch: async (o) => { calls.push(['librarySearch', o]); return { results: [{ id: 'freesound-1', title: 'Whoosh fast', duration: 1.2, creator: 'X', license: 'cc0', url: 'https://x' }, { id: 'jam-2', title: 'Happy', duration: 95, creator: 'Y', license: 'by' }] }; },
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
-  ttsStatus: async () => ({ voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male' }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog() }),
+  ttsStatus: async () => ({ supported: true, installed: piperInstalled, voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male', downloaded: true }, { id: 'en_US-joe-medium', name: 'Joe', lang: 'English (US)', gender: 'male', downloaded: false }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog() }),
   ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' }
     : req.text === 'Out of quota' ? { error: 'Gemini TTS daily request limit reached.', limit: { provider: 'gemini', kind: 'daily', model: 'gemini-3.8-flash-tts', resets: 'midnight Pacific time', other_model: 'gemini-3.8-flash-lite-tts' } }
     : req.text === 'Waited' ? { ...probed('Voice - waited.wav', 'audio', 1), waited_sec: 31 } : probed('Voice - hello.wav', 'audio', 2.5); },
@@ -89,12 +89,21 @@ assert.equal(p().audioClips.find((c) => c.id === music.id).fadeOut, 3);
 ok(await run('set_volume', { clip_id: 'a', fade_in_sec: 1 }), 'fade on a main-track video');
 
 // Voice-over.
+// Piper voices are optional downloads (Settings > Voice): without the engine none is offered or used.
+piperInstalled = false;
 r = await run('list_voices');
-assert.equal(r.piper[0].voice_id, 'ar_JO-kareem-medium');
+assert.equal(r.default_engine, null); assert.match(r.piper, /Settings > Voice/);
+err(await run('add_voiceover', { text: 'Hello' }), /No speech engine is set up.*Settings > Voice/, 'no engine, no silent download');
+err(await run('add_voiceover', { engine: 'piper', text: 'Hello' }), /No Piper voice is downloaded/, 'piper asked for while missing');
+piperInstalled = true;
+r = await run('list_voices');
+assert.equal(r.default_engine, 'piper');
+assert.deepEqual(r.piper.map((v) => v.voice_id), ['ar_JO-kareem-medium'], 'only downloaded voices are listed');
+err(await run('add_voiceover', { text: 'x', voice_id: 'en_US-joe-medium' }), /not downloaded.*Settings > Voice/, 'a voice that is not downloaded');
 r = await run('add_voiceover', { text: 'مرحبا', voice_id: 'ar_JO-kareem-medium', start_sec: 4 });
 ok(r, 'add_voiceover');
 assert.equal(p().audioClips.find((c) => c.id === r.clip_id).start, 4);
-err(await run('add_voiceover', { text: 'x', voice_id: 'bad' }), /Unknown voice/, 'voice errors come back');
+err(await run('add_voiceover', { text: 'x', voice_id: 'bad' }), /not downloaded/, 'unknown Piper voices are refused before speaking');
 geminiConfigured = true;
 r = await run('list_voices');
 assert.equal(r.default_engine, 'gemini');

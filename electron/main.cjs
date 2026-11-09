@@ -1055,7 +1055,7 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
       send('voice', 0);
       file = await tts.elevenSpeak(scopedFetch(net.fetch, signal), settings.getServiceKey('elevenlabs'), ttsOut(), { ...req, signal });
     } else {
-      await tts.piperPrepare(scopedFetch(net.fetch, signal), ttsDir(), req.voiceId, send, { signal });
+      // Piper's engine and voices are downloaded in Settings > Voice, never on the way.
       send('voice', 1);
       file = await tts.piperSpeak(ttsDir(), ttsOut(), { ...req, signal });
     }
@@ -1072,6 +1072,28 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
     return { error: e.message, ...(e.limit ? { limit: e.limit } : {}) };
   }
 }));
+// Piper voices on this computer (Settings > Voice): download the engine or a voice (one at a time, with progress
+// and Cancel), or remove it. target: 'engine' or a voice id.
+const piperJobs = new Map(); // target -> AbortController
+ipcMain.handle('tts:piperDownload', async (_event, target) => {
+  if (typeof target !== 'string' || !target) return { error: 'Nothing to download.' };
+  if (piperJobs.size) return { error: 'Another download is running. Wait for it, or cancel it.' };
+  const controller = new AbortController();
+  piperJobs.set(target, controller);
+  const send = (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('tts:piperProgress', { target, fraction }); };
+  try {
+    await tts.piperDownload(scopedFetch(net.fetch, controller.signal), ttsDir(), target, send, { signal: controller.signal });
+    return { ok: true, status: tts.piperStatus(ttsDir()) };
+  } catch (e) {
+    return controller.signal.aborted ? { canceled: true, status: tts.piperStatus(ttsDir()) } : { error: e.message, status: tts.piperStatus(ttsDir()) };
+  } finally { piperJobs.delete(target); }
+});
+ipcMain.handle('tts:piperCancel', (_event, target) => { piperJobs.get(target)?.abort(); return true; });
+ipcMain.handle('tts:piperRemove', (_event, target) => {
+  if (piperJobs.has(target)) return { error: 'Cancel the download first.' };
+  try { tts.piperRemove(ttsDir(), String(target)); return { ok: true, status: tts.piperStatus(ttsDir()) }; }
+  catch (e) { return { error: e.message, status: tts.piperStatus(ttsDir()) }; }
+});
 // Several narration lines from one Gemini request, cut into one audio item per line (audio/narration.cjs).
 ipcMain.handle('tts:speakLines', (event, req) => withAgentJob(event, req?.requestId, async signal => {
   try {

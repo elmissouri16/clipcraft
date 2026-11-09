@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ExternalLink, KeyRound, Loader2, Pause, Play, Plus, Type } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, KeyRound, Loader2, Pause, Play, Plus, Type } from 'lucide-react';
 import { toFileUrl } from "../../../state/store.js";
 
 // Sign-up page for new ElevenLabs accounts.
@@ -67,9 +67,15 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
     } else onAdd(res, !!selectedText && text.trim() === selectedText.text.trim());
   };
 
+  // Piper's engine and voices are optional downloads in Settings > Voice; only downloaded voices are offered.
+  const piperVoices = status?.installed ? (status.voices || []).filter((v) => v.downloaded) : [];
+  const piperMissing = engine === 'piper' && status && !piperVoices.length;
+  useEffect(() => {
+    if (piperVoices.length && !piperVoices.some((v) => v.id === voice.piper)) setVoice((v) => ({ ...v, piper: piperVoices[0].id }));
+  }, [piperVoices.map((v) => v.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   const needKey = status && ((engine === 'eleven' && !status.elevenKey) || (engine === 'gemini' && !status.geminiKey));
-  const ready = status && text.trim() && voiceId && !needKey && !busy;
-  const selected = status?.voices.find((v) => v.id === voice.piper);
+  const ready = status && text.trim() && voiceId && !needKey && !piperMissing && !busy;
+  const selected = piperVoices.find((v) => v.id === voice.piper);
   return (
     <div className="tts">
       <div className="tab-title">Text to speech</div>
@@ -89,22 +95,28 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
         <small className="muted">{text.length} / 5000</small>
       </label>
 
-      {engine === 'piper' ? (
+      {engine === 'piper' ? (piperMissing ? (
+        <div className="card stock-key" data-piper-missing>
+          <div className="card-row">
+            <span className="card-icon"><Download size={18} /></span>
+            <div><b>{status.supported ? 'Download Piper voices first' : 'Piper is not available here'}</b>
+              <p>{!status.supported ? 'Piper voices are not available on this computer. Use Gemini or ElevenLabs.'
+                : !status.installed ? 'Free voices that run on this computer. Download the voice engine and the voices you want in Settings > Voice.'
+                : 'The engine is ready. Download at least one voice in Settings > Voice.'}</p></div>
+          </div>
+          {status.supported && <div className="row-btns"><button className="btn btn-primary btn-sm" onClick={() => onOpenSettings?.('speech')}>Open Settings</button></div>}
+        </div>
+      ) : (
         <label className="field">
           <span>Voice</span>
           <select value={voice.piper} aria-label="Voice" onChange={(e) => setVoice((v) => ({ ...v, piper: e.target.value }))}>
-            {(status?.voices || []).map((v) => (
-              <option key={v.id} value={v.id}>{v.lang} · {v.name} ({v.gender}){v.downloaded ? ' ✓' : ''}</option>
+            {piperVoices.map((v) => (
+              <option key={v.id} value={v.id}>{v.lang} · {v.name} ({v.gender})</option>
             ))}
           </select>
-          {selected && (
-            <small className="muted">
-              Licence: {selected.license}. {selected.downloaded ? 'Downloaded.' : 'First use downloads the voice (about 60 MB)'}
-              {!status.installed && !selected.downloaded ? ' and the free Piper engine (about 22 MB).' : selected.downloaded ? '' : "."}
-            </small>
-          )}
+          {selected && <small className="muted">Licence: {selected.license}. More voices in Settings &gt; Voice.</small>}
         </label>
-      ) : needKey ? (
+      )      ) : needKey ? (
         <div className="card stock-key">
           <div className="card-row">
             <span className="card-icon"><KeyRound size={18} /></span>
@@ -167,8 +179,7 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
         <div className="lib-loading"><Loader2 size={15} className="spin" />
           {progress.stage === 'wait' ? `Gemini's per-minute request limit: waiting ${Math.ceil(progress.seconds || 0)} s, then trying again…`
             : progress.stage === 'speech' ? 'Generating speech with Gemini…'
-            : progress.stage === 'engine' ? `Downloading the voice engine… ${Math.round(progress.fraction * 100)}%`
-            : progress.fraction < 1 ? `Downloading the voice… ${Math.round(progress.fraction * 100)}%` : 'Speaking…'}
+            : 'Speaking…'}
         </div>
       )}
       {error && <p className="error-text">{error}</p>}

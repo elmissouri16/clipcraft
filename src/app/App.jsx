@@ -2019,7 +2019,7 @@ export default function App() {
           onDiscardUnsaved={discardUnsaved} agentBadge={externalBadge} />
         {externalApproval}
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
-        {settingsOpen && <SettingsDialog onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
+        {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
           onAbout={() => setAboutOpen('settings')} updateReady={!!update?.newer} />}
         {aboutOpen && <AboutDialog update={update} onUpdate={setUpdate} onClose={() => { setAboutOpen(false); setUpdateSeen(true); if (aboutOpen === 'settings') setSettingsOpen(true); }}
           onWelcome={() => setAboutOpen(false)} />}
@@ -2046,7 +2046,7 @@ export default function App() {
       <div className="workspace" style={{ gridTemplateColumns: panes.rightCollapsed ? `${panes.left}px minmax(0, 1fr)` : `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch} settingsVersion={settingsVersion}
           onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText}
-          onOpenSettings={() => setSettingsOpen(true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
+          onOpenSettings={(section) => setSettingsOpen(typeof section === 'string' ? section : true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
           recorder={recorder} onStartRecord={() => recorder.start(readTime())} onAddText={addText} onAddTextOver={addTextOver}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
           target={target} updateTarget={updateTarget} selectedCount={selectedPictures(project, selection).length}
@@ -2116,7 +2116,7 @@ export default function App() {
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
-      {settingsOpen && <SettingsDialog onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
+      {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
         onAbout={() => setAboutOpen('settings')} updateReady={!!update?.newer}
         onProxiesCleared={(deleted) => projectRef.current.media.forEach((m) => {
           if (m.lightProxy && deleted.includes(m.lightProxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { lightProxy: null } });

@@ -65,6 +65,11 @@ const TEXT_LOOK = {
   bubble: S, bubble_color: S,
 };
 
+// Piper voices are optional downloads (Settings > Voice): only the downloaded ones are usable.
+const piperVoicesOf = (st) => (st?.installed ? (st.voices || []).filter((v) => v.downloaded) : []);
+const PIPER_MISSING = (st) => !st?.supported ? 'Piper voices are not available on this computer.'
+  : 'No Piper voice is downloaded. Ask the user to download the voice engine and a voice in Settings > Voice; do not retry piper until then.';
+
 export const TOOL_DECLARATIONS = [
   ...EDITING_DECLARATIONS,
   ...FILE_DECLARATIONS,
@@ -1268,7 +1273,9 @@ export function createToolRunner(ctx) {
 
     async list_voices() {
       const st = await api.ttsStatus();
-      const out = { default_engine: st.geminiKey ? 'gemini' : 'piper', piper: (st.voices || []).map((v) => ({ voice_id: v.id, name: v.name, language: v.lang, gender: v.gender })),
+      const piper = piperVoicesOf(st);
+      const out = { default_engine: st.geminiKey ? 'gemini' : piper.length ? 'piper' : st.elevenKey ? 'elevenlabs' : null,
+        piper: piper.length ? piper.map((v) => ({ voice_id: v.id, name: v.name, language: v.lang, gender: v.gender })) : PIPER_MISSING(st),
         gemini: st.geminiKey ? { models: st.gemini?.models || [], default_voice: st.gemini?.defaultVoice || 'Kore',
           voices: (st.gemini?.voices || []).map((v) => ({ voice_id: v.id, name: v.name, delivery: v.style })),
           language: 'Detected from the spoken text. Put accent and pacing instructions in style.' }
@@ -1282,11 +1289,15 @@ export function createToolRunner(ctx) {
 
     async add_voiceover({ text, voice_id, engine, model, style, start_sec = 0, speed = 1, volume = 1 }) {
       if (!String(text || '').trim()) return { error: 'text is empty.' };
-      const st = !engine ? await api.ttsStatus() : null;
-      const chosen = engine || (st.geminiKey ? 'gemini' : 'piper');
+      const st = await api.ttsStatus();
+      const piper = piperVoicesOf(st);
+      const chosen = engine || (st.geminiKey ? 'gemini' : piper.length ? 'piper' : st.elevenKey ? 'elevenlabs' : null);
+      if (!chosen) return { error: `No speech engine is set up. ${PIPER_MISSING(st)} Or add a Gemini or ElevenLabs key in Settings.` };
       const normalized = chosen === 'elevenlabs' ? 'eleven' : chosen;
       if (!['gemini', 'eleven', 'piper'].includes(normalized)) return { error: 'engine must be gemini, piper or elevenlabs.' };
-      const voiceId = voice_id || (normalized === 'gemini' ? 'Kore' : st?.voices?.[0]?.id);
+      if (normalized === 'piper' && !piper.length) return { error: PIPER_MISSING(st) };
+      if (normalized === 'piper' && voice_id && !piper.some((v) => v.id === voice_id)) return { error: `The Piper voice ${voice_id} is not downloaded. Downloaded: ${piper.map((v) => v.id).join(', ')}. Ask the user to download others in Settings > Voice.` };
+      const voiceId = voice_id || (normalized === 'gemini' ? 'Kore' : normalized === 'piper' ? piper[0].id : undefined);
       const res = await api.ttsSpeak({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
       if (res.error) return speechFailure(res, model);
       const added = await place(addProbed({ ...res, origin: 'tts' }), { start_sec, name: res.name });

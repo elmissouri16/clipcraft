@@ -232,6 +232,10 @@ contextBridge.exposeInMainWorld('api', {
   ttsGeminiTestKey: (key) => ipcRenderer.invoke('tts:geminiTestKey', key),
   ttsSpeak: (req) => ipcRenderer.invoke('tts:speak', req),
   ttsSpeakLines: (req) => ipcRenderer.invoke('tts:speakLines', req),
+  ttsPiperDownload: (target) => ipcRenderer.invoke('tts:piperDownload', target),
+  ttsPiperCancel: (target) => ipcRenderer.invoke('tts:piperCancel', target),
+  ttsPiperRemove: (target) => ipcRenderer.invoke('tts:piperRemove', target),
+  onTtsPiperProgress: (cb) => { const h = (_e, value) => cb(value); ipcRenderer.on('tts:piperProgress', h); return () => ipcRenderer.removeListener('tts:piperProgress', h); },
   onTtsProgress: (fn) => {
     const h = (_e, p) => fn(p);
     ipcRenderer.on('tts:progress', h);
