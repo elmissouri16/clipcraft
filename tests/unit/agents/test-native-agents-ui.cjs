@@ -12,8 +12,8 @@ const {spawn}=require('node:child_process'),net=require('node:net');
   let ready=false;for(let i=0;i<100;i++){try{ready=(await fetch(url)).ok;}catch{}if(ready)break;await new Promise(r=>setTimeout(r,50));}assert.ok(ready,'Vite starts');
   const bin=process.env.ELECTRON_BIN||require('electron');
   electron=spawn(bin,['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'native-agents',VITE_DEV_SERVER_URL:url}});
-  const code=await new Promise(resolve=>{const timer=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},300000);electron.once('exit',code=>{clearTimeout(timer);resolve(code);});});
-  const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json')));assert.equal(code,0,result.error);assert.ok(!result.error,result.error);
+  const code=await new Promise(resolve=>{const timer=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},process.env.FVE_NATIVE_IMAGE_LIVE==='1'?720000:300000);electron.once('exit',code=>{clearTimeout(timer);resolve(code);});});
+  const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json')));assert.equal(code,0,result.failure);assert.ok(!result.failure,result.failure);
   console.log('Real-app native agents passed; evidence: '+dir);
  }finally{electron?.kill();vite.kill();fs.closeSync(fd);}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -3,8 +3,9 @@
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 const { abortError, checkAbort, abortable } = require("../system/cancel.cjs");
-// Codex features that can put a tool or an action in front of the model; all off, so a ClipCraft
-// session offers ClipCraft's tools only (docs/design/agent-adapters.md). With these off, Codex
+// Codex features that can put a tool or an action in front of the model; disabled by default.
+// Native editor sessions enable code_mode_host below: models using code mode need that bridge
+// to invoke the registered tools, even when shell/filesystem tools are off. With these off, Codex
 // 0.167 still offers request_user_input (inert outside Plan mode; ClipCraft refuses it) and keeps
 // unified_exec on, which only backs the shell tool that is off. tests/unit/agents/test-agent-parity.mjs
 // checks the tools the model actually receives.
@@ -16,7 +17,7 @@ const CODEX_FEATURES_OFF = Object.fromEntries(['shell_tool', 'unified_exec', 'un
 class CodexNative {
   constructor({ executablePath, cwd, env, cfg = {}, system, tools = [], catalogOnly = false, webSearch = true, spawnImpl = spawn }) {
     this.cfg = cfg; this.cwd = cwd; this.tools = tools; this.pending = new Map(); this.nextId = 1; this.active = null; this.threadId = null; this.closed = false;
-    const settings = { features: { ...CODEX_FEATURES_OFF, skip_host_skill_discovery:true }, skills:{include_instructions:false}, mcp_servers:{} };
+    const settings = { features: { ...CODEX_FEATURES_OFF, code_mode_host:true, skip_host_skill_discovery:true }, skills:{include_instructions:false}, mcp_servers:{} };
     const args = ['app-server'];
     const flatten = (object, prefix='') => { for (const [key, value] of Object.entries(object)) {
       const name = prefix ? `${prefix}.${key}` : key;

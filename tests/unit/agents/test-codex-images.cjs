@@ -45,6 +45,7 @@ async function main() {
     assert.deepEqual(fs.readFileSync(image.path), PNG);
     const client = captured.findLast(c => c.kind === 'client').options;
     assert.equal(client.config.features.image_generation, true);
+    assert.equal(client.config.features.code_mode_host, true);
     assert.equal(client.config.features.shell_tool, false);
     assert.equal(client.config.features.unified_exec, false);
     assert.equal(client.config.features.plugins, false);

@@ -60,6 +60,7 @@ try{
  check('Claude resumes its native session on the second user request',!queries[0].resume&&queries[1].resume==='00000000-0000-4000-8000-000000000001');
  check('Claude allows only registered tools',queries.every(options=>options.allowedTools.every(name=>name.startsWith('mcp__clipcraft__'))));
  const protocol=fs.readFileSync(path.join(dir,'protocol.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+ check('Codex can execute its tool bridge while shell access remains disabled',protocol.some(item=>item.codeModeReady&&item.shellDisabled));
  check('Codex creates one native thread for multiple user requests',protocol.filter(item=>item.method==='thread/start').length===1&&protocol.filter(item=>item.method==='turn/start').length===2);
  check('Codex replayed native callbacks execute the edit only once',protocol.some(item=>item.duplicateCallbackCompleted));
  check('Codex rejects callbacks belonging to an older turn',protocol.some(item=>item.staleCallbackRejected));

@@ -349,7 +349,7 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
         return dest;
       });
       const codex = new session.sdk.Codex({ codexPathOverride: session.executablePath, env: session.env,
-        config: { features: { image_generation: true, shell_tool: false, unified_exec: false, apps: false, plugins: false,
+        config: { features: { image_generation: true, code_mode_host: true, shell_tool: false, unified_exec: false, apps: false, plugins: false,
           multi_agent: false, memories: false, skip_host_skill_discovery: true },
           skills: { include_instructions: false }, mcp_servers: {},
         },

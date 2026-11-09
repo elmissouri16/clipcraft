@@ -25,9 +25,10 @@ module.exports=async(win,app,dir)=>{
  }
  try{
   await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');await click('.home-frame-card');await until('!!document.querySelector(".topbar")');await q('document.querySelector(".welcome-go")?.click()');
-  const providers=live?['codex-sdk','claude-agent-sdk']:['codex-sdk'];
+  const providers=live?(process.env.FVE_NATIVE_PROVIDERS||'codex-sdk,claude-agent-sdk').split(','):['codex-sdk'];
+  assert.ok(providers.every(provider=>['codex-sdk','claude-agent-sdk'].includes(provider)),'known native providers');
   for(const provider of providers){
-   settings.save({provider,model:''});
+   settings.save({provider,model:process.env.FVE_NATIVE_MODEL||''});
    const p={id:require('node:crypto').randomUUID(),name:'Native verification',ratio:'16:9',width:320,height:180,fps:30,background:'#194329',media:[],videoClips:[{id:'gap',gap:true,in:0,out:10,speed:1}],overlayClips:[],audioClips:[],textClips:[],effectClips:[]};
    await q(`window.__fve.load(${JSON.stringify(p)})`);await until('!!document.querySelector(".pilot-fab")');await click('.pilot-fab');await until('!!document.querySelector(".pilot-input textarea")');
    await send('Add exactly one text title reading NATIVE CHECK at timeline second 8 for 1 second. Keep every other project setting unchanged. Use only the editor tools, and complete_edit until ready is true before finishing. Do not generate or download media or do web research.');
@@ -38,6 +39,19 @@ module.exports=async(win,app,dir)=>{
    check(`${provider}: saved history contains no transported image bytes`,!JSON.stringify(after.craftAI).includes('inlineData')&&!JSON.stringify(after.craftAI).includes(';base64,'));
    await send('Read the current project, confirm the NATIVE CHECK title is still there, and make no changes. Call complete_edit until ready is true, then reply briefly. Do not generate media or use web research.');
    check(`${provider}: the second request reuses the conversation and preserves the title`,await q('window.__fve.rawProject().textClips.filter(c=>c.text==="NATIVE CHECK").length===1&&!document.querySelector(".pilot-error")'));
+   if(live&&provider==='codex-sdk'&&process.env.FVE_NATIVE_IMAGE_LIVE==='1'){
+    await q(`window.__fve.load(${JSON.stringify({...p,id:require('node:crypto').randomUUID(),name:'Live image verification',width:640,height:360})})`);await wait(300);
+    if(await q('!!document.querySelector(".pilot-fab")'))await click('.pilot-fab');
+    await until('!!document.querySelector(".pilot-input textarea")');
+    await send('Generate one original image showing four animals together: a cat, dog, rabbit and fox. Add the generated image to this video as a full-frame overlay at 0 seconds for exactly 5 seconds. Use the image-generation editor tool; no stock or drawn substitutes. Keep the canvas unchanged. Do not export or use web research.');
+    const imageProject=await q('window.__fve.rawProject()');
+    const imageClip=imageProject.overlayClips.find(c=>imageProject.media.find(m=>m.id===c.mediaId)?.origin==='codex-image');
+    const image=imageProject.media.find(m=>m.id===imageClip?.mediaId);
+    check('Codex live image tool generates a persistent image and places its five-second overlay',!!image&&fs.existsSync(image.path)&&imageClip.start===0&&Math.abs((imageClip.out-imageClip.in)/(imageClip.speed||1)-5)<.001);
+    check('Codex live image task finishes without an editor error',await q('!document.querySelector(".pilot-error")'));
+    result.generatedImage={path:image.path,width:image.width,height:image.height,start:imageClip.start,duration:imageClip.out-imageClip.in};
+    await q('window.__fve.seek(2)');await wait(1000);fs.writeFileSync(path.join(dir,'live-generated-image.png'),(await win.capturePage()).toPNG());
+   }
    if(!live){
     const stopped=send('CANCEL_NATIVE: generate the requested voice.');
     for(let i=0;i<100&&!voiceStarted;i++)await wait(50);

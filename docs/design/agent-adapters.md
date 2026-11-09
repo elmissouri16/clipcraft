@@ -141,8 +141,12 @@ completion check failures, duration, tokens, outcome. Counts only.
 
 ## Phase 2 results
 
-- **Built-ins:** every Codex feature that can put a tool in front of the model is switched off
+- **Built-ins:** Codex's shell, filesystem and unrelated tool features are switched off
   (`CODEX_FEATURES_OFF` in `codexNative.cjs`, also used by the step path), including `view_image`.
+  Native editor sessions explicitly enable `code_mode_host`: code-mode models need that
+  execution bridge to call the registered editor tools. Disabling it leaves the tool definitions
+  visible but their calls fail before reaching ClipCraft. The dedicated image-generation session
+  also enables it. This does not enable the disabled shell/filesystem tools.
   Codex 0.167 still offers `request_user_input` (no switch exists; inert outside Plan mode, and
   ClipCraft refuses it) and keeps `unified_exec` on internally, with no tool reaching the model.
 - **Limits:** `contract.cjs` `LIMITS`: 300 tool calls per request (`complete_edit` always allowed),
