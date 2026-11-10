@@ -99,3 +99,28 @@ The existing `performance-contracts` smoke mode additionally exercises live
 playback, frame stepping, pause/seek, production project loading, virtualized
 tracks and bounded preview media pools against the dev server. It imports source
 modules and therefore needs the dev server rather than Vite preview.
+
+## Filters: selected clip or the whole video (2026-11-10)
+
+A filter look belongs to one clip, and with nothing selected it goes to the main-track clip under
+the playhead. In the common CraftAI layout the main track is a flat background with the pictures
+and graphics on overlay tracks, so a look applied that way visibly did nothing. The Filters tab now
+has a scope: **Selected clip** (one clip, or every selected clip) or **Whole video**, which puts the
+look on the Effects track as a filter layer (`project.effectClips` with `fx: 'filter:<look>'`,
+`src/features/effects/filters.js`). A filter layer acts on every picture under it — main track,
+overlays and graphics — through the same pass builder the clip filter uses (`pixelPasses` in
+`src/features/effects/apply.js`), so the player and the export agree; its strength is the intensity,
+it takes a region like any effect layer, it can be trimmed or moved on the timeline, and a filter tile
+dropped on the Effects lane creates one. The timeline and inspector label it "<Look> filter".
+`tests/smoke/smoke-filters.cjs` (launched by `tests/unit/effects/test-filters-ui.cjs`) proves both
+scopes in the real app with chroma measurements of the player and the export;
+`tests/unit/effects/test-filter-layer.mjs` pins the pass builder.
+
+## Effects are visible where they land (2026-11-10)
+
+An effect applied to a clip is now a named badge on the clip itself (teal, after the filter's purple
+badge), with × to remove it; clicking the badge selects that effect so the inspector opens on its
+strength and region. The Effects lane keeps showing the same effect as "<name> · on clip", and a free
+effect added with nothing selected still lands on the Effects track at the playhead, selected. The clip
+label no longer says "N effects" — the badges name them. `tests/smoke/smoke-effects-ui.cjs` (launched by
+`tests/unit/effects/test-effects-ui.cjs`) proves both paths in the real app.

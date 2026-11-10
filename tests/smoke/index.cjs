@@ -46,6 +46,7 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'effect-parity') return require('./smoke-effect-parity.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'performance') return require('./smoke-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'performance-contracts') return require('./smoke-performance-contracts.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'effects-ui') return require('./smoke-effects-ui.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'export-performance') return require('./smoke-export-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'persistence-performance') return require('./smoke-persistence-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'structure') return require('./smoke-structure.cjs')(win, app, dir);

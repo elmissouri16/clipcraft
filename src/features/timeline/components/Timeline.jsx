@@ -789,10 +789,23 @@ export default function Timeline({
   const common = { pps, selection, onMenu: onClipMenu, onToggle: toggleSel,
     layerStateFor: (track, clip) => layerStateOf(project, track, clipLayer(track, clip)) };
   // The filter of a picture clip as a chip on the clip, removable from the timeline.
+  // Badges on a picture clip for what it carries: its filter, then each effect by name (the way a
+  // modern editor marks an fx clip), each with × to remove it. An effect badge opens that effect in the
+  // inspector (the same object the Effects lane shows as "<name> · on clip").
   const lookTags = (track, clip) => {
-    if (!clip.filter || clip.filter === 'none') return null;
-    const name = filterName(clip.filter);
-    return [{ key: 'filter', label: name, title: `Filter: ${name}`, onRemove: () => dispatch({ type: 'update', track, id: clip.id, patch: { filter: 'none' } }) }];
+    const tags = [];
+    if (clip.filter && clip.filter !== 'none') {
+      const name = filterName(clip.filter);
+      tags.push({ key: 'filter', label: name, title: `Filter: ${name}`, onRemove: () => dispatch({ type: 'update', track, id: clip.id, patch: { filter: 'none' } }) });
+    }
+    for (const id of clip.effects || []) {
+      const e = effectInfo(id);
+      const name = e?.name || id;
+      tags.push({ key: `fx:${id}`, kind: 'fx', label: name, icon: e?.icon, title: `Effect: ${name} — click to adjust`,
+        onOpen: () => onSelect({ track: 'effect', id: `${track}|${clip.id}|${id}` }),
+        onRemove: () => dispatch({ type: 'update', track, id: clip.id, patch: { effects: (clip.effects || []).filter((x) => x !== id) } }) });
+    }
+    return tags.length ? tags : null;
   };
   const fxObjects = useMemo(() => effectObjects(project), [project]);
   // Rows of a layered lane: one per layer, empty ones included.
@@ -1170,8 +1183,12 @@ function Clip({ pps, selection, track, selTrack, clip, start, length, label, ico
       {tags?.length > 0 && (
         <span className="clip-tags">
           {tags.map((t) => (
-            <span key={t.key} className="clip-tag" title={t.title}>
-              {t.label}
+            <span key={t.key} className={`clip-tag ${t.kind || ''} ${t.onOpen ? 'clickable' : ''}`} title={t.title}
+              role={t.onOpen ? 'button' : undefined} tabIndex={t.onOpen ? 0 : undefined}
+              onPointerDown={t.onOpen ? (e) => e.stopPropagation() : undefined}
+              onClick={t.onOpen ? (e) => { e.stopPropagation(); t.onOpen(); } : undefined}
+              onKeyDown={t.onOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); t.onOpen(); } } : undefined}>
+              {t.icon && <span className="clip-tag-icon" aria-hidden="true">{t.icon}</span>}{t.label}
               <button type="button" aria-label={`Remove ${t.label}`} title={`Remove ${t.label}`}
                 onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); t.onRemove(); }}>×</button>
             </span>
@@ -1248,7 +1265,7 @@ function ClipWave({ m, clip, pps }) {
 function videoLabel(clip, m) {
   const tags = [];
   if ((clip.speed || 1) !== 1) tags.push(`${clip.speed}×`);
-  if (clip.effects?.length) tags.push(`${clip.effects.length} effect${clip.effects.length > 1 ? 's' : ''}`);
+  // Effects are named badges on the clip (lookTags), not a count in the label.
   if (clip.muted) tags.push('muted');
   return [m?.name ?? '?', ...tags].join(' · ');
 }
