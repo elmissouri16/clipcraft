@@ -80,7 +80,7 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     activeEvent=event;activeProject=beforeProject;
     imageEvent = ['generate_image','generate_images'].includes(call.name) ? event : null;
     onEvent(event);
-    let result;
+    let result, actions = [];
     try {
       const error = validateToolCall(call, tools);
       if (error) result = { error };
@@ -95,7 +95,7 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
         const results = await runner.runImages(call.args.scenes);
         results.forEach((value, i) => remember('generate_image', call.args.scenes[i], value, `${requestId}:${id}:${i}`, beforeProject));
         result = { results, changed:results.some(value=>value.changed), ...(results.some(value=>value.error) ? { error:'Some scenes failed. Retry only the failed scenes using their failed_operation_id.' } : {}) };
-      } else result = await runner.run(call.name, call.args);
+      } else { result = await runner.run(call.name, call.args); actions = runner.lastActions(); }
       await ctx.settle(); validOwner();
       if (!result || typeof result !== 'object') result = { error:'Tool returned no valid result.' };
     } catch (error) { result = { error:error.message }; }
@@ -109,7 +109,7 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     contents.push({ role:'model', parts:[{ functionCall:{ name:call.name, args:call.args } }] }, { role:'user', parts:[{ functionResponse:{ name:call.name, response:{ result } } }] });
     onEvent({ type:'tool', id, name:call.name, label:call.name === 'complete_edit'
       ? result.review_required ? `Checking the edit: ${result.checked_regions} of ${result.total_regions} regions reviewed` : 'Validating the completed edit'
-      : call.name === 'generate_images' ? 'Generating scene images' : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject,result,ctx.getProject()), status:result.error ? 'error' : 'done', detail:stopError?.error || result.error });
+      : call.name === 'generate_images' ? 'Generating scene images' : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject,result,ctx.getProject(),actions), status:result.error ? 'error' : 'done', detail:stopError?.error || result.error });
     imageEvent = null;
     activeEvent=null;activeProject=null;
     if (result.canceled) { stopped = true;await ctx.api.agentCancel?.(requestId); }

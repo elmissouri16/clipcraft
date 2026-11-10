@@ -17,6 +17,25 @@ import { useClockTime } from '../../preview/useClockTime.js';
 import { timelineViewport, intersectsViewport, filmstripTiles, timelineClipBox, boxesIntersect } from '../viewport.js';
 import { stackRows, visibleRowRange } from '../rows.js';
 
+// CraftAI spotlight and trail on the timeline (App's agentFocus, docs/agents/agent-editing.md): the clips
+// and ranges the running tool works on (live) and the clips this request changed (done), as Maps/Sets the
+// Clip component checks by 'track:id'. One shared empty object when the agent is idle.
+const NO_MARKS = { any: false, live: new Map(), done: new Set(), liveRanges: [], doneRanges: [], liveCaptions: false, doneCaptions: false, liveTitle: '', liveFirstKey: null };
+function buildAgentMarks(focus) {
+  if (!focus) return NO_MARKS;
+  const live = new Map(), done = new Set(), liveRanges = [], doneRanges = [];
+  const liveTitle = focus.live?.title || '';
+  let liveFirstKey = null;
+  for (const ref of focus.live?.targets?.clips || []) { const key = `${ref.track}:${ref.id}`; if (!live.has(key)) { live.set(key, liveTitle); liveFirstKey ??= key; } }
+  for (const r of focus.live?.targets?.ranges || []) liveRanges.push(r);
+  for (const step of focus.trail || []) {
+    for (const ref of [...(step.targets?.clips || []), ...(step.targets?.created || [])]) { const key = `${ref.track}:${ref.id}`; if (!live.has(key)) done.add(key); }
+    for (const r of step.targets?.ranges || []) doneRanges.push(r);
+  }
+  return { any: true, live, done, liveRanges, doneRanges: doneRanges.slice(-24), liveCaptions: !!focus.live?.targets?.captions,
+    doneCaptions: (focus.trail || []).some((step) => step.targets?.captions), liveTitle, liveFirstKey };
+}
+
 const HEADER = 192; // lane-head width: title + layer rows share one control grid (lock/eye/speaker/solo/more) and names get 60px
 const HEAD_TITLE_H = 22; // height of a lane head's title strip; layer control rows stack below it
 const ROW = 34; // height of one stacked row on the Effects / Text tracks
@@ -40,7 +59,7 @@ export default function Timeline({
   project, time: pausedTime, duration, selection, onSelect, onSeek, dispatch, onSplit, onDelete, onDuplicate,
   onDropItem, onDropFiles, canUndo, canRedo, tool, setTool, onTrimSide, onMarker, recorder, onToggleRecord, onClipMenu, overlay, onAddText, clockRef, playing,
   onDetach, detachOk, onLinkToggle, linkMode, onAttachContext, contextVersion,
-  agentRun, agentOwnsEdit, agentHasChanges, onShowAgent,
+  agentRun, agentOwnsEdit, agentHasChanges, onShowAgent, agentFocus,
 }) {
   const time = useClockTime(clockRef, pausedTime, playing);
   const readTime = () => clockRef?.current.time ?? time;
@@ -400,6 +419,33 @@ export default function Timeline({
     return { start: c.start, len: c.duration };
   };
 
+  const agentMarks = useMemo(() => buildAgentMarks(agentFocus), [agentFocus]);
+  // Reveal the spotlight: scroll (never zoom) so the running tool's clips and ranges are in view, unless
+  // playback follow-scroll owns the scroller or the user wheeled or pressed in the timeline in the last 2 s
+  // (programmatic scrolls — layout, fit, follow — are not the user's and do not count).
+  const userScrollAt = useRef(-1e9); // far in the past: a fresh page has no recent user scroll
+  const liveSpan = useMemo(() => {
+    if (!agentMarks.any || (!agentMarks.live.size && !agentMarks.liveRanges.length)) return null;
+    let start = Infinity, end = -Infinity;
+    for (const key of agentMarks.live.keys()) {
+      const i = key.indexOf(':'), s = clipSpan(project, key.slice(0, i), key.slice(i + 1));
+      if (s) { start = Math.min(start, s.start); end = Math.max(end, s.start + s.len); }
+    }
+    for (const r of agentMarks.liveRanges) { start = Math.min(start, r.start); end = Math.max(end, r.end); }
+    return Number.isFinite(start) ? { start, end } : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentMarks, layout, project]);
+  useEffect(() => {
+    const sc = scrollRef.current, span = liveSpan;
+    if (!sc || !span || clockRef?.current?.playing) return;
+    if (performance.now() - userScrollAt.current < 2000) return; // the newest live target always wins otherwise
+    const width = sc.clientWidth - HEADER, x0 = span.start * pps, x1 = span.end * pps, left = sc.scrollLeft, right = left + width;
+    if (x0 >= left + 24 && x1 <= right - 24) return;
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    sc.scrollTo({ left: Math.max(0, x0 - width * 0.15), behavior: reduced ? 'auto' : 'smooth' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentFocus?.live?.id]);
+
   // Trim wrapper: while an edge is dragged, the preview/playhead follows the edge being
   // trimmed and a readout chip shows the edge time + the clip's resulting length; the snap
   // guide lights when the edge lands on a snap target (playhead, neighbour, marker, zero).
@@ -734,6 +780,7 @@ export default function Timeline({
     const el = scrollRef.current;
     if (!el) return undefined;
     const onWheel = (e) => {
+      userScrollAt.current = performance.now();
       const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientWidth : 1;
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault(); // also stops the window from zooming
@@ -786,7 +833,7 @@ export default function Timeline({
     const has = items.some((x) => x.track === track && x.id === id);
     onSelect(makeSelection(has ? items.filter((x) => !(x.track === track && x.id === id)) : [...items, { track, id }]));
   };
-  const common = { pps, selection, onMenu: onClipMenu, onToggle: toggleSel,
+  const common = { pps, selection, onMenu: onClipMenu, onToggle: toggleSel, agentMarks,
     layerStateFor: (track, clip) => layerStateOf(project, track, clipLayer(track, clip)) };
   // The filter of a picture clip as a chip on the clip, removable from the timeline.
   // Badges on a picture clip for what it carries: its filter, then each effect by name (the way a
@@ -962,7 +1009,7 @@ export default function Timeline({
   const canSplit = !!(selection || underPlayhead);
 
   return (
-    <section className={`timeline${agentRun ? ' is-agent-working' : ''}`} aria-label="Timeline" aria-description={agentRun ? 'CraftAI is working. Manual edits interrupt its editing session.' : undefined}>
+    <section className={`timeline${agentRun ? ' is-agent-working' : ''}${agentFocus?.fading ? ' agent-fading' : ''}`} aria-label="Timeline" aria-description={agentRun ? 'CraftAI is working. Manual edits interrupt its editing session.' : undefined}>
       <div className="tl-main">
       {overlay}
       <div className="tl-toolbar">
@@ -1035,6 +1082,7 @@ export default function Timeline({
         <button type="button" className="pilot-text-btn" onClick={agentRun.onStop} disabled={agentRun.stopping}>Stop</button>
       </div>}
       <div className={`tl-scroll ${tool === 'razor' ? 'razor' : ''}`} ref={scrollRef}
+        onPointerDownCapture={() => { userScrollAt.current = performance.now(); }}
         onPointerMove={(e) => { if (tool === 'razor') { const t = timeFromEvent(e); setRazorAt(project.snapping ? snapPoint(t) : t); } }}
         onPointerLeave={() => setRazorAt(null)}
         onDragOver={onDragOver} onDragLeave={(e) => {
@@ -1042,12 +1090,15 @@ export default function Timeline({
       }} onDrop={onDrop}>
         <div className="tl-content" ref={contentRef} style={{ width: width + HEADER }} onContextMenu={onAttachContext ? openRangeMenu : undefined}>
           {contextRange && <div className="tl-context-range" aria-hidden="true" style={{ left: HEADER + contextRange.start_sec * pps, width: (contextRange.end_sec - contextRange.start_sec) * pps }} />}
+          {agentMarks.liveRanges.map((r, i) => <div key={`agent-live-${i}`} className="tl-agent-range" aria-hidden="true" style={{ left: HEADER + r.start * pps, width: Math.max(2, (r.end - r.start) * pps) }} />)}
+          {agentMarks.doneRanges.map((r, i) => <div key={`agent-seam-${i}`} className="tl-agent-seam" aria-hidden="true" style={{ left: HEADER + r.start * pps }} />)}
           {box && <div className="select-box" style={{ left: box.x, top: box.y, width: box.w, height: box.h }} />}
           <div className={`tl-row ruler ${rangeTool ? 'context-selecting' : ''}`} onPointerDown={onAttachContext ? selectContextRange : scrub}>
             <div className="tl-head" />
             <div className="tl-ruler">
               {rangeTool && <span className="tl-range-hint">Drag on the ruler to attach a range</span>}
               {contextRange && <div className="tl-context-ruler" aria-label={`Selected range ${formatTime(contextRange.start_sec)} to ${formatTime(contextRange.end_sec)}`} style={{ left: contextRange.start_sec * pps, width: (contextRange.end_sec - contextRange.start_sec) * pps }} />}
+              {agentMarks.liveRanges.map((r, i) => <div key={`agent-ruler-${i}`} className="tl-agent-ruler" aria-label={`CraftAI: ${agentMarks.liveTitle} ${formatTime(r.start)} to ${formatTime(r.end)}`} style={{ left: r.start * pps, width: Math.max(18, (r.end - r.start) * pps) }}>{(r.end - r.start) * pps > 80 ? agentMarks.liveTitle : ''}</div>)}
               {markerEls}
               {ticks.map((t) => (
                 <div key={t} className="tick" style={{ left: t * pps }}><span>{formatTime(t).slice(0, 5)}</span></div>
@@ -1160,15 +1211,18 @@ function RecMeter({ analyserRef }) {
   return <span className="rec-meter" aria-hidden="true"><span className="rec-meter-fill" ref={fillRef} /></span>;
 }
 
-function Clip({ pps, selection, track, selTrack, clip, start, length, label, icon, bg, dropHere, onDown, row, rowH = ROW, children, onMenu, onToggle, tags, onKeyDrag, layerStateFor }) {
+function Clip({ pps, selection, track, selTrack, clip, start, length, label, icon, bg, dropHere, onDown, row, rowH = ROW, children, onMenu, onToggle, tags, onKeyDrag, layerStateFor, agentMarks = NO_MARKS }) {
   const st = selTrack || track;
   const selected = isSelected(selection, st, clip.id);
+  // CraftAI: 'live' while a tool works on this clip, 'done' once this request changed it.
+  const agentKey = `${st}:${clip.id}`;
+  const agent = agentMarks.live.has(agentKey) || (agentMarks.liveCaptions && clip.caption) ? 'live' : agentMarks.done.has(agentKey) || (agentMarks.doneCaptions && clip.caption) ? 'done' : '';
   const lst = layerStateFor ? layerStateFor(st, clip) : null;
   const stacked = row !== undefined ? { top: HEAD_TITLE_H + row * rowH, bottom: 'auto', height: rowH - 4 } : null;
   return (
-    <div className={`clip ${track} ${selected ? 'selected' : ''} ${dropHere ? 'drop-here' : ''} ${clip.disabled ? 'off' : ''} ${clip.slot && !clip.gap ? 'replaceable' : ''} ${lst?.locked ? 'locked' : ''} ${lst?.hidden ? 'layer-hidden' : ''}`}
+    <div className={`clip ${track} ${selected ? 'selected' : ''} ${dropHere ? 'drop-here' : ''} ${agent ? `agent-${agent}` : ''} ${clip.disabled ? 'off' : ''} ${clip.slot && !clip.gap ? 'replaceable' : ''} ${lst?.locked ? 'locked' : ''} ${lst?.hidden ? 'layer-hidden' : ''}`}
       style={{ left: start * pps, width: Math.max(6, length * pps), ...stacked }}
-      data-sel-track={st} data-sel-id={clip.id}
+      data-sel-track={st} data-sel-id={clip.id} data-agent={agent || undefined}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         // Ctrl / Shift + click adds the clip to the selection (or takes it out).
@@ -1178,6 +1232,8 @@ function Clip({ pps, selection, track, selTrack, clip, start, length, label, ico
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu?.(e, st, clip); }}>
       {bg && <div className="clip-bg" style={bg} />}
       {children}
+      {agent === 'live' && agentKey === agentMarks.liveFirstKey && <span className="agent-chip" aria-hidden="true">CraftAI · {agentMarks.liveTitle}</span>}
+      {agent === 'done' && <span className="agent-mark" title="Changed by CraftAI" aria-hidden="true">✓</span>}
       <div className="handle left" onPointerDown={(e) => e.button === 0 && onDown(e, 'left')} />
       <span className="clip-label">{clip.slot && !clip.gap && <span className="rep-badge" title="Replaceable: people put their own video here when they use the template">⇄</span>}{icon}<bdi>{label}</bdi>
       {tags?.length > 0 && (

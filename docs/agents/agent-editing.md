@@ -221,6 +221,25 @@ after owned document changes, and a stopping/interrupted state when applicable.
 The strip offers **View chat** and **Stop** and clears when the request ends.
 Manual controls remain available and take priority over agent edits.
 
+### Spotlight and trail on the timeline (2026-11-10)
+
+While a request runs, the timeline shows what the running tool works on: its clips carry a violet
+inset ring with an animated informational stripe and a "CraftAI · <tool title>" chip on the first of
+them (`agent-live`), and a requested time range (a cut, a placement, a zoom) is a `tl-agent-range`
+band with a ruler chip. The scroller reveals an off-screen target by scrolling, never zooming, unless
+playback follow-scroll owns it or the user wheeled or pressed in the timeline in the last two seconds;
+the newest target always wins. Each finished change leaves a trail: the changed and created clips get a
+1 px ring and a ✓ mark (`agent-done`), cut seams a thin line. Six seconds after the request ends the
+trail fades out; an undo, redo or project load after the run clears it at once. A manual edit that
+interrupts the agent drops the spotlight in the same render the strip turns "Agent interrupted" and
+keeps the trail of the edits that did happen. None of this touches history: the focus state lives in
+App (`agentFocus`), fed by CraftPilot from the turn's steps, whose `activity.targets` come from
+`src/features/agent/toolTargets.js` (arguments on the running event; reducer actions, a content diff
+that ignores pure ripple shifts, and created ids on the done event). Reads spotlight what they look at
+and leave no trail. External MCP agents produce the same targets but are not rendered yet.
+`tests/smoke/smoke-agent-spotlight.cjs` (launcher `tests/unit/agents/test-agent-spotlight-ui.cjs`)
+proves all of it in the real app; `tests/unit/agents/test-tool-targets.mjs` pins the mapper.
+
 Activity expands during a request and collapses after successful replies in
 Agent mode. Reading earlier messages stops automatic scrolling; **Latest activity**
 returns to the current turn. The composer and its Send/Stop controls remain

@@ -25,6 +25,15 @@ have a local video player and explicit open/reveal actions.
 - Local source thumbnails and waveform images are reused. No additional image
   generation or remote footage-review service supplies these previews.
 
+`toolTargets.js` adds `activity.targets` to every tool event for the timeline's spotlight and trail
+(docs/agents/agent-editing.md): `{ clips: [{track,id}], ranges: [{start,end}], created: [{track,id}],
+captions? }`, absent when empty. The running event derives them from the arguments and the project
+before the call (clip ids resolved to their track, cut/keep/split/trim ranges, where a new clip will
+land). The done event uses the reducer actions the call dispatched (`runner.lastActions()`, kept out
+of the tool result the model reads), a content-and-length diff of the project that ignores clips which
+only shifted after a cut, and the clip ids in the result. Caps: 40 clips, 12 ranges; the saved-chat
+whitelist in `activityData.js` keeps the same bounds.
+
 `activityData.js` normalizes saved display metadata separately from model
 context. It bounds strings/arrays, rejects network/data/script URLs, and keeps
 only typed local media references, edit summaries and output metadata. Older

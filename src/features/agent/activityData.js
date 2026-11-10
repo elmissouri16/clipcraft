@@ -21,6 +21,13 @@ export function normalizeToolActivity(value) {
       tracks:Object.fromEntries(Object.entries(record(c.tracks)?c.tracks:{}).filter(([key,n])=>['Video','Overlay','Audio','Captions','Text','Effects'].includes(key)&&Number.isFinite(n)).map(([key,n])=>[key,Math.max(0,Math.min(100000,n))])),
       clips:(Array.isArray(c.clips)?c.clips:[]).slice(0,4).filter(record).map(r=>({label:text(r.label,80),track:text(r.track,20),start:finite(r.start,0),end:finite(r.end,0)})),more_clips:finite(c.more_clips,0)};
   }
+  const t=value.targets;
+  if(record(t)){
+    const TRACKS=['video','overlay','audio','text','effect'];
+    const refs=v=>(Array.isArray(v)?v:[]).slice(0,40).filter(r=>record(r)&&TRACKS.includes(r.track)&&typeof r.id==='string'&&r.id).map(r=>({track:r.track,id:text(r.id,80)}));
+    const targets={clips:refs(t.clips),created:refs(t.created),ranges:(Array.isArray(t.ranges)?t.ranges:[]).slice(0,12).filter(r=>record(r)&&finite(r.start)!==null&&finite(r.end)!==null&&r.end>=r.start).map(r=>({start:r.start,end:r.end})),...(t.captions===true?{captions:true}:{})};
+    if(targets.clips.length||targets.created.length||targets.ranges.length||targets.captions)output.targets=targets;
+  }
   const a=value.artifact;
   if(record(a)&&safeLocalPath(a.file)&&/\.(mp4|mov|mkv|webm)$/i.test(a.file))output.artifact={file:safeLocalPath(a.file),name:a.file.split(/[\\/]/).at(-1),bytes:finite(a.bytes,0),duration_sec:finite(a.duration_sec),width:finite(a.width),height:finite(a.height),fps:finite(a.fps),review:!!a.review};
   return output;

@@ -124,3 +124,13 @@ strength and region. The Effects lane keeps showing the same effect as "<name> �
 effect added with nothing selected still lands on the Effects track at the playhead, selected. The clip
 label no longer says "N effects" — the badges name them. `tests/smoke/smoke-effects-ui.cjs` (launched by
 `tests/unit/effects/test-effects-ui.cjs`) proves both paths in the real app.
+
+## CraftAI spotlight and trail (2026-11-10)
+
+The timeline shows what the agent is doing instead of only the status strip: the running tool's clips
+and ranges are spotlit (violet ring, informational stripe, "CraftAI · <title>" chip; a band and ruler
+chip for a time range), the scroller reveals an off-screen target without fighting the user, and each
+finished change leaves a fading trail (1 px ring and ✓). Violet only, no glow, `--r-xs` chips, selection
+ring stays outermost; reduced motion keeps the rings and drops the stripe animation. Details and the
+ownership rules in docs/agents/agent-editing.md. `tests/unit/agents/test-agent-spotlight-ui.cjs` proves
+it in the real app.

@@ -287,7 +287,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
           running.set(event.id, event); onEvent(event);
         });
         const beforeProject = ctx.getProject(), beforeGroup = projectRevision(beforeProject);
-        let results;
+        let results, actions = [];
         if (invalidBatch) results = group.map((_call, offset) => ({ error: invalidCalls[index + offset] || 'This batch contains invalid tool arguments. No tools in this batch were executed.' }));
         else if (group.length > 1) results = await runner.runImages(group.map(call => call.args));
         else {
@@ -299,7 +299,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
           else if (call.name.startsWith('mcp_')) {
             const r = await ctx.api.mcpCall({ name: call.name, args: call.args, requestId, revision: beforeGroup });
             result = r?.ok ? (typeof r.result === 'string' ? { text: r.result } : r.result) : { error: r?.error || 'MCP call failed' };
-          } else result = await runner.run(call.name, call.args);
+          } else { result = await runner.run(call.name, call.args); actions = runner.lastActions(); }
           results = [result];
         }
         results = results.map(result => result && typeof result === 'object' ? result : { error: 'The tool returned no valid result.' });
@@ -330,7 +330,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
           result.operation_id = operationId;
           operations.push({ id: operationId, name: call.name, changed: !!result.changed, status: failed ? 'failed' : 'completed', ...(failed ? { error: result.error } : {}), revision: result.revision });
           running.delete(`${step}-${index + offset}`);
-          onEvent({ type: 'tool', id: `${step}-${index + offset}`, name: call.name, label: describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject,result,ctx.getProject()), status: failed ? 'error' : 'done', detail: failed ? result.error : undefined });
+          onEvent({ type: 'tool', id: `${step}-${index + offset}`, name: call.name, label: describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject,result,ctx.getProject(),actions), status: failed ? 'error' : 'done', detail: failed ? result.error : undefined });
           responses.push({ functionResponse: { name: call.name, response: { result } } });
         });
         if (results.some(result => result.canceled)) {

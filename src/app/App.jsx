@@ -109,6 +109,23 @@ export default function App() {
   const [agentRun, setAgentRun] = useState(null);
   const agentRunRef = useRef(agentRun);
   agentRunRef.current = agentRun;
+  // Timeline spotlight and trail (docs/agents/agent-editing.md): what CraftAI works on now and what it
+  // changed this request. Outside the history reducer: it never makes an Undo step or revokes the agent.
+  // The run's end starts a 6 s hold, then a fade; a history move afterwards (undo, redo, load) clears it.
+  const [agentFocus, setAgentFocus] = useState(null);
+  const onAgentFocus = useCallback((next) => setAgentFocus((prev) => (next ? { ...next, ended: false, fading: false } : prev && !prev.ended ? { ...prev, live: null, ended: true } : prev)), []);
+  useEffect(() => {
+    if (!agentFocus?.ended) return undefined;
+    const fade = setTimeout(() => setAgentFocus((f) => (f && f.ended ? { ...f, fading: true } : f)), 6000);
+    const clear = setTimeout(() => setAgentFocus((f) => (f && f.ended ? null : f)), 6400);
+    return () => { clearTimeout(fade); clearTimeout(clear); };
+  }, [agentFocus?.ended, agentFocus?.requestId]);
+  const focusHistory = useRef(null);
+  useEffect(() => {
+    const key = `${state.past.length}:${state.future.length}:${projectLoadVersion}`;
+    if (agentFocus?.ended && focusHistory.current !== null && focusHistory.current !== key) setAgentFocus(null);
+    focusHistory.current = key;
+  }, [state.past.length, state.future.length, projectLoadVersion, agentFocus?.ended]);
   const exportBusy = agentRendering || (!!exporting && !exporting.ready && !exporting.done && !exporting.error);
   useEffect(() => {
     window.api.foregroundWork?.({ playing, exporting: exportBusy }).catch(() => {});
@@ -2122,6 +2139,7 @@ export default function App() {
         agentRun={agentRun?.runKey === `${project.id}:${projectLoadVersion}` ? agentRun : null}
         agentOwnsEdit={state.agentEdit?.token === agentRun?.requestId} agentHasChanges={!!state.agentEdit?.steps.length}
         onShowAgent={() => setWorkspaceMode('agent')}
+        agentFocus={agentFocus?.runKey === `${project.id}:${projectLoadVersion}` ? (agentFocus.live && state.agentEdit?.token !== agentFocus.requestId ? { ...agentFocus, live: null } : agentFocus) : null}
         onSelect={select} onSeek={seek} dispatch={dispatch} onAttachContext={attachTimelineContext} contextVersion={projectLoadVersion}
         onDetach={() => detachAudio()} detachOk={detachOk} linkMode={linkMode}
         onLinkToggle={() => (linkMode === 'unlink' ? unlinkClip() : linkPair())}
@@ -2165,7 +2183,7 @@ export default function App() {
           }
         })} />}
       <CraftAI key={`${project.id}:${projectLoadVersion}`} getProject={() => projectRef.current} getHistoryLength={() => historyRef.current.past.length}
-        runKey={`${project.id}:${projectLoadVersion}`} onRunStateChange={setAgentRun}
+        runKey={`${project.id}:${projectLoadVersion}`} onRunStateChange={setAgentRun} onAgentFocus={onAgentFocus}
         onAttachmentDrag={() => setDragOver(false)}
         dispatch={dispatch} settle={settle} onOpenSettings={() => setSettingsOpen(true)} settingsVersion={settingsVersion}
         timelineContextRequest={timelineContextRequest?.projectId === project.id && timelineContextRequest.loadVersion === projectLoadVersion ? timelineContextRequest : null}

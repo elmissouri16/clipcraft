@@ -43,7 +43,7 @@ function Rich({ text }) {
   });
 }
 
-export default function CraftAI({ getProject, getHistoryLength, dispatch, settle, onOpenSettings, settingsVersion, timelineContextRequest, presentation = 'floating', onExpand, onImport, onAttachSelection, hasSelection, onRunStateChange, runKey, onAttachmentDrag, app = {}, external = null }) {
+export default function CraftAI({ getProject, getHistoryLength, dispatch, settle, onOpenSettings, settingsVersion, timelineContextRequest, presentation = 'floating', onExpand, onImport, onAttachSelection, hasSelection, onRunStateChange, onAgentFocus, runKey, onAttachmentDrag, app = {}, external = null }) {
   const [floatingOpen, setOpen] = useState(false);
   const docked = presentation === 'docked';
   const open = docked || floatingOpen;
@@ -209,6 +209,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       configRequest.current++;
       if (activeRequest.current) window.api.agentCancel?.(activeRequest.current).catch(() => {});
       onRunStateChange?.(null);
+      onAgentFocus?.(null);
     };
   }, []);
 
@@ -261,6 +262,17 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   useEffect(() => {
     onRunStateChange?.(busy ? { runKey, requestId: activeRequest.current, label: runningStep?.label || 'Preparing the next step…', stopping, onStop: stopRequest } : null);
   }, [busy, stopping, runningStep?.label]);
+  // Timeline spotlight and trail (App's agentFocus, docs/agents/agent-editing.md): the running step's
+  // targets and the finished changes of this turn. Keyed on step ids, apart from the strip effect above.
+  const turnSteps = busy ? messages.at(-1)?.steps || [] : [];
+  const liveStep = turnSteps.find((s) => s.status === 'running' && s.activity?.targets);
+  const trailSteps = turnSteps.filter((s) => s.status === 'done' && s.activity?.targets);
+  const focusKey = busy ? `${liveStep?.id ?? ''}|${trailSteps.map((s) => s.id).join(',')}` : '';
+  useEffect(() => {
+    const pick = (s) => ({ id: s.id, name: s.name, title: s.activity.title || s.label || '', targets: s.activity.targets, at: Date.now() });
+    onAgentFocus?.(busy ? { runKey, requestId: activeRequest.current, live: liveStep ? pick(liveStep) : null, trail: trailSteps.slice(-24).map(pick) } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, focusKey]);
 
   const startTurn = async (item, queued = false, preserveComposer = false) => {
     const msg = item.text.trim();

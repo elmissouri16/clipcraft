@@ -1626,8 +1626,12 @@ export function createToolRunner(ctx) {
   const cachedTools = new Set(['list_options', 'motion_guide', 'edit_guide']);
   return {
     runImages,
+  // The reducer actions the most recent run() dispatched: the exact clips a call touched, for the
+  // timeline's agent trail (toolTargets.js). Kept out of the tool result, which the model reads.
+  let lastActions = [];
     async run(name, args) {
       const fn = Object.hasOwn(tools, name) ? tools[name] : null;
+    lastActions: () => lastActions,
       if (!fn) return { error: `Unknown tool "${name}".` };
       const before = project(), revision = projectRevision(before);
       const edits = !NON_MUTATING.has(name);
@@ -1635,6 +1639,7 @@ export function createToolRunner(ctx) {
       operation = edits ? active : null;
       let result;
       try {
+      lastActions = active.actions;
         const key = cachedTools.has(name) ? JSON.stringify([name, args || {}, revision]) : null;
         if (key && readCache.has(key)) return structuredClone(readCache.get(key));
         result = await fn(args || {});

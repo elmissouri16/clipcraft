@@ -1,6 +1,7 @@
 import { videoLayout } from '../../state/store.js';
 import { activityEvidence } from './activityEvidence.js';
 import { normalizePlan } from './editorialTools.js';
+import { toolTargets } from './toolTargets.js';
 // Bounded display data only. Local image/output references have their own typed
 // schema; never copy raw arguments/results, credentials or image bytes here.
 const clean=(value,max=180)=>typeof value==='string'?value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').trim().slice(0,max):'';
@@ -135,10 +136,11 @@ function activity(name,args={},project={},result) {
   }
   return {title:TITLES[name]||(name?.startsWith('mcp_')?'Using a connected tool':''),description:clean(description,260),excerpt:clean(excerpt,1800),excerptLabel,outcome:clean(outcome,220)};
 }
-export function describeToolActivity(name,args,project,result,afterProject=project) {
+// actions: the reducer actions the call dispatched (runner.lastActions()), for exact done targets.
+export function describeToolActivity(name,args,project,result,afterProject=project,actions=[]) {
   // Invalid model arguments still belong to the runner's normal validation.
   // Formatting must never stop an edit or bypass that validation.
-  try{return {...activity(name,args,project,result),...activityEvidence(name,args,project,result,afterProject),...(name==='propose_edit_plan'&&result?.plan&&!result.error?{plan:normalizePlan(result.plan)}:{})};}catch{return {title:TITLES[name]||'',description:'',excerpt:'',excerptLabel:'',outcome:''};}
+  try{const targets=toolTargets(name,args,project,result,afterProject,actions);return {...activity(name,args,project,result),...activityEvidence(name,args,project,result,afterProject),...(targets?{targets}:{}),...(name==='propose_edit_plan'&&result?.plan&&!result.error?{plan:normalizePlan(result.plan)}:{})};}catch{return {title:TITLES[name]||'',description:'',excerpt:'',excerptLabel:'',outcome:''};}
 }
 export function imageActivityProgress(progress) {
   const {completed,total,inserted,active,failed,elapsed_sec}=progress;
