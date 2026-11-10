@@ -104,6 +104,14 @@ export function filterExpr(clip) {
 // A LUT used as a filter: clip.filter = 'lut:<bundled file>'.
 export const lutFilterRef = (clip) => (typeof clip.filter === 'string' && clip.filter.startsWith('lut:') && (clip.filterIntensity ?? 100) > 0
   ? { bundled: clip.filter.slice(4) } : null);
+// A filter look as a LAYER on the Effects track (project.effectClips with fx 'filter:<look>'): it acts
+// on every picture under it — pictures, overlays and graphics alike — which is how the whole video
+// gets a look when the content lives on overlay tracks. The layer's strength is the intensity.
+// Rendered by pixelPasses (src/features/effects/apply.js) in the player and the export alike.
+export const FILTER_FX = 'filter:';
+export const isFilterFx = (id) => typeof id === 'string' && id.startsWith(FILTER_FX) && id.length > FILTER_FX.length;
+export const filterFxLook = (id) => (isFilterFx(id) ? id.slice(FILTER_FX.length) : null);
+export const filterFx = (look) => `${FILTER_FX}${look}`;
 export const hasFilter = (clip) => (!!byId[clip.filter] && clip.filter !== 'none' && (clip.filterIntensity ?? 100) > 0) || !!lutFilterRef(clip);
 const LUT_NAMES = { 'slay-01-amber.cube': 'Amber', 'slay-02-fade.cube': 'Fade', 'slay-03-neon.cube': 'Neon', 'slay-04-film.cube': 'Film', 'slay-05-portrait.cube': 'Portrait' };
 export const filterName = (id) => byId[id]?.name || (String(id).startsWith('lut:') ? `${LUT_NAMES[id.slice(4)] || 'LUT'} (LUT)` : id);

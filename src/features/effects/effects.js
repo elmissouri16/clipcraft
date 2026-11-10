@@ -1,7 +1,7 @@
 // Catalog of looks shared by the UI. Filters are GPU looks (src/features/effects/filters.js), the same in the player and the
 // export; the export side (electron/media/ffmpeg.cjs) maps the remaining keys (classic adjustments, simple effects).
 import { FX_TRANSITIONS, OVERLAY_EFFECTS, PIXEL_EFFECTS } from "./catalog.js";
-import { FILTER_LOOKS } from "./filters.js";
+import { FILTER_LOOKS, filterFxLook, filterName, isFilterFx } from "./filters.js";
 import { classicViaShader } from './apply.js';
 
 export const FILTERS = FILTER_LOOKS.map(({ id, name, cat }) => ({ id, name, cat }));
@@ -103,3 +103,8 @@ export function textAnim(clip, lt) {
     default: return { opacity: 1, transform: '' };
   }
 }
+
+// Name and icon of an effect id wherever the UI labels one (timeline, inspector): a catalog effect, or a
+// filter look placed on the Effects track ('filter:<look>', src/features/effects/filters.js).
+export const effectInfo = (id) => EFFECTS.find((x) => x.id === id)
+  || (isFilterFx(id) ? { id, name: `${filterName(filterFxLook(id))} filter`, icon: '◐', group: 'Filters' } : null);

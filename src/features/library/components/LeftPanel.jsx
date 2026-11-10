@@ -8,7 +8,7 @@ import { useAssets } from '../useAssets.js';
 import { mediaTreeCounts, mediaTreeFilter } from '../assetsLib.js';
 import GradePanel from "../../effects/components/GradePanel.jsx";
 import { LookThumb } from "../../effects/components/FilterThumbs.jsx";
-import { FILTER_CATS, filterName } from "../../effects/filters.js";
+import { FILTER_CATS, filterFxLook, filterName } from "../../effects/filters.js";
 import { loadPresets, savePresets, upsertPreset, removePreset, presetPatch } from "../../effects/presets.js";
 import { BUNDLED_LUTS } from "../../effects/lut.js";
 import { loadLutLibrary, saveLutLibrary, addLutEntry, removeLutEntry } from "../../effects/lutlib.js";
@@ -775,23 +775,38 @@ function ManyNote({ count }) {
   return <p className="hint many">Applies to the {count} selected clips.</p>;
 }
 
-function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, project }) {
-  const current = target?.clip.filter || 'none';
-  const k = target?.clip.filterIntensity ?? 100;
+// Scope: "Selected clip" puts the look on one clip (several when several are selected); "Whole video"
+// puts it on the Effects track over everything — the main track is often just a background behind
+// overlay pictures and graphics, where a clip filter visibly does nothing. The whole-video layer is
+// App's wholeFilter / onWholeVideoFilter; the tab opens on that scope when such a layer exists.
+function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, project, wholeFilter = null, onWholeVideoFilter = null }) {
+  const [scope, setScope] = useState(wholeFilter ? 'video' : 'clip');
+  const whole = scope === 'video' && !!onWholeVideoFilter;
+  const current = whole ? (wholeFilter ? filterFxLook(wholeFilter.fx) : 'none') : (target?.clip.filter || 'none');
+  const k = whole ? Math.round((wholeFilter?.strength ?? 1) * 100) : (target?.clip.filterIntensity ?? 100);
+  const has = whole || !!target; // something to put a look on
+  const apply = (patch) => { if (whole) onWholeVideoFilter(patch); else if (target) updateTarget(patch); };
   const [presets, setPresets] = useState(() => loadPresets(localStorage));
   const [presetName, setPresetName] = useState('');
   const [compareId, setCompareId] = useState(null); // hold a tile: show the unfiltered picture
   const storePresets = (list) => { setPresets(list); savePresets(localStorage, list); };
-  const canSave = !!target && current !== 'none' && !current.startsWith('lut:');
+  const canSave = !whole && !!target && current !== 'none' && !current.startsWith('lut:');
   return (
     <>
-      <Head title="Filters" hint="Click or drag onto a clip · hold a tile to compare before/after" />
-      <NeedClip target={target} />
-      <ManyNote count={selectedCount} />
-      {target && current !== 'none' && (
+      <Head title="Filters" hint={whole ? 'Click a look: it goes over the whole video · hold a tile to compare before/after' : 'Click or drag onto a clip · hold a tile to compare before/after'} />
+      {onWholeVideoFilter && (
+        <div className="seg-tabs small filter-scope" role="radiogroup" aria-label="Apply filters to">
+          <button type="button" className={!whole ? 'on' : ''} aria-pressed={!whole} onClick={() => setScope('clip')}>Selected clip</button>
+          <button type="button" className={whole ? 'on' : ''} aria-pressed={whole} onClick={() => setScope('video')}>Whole video</button>
+        </div>
+      )}
+      {whole && <p className="hint">The look goes on the Effects track over everything — pictures, overlays and graphics — for the whole video. Trim or move it on the timeline to limit it.</p>}
+      {!whole && <NeedClip target={target} />}
+      {!whole && <ManyNote count={selectedCount} />}
+      {has && current !== 'none' && (
         <div className="pad-block filter-k">
           <Slider dispatch={dispatch} label={`${filterName(current)} intensity`} value={k} min={0} max={100} step={1}
-            fmt={(v) => `${Math.round(v)}`} onChange={(v) => updateTarget({ filterIntensity: v })} />
+            fmt={(v) => `${Math.round(v)}`} onChange={(v) => apply({ filterIntensity: v })} />
         </div>
       )}
       <div className="look-cat">
@@ -807,8 +822,8 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
         {!!presets.length && (
           <div className="tile-grid">
             {presets.map((pr) => (
-              <button key={pr.name} className={`tile ${target && current === pr.filter ? 'on' : ''}`} title={`${pr.name} — ${filterName(pr.filter)} at ${Math.round(pr.filterIntensity)}%`}
-                onClick={() => target && updateTarget(presetPatch(pr))}>
+              <button key={pr.name} className={`tile ${has && current === pr.filter ? 'on' : ''}`} title={`${pr.name} — ${filterName(pr.filter)} at ${Math.round(pr.filterIntensity)}%`}
+                onClick={() => (whole ? apply({ filter: pr.filter, filterIntensity: pr.filterIntensity }) : target && updateTarget(presetPatch(pr)))}>
                 <span className="tile-preview filter-thumb"><LookThumb filterId={pr.filter === 'none' ? null : pr.filter} /></span>
                 <span className="tile-label">{pr.name}</span>
                 <span className="tile-star" role="button" aria-label={`Delete preset ${pr.name}`} title="Delete preset"
@@ -825,8 +840,8 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
           <div className="look-cat-title">{cat}</div>
           <div className="tile-grid">
             {FILTERS.filter((f) => f.cat === cat).map((f) => (
-              <button key={f.id} className={`tile ${current === f.id && target ? 'on' : ''}`}
-                onClick={() => target && updateTarget({ filter: f.id })} {...dragProps({ kind: 'filter', id: f.id })}
+              <button key={f.id} className={`tile ${current === f.id && has ? 'on' : ''}`}
+                onClick={() => apply({ filter: f.id })} {...dragProps({ kind: 'filter', id: f.id })}
                 onPointerDown={() => setCompareId(f.id)} onPointerUp={() => setCompareId(null)} onPointerLeave={() => setCompareId(null)}>
                 <span className="tile-preview filter-thumb"><LookThumb filterId={f.id === 'none' ? null : f.id} plain={compareId === f.id} /></span>
                 <span className="tile-label">{f.name}</span>
@@ -835,7 +850,7 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
           </div>
         </div>
       ))}
-      <LutBrowser target={target} updateTarget={updateTarget} dispatch={dispatch} project={project} current={current} />
+      <LutBrowser target={whole ? { clip: { filter: current, filterIntensity: k } } : target} updateTarget={apply} dispatch={dispatch} project={project} current={current} />
     </>
   );
 }

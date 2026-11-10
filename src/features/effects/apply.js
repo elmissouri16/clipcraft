@@ -13,7 +13,7 @@ import { OVERLAY_EFFECTS, PIXEL_EFFECTS } from './catalog.js';
 import { freeLen, videoLayout } from "../../state/store.js";
 import { gradeExpr, hasGrade } from './grade.js';
 import { getLut, lutOn } from './lut.js';
-import { filterExpr, hasFilter, lutFilterRef } from './filters.js';
+import { filterExpr, filterFxLook, hasFilter, isFilterFx, lutFilterRef } from './filters.js';
 
 const PIXEL = Object.fromEntries(PIXEL_EFFECTS.map((e) => [e.id, e.expr]));
 const OVERLAY = Object.fromEntries(OVERLAY_EFFECTS.map((e) => [e.id, e.draw]));
@@ -32,7 +32,7 @@ const TRACK_CLASSIC = {
 };
 export const isClassic = (id) => !!TRACK_CLASSIC[id];
 // Effects that end up baked into a clip's frames by the export's effects pass.
-export const isShaderFx = (id) => isPixel(id) || isClassic(id);
+export const isShaderFx = (id) => isPixel(id) || isClassic(id) || isFilterFx(id);
 
 // ---- Effect regions ----
 // An effect instance may carry a region: { x, y, w, h, feather, shape, invert } in normalized
@@ -119,6 +119,14 @@ export function pixelPasses(project, clip, clipStart, lt) {
     if (k === 0) continue;
     if (isPixel(e.fx)) list.push({ expr: fxWrap(PIXEL[e.fx], e.region, k), T: t - e.start });
     else if (isClassic(e.fx)) list.push({ expr: fxWrap(TRACK_CLASSIC[e.fx], e.region, k), T: t - e.start });
+    else if (isFilterFx(e.fx)) {
+      // A filter look on the Effects track: the same look expression a clip filter uses, at the
+      // layer's strength as intensity (filterExpr bakes it in), inside the layer's region if any.
+      const look = { filter: filterFxLook(e.fx), filterIntensity: (k == null ? 1 : k) * 100 };
+      const ref = lutFilterRef(look);
+      if (ref) { const l = getLut(ref); if (l) list.push({ lut: l, K: k == null ? 1 : k }); }
+      else { const expr = filterExpr(look); if (expr) list.push({ expr: regionWrap(expr, e.region), T: t - e.start }); }
+    }
   }
   return list;
 }

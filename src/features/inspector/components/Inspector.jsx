@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useClockTime } from '../../preview/useClockTime.js';
 import { Blend, Film, Layers, Music, PanelRightClose, RotateCcw, Settings2, Sparkles, Type } from 'lucide-react';
 import { clipLen, formatTime, parseEffectKey, videoLayout } from "../../../state/store.js";
-import { EFFECTS, RATIOS, TRANSITIONS, sizeFor } from "../../effects/effects.js";
+import { EFFECTS, RATIOS, TRANSITIONS, effectInfo, sizeFor } from "../../effects/effects.js";
 import { EXPORT_PRESETS, ENCODER_PRESETS, RES_CAPS, FPS_CHOICES, AUDIO_RATES, storedExportSettings, settingsPatch, resolveExport } from "../../export/exportQuality.js";
 import Slider from "../../../components/ui/Slider.jsx";
 import CurveEditor from './CurveEditor.jsx';
@@ -301,14 +301,14 @@ function AddTextCard({ onAddTextOver, start, duration }) {
 function FreeEffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
   const c = (project.effectClips || []).find((x) => x.id === selection.id);
   if (!c) return <div className="fields"><div className="info dim">This effect was removed.</div></div>;
-  const e = EFFECTS.find((x) => x.id === c.fx);
+  const e = effectInfo(c.fx);
   const set = (patch) => dispatch({ type: 'update', track: 'effect', id: c.id, patch });
   return (
     <div className="fields">
       <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{e?.name || c.fx}</b><span className="dim">on the Effects track</span></div></div>
       <div className="insp-card">
         <div className="insp-card-title">Timing</div>
-      <p className="dim small">Acts on every picture under it. Drag it on the timeline, or its edges to change its length.</p>
+      <p className="dim small">{e?.group === 'Filters' ? 'Gives every picture under it this look — pictures, overlays and graphics. ' : 'Acts on every picture under it. '}Drag it on the timeline, or its edges to change its length.</p>
       <Num label="Start (s)" value={c.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
       <Num label="Duration (s)" value={c.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
       </div>

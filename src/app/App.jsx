@@ -8,6 +8,7 @@ import { useExternalAgent } from './useExternalAgent.js';
 import SequenceDialog from "../features/timeline/components/SequenceDialog.jsx";
 import { mismatchFor, sequencePatchFor } from "../features/timeline/sequence.js";
 import { sizeFor } from "../features/effects/effects.js";
+import { filterFx, isFilterFx } from "../features/effects/filters.js";
 import ContextMenu from "../components/ui/ContextMenu.jsx";
 import {
   MessageSquarePlus, ScanLine, AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Pipette, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
@@ -537,6 +538,10 @@ export default function App() {
     } else if (payload.kind === 'effect' && info.lane === 'effect') {
       dispatch({ type: 'addEffectClip', clipId, fx: payload.id, at: info.time });
       setSelection({ track: 'effect', id: clipId });
+    } else if (payload.kind === 'filter' && info.lane === 'effect') {
+      // A filter tile on the Effects lane: a filter layer over every picture under it.
+      dispatch({ type: 'addEffectClip', clipId, fx: filterFx(payload.id), at: info.time });
+      setSelection({ track: 'effect', id: clipId });
     } else if (info.clipId) {
       applyToClip(info.clipId, payload);
     }
@@ -796,6 +801,28 @@ export default function App() {
     || (selection?.track === 'video' && layout.find((l) => l.clip.id === selection.id && !l.clip.gap))
     || (selection?.items && layout.find((l) => !l.clip.gap && selection.items.some((it) => it.track === 'video' && it.id === l.clip.id)))
     || videoClipAt(project, readTime());
+  // The whole-video filter: a filter layer on the Effects track that starts at 0 and covers the
+  // timeline (src/features/effects/filters.js filterFx). The Filters tab's "Whole video" scope edits
+  // it — the look everything gets, overlays and graphics included — where a clip filter touches
+  // one clip only (the main track is often just a background behind overlay content).
+  const wholeFilter = (() => {
+    const dur = projectDuration(project);
+    return (project.effectClips || []).find((e) => isFilterFx(e.fx) && e.start <= 1e-3 && e.start + e.duration >= dur - 1e-3) || null;
+  })();
+  const setWholeVideoFilter = (patch) => {
+    const p = projectRef.current, dur = projectDuration(p);
+    const existing = (p.effectClips || []).find((e) => isFilterFx(e.fx) && e.start <= 1e-3 && e.start + e.duration >= dur - 1e-3) || null;
+    const strength = patch.filterIntensity == null ? undefined : Math.max(0, Math.min(1, patch.filterIntensity / 100));
+    if ('filter' in patch) {
+      if (!patch.filter || patch.filter === 'none') { if (existing) dispatch({ type: 'delete', track: 'effect', id: existing.id }); return; }
+      if (existing) { dispatch({ type: 'update', track: 'effect', id: existing.id, patch: { fx: filterFx(patch.filter), ...(strength != null ? { strength: strength >= 1 ? undefined : strength } : {}) } }); return; }
+      const clipId = uid();
+      dispatch({ type: 'addEffectClip', clipId, fx: filterFx(patch.filter), at: 0, duration: Math.max(0.1, dur) });
+      if (strength != null && strength < 1) dispatch({ type: 'update', track: 'effect', id: clipId, patch: { strength } });
+    } else if (strength != null && existing) {
+      dispatch({ type: 'update', track: 'effect', id: existing.id, patch: { strength: strength >= 1 ? undefined : strength } });
+    }
+  };
   // With several clips selected, a filter or color change goes to all of them (one undo step).
   const updateTarget = (patch) => {
     const current = selection ? target : videoClipAt(projectRef.current, readTime());
@@ -2061,6 +2088,7 @@ export default function App() {
           recorder={recorder} onStartRecord={() => recorder.start(readTime())} onAddText={addText} onAddTextOver={addTextOver}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
           target={target} updateTarget={updateTarget} selectedCount={selectedPictures(project, selection).length}
+          wholeFilter={wholeFilter} onWholeVideoFilter={setWholeVideoFilter}
           onApplyLookToAll={(clip) => dispatch({ type: 'updateMany', updates: [
             ...project.videoClips.filter((c) => !c.gap).map((c) => ({ track: 'video', id: c.id, patch: { grade: { ...(clip.grade || {}) }, adjust: { ...(clip.adjust || {}) } } })),
             ...(project.overlayClips || []).map((c) => ({ track: 'overlay', id: c.id, patch: { grade: { ...(clip.grade || {}) }, adjust: { ...(clip.adjust || {}) } } })),

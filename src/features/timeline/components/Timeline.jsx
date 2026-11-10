@@ -7,7 +7,7 @@ import {
 import { LAYERED, MIN_CLIP, clipLayer, effectObjects, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../../../state/store.js";
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from "../../effects/filters.js";
-import { EFFECTS, TRANSITIONS } from "../../effects/effects.js";
+import { TRANSITIONS, effectInfo } from "../../effects/effects.js";
 import { clipCss } from "../../effects/effects.js";
 import { activeDrag, isFiles, isInternal, laneFor, readPayload } from '../dnd.js';
 import { followScrollTarget, interpolateTime, playheadX } from "../../preview/playbackClock.js";
@@ -287,7 +287,8 @@ export default function Timeline({
     }
     if (lane === 'clip') {
       // An effect dropped on the Effects lane becomes a free effect there.
-      if (activeDrag()?.kind === 'effect' && overLane === 'effect') return { lane: 'effect', time: t };
+      // An effect or a filter tile dropped on the Effects lane becomes a layer there (a filter layer acts on every picture under it).
+      if (['effect', 'filter'].includes(activeDrag()?.kind) && overLane === 'effect') return { lane: 'effect', time: t };
       if (overLane !== 'video') return { lane, time: t };
       const hit = layout.filter((l) => t >= l.start && t < l.end).pop();
       if (hit) info.clipId = hit.clip.id;
@@ -853,7 +854,7 @@ export default function Timeline({
     if (id === 'effect') {
       // One bar per effect applied to a clip; it follows the clip. Select it to see it in the panel, Delete removes it.
       return fxObjects.filter(o => visibleInRow('effect',o.key,o.start,o.duration,stacks.effect.rows[o.key])).map((o) => {
-        const e = EFFECTS.find((x) => x.id === o.fx);
+        const e = effectInfo(o.fx);
         return (
           <Clip {...common} key={o.key} track={o.free ? 'effect free' : 'effect bound'} selTrack="effect" clip={o.free ? o.clip : { id: o.key }}
             start={o.start} length={o.duration} row={stacks.effect.rows[o.key]}
@@ -1041,7 +1042,7 @@ export default function Timeline({
             </div>
           </div>
 
-          {LANES.filter((l) => l.id !== 'effect' || fxObjects.length || activeDrag()?.kind === 'effect').map((l) => {
+          {LANES.filter((l) => l.id !== 'effect' || fxObjects.length || ['effect', 'filter'].includes(activeDrag()?.kind)).map((l) => {
             const Icon = l.icon;
             return (
               <div key={l.id} className={`tl-row ${l.main ? 'main' : ''} ${folded[l.id] ? 'is-folded' : ''}`} style={{ height: rowHeight(l.id) }}>
