@@ -7,7 +7,7 @@ const path = require('path');
 const { randomUUID } = require('node:crypto');
 const { app, safeStorage } = require('electron');
 
-const PROVIDERS = ['gemini', 'groq', 'ollama', 'openai', 'openrouter', 'claude', 'custom', 'codex-sdk', 'claude-agent-sdk'];
+const PROVIDERS = ['gemini', 'groq', 'ollama', 'openai', 'openrouter', 'claude', 'custom', 'codex-sdk', 'claude-agent-sdk', 'opencode-sdk'];
 const DEFAULT_MODELS = {
   gemini: 'gemini-3.8-flash',
   groq: 'openai/gpt-oss-120b',
@@ -18,6 +18,7 @@ const DEFAULT_MODELS = {
   custom: '',
   'codex-sdk': '',
   'claude-agent-sdk': '',
+  'opencode-sdk': '',
 };
 
 function settingsFile() {

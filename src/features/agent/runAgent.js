@@ -65,7 +65,7 @@ export const editTarget = (name, args = {}) => {
 };
 
 const MAX_STEPS = 40; // a full edit takes many tool calls
-const providerName = (p) => ({ gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama', 'codex-sdk': 'Codex SDK', 'claude-agent-sdk': 'Claude Agent SDK' }[p] || p);
+const providerName = (p) => ({ gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama', 'codex-sdk': 'Codex SDK', 'claude-agent-sdk': 'Claude Agent SDK', 'opencode-sdk': 'OpenCode SDK' }[p] || p);
 
 // Tool arguments shown as a short phrase in the chat.
 export function describeCall(name, args) {
@@ -152,7 +152,7 @@ export function describeCall(name, args) {
 // contents: the running conversation (mutated). onEvent: UI callback. isCanceled(): polled between steps.
 // ctx: { getProject, dispatch, api, settle }.
 export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, sessionKey }) {
-  if (['codex-sdk', 'claude-agent-sdk'].includes(ctx.provider)) return (await import('./runNativeAgent.js')).runNativeAgent({ contents, ctx, onEvent, isCanceled, requestId, sessionKey });
+  if (['codex-sdk', 'claude-agent-sdk', 'opencode-sdk'].includes(ctx.provider)) return (await import('./runNativeAgent.js')).runNativeAgent({ contents, ctx, onEvent, isCanceled, requestId, sessionKey });
   const initialProject = ctx.getProject();
   const initialRevision = projectRevision(initialProject);
   let changed = false;

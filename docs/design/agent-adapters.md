@@ -1,5 +1,8 @@
 # One tool contract, one adapter per agent
 
+> 2026-11-10: a third adapter, `adapters/opencode.cjs`, serves the same contract to OpenCode 2.x over a
+> private MCP endpoint (`electron/agents/opencodeNative.cjs`); see docs/agents/native-agent-tools.md.
+
 Status: phases 0–3 done; phase 5 (A/B in the real app) next (2026-11-08). Branch: `feat/agent-adapters`.
 
 ## Goal

@@ -18,6 +18,8 @@ const setRuntimeDirectory = directory => { runtimeDirectory = directory; };
 const PROVIDERS = {
   'codex-sdk': { name: 'Codex SDK', cli: 'codex', module: '@openai/codex-sdk', login: 'codex login' },
   'claude-agent-sdk': { name: 'Claude Agent SDK', cli: 'claude', module: '@anthropic-ai/claude-agent-sdk', login: 'claude auth login' },
+  // OpenCode 2.x: the binary serves a private API the @opencode/client package talks to (opencodeNative.cjs).
+  'opencode-sdk': { name: 'OpenCode SDK', cli: 'opencode', module: '@opencode/client', login: 'opencode auth login' },
 };
 const isProvider = (id) => Object.hasOwn(PROVIDERS, id);
 const abortError = () => Object.assign(new Error('Stopped.'), { name: 'AbortError' });
@@ -61,6 +63,13 @@ function unwrapShim(file, provider, platform = process.platform, arch = process.
   if (provider === 'claude-agent-sdk') {
     for (const entry of [path.join(packages, '@anthropic-ai', `claude-code-${platform}-${arch}`, 'claude.exe'),
       path.join(packages, '@anthropic-ai', 'claude-code', 'cli.js')]) {
+      if (fs.existsSync(entry)) return entry;
+    }
+  } else if (provider === 'opencode-sdk') {
+    // npm's @opencode/cli puts the platform binary in @opencode/cli-<platform>-<arch>/bin.
+    const os = { win32: 'windows', darwin: 'darwin', linux: 'linux' }[platform] || platform;
+    for (const entry of [path.join(packages, '@opencode', `cli-${os}-${arch}`, 'bin', platform === 'win32' ? 'opencode.exe' : 'opencode'),
+      path.join(packages, '@opencode', 'cli', 'bin', 'opencode.exe')]) {
       if (fs.existsSync(entry)) return entry;
     }
   } else {
@@ -183,8 +192,9 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
       }
       let authenticated = null;
       try {
-        const auth = await runCli(executablePath, cfg.provider === 'codex-sdk' ? ['login', 'status'] : ['auth', 'status', '--json']);
-        authenticated = cfg.provider === 'codex-sdk' ? true : JSON.parse(auth).loggedIn === true;
+        const auth = await runCli(executablePath, cfg.provider === 'codex-sdk' ? ['login', 'status'] : cfg.provider === 'opencode-sdk' ? ['auth', 'list'] : ['auth', 'status', '--json']);
+        // OpenCode lists its stored provider credentials; an empty list means no provider is connected yet.
+        authenticated = cfg.provider === 'codex-sdk' ? true : cfg.provider === 'opencode-sdk' ? /\bstored\b/i.test(auth) ? true : /no credentials|not logged in|nothing/i.test(auth) ? false : null : JSON.parse(auth).loggedIn === true;
       } catch (error) {
         // Older CLIs may not expose an auth-status command. A real connection
         // test remains available; never return the CLI's credential/account JSON.
@@ -242,6 +252,10 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
 
   async function complete(cfg, { system = '', prompt, schema, images = [], onSearch, webResearch = false, ...options }) {
     return withSession(cfg, options, async (session) => {
+      if (cfg.provider === 'opencode-sdk') {
+        return require('./opencodeNative.cjs').runOnce({ sdk: session.sdk, executablePath: session.executablePath, cwd: session.cwd, env: session.env, cfg,
+          system, prompt, schema, images, signal: session.controller.signal, webResearch: webResearch && research.enabled(cfg), onSearch });
+      }
       if (cfg.provider === 'codex-sdk') {
         if(!Array.isArray(images)||images.length>6)throw new Error('Use at most six inspected frames.');
         const attachments=images.map((image,index)=>{
@@ -403,13 +417,14 @@ ${prompt.trim()}`;
   }
 
   async function listModels(cfg, { signal, refresh=false } = {}) {
-    if (cfg.provider === 'codex-sdk') {
+    if (cfg.provider === 'codex-sdk' || cfg.provider === 'opencode-sdk') {
       if(signal?.aborted)throw abortError();
-      const key=JSON.stringify([cfg.executablePath||'',env.CODEX_HOME||home]);
+      const key=JSON.stringify([cfg.provider,cfg.executablePath||'',env.CODEX_HOME||home]);
       const cached=catalogs.get(key);
       if(cached&&(cached.pending||(!refresh&&Date.now()-cached.time<30000)))return abortable(cached.promise,signal);
       const entry={pending:true,time:Date.now()};
-      entry.promise=loadCodexModels(cfg).then(result=>{entry.pending=false;entry.time=Date.now();if(!result.models?.length||result.fromCache)catalogs.delete(key);return result;},error=>{catalogs.delete(key);throw error;});
+      const load=cfg.provider==='codex-sdk'?loadCodexModels(cfg):loadOpenCodeModels(cfg);
+      entry.promise=load.then(result=>{entry.pending=false;entry.time=Date.now();if(!result.models?.length||result.fromCache)catalogs.delete(key);return result;},error=>{catalogs.delete(key);throw error;});
       catalogs.set(key,entry);
       if(catalogs.size>16){const oldest=[...catalogs].find(([id,value])=>id!==key&&!value.pending);if(oldest)catalogs.delete(oldest[0]);}
       return abortable(entry.promise,signal);
@@ -428,6 +443,16 @@ ${prompt.trim()}`;
       }
       return { ok: true, models: entries.map((model) => model.value), modelCapabilities };
     } catch (error) { return { ok: false, error: error.message }; }
+  }
+  // OpenCode's catalog comes from a short-lived private server (opencodeNative.cjs listModels).
+  async function loadOpenCodeModels(cfg) {
+    const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-opencode-models-'));
+    try {
+      const sdk=await sdkFor(cfg.provider);
+      return await require('./opencodeNative.cjs').listModels({ sdk, executablePath:resolveExecutable(cfg.provider,cfg.executablePath,{env,home}), cwd, env:childEnv() });
+    } catch(error) {
+      return { ok:true, models:[], useCliDefault:true, notice:`The live model list is unavailable (${String(error.message||error).slice(0,200)}). The OpenCode default and custom provider/model IDs are still supported.` };
+    } finally { fs.rmSync(cwd,{recursive:true,force:true}); }
   }
   async function loadCodexModels(cfg) {
       let liveError;

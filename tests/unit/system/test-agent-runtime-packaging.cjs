@@ -11,4 +11,6 @@ for(const file of ['@openai/codex-sdk/dist/index.js','@anthropic-ai/claude-agent
 assert.equal(included('@anthropic-ai/claude-agent-sdk/cli.js'),false);
 assert.equal(included('wrapper/node_modules/@openai/codex-darwin-arm64/vendor/bin/codex'),false);
 assert.equal(included('wrapper/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude'),false);
-console.log('Both native agent distributions are excluded; SDK adapters and extraction code remain included');
+for(const platform of ['darwin-arm64','linux-x64','windows-x64'])assert.equal(included(`@opencode/cli-${platform}/bin/opencode`),false,`@opencode/cli-${platform} is excluded`);
+assert.equal(included('@opencode/client/dist/promise/index.js'),true,'the OpenCode client stays packaged');
+console.log('All three native agent distributions are excluded; SDK adapters and extraction code remain included');

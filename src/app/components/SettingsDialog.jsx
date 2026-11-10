@@ -17,7 +17,10 @@ const PROVIDERS = [
   { id: 'claude-agent-sdk', name: 'Claude (native)', needsKey: false, sdk: true, hint: 'Uses your existing Claude sign-in. No API key, Node or npm needed; the native engine can be downloaded here.', keyUrl: 'https://code.claude.com/docs/en/quickstart', keyUrlLabel: 'Install Claude' },
 ];
 
+  { id: 'opencode-sdk', name: 'OpenCode (native)', needsKey: false, sdk: true, hint: 'Uses the providers you connected in OpenCode (opencode auth login), including its free models. No API key, Node or npm needed; the native engine can be downloaded here. Model ids are provider/model, e.g. opencode/claude-fable-5-2.', keyUrl: 'https://opencode.ai/docs/', keyUrlLabel: 'OpenCode docs' },
 
+// Display name of a native agent in the runtime controls.
+const nativeName = (id) => ({ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' })[id] || 'the agent';
 // Page and group primitives: every settings page is a header (what it is for)
 // followed by small labelled groups, with page-level actions in a footer.
 function SettingsPage({ title, description, actions, children }) {
@@ -483,7 +486,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
                   {runtimeBusy ? <>
                     <span role="status" aria-live="polite">{runtimeProgress?.stage === 'retry' ? 'Reconnecting download…' : runtimeProgress?.stage === 'verify' ? 'Verifying download…'
                       : runtimeProgress?.stage === 'extract' ? 'Installing native engine…'
-                      : `Downloading ${provider === 'codex-sdk' ? 'Codex' : 'Claude'}…${runtimeProgress?.total ? ` ${Math.round(100 * (runtimeProgress.received || 0) / runtimeProgress.total)}%` : ''}`}</span>
+                      : `Downloading ${nativeName(provider)}…${runtimeProgress?.total ? ` ${Math.round(100 * (runtimeProgress.received || 0) / runtimeProgress.total)}%` : ''}`}</span>
                     <div className="progress" role="progressbar" aria-label="Agent download progress" aria-valuemin={0} aria-valuemax={100}
                       aria-valuenow={runtimeProgress?.total ? Math.round(100 * (runtimeProgress.received || 0) / runtimeProgress.total) : undefined}>
                       <div style={{ width: `${runtimeProgress?.total ? 100 * (runtimeProgress.received || 0) / runtimeProgress.total : 0}%` }} />
@@ -491,7 +494,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
                     <button type="button" className="btn btn-sm" onClick={() => window.api.aiRuntimeCancel(provider)}>Cancel download</button>
                   </> : <>
                     <p className="muted">The native engine downloads once and is reused. No Node or npm installation needed.</p>
-                    <button type="button" className="btn btn-sm" onClick={installRuntime}>{runtimeError ? 'Retry download' : `Download ${provider === 'codex-sdk' ? 'Codex' : 'Claude'}`}</button>
+                    <button type="button" className="btn btn-sm" onClick={installRuntime}>{runtimeError ? 'Retry download' : `Download ${nativeName(provider)}`}</button>
                   </>}
                 </div>
               )}
@@ -499,7 +502,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
               <label className="set2-switch-row">
                 <span className="set2-switch-text">
                   <b>Web research</b>
-                  <small className="muted">{provider === 'codex-sdk' ? 'Codex' : 'Claude'} may search the web{provider === 'claude-agent-sdk' ? ' and read pages' : ''} when you ask for research, sources or current facts. Searches show in the chat and answers link their sources. It never changes your project on its own.</small>
+                  <small className="muted">{nativeName(provider)} may search the web{provider !== 'codex-sdk' ? ' and read pages' : ''} when you ask for research, sources or current facts. Searches show in the chat and answers link their sources. It never changes your project on its own.</small>
                 </span>
                 <input type="checkbox" className="switch" aria-label="Web research" checked={webResearch} onChange={(e) => setWebResearch(e.target.checked)} />
               </label>

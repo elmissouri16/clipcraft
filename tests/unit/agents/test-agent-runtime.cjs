@@ -6,7 +6,7 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-agent-runtime-test-')
  const d=distribution('codex-sdk','darwin','arm64');assert.equal(d.executable,'vendor/aarch64-apple-darwin/bin/codex');
  assert.equal(distribution('claude-agent-sdk','linux','x64',true).key,'linux-x64-musl');assert.equal(distribution('codex-sdk','linux','x64',true).key,'linux-x64-musl');assert.equal(distribution('claude-agent-sdk','win32','arm64').executable,'claude.exe');assert.equal(distribution('codex-sdk','unknown','x64'),null);
  for(const [provider,base] of Object.entries(require('../../../electron/agents/runtimeManifest.json'))){
-  const version=require('../../../package.json').dependencies[provider==='codex-sdk'?'@openai/codex-sdk':'@anthropic-ai/claude-agent-sdk'];assert.equal(base.version,version,'SDK and pinned runtime stay aligned');
+  const version=require('../../../package.json').dependencies[{'codex-sdk':'@openai/codex-sdk','claude-agent-sdk':'@anthropic-ai/claude-agent-sdk','opencode-sdk':'@opencode/client'}[provider]];assert.equal(base.version,version,'SDK and pinned runtime stay aligned');
   for(const a of Object.values(base.platforms)){assert.equal(new URL(a.url).hostname,'registry.npmjs.org');assert.match(a.integrity,/^sha512-/);}
  }
  const fixture=path.join(root,'fixture'),exe=path.join(fixture,'package',d.executable);fs.mkdirSync(path.dirname(exe),{recursive:true});fs.writeFileSync(exe,'native test executable');

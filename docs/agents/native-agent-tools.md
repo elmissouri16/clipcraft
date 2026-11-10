@@ -1,4 +1,4 @@
-# Native editing tools for Codex and Claude
+# Native editing tools for Codex, Claude and OpenCode
 
 Codex and Claude now own their reasoning and tool loops. The production editor
 does not ask either provider to emit JSON plans, parse a plan, or restart the
@@ -22,14 +22,34 @@ no external MCP server. Only registered ClipCraft tools are allowed. Built-in
 filesystem and shell tools are disabled. JSON Schema arguments are converted with
 Zod while preserving open-ended external tool inputs.
 
+**OpenCode (2.x):** `electron/agents/opencodeNative.cjs` starts a private `opencode serve` per chat
+from the session's temporary directory on 127.0.0.1 with a random port and password (`--port=0`,
+`OPENCODE_SERVER_PASSWORD`) and an isolated config directory (`XDG_CONFIG_HOME` inside the session
+directory), so the user's global `opencode.json` — their MCP servers and agents — never reaches an
+editor session while their stored provider credentials (OpenCode's data directory) remain available.
+OpenCode has no in-process tool callbacks, so the editor tools are served to that one server over MCP
+(Streamable HTTP on 127.0.0.1 with a bearer token only this session knows; `NativeMcpEndpoint`). The
+session directory's `opencode.json` defines the `clipcraft` agent (the instructions as its `system`,
+permissions that deny every action and allow `clipcraft_*` — OpenCode names MCP tools
+`<server>_<tool>` — plus `websearch`/`webfetch` under Web research). The endpoint is registered as the
+`clipcraft` remote MCP server (bearer token, no OAuth, code mode off) through the server's MCP API,
+in memory only — OpenCode 2.2 does not activate MCP servers from a project file — and the runtime
+waits until OpenCode reports it connected. The session is created as that agent in that directory with the same rules, and
+any permission OpenCode still asks for is rejected unless it is a ClipCraft tool. Turns go through
+`@opencode/client` (`session.prompt`, the `/api/event` stream for text, tool, usage and terminal
+events, `session.interrupt` on Stop); `cfg.model` is OpenCode's `provider/model` id and the reasoning
+effort is the model variant. Verified against OpenCode 2.2.6 (`tests/unit/agents/test-opencode-live.cjs`,
+opt-in).
+
 References: [Codex app-server](https://learn.chatgpt.com/docs/app-server),
-[Claude custom tools](https://code.claude.com/docs/en/agent-sdk/custom-tools).
+[Claude custom tools](https://code.claude.com/docs/en/agent-sdk/custom-tools),
+[OpenCode server and client](https://opencode.ai/docs/build/client/).
 
 ## Adapters
 
 `electron/agents/nativeAgents.cjs` is the session manager for every native agent; the wire work is in
-`electron/agents/adapters/codex.cjs` (app-server dynamic tools) and `adapters/claude.cjs` (SDK MCP
-server). Both receive the same tool list (`runNativeAgent.js` `nativeTools`, `contract.cjs`
+`electron/agents/adapters/codex.cjs` (app-server dynamic tools), `adapters/claude.cjs` (SDK MCP
+server) and `adapters/opencode.cjs` (private MCP endpoint, `opencodeNative.cjs`). All receive the same tool list (`runNativeAgent.js` `nativeTools`, `contract.cjs`
 `wireTools`) and instructions (`nativeSystemPrompt`); image generation is Codex only. See
 `docs/design/agent-adapters.md`, and `node scripts/agent-inventory.mjs` for what each agent sends
 its model. Each request is counted in `<userData>/logs/agent-runs.jsonl`. Both agents share the
@@ -61,7 +81,7 @@ reopen, what the agent run receives).
 ## Native runtime installation
 
 The application includes the small JavaScript SDK adapters, but excludes the
-Codex and Claude native platform packages from its installer. Settings offers a
+Codex, Claude and OpenCode native platform packages from its installer. Settings offers a
 native download when no usable installation is available. No separate Node or
 npm installation is needed: Electron fetches the official platform archive
 directly, verifies the pinned SHA-512 integrity value, extracts it, and checks
@@ -71,8 +91,11 @@ its native `--version` before atomically publishing it to the application suppor
 An explicit executable setting takes priority. A verified managed runtime takes
 priority over PATH installations; otherwise the existing native CLI is reused.
 Older recognized CLI versions are rejected with setup guidance. Authentication
-continues to belong to Codex or Claude, and Settings supplies the absolute
-sign-in command for a managed executable.
+continues to belong to Codex, Claude or OpenCode (`opencode auth login`; Settings
+reads `opencode auth list` for the sign-in state), and Settings supplies the
+absolute sign-in command for a managed executable. OpenCode's managed runtime is
+the `@opencode/cli-<platform>` package (`bin/opencode`), pinned together with
+`@opencode/client` at the same version; `--version` prints it as `v2.2.6`.
 
 `electron/agents/agentRuntime.cjs` owns installation, cancellation, shared
 requests, bounded extraction and resumable retries after interrupted transfers.

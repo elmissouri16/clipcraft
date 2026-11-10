@@ -14,9 +14,13 @@ function distribution(provider,platform=process.platform,arch=process.arch,musl)
  const artifact=record.platforms[provider==='codex-sdk'?key.replace(/-musl$/,''):key];
  if(!artifact)return null;
  const target=`${arch==='arm64'?'aarch64':'x86_64'}-${TARGETS[platform]}`;
- const executable=provider==='codex-sdk'?`vendor/${target}/bin/codex${platform==='win32'?'.exe':''}`:`claude${platform==='win32'?'.exe':''}`;
+ const exe=platform==='win32'?'.exe':'';
+ // Codex: the vendor binary; Claude: the package root; OpenCode (@opencode/cli-<platform>): bin/opencode.
+ const executable=provider==='codex-sdk'?`vendor/${target}/bin/codex${exe}`:provider==='opencode-sdk'?`bin/opencode${exe}`:`claude${exe}`;
  return {...artifact,provider,version:record.version,cliVersion:record.cliVersion,key,executable};
 }
+// `--version` output names the pinned version as a word (OpenCode prints it as v2.2.6).
+const versionMatches=(stdout,version)=>new RegExp(`(?:^|\\s)v?${String(version).replace(/\./g,'\\.')}(?:\\s|$)`).test(String(stdout||''));
 function runtimePath(root,provider,options={}){
  const d=distribution(provider,options.platform,options.arch,options.musl);
  return root&&d?path.join(root,provider,d.version,d.key,'package',d.executable):null;
@@ -31,7 +35,7 @@ function createAgentRuntimes({root,fetchImpl=globalThis.fetch,onProgress=()=>{},
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
   execFile(file,['--version'],{env,signal,timeout:15000,maxBuffer:32768,windowsHide:true},(error,stdout)=>{
    if(error)return reject(Error('The downloaded agent could not start. '+error.message));
-   if(!new RegExp(`(?:^|\\s)${d.cliVersion.replace(/\./g,'\\.')}(?:\\s|$)`).test(stdout))return reject(Error('The downloaded agent version does not match the supported runtime.'));
+   if(!versionMatches(stdout,d.cliVersion))return reject(Error('The downloaded agent version does not match the supported runtime.'));
    resolve();
   });
  }));
@@ -123,4 +127,4 @@ function createAgentRuntimes({root,fetchImpl=globalThis.fetch,onProgress=()=>{},
  function cancel(provider,owner){const job=jobs.get(provider);if(job&&job.owner===owner)job.controller.abort();}
  return {root,describe,install,cancel,cancelOwner:owner=>{for(const job of jobs.values())if(job.owner===owner)job.controller.abort();},close:()=>{for(const job of jobs.values())job.controller.abort();},pathFor:provider=>runtimePath(root,provider,options)};
 }
-module.exports={createAgentRuntimes,distribution,runtimePath,platformKey};
+module.exports={createAgentRuntimes,distribution,runtimePath,platformKey,versionMatches};

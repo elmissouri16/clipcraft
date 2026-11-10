@@ -9,11 +9,12 @@ const { checkAbort, abortError } = require("../system/cancel.cjs");
 const research = require('./research.cjs');
 const { createCodexAdapter } = require('./adapters/codex.cjs');
 const { createClaudeAdapter } = require('./adapters/claude.cjs');
+const { createOpenCodeAdapter } = require('./adapters/opencode.cjs');
 const { LIMITS: SHARED_LIMITS, hostError } = require('./contract.cjs');
 
 const SECRETS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
 const NOT_ACCEPTED = 'The host has not accepted completion. Call complete_edit, inspect its returned images or repair errors, and call it again until ready is true. Then provide your final answer. Do not repeat already completed edits.';
-const agentName = (provider) => provider === 'codex-sdk' ? 'Codex' : 'Claude';
+const agentName = (provider) => ({ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' })[provider] || 'The native agent';
 
 // limits: the contract's, overridable for tests only.
 function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession = CodexNative, limits: LIMITS = SHARED_LIMITS }) {
@@ -24,6 +25,7 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
   const openAdapter = async (cfg, state, { system, tools, env, executablePath }) => {
     const common = { executablePath, cwd: state.cwd, env, cfg, system, tools, webResearch: research.enabled(cfg) };
     if (cfg.provider === 'codex-sdk') return createCodexAdapter({ ...common, CodexSession });
+    if (cfg.provider === 'opencode-sdk') return createOpenCodeAdapter({ ...common, sdk: await loadSdk(cfg.provider) });
     return createClaudeAdapter({ ...common, sdk: await loadSdk(cfg.provider) });
   };
 

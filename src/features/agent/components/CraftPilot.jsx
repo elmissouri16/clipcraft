@@ -188,12 +188,12 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const refreshConfig = useCallback(async () => {
     const generation = ++configRequest.current;
     const s = await window.api.settingsGet();
-    const sdk = ['codex-sdk', 'claude-agent-sdk'].includes(s.provider);
+    const sdk = ['codex-sdk', 'claude-agent-sdk', 'opencode-sdk'].includes(s.provider);
     const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
     const status = sdk ? await window.api.aiSdkStatus({ provider: s.provider, executablePath: s.executablePaths?.[s.provider] || '' }) : null;
     if (generation !== configRequest.current) return;
     setConfig({ ready: sdk ? status.ok && status.authenticated !== false : s.provider === 'ollama' || !!s.keys[s.provider],
-      provider: s.provider, model: modelId || (sdk ? `${s.provider === 'codex-sdk' ? 'Codex' : 'Claude'} · CLI default` : ''),
+      provider: s.provider, model: modelId || (sdk ? `${{ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' }[s.provider]} · CLI default` : ''),
       modelId, executablePath: s.executablePaths?.[s.provider] || '',
       reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
       error: sdk ? status.error || (status.authenticated === false ? `Sign in with ${status.loginCommand}.` : '') : '', sdk });
@@ -448,7 +448,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
               configRequest.current++;
               const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
               setConfig((previous) => ({ ...previous, modelId,
-                model: modelId || (s.provider === 'codex-sdk' ? 'Codex · CLI default' : s.provider === 'claude-agent-sdk' ? 'Claude · CLI default' : ''),
+                model: modelId || ({ 'codex-sdk': 'Codex · CLI default', 'claude-agent-sdk': 'Claude · CLI default', 'opencode-sdk': 'OpenCode · CLI default' }[s.provider] || ''),
                 reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
               }));
             }} />
