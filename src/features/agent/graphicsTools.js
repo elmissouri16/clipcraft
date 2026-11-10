@@ -8,6 +8,7 @@ import { clipLen, uid } from '../../state/store.js';
 import { projectRevision } from './context.js';
 import { graphicsGuide, GRAPHICS_TOPICS } from './graphicsGuide.js';
 import { bundledGraphicFamilies } from '../graphics/graphicFonts.js';
+import { libraryPictures } from '../graphics/graphicImages.js';
 import { renderGraphicMedia, swapGraphicActions } from '../graphics/graphicMedia.js';
 
 const S = { type: 'STRING' }, N = { type: 'NUMBER' };
@@ -15,8 +16,8 @@ const FONTS = { type: 'ARRAY', items: S, description: 'Bundled font families the
 export const GRAPHICS_DECLARATIONS = [
   { name: 'graphics_guide', description: `How to write motion graphics (custom charts, buttons, callouts, lower thirds, diagrams, anything drawable): component format, toolkit, design rules, reference examples. Read toolkit first. topic: ${GRAPHICS_TOPICS.join(', ')}.`,
     parameters: { type: 'OBJECT', properties: { topic: S }, required: ['topic'] } },
-  { name: 'add_graphic', description: 'Render a motion graphic you wrote (JavaScript component returning SVG per frame; see graphics_guide toolkit and inputs) and place it as a transparent overlay over the whole frame. Declare useful editable settings for motion, appearance and content. Returns those declarations and sample frames: check them, and fix the code if anything is off. Errors name the component line.',
-    parameters: { type: 'OBJECT', properties: { code: S, inputs: { type: 'OBJECT', description: 'Values for the component inputs (data, text, colours)' }, fonts: FONTS,
+  { name: 'add_graphic', description: 'Render a motion graphic you wrote (JavaScript component returning SVG per frame; see graphics_guide toolkit and inputs) and place it as a transparent overlay over the whole frame. Declare useful editable settings for motion, appearance and content; a library picture goes in an input of type image holding its media id. Returns those declarations and sample frames: check them, and fix the code if anything is off. Errors name the component line.',
+    parameters: { type: 'OBJECT', properties: { code: S, inputs: { type: 'OBJECT', description: 'Values for the component inputs (data, text, colours, library picture media ids)' }, fonts: FONTS,
       start_sec: N, duration_sec: N, name: S }, required: ['code', 'duration_sec'] } },
   { name: 'edit_graphic', description: 'Change a graphic added with add_graphic and render it again in place: new inputs (merged unless replace_inputs), new code, fonts or duration. The clip keeps its position, keyframes and effects.',
     parameters: { type: 'OBJECT', properties: { clip_id: S, inputs: { type: 'OBJECT' }, replace_inputs: { type: 'BOOLEAN' }, code: S, fonts: FONTS, duration_sec: N }, required: ['clip_id'] } },
@@ -55,8 +56,8 @@ export function createGraphicsTools({ project, dispatch, after, api, requestId, 
 
   return {
     async graphics_guide({ topic } = {}) {
-      const guide = graphicsGuide(topic), fonts = bundledGraphicFamilies();
-      return topic === 'toolkit' && fonts.length ? { ...guide, fonts_available: fonts } : guide;
+      const guide = graphicsGuide(topic), fonts = bundledGraphicFamilies(), pictures = libraryPictures(project());
+      return topic === 'toolkit' ? { ...guide, ...(fonts.length ? { fonts_available: fonts } : {}), ...(pictures.length ? { pictures_available: pictures.map((p) => ({ media_id: p.id, name: p.name })) } : {}) } : guide;
     },
 
     async add_graphic({ code, inputs, fonts, start_sec = 0, duration_sec, name } = {}) {

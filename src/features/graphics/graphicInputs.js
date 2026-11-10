@@ -38,5 +38,6 @@ export function graphicInputError(field, value) {
   if (field.type === 'point') return !value || typeof value !== 'object' ? 'Enter X and Y coordinates.'
     : numberError(value.x) || numberError(value.y);
   if (field.type === 'choice' || field.type === 'select') return field.options.some((option) => Object.is(option.value, value)) ? '' : 'Choose an option.';
+  if (field.type === 'image') return value === '' || value == null || typeof value === 'string' ? '' : 'Choose a picture from the library.';
   return '';
 }

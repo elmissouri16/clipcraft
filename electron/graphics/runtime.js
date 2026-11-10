@@ -9,7 +9,8 @@
 // Randomness and the clock are fixed so the same frame always draws the same picture. Each frame's
 // SVG is rasterised in a canvas here and its pixels sent to the host; a frame whose markup equals the
 // previous one is not drawn again. Fonts handed over with the job are embedded in every frame (an SVG
-// drawn as an image loads nothing external) and loaded into the page for text measuring.
+// drawn as an image loads nothing external) and loaded into the page for text measuring; library
+// pictures handed over with the job are read by the component through kit.image(mediaId).
 (() => {
   'use strict';
   // ---- Determinism ----
@@ -125,8 +126,12 @@
     if (line) lines.push(line);
     return lines;
   };
+  // Library pictures handed over with the job (electron/graphics/images.cjs), by media id. A picture is
+  // inline data in the frame's markup, the only kind of image an SVG drawn as an image may show.
+  const pictures = new Map();
+  const image = (id) => pictures.get(String(id ?? '')) || null;
   const kit = Object.freeze({ interpolate, spring, progress, stagger, format, countUp, svg, raw, drawOn, gradient, shadow, glow, smoothPath, arc, mix, safeArea,
-    textWidth, fitText, wrapText, easings, clamp01, random: seeded });
+    textWidth, fitText, wrapText, easings, clamp01, random: seeded, image });
 
   // ---- Running a job ----
   // The bridge cannot be removed from the page; the runtime takes the job (and its token) before the
@@ -158,6 +163,7 @@
         faces.push(`@font-face{font-family:"${f.family.replace(/"/g, '')}";font-weight:${f.weight || 400};font-style:${f.style || 'normal'};${f.unicodeRange ? `unicode-range:${f.unicodeRange};` : ''}src:url(data:font/woff2;base64,${f.data}) format('woff2');}`);
       }
       const fontStyle = faces.length ? `<style>${faces.join('')}</style>` : '';
+      for (const p of job.images || []) pictures.set(p.id, Object.freeze({ id: p.id, href: `data:${p.type};base64,${p.data}`, width: p.width, height: p.height, aspect: p.width / p.height }));
       const component = await load(job.code);
       if (typeof component.default !== 'function') throw Error('The graphic must `export default function render({ frame, fps, width, height, inputs, kit })`.');
       const defaults = Object.fromEntries(Object.entries(component.inputs || {}).map(([k, v]) => [k, v && typeof v === 'object' && 'default' in v ? v.default : v]));

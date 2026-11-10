@@ -1,9 +1,10 @@
 // Motion graphics as project media, shared by CraftAI's graphics tools, the inspector's Graphic tab
 // and the automatic re-render. A graphic is transparent video (electron/graphics/) that keeps the
-// code, inputs, fonts and input schema it was drawn from, so it can be drawn again with new data,
+// code, inputs, fonts and input schema it was drawn from (pictures only by library media id), so it can be drawn again with new data,
 // a new length or a new canvas size. Swapping in a new render is one batch action: one Undo step.
 import { uid } from '../../state/store.js';
 import { bundledGraphicFamilies, resolveGraphicFonts } from './graphicFonts.js';
+import { graphicImageRefs } from './graphicImages.js';
 
 export const isGraphicMedia = (m) => !!m?.graphic;
 
@@ -31,7 +32,8 @@ export async function renderGraphicMedia({ api, project, code, inputs = {}, font
     const available = bundledGraphicFamilies();
     return { error: `Fonts not bundled: ${resolved.missing.join(', ')}. Use bundled families${available.length ? `: ${available.join(', ')}` : ' (list_options fonts)'}.` };
   }
-  const req = { code, inputs, fonts: resolved.fonts, width: project.width, height: project.height, fps: project.fps || 30, duration_sec, start_sec };
+  // Library pictures the inputs name travel as references; the main process prepares them once.
+  const req = { code, inputs, fonts: resolved.fonts, images: graphicImageRefs(project, inputs), width: project.width, height: project.height, fps: project.fps || 30, duration_sec, start_sec };
   const result = agent ? await api.agentRenderGraphic({ ...req, requestId: agent.requestId, revision: agent.revision }) : await api.renderGraphic({ ...req, requestId });
   if (result?.canceled) return { error: 'Graphic render stopped.', canceled: true };
   if (!result?.ok) return { error: result?.error || 'The graphic did not render.' };

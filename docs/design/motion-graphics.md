@@ -1,6 +1,6 @@
 # Motion graphics: plan
 
-Status: phase 0 spike done (go). The agent slice works: `graphics_guide`, `add_graphic`, `edit_graphic`, sandbox render, preview and export (see [agent editing](../agents/agent-editing.md#motion-graphics)). Editor integration done: Graphics library group and badge, always a full-frame overlay, inspector Graphic tab with the declared fields, automatic re-draw on canvas changes and lost files. Next: cache size in Settings, re-timing on trim, poster frames over a checkerboard, Windows/Linux runs. Branch `feat/motion-graphics`.
+Status: phase 0 spike done (go). The agent slice works: `graphics_guide`, `add_graphic`, `edit_graphic`, sandbox render, preview and export (see [agent editing](../agents/agent-editing.md#motion-graphics)). Editor integration done: Graphics library group and badge, always a full-frame overlay, inspector Graphic tab with the declared fields, automatic re-draw on canvas changes and lost files. Library pictures inside graphics done (image inputs, prepared once by the main process). Next: cache size in Settings, re-timing on trim, poster frames over a checkerboard, Windows/Linux runs. Branch `feat/motion-graphics`.
 
 ## Goal
 
@@ -78,7 +78,9 @@ inspection (`captureTimelineFrame` in `electron/main.cjs`), but locked down furt
 
 - `sandbox: true`, no Node, context isolation, and its own session partition;
 - a Content Security Policy with no network; images only from `data:` and `blob:`, fonts only from
-  the bundled set;
+  the bundled set. Library pictures a graphic uses are prepared by the main process and handed
+  over with the job as data, like fonts (see [agent editing](../agents/agent-editing.md#motion-graphics),
+  Pictures);
 - every permission request, navigation and `window.open` denied;
 - `Math.random`, `Date` and `performance.now` replaced with seeded or frozen versions; no timers;
 - limits: code size, time per frame (an endless loop is stopped and reported) and total render time.

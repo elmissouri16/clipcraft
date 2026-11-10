@@ -96,6 +96,23 @@ await check('arbitrary input declarations preserve legacy values and validate ed
   assert.equal(graphicInputField('old', 2, values.old).type, 'number');
 });
 
+await check('a library picture named by an image input travels as a reference; the inspector gets a picker field', async () => {
+  ctx.dispatch({ type: 'addMedia', items: [{ id: 'pic', type: 'image', name: 'photo.jpg', path: '/lib/photo.jpg', width: 4000, height: 3000 }, { id: 'vid', type: 'video', name: 'v.mp4', path: '/lib/v.mp4', duration: 3 }] });
+  const guide = await run('graphics_guide', { topic: 'toolkit' });
+  assert.deepEqual(guide.pictures_available, [{ media_id: 'pic', name: 'photo.jpg' }], 'the toolkit names the library pictures, never videos');
+  assert.match(guide.text, /kit\.image\(inputs\.photo\)/);
+  const r = await run('add_graphic', { code: GRAPHICS_EXAMPLES.photo_card, inputs: { photo: 'pic', caption: 'Rabat', decoy: 'vid' }, fonts: [], duration_sec: 3, name: 'Photo card' });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(renders.at(-1).images, [{ id: 'pic', path: '/lib/photo.jpg' }], 'only pictures, by id and file; the video id is not a picture');
+  const m = state.present.media.find((x) => x.id === r.media_id);
+  assert.equal(m.graphic.inputs.photo, 'pic'); assert.ok(!JSON.stringify(m.graphic).includes('base64'), 'the project keeps the id, never picture data');
+  const field = graphicInputField('photo', { type: 'image', default: '', label: 'Picture' }, 'pic');
+  assert.equal(field.type, 'image'); assert.equal(field.label, 'Picture');
+  assert.equal(graphicInputError(field, 'pic'), ''); assert.equal(graphicInputError(field, ''), ''); assert.ok(graphicInputError(field, 3));
+  const none = await run('edit_graphic', { clip_id: r.clip_id, inputs: { photo: '' } });
+  assert.ok(none.ok); assert.deepEqual(renders.at(-1).images, [], 'no picture chosen: nothing travels');
+});
+
 await check('fonts come from the bundled @font-face rules, with missing ones named', async () => {
   const rule = (family, weight, url, range) => ({ type: 5, style: { getPropertyValue: (k) => ({ 'font-family': `"${family}"`, 'font-weight': weight, 'font-style': 'normal', src: `url(${url}) format("woff2")`, 'unicode-range': range })[k] || '' }, parentStyleSheet: { href: 'http://app/assets/index.css' } });
   const doc = { baseURI: 'http://app/', styleSheets: [{ cssRules: [rule('Montserrat', '800', './montserrat-latin-800.woff2', 'U+0000-00FF'), rule('Inter', '100 900', '/inter-var.woff2')] }] };

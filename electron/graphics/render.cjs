@@ -25,7 +25,7 @@ function register() {
     const j = job(event);
     if (j.token) throw Error('The job was already taken.');
     j.token = crypto.randomBytes(16).toString('hex');
-    return { token: j.token, code: j.code, inputs: j.inputs, fonts: j.fonts, width: j.width, height: j.height, fps: j.fps, frames: j.frames, live: !!j.live };
+    return { token: j.token, code: j.code, inputs: j.inputs, fonts: j.fonts, images: j.images || [], width: j.width, height: j.height, fps: j.fps, frames: j.frames, live: !!j.live };
   });
   ipcMain.handle('graphics:frame', (event, token, index, pixels) => owned(event, token).onFrame(index, pixels));
   ipcMain.handle('graphics:done', (event, token, error, stats) => owned(event, token).onDone(error, stats));
@@ -97,8 +97,9 @@ function secure() {
 
 // Render `frames` frames of `code` at width x height into dir/graphic.mov.
 // fonts: [{ family, weight, style, unicodeRange, data (base64) }], embedded in every frame.
+// images: [{ id, data (base64), type, width, height }], library pictures the component reads with kit.image(id).
 // onProgress(done, total) after each frame. Resolves with { file, stats }.
-async function renderGraphic({ ffmpegPath, code, inputs = {}, fonts = [], width, height, fps = 30, frames, dir, frameTimeoutMs = 2000, signal, onProgress }) {
+async function renderGraphic({ ffmpegPath, code, inputs = {}, fonts = [], images = [], width, height, fps = 30, frames, dir, frameTimeoutMs = 2000, signal, onProgress }) {
   register(); secure();
   fs.mkdirSync(dir, { recursive: true });
   const started = Date.now();
@@ -115,7 +116,7 @@ async function renderGraphic({ ffmpegPath, code, inputs = {}, fonts = [], width,
       const stop = () => reject(Object.assign(Error('Graphic render stopped.'), { name: 'AbortError' }));
       signal?.addEventListener('abort', stop, { once: true }); if (signal?.aborted) stop();
       wc.once('render-process-gone', () => reject(Error('The graphics renderer stopped.')));
-      jobs.set(id, { code, inputs, fonts, width, height, fps, frames,
+      jobs.set(id, { code, inputs, fonts, images, width, height, fps, frames,
         // pixels null: the same picture as the previous frame.
         onFrame: async (index, pixels) => {
           if (!loaded) { loaded = Date.now(); stats.load_ms = loaded - started; }

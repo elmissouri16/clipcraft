@@ -8,6 +8,7 @@
 // Graphics referenced by saved projects live here, so nothing is evicted automatically.
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
+const { GraphicImages, validateImages } = require('./images.cjs');
 
 const VERSION = 'graphics-1';
 const LIMITS = { code: 200000, inputs: 2 * 1024 * 1024, fonts: 3 * 1024 * 1024, seconds: 60, side: 4096 };
@@ -19,7 +20,7 @@ const run = (file, args, signal) => new Promise((resolve, reject) => {
 
 // Throws a message the agent can act on, or returns the normalized job.
 function validate(job) {
-  const { code, inputs = {}, fonts = [], width, height, fps = 30, duration_sec } = job || {};
+  const { code, inputs = {}, fonts = [], images = [], width, height, fps = 30, duration_sec } = job || {};
   if (typeof code !== 'string' || !code.trim()) throw Error('code must be the graphic component source.');
   if (code.length > LIMITS.code) throw Error(`The graphic code is too long (${code.length} characters; at most ${LIMITS.code}).`);
   if (!/export\s+default/.test(code)) throw Error('The graphic must `export default function render({ frame, fps, width, height, inputs, kit })`.');
@@ -32,7 +33,7 @@ function validate(job) {
   if (!(Number.isFinite(fps) && fps >= 1 && fps <= 60)) throw Error('fps must be from 1 to 60.');
   if (!(Number.isFinite(duration_sec) && duration_sec >= 0.2 && duration_sec <= LIMITS.seconds)) throw Error(`duration_sec must be from 0.2 to ${LIMITS.seconds} seconds.`);
   // Even sizes keep the VP9 preview's 4:2:0 alpha exact.
-  return { code, inputs, fonts, width: width + (width % 2), height: height + (height % 2), fps, frames: Math.max(1, Math.round(duration_sec * fps)) };
+  return { code, inputs, fonts, images: validateImages(images), width: width + (width % 2), height: height + (height % 2), fps, frames: Math.max(1, Math.round(duration_sec * fps)) };
 }
 
 // The cache keeps at most this much; least recently used graphics go first. Graphics an open project
@@ -42,7 +43,19 @@ const CACHE_MAX_BYTES = 4 * 1024 ** 3, RECENT_MS = 10 * 60 * 1000;
 const dirSize = (dir) => { let n = 0; for (const f of fs.readdirSync(dir)) { try { n += fs.statSync(path.join(dir, f)).size; } catch {} } return n; };
 
 class GraphicsService {
-  constructor({ root, ffmpegPath, probe, renderGraphic, maxBytes = CACHE_MAX_BYTES, now = Date.now }) { Object.assign(this, { root, ffmpegPath, probe, renderGraphic, maxBytes, now }); this.inUse = new Map(); }
+  constructor({ root, ffmpegPath, probe, renderGraphic, maxBytes = CACHE_MAX_BYTES, now = Date.now }) {
+    Object.assign(this, { root, ffmpegPath, probe, renderGraphic, maxBytes, now }); this.inUse = new Map();
+    this.images = new GraphicImages({ ffmpegPath, probe });
+  }
+
+  // The library pictures a request names ([{ id, path }]) become data for the sandbox, shrunk to
+  // the canvas. Already prepared pictures pass through. Resolves the request ready for validate().
+  async prepare(request, { signal } = {}) {
+    const refs = request?.images;
+    if (!refs?.length || refs.every((i) => i && typeof i.data === 'string')) return request;
+    const side = Math.max(Number(request.width) || 0, Number(request.height) || 0);
+    return { ...request, images: await this.images.prepare(refs, { side, signal }) };
+  }
 
   // Keys an open project uses, per owner (a window); they survive pruning and clearing.
   setInUse(owner, keys) { if (keys?.length) this.inUse.set(owner, new Set(keys.map(String))); else this.inUse.delete(owner); }
@@ -72,14 +85,15 @@ class GraphicsService {
   clear() { return this.prune({ all: true }); }
 
   key(job) {
-    return sha(JSON.stringify([VERSION, job.code, job.inputs, job.fonts.map((f) => [f.family, f.weight, f.style, f.unicodeRange, sha(f.data)]), job.width, job.height, job.fps, job.frames]));
+    return sha(JSON.stringify([VERSION, job.code, job.inputs, job.fonts.map((f) => [f.family, f.weight, f.style, f.unicodeRange, sha(f.data)]), job.width, job.height, job.fps, job.frames,
+      ...(job.images.length ? [job.images.map((i) => [i.id, i.type, i.width, i.height, sha(i.data)])] : [])])); // no pictures: the key graphics had before pictures existed
   }
 
   // Resolves with { key, file, preview, media (probe of the graphic), width, height, fps, frames,
   // duration_sec, cached, stats, samples: [{ time_sec, bytes (JPEG), width, height }] }.
   // samples false: no sample frames (the editor re-rendering a graphic needs none).
   async render(request, { signal, onProgress, sampleTimes, samples: wantSamples = true } = {}) {
-    const job = validate(request), key = this.key(job), dir = path.join(this.root, key);
+    const job = validate(await this.prepare(request, { signal })), key = this.key(job), dir = path.join(this.root, key);
     const file = path.join(dir, 'graphic.mov'), preview = path.join(dir, 'preview.webm'), metaFile = path.join(dir, 'meta.json');
     let cached = fs.existsSync(file) && fs.existsSync(preview) && fs.existsSync(metaFile), stats;
     if (cached) {

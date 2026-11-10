@@ -2,6 +2,7 @@
 // toolkit, design rules, and three reference components (a data chart, a call-to-action button and
 // a lower third). The references are examples to learn from and adapt, not a template catalogue:
 // the agent writes whatever graphic the video needs. Rendered by electron/graphics/runtime.js.
+// The fourth reference, a photo card, shows a library picture inside a graphic.
 
 export const GRAPHICS_TOOLKIT = `A graphic is a JavaScript module, rendered frame by frame in a sandbox (no network, no files, no DOM):
 
@@ -13,7 +14,8 @@ export const GRAPHICS_TOOLKIT = `A graphic is a JavaScript module, rendered fram
 - render must be pure: same frame + inputs -> same picture. No timers, fetch, Date or randomness (use kit.random(seed)).
 - The canvas is the whole video frame (width x height); everything outside your shapes stays transparent, so the video shows through.
 - Write markup with kit.svg\`…\`: numbers are rounded, text is escaped, nested kit.svg pieces and arrays are kept. Never build markup by string concatenation of user text.
-- Fonts: pass families to add_graphic fonts (e.g. ["Montserrat 800", "Inter"]) and use font-family="Montserrat" font-weight="800". Without fonts, use sans-serif/serif. No external images; draw icons as <path>.
+- Fonts: pass families to add_graphic fonts (e.g. ["Montserrat 800", "Inter"]) and use font-family="Montserrat" font-weight="800". Without fonts, use sans-serif/serif.
+- Pictures from the library: declare an input of type 'image' whose value is the media id of a library picture (get_project media with type image; '' for none) and read it with kit.image(inputs.photo) -> { href, width, height, aspect } or null. Draw it as <image href="\${img.href}" x y width height preserveAspectRatio="xMidYMid slice"/> (slice fills the box like a cover crop, meet fits inside), inside a <clipPath> for rounded corners or circles. The picture is prepared once at canvas size, so move, scale and mask it freely. No other images (no URLs, no files, no base64); draw icons as <path>.
 - Identical markup on consecutive frames costs nothing: let things settle and hold.
 - Expose useful settings in export const inputs so the user can adjust the result in the Graphic inspector without another agent request. Read graphics_guide topic inputs for the field contract. Wire every setting into render; do not hard-code adjustable appearance or animation values. This applies to any graphic, not a list of supported shapes.
 
@@ -28,7 +30,8 @@ kit:
 - smoothPath([[x, y], ...]) -> smooth line "d" (line charts, routes); arc(cx, cy, r, a0, a1, inner) -> pie/ring segment "d" (degrees, 0 = top).
 - textWidth(text, { family, size, weight }), fitText(text, maxWidth, { family, weight, max, min }) -> size, wrapText(text, maxWidth, font) -> lines.
 - safeArea(width, height) -> { x, y, width, height } where content stays visible (vertical video keeps clear of the bottom buttons).
-- mix('#hex', '#hex', t) -> blended colour. raw(markup) -> trusted markup as is.`;
+- mix('#hex', '#hex', t) -> blended colour. raw(markup) -> trusted markup as is.
+- image(mediaId) -> { href, width, height, aspect } for a library picture named by an image input, or null when none is chosen.`;
 
 export const GRAPHICS_INPUTS = `Every component declares its own editable settings in export const inputs. The editor creates controls from that schema; there is no shape-specific tool or preset requirement.
 
@@ -36,6 +39,7 @@ Field contract (all fields need default):
 - text: string, color: SVG colour string, boolean: on/off, series: array of data rows, json: arbitrary JSON.
 - number: numeric default; optional min, max, step, unit. Finite min and max produce a slider plus exact number entry; control: 'number' keeps just number entry. Use positive min where zero would be invalid; integer step for counts.
 - choice: options as strings/numbers/booleans, or [{ value: 'forward', label: 'Forward' }, ...]. Values retain their declared type.
+- image: default '' or the media id of a library picture; the editor shows a picker of the library's pictures. Read it with kit.image(id) and draw a placeholder when it returns null.
 - point: default { x: 0.5, y: 0.5 }, X/Y fields; defaults to normalized 0..1 bounds with step .01. Multiply x by width and y by height when drawing. Override min/max/step for other coordinate systems.
 - Any field: label, description, group (section heading). Choose concise names and explain units/meaning.
 
@@ -142,7 +146,42 @@ export default function render({ frame, fps, width, height, inputs, kit }) {
   </svg>\`;
 }`;
 
-export const GRAPHICS_EXAMPLES = { chart: CHART, button: BUTTON, lower_third: LOWER_THIRD };
+const PHOTO_CARD = `export const inputs = {
+  photo: { type: 'image', default: '', label: 'Picture', description: 'A picture from the library.' },
+  caption: { type: 'text', default: 'Casablanca, 1958' },
+  accent: { type: 'color', default: '#ffb703' },
+  size: { type: 'number', default: 0.62, min: 0.3, max: 1, step: 0.01, label: 'Width', unit: '× frame', group: 'Layout' },
+  anchor: { type: 'point', default: { x: 0.5, y: 0.45 }, group: 'Layout' },
+  push: { type: 'number', default: 6, min: 0, max: 20, step: 1, unit: '%', label: 'Slow push', group: 'Animation', description: 'How much the picture grows while it holds.' },
+};
+// A library picture in a rounded frame: it rises in, a caption plate slides up over its foot, and a
+// slow push keeps it alive. Without a picture, the frame shows a placeholder.
+export default function render({ frame, frames, fps, width, height, inputs, kit }) {
+  const img = kit.image(inputs.photo);
+  const w = Math.round(width * inputs.size), h = Math.round(w / (img ? img.aspect : 4 / 3));
+  const x = Math.round(width * inputs.anchor.x - w / 2), y = Math.round(height * inputs.anchor.y - h / 2);
+  const rise = kit.spring({ frame, fps, delay: 2, stiffness: 140, damping: 16 });
+  const plate = kit.progress(frame, 14, 12, 'out');
+  const zoom = 1 + inputs.push / 100 * kit.progress(frame, 0, frames, 'linear');   // never still
+  const cap = kit.fitText(inputs.caption, w - 60, { family: 'Montserrat', weight: 700, max: 48, min: 32 });
+  return kit.svg\`<svg viewBox="0 0 \${width} \${height}">
+    <defs>
+      <clipPath id="frame"><rect x="\${x}" y="\${y}" width="\${w}" height="\${h}" rx="28"/></clipPath>
+      \${kit.shadow('lift', { dy: 16, blur: 32, opacity: 0.45 })}
+    </defs>
+    <g transform="translate(0 \${(1 - rise) * 80})" opacity="\${rise}">
+      <rect x="\${x}" y="\${y}" width="\${w}" height="\${h}" rx="28" fill="#111827" filter="url(#lift)"/>
+      <g clip-path="url(#frame)">
+        \${img ? kit.svg\`<image href="\${img.href}" x="\${x + w / 2 - w * zoom / 2}" y="\${y + h / 2 - h * zoom / 2}" width="\${w * zoom}" height="\${h * zoom}" preserveAspectRatio="xMidYMid slice"/>\`
+          : kit.svg\`<rect x="\${x}" y="\${y}" width="\${w}" height="\${h}" fill="#334155"/><text x="\${x + w / 2}" y="\${y + h / 2 + 14}" text-anchor="middle" font-family="Montserrat" font-weight="700" font-size="40" fill="#94a3b8">Choose a picture</text>\`}
+        <rect x="\${x}" y="\${y + h - 90 * plate}" width="\${w}" height="90" fill="\${inputs.accent}"/>
+        <text x="\${x + 30}" y="\${y + h - 90 * plate + 58}" font-family="Montserrat" font-weight="700" font-size="\${cap}" fill="#111827">\${inputs.caption}</text>
+      </g>
+    </g>
+  </svg>\`;
+}`;
+
+export const GRAPHICS_EXAMPLES = { chart: CHART, button: BUTTON, lower_third: LOWER_THIRD, photo_card: PHOTO_CARD };
 export const GRAPHICS_TOPICS = ['toolkit', 'inputs', 'design', ...Object.keys(GRAPHICS_EXAMPLES)];
 
 export function graphicsGuide(topic = 'toolkit') {

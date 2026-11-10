@@ -2,6 +2,7 @@
 // here. The normal overlay layer still owns placement, compositing, effects and z-order.
 import { useCallback, useEffect, useRef } from 'react';
 import { resolveGraphicFonts } from './graphicFonts.js';
+import { graphicImageRefs } from './graphicImages.js';
 import { graphicEdits } from './graphicEdits.js';
 
 export default function LiveGraphicFrame({ project, clip, media, time, clockRef, imageRef, redraw }) {
@@ -9,6 +10,8 @@ export default function LiveGraphicFrame({ project, clip, media, time, clockRef,
   latest.current = { project, clip, time, clockRef, redraw };
   const img = useRef(null);
   const attach = useCallback(node => { img.current = node; imageRef(node); }, [imageRef]);
+  // The pictures a graphic uses are part of its sandbox session: choosing another one reopens it.
+  const pictureKey = graphicImageRefs(project, clip.graphicDraft?.inputs || media.graphic.inputs).map(r => r.id).join('|');
   useEffect(() => {
     let stopped = false, raf, side = 960, lastKey = '', slow = 0, failedInputs;
     const owner = `live-${clip.id}-${crypto.randomUUID()}`, api = window.api;
@@ -48,15 +51,15 @@ export default function LiveGraphicFrame({ project, clip, media, time, clockRef,
         const fonts = await resolveGraphicFonts(media.graphic.fonts || []);
         if (stopped) return;
         if (fonts.missing.length) throw Error(`Fonts not bundled: ${fonts.missing.join(', ')}.`);
-        const out = await api.openLiveGraphic({ owner, code: media.graphic.code, fonts: fonts.fonts, width: project.width, height: project.height,
-          fps: project.fps || 30, duration_sec: clip.out, inputs: {} });
+        const out = await api.openLiveGraphic({ owner, code: media.graphic.code, fonts: fonts.fonts, images: graphicImageRefs(project, clip.graphicDraft?.inputs || media.graphic.inputs),
+          width: project.width, height: project.height, fps: project.fps || 30, duration_sec: clip.out, inputs: {} });
         if (stopped) { api.closeLiveGraphic(owner); return; }
         if (out.error) throw Error(out.error);
         raf = requestAnimationFrame(tick);
       } catch (error) { if (!stopped) graphicEdits.previewError(clip.id, error.message); }
     })();
     return finish;
-  }, [clip.id, media.id, project.width, project.height, project.fps]);
+  }, [clip.id, media.id, project.width, project.height, project.fps, pictureKey]);
   return <img ref={attach} alt="" data-live-graphic={clip.id} style={{ display: 'none' }}
     onLoad={() => { if (img.current) img.current.dataset.ready = 'true'; latest.current.redraw(); }} />;
 }

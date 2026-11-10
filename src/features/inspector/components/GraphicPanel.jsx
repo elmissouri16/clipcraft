@@ -1,12 +1,13 @@
 // The inspector's Graphic tab: a motion graphic's own fields, from the inputs its component declares
 // (electron/graphics/runtime.js reports them; the editor never runs the code). Text, numbers,
-// colours, choices, points and data tables get proper controls; anything else is JSON. Valid edits
+// colours, choices, points, library pictures and data tables get proper controls; anything else is JSON. Valid edits
 // are saved immediately; the player renders them live and the shared queue bakes them after editing.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { clipLen, uid } from '../../../state/store.js';
 import { graphicEdits } from '../../graphics/graphicEdits.js';
 import { graphicInputDefaults, graphicInputField, graphicInputError } from '../../graphics/graphicInputs.js';
+import { libraryPictures } from '../../graphics/graphicImages.js';
 
 function SeriesField({ rows, onChange }) {
   const cols = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r)))].slice(0, 4), [rows]);
@@ -95,6 +96,15 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
       {!spec.options.some((option) => Object.is(option.value, value)) && <option value={-1} disabled>Choose…</option>}
       {spec.options.map((option, index) => <option key={index} value={index}>{option.label}</option>)}
     </select>;
+    if (kind === 'image') {
+      // The library's pictures by name; the value is the media id, which the project keeps (never the picture).
+      const pictures = libraryPictures(project), chosen = value ? String(value) : '', known = !chosen || pictures.some((p) => p.id === chosen);
+      return <select aria-label={label} value={chosen} onChange={(e) => set(e.target.value)}>
+        <option value="">None</option>
+        {!known && <option value={chosen} disabled>Missing picture (removed from the library)</option>}
+        {pictures.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>;
+    }
     if (kind === 'boolean') return <input type="checkbox" aria-label={label} checked={!!value} onChange={(e) => set(e.target.checked)} />;
     if (kind === 'text' || kind === 'string') return String(value ?? '').length > 48 ? <textarea rows={2} aria-label={label} value={value ?? ''} onChange={(e) => set(e.target.value)} />
       : <input type="text" aria-label={label} value={value ?? ''} onChange={(e) => set(e.target.value)} />;

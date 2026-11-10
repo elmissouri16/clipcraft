@@ -66,8 +66,9 @@ and map routes. They are written for the video's style; there is no template cat
 measurements: [motion graphics](../design/motion-graphics.md).
 
 - **Tools** (`graphics` group, `src/features/agent/graphicsTools.js`):
-  - `graphics_guide` gives the component format, the toolkit, design rules and three reference
-    components (a chart, a call-to-action button, a lower third) to learn from.
+  - `graphics_guide` gives the component format, the toolkit, design rules and four reference
+    components (a chart, a call-to-action button, a lower third, a photo card) to learn from. The
+    toolkit answer also lists the library's pictures by media id.
   - `add_graphic` renders the agent's component and places it as a full-frame transparent overlay.
   - `edit_graphic` re-renders it with merged inputs, new code, fonts or duration. The clip keeps
     its position, keyframes and effects; the old render leaves the library.
@@ -89,7 +90,8 @@ measurements: [motion graphics](../design/motion-graphics.md).
     the main track (enforced in the reducer).
   - The inspector opens on a Graphic tab showing the inputs the component declares. The sandbox
     reports them; the editor never runs the code. Text, numbers, colours, on/off, choices, X/Y
-    points and data tables get proper controls, alongside the duration. Numeric min/max/step,
+    points, library pictures (a picker by name) and data tables get proper controls, alongside
+    the duration. Numeric min/max/step,
     units, labels, descriptions and groups are supported; bounded numbers also get sliders.
     Choices keep their original value types. Invalid numbers, choices and JSON keep the last valid
     settings. Valid changes are saved on the clip immediately and preview live in a persistent,
@@ -109,11 +111,26 @@ measurements: [motion graphics](../design/motion-graphics.md).
   - "Inter" finds "Inter Variable".
   - A missing weight uses the family's nearest bundled weight.
   - A family that is not bundled is refused, with the list of available families.
+- **Pictures:** an input of type `image` holds the media id of a library picture; the project
+  never stores the picture itself. When a graphic is drawn, the editor sends the ids its inputs
+  name together with their file paths (`src/features/graphics/graphicImages.js`). The main
+  process prepares each file once (`electron/graphics/images.cjs`): decoded with FFmpeg, shrunk
+  to the canvas side, re-encoded as JPEG, or PNG when it has transparency, and kept in memory by
+  file identity, so the live preview, the full render and later re-draws prepare nothing again.
+  The picture travels to the sandbox with the job like a font, and the component reads it with
+  `kit.image(id)` as an inline data href, the only kind of image an SVG drawn as an image may
+  show (the sandbox may load neither files nor blob URLs). `kit.image` returns null when no
+  picture is chosen. The render key covers the picture's content, so a replaced file re-draws and
+  an unchanged one never renders twice. At most 8 pictures per graphic and 24 MB together; a
+  video or a file that is not a picture is refused by name.
 - **Tests:**
   - `tests/unit/agents/test-agent-graphics.mjs` covers the tools against the real reducer.
+  - `tests/unit/agents/test-graphic-images.cjs` covers picture preparation with the real FFmpeg:
+    shrinking, JPEG/PNG choice, the file-identity cache, refusals, limits and the render key.
   - `tests/unit/agents/test-graphics-ui.cjs` runs the real app: a button over a video,
     transparent in preview and export and pressed later in the export; edits; errors; a US-state
-    population chart on an empty project.
+    population chart on an empty project; a photo card showing a library picture in the preview
+    and the export, swapped through the inspector's picker, with its raster cost measured.
 
 ## Speech and silence
 

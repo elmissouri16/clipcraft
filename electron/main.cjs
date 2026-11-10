@@ -2013,7 +2013,7 @@ ipcMain.handle('graphics:liveOpen', async (event, req = {}) => {
   const owner = String(req.owner || '').slice(0, 120), id = event.sender.id, key = `${id}:${owner}`;
   if (!owner) return { error: 'Missing live graphic owner.' };
   try {
-    const job = require('./graphics/service.cjs').validate(req);
+    const job = require('./graphics/service.cjs').validate(await graphics().prepare(req));
     liveGraphics.get(key)?.renderer.close();
     const renderer = require('./graphics/render.cjs').createLiveGraphic(job);
     liveGraphics.set(key, { owner, renderer });

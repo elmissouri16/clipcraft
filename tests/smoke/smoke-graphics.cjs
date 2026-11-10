@@ -270,6 +270,56 @@ module.exports = async (win, app, dir) => {
       }finally{await window.api.closeLiveGraphic(owner);}
     })()`);
     check('HD live preview reuses its sandbox, caps raster size and preserves transparency', new Set(result.liveHD.samples.map(s=>s.session)).size === 1 && result.liveHD.raster.join('x') === '540x960' && result.liveHD.corner[3] === 0);
+
+    // 8. Library pictures inside a graphic: the project keeps the media id, the picture travels
+    // prepared to the sandbox, the inspector picks it, and it shows in the preview and the export.
+    const photo = path.join(dir, 'photo.jpg'), blue = path.join(dir, 'blue.png');
+    execFileSync(ff.ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0xd400d4:s=3200x2400', '-frames:v', '1', '-q:v', '2', photo]);
+    execFileSync(ff.ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=0x1e5bd4:s=800x800', '-frames:v', '1', '-c:v', 'png', blue]);
+    const withPictures = { ...fixture, id: 'graphics-pictures', media: [...fixture.media, { ...await ff.probe(photo), id: 'pic', name: 'photo.jpg', path: photo }, { ...await ff.probe(blue), id: 'pic2', name: 'blue.png', path: blue }] };
+    await q(`window.__fve.load(${JSON.stringify(withPictures)})`); await wait(400);
+    const toolkit = await tool('graphics_guide', { topic: 'toolkit' });
+    check('the toolkit lists the library pictures the agent may use, by media id', toolkit.pictures_available?.map(p => `${p.media_id}:${p.name}`).join(',') === 'pic:photo.jpg,pic2:blue.png' && /kit\.image\(/.test(toolkit.text));
+    const t1 = Date.now();
+    const card = await tool('add_graphic', { code: examples.photo_card, inputs: { photo: 'pic', caption: 'Rabat' }, fonts: ['Montserrat 700'], duration_sec: 3, name: 'Photo card' });
+    result.card = { ...card, frames: card.frames?.length, ms: Date.now() - t1 };
+    check('a graphic shows a library picture, declared as an image input, with no design warnings', card.ok && card.editable_inputs?.photo?.type === 'image' && !card.design_warnings);
+    const readCard = () => q(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(card.clip_id)}),m=p.media.find(m=>m.id===c.mediaId);return {clip:c,media:m,size:JSON.stringify(m.graphic).length}})()`);
+    const cardMedia = await readCard();
+    check('the project keeps the picture by media id, never its bytes', cardMedia.media.graphic.inputs.photo === 'pic' && cardMedia.size < 20000);
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, 'graphics', cardMedia.media.graphic.key, 'meta.json'), 'utf8')).stats;
+    result.cardStats = { frames: meta.frames, repeated: meta.repeated, render_ms: meta.render_ms, raster_ms: meta.raster_ms, total_ms: meta.total_ms, per_frame_raster_ms: meta.raster_ms / Math.max(1, meta.frames - meta.repeated) };
+    check('frames carrying a canvas-size picture rasterise well inside the frame budget', result.cardStats.per_frame_raster_ms < 100);
+    // Where the picture is: the card is 0.62 of the width, 4:3, centred on (0.5, 0.45).
+    const px = Math.round(W * 0.5), py = Math.round(H * 0.45);
+    const magenta = ([r, g, b]) => r > 150 && b > 150 && g < 90, blueish = ([r, g, b]) => b > 150 && r < 90 && g < 130;
+    check('the rendered graphic carries the picture (the magenta photo at its centre)', magenta(pixel(cardMedia.media.path, 2, px, py)));
+    await q('window.__fve.seek(2)'); await wait(1200);
+    const shot2 = await win.capturePage(); fs.writeFileSync(path.join(dir, 'preview-photo-card.png'), shot2.toPNG());
+    const stage2 = await q('(()=>{const r=document.querySelector(".stage").getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()');
+    const sample2 = (fx, fy) => { const img = shot2.crop({ x: Math.round((stage2.x + stage2.w * fx) * scale), y: Math.round((stage2.y + stage2.h * fy) * scale), width: 1, height: 1 }).toBitmap(); return [img[2], img[1], img[0]]; };
+    result.cardPreview = { photo: sample2(0.5, 0.45), corner: sample2(0.1, 0.1) };
+    check('the preview shows the picture inside the graphic, over the video', magenta(result.cardPreview.photo) && green(result.cardPreview.corner));
+    await q('window.__fve.exportNow()'); await until('!!document.querySelector(".modal-icon.ok")', 120000);
+    result.cardExport = pixel(path.join(dir, 'ui-export.mp4'), 2, px, py);
+    check('the export shows the picture inside the graphic', magenta(result.cardExport));
+    await q('[...document.querySelectorAll(".modal-backdrop button")].find(b=>b.textContent.trim()==="OK")?.click()');
+    // The inspector: a picker of the library's pictures; choosing another one re-draws the graphic.
+    await q(`window.__fve.select({ track: 'overlay', id: ${JSON.stringify(card.clip_id)} })`);
+    await until('!!document.querySelector(\'select[aria-label="Picture"]\')');
+    const picker = await q('[...document.querySelector(\'select[aria-label="Picture"]\').options].map(o=>o.textContent+"="+o.value)');
+    check('the Graphic tab offers the library pictures by name', picker.join(',') === 'None=,photo.jpg=pic,blue.png=pic2' && await q('document.querySelector(\'select[aria-label="Picture"]\').value') === 'pic');
+    const cardPast = await q('window.__fve.history().past.length');
+    await changeField('Picture', 'pic2', 'select');
+    await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(card.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.photo==='pic2'})()`, 60000);
+    const swapped = await readCard();
+    result.cardSwap = { past: [cardPast, await q('window.__fve.history().past.length')], pixel: pixel(swapped.media.path, 2, px, py) };
+    check('choosing another picture re-draws the graphic with it, as one Undo step', blueish(result.cardSwap.pixel) && result.cardSwap.past[1] === cardPast + 1 && swapped.media.path !== cardMedia.media.path);
+    await wait(500); fs.writeFileSync(path.join(dir, 'inspector-photo-card.png'), (await win.capturePage()).toPNG());
+    await changeField('Picture', '', 'select');
+    await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(card.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.photo===''})()`, 60000);
+    result.cardNone = pixel((await readCard()).media.path, 2, px, py);
+    check('without a picture the component draws its placeholder', near(result.cardNone, [51, 65, 85], 12));
     await wait(200);
     check('live graphics sandboxes are released after editing', require('electron').BrowserWindow.getAllWindows().length === 1);
     check('no renderer exceptions', !result.errors.length);
