@@ -60,6 +60,8 @@ function probe(file) {
         acodec: a ? a.codec_name : '',
         pixFmt: v ? v.pix_fmt : '',
         profile: v ? v.profile || '' : '',
+        // The stream's colour matrix tag ('' when untagged): see matrixIn for how an untagged source is read.
+        colorSpace: v ? v.color_space || '' : '',
         // Audio channel count: mono sources get a unity dual-mono pan in the export chains
         // (see monoUp below); media probed before this field existed reads as undefined and
         // simply keeps the old upmix behaviour.
@@ -75,6 +77,17 @@ const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
 // the picture comes out pale and yellowish, because every later step reads the HDR values as normal ones.
 const TONEMAP = 'zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
 const toSdr = (m) => (m && m.hdr ? `,${TONEMAP}` : '');
+// The matrix an UNTAGGED SDR video is read with before the RGB compositing path. FFmpeg's own default for an
+// untagged source is BT.601, which players (and the preview, through Chromium) do not share: they read untagged
+// HD as BT.709. Without this the composite was decoded as 601 and re-encoded as 709 — a visible shift on
+// saturated colours (measured 23.7 dB vs 35.6 dB for the same tagged source). Tagged sources keep their tag;
+// HDR is handled by TONEMAP; images decode straight to RGB. Media probed before `colorSpace` existed is
+// treated as untagged, which is harmless for a BT.709 tag and right for SD BT.601. Only YUV pixel formats
+// take the hint: RGB sources (the graphics' ARGB qtrle, RGBA PNG sequences) have no matrix, and tagging one
+// broke their alpha compositing (test-graphics-ui).
+const UNTAGGED = ['', 'unknown', 'unspecified', 'reserved'];
+const matrixIn = (m) => (m && m.type === 'video' && !m.hdr && /^yuv/.test(m.pixFmt || 'yuv') && UNTAGGED.includes(m.colorSpace || '')
+  ? `,setparams=colorspace=${(m.height || 0) < 720 && (m.width || 0) < 1280 ? 'smpte170m' : 'bt709'}` : '');
 
 function transitionDur(clips, i) {
   const t = clips[i] && clips[i].transition;
@@ -387,7 +400,7 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
         // Each concatenated interval owns explicit frame boundaries. fps alone
         // can drop its last frame at EOF (notably a two-frame source gap next
         // to an effect), shortening transition inputs and shifting later spans.
-        filters.push(`[${idx}:v]trim=duration=${num(sourceDuration)},setpts=${clock}${!span.file ? toSdr(m) : ''},fps=${fps},tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=N/(${fps}*TB),scale=${fw}:${fh},setsar=1,format=rgba[${label}]`);
+        filters.push(`[${idx}:v]trim=duration=${num(sourceDuration)},setpts=${clock}${!span.file ? matrixIn(m) + toSdr(m) : ''},fps=${fps},tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=N/(${fps}*TB),scale=${fw}:${fh},setsar=1,format=rgba[${label}]`);
       });
       const label = `parts${tag}`;
       filters.push(`${labels.join('')}${labels.length > 1 ? `concat=n=${labels.length}:v=1:a=0` : 'null'}[${label}]`);
@@ -401,7 +414,7 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
     return { idx, chain: `[${idx}:v]trim=duration=${num(len)},setpts=PTS-STARTPTS${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: false };
   }
   const idx = addInput(['-ss', num(clip.in), '-i', m.path]);
-  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${clip.speed || 1}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
+  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${clip.speed || 1}${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
 }
 
 // A colour-only look baked into a 3D LUT (electron/export/fxjobs.cjs lut): applied where the

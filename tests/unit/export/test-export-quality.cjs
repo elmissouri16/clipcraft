@@ -3,7 +3,7 @@
 // (runExport), with the effective settings resolved by src/features/export/exportQuality.js — the same resolver the
 // UI and the Export dialog summary use. Asserts, from ffprobe + PSNR measurements:
 //   - file sizes strictly increase Low < Medium < High < Ultra
-//   - PSNR vs the source increases with the preset tier
+//   - PSNR vs the source increases with the preset tier, and High/Ultra stay above 33 dB (no colour-matrix mismatch)
 //   - Custom output's longest side <= 720 and its video bitrate is within ±25% of the 8 Mbps target
 //   - Ultra's resolution == the project resolution (never upscales)
 //   - the H.265 export really is HEVC
@@ -98,6 +98,10 @@ function psnrVs(file, srcFile) {
     `sizes strictly increase Low<Medium<High<Ultra (${low.size} < ${medium.size} < ${high.size} < ${ultra.size})`);
   const [pl, pm, ph, pu] = [rows[0].psnr, rows[1].psnr, rows[2].psnr, rows[3].psnr];
   check(pl < pm && pm < ph && ph < pu, `PSNR increases with tier (${pl.toFixed(2)} < ${pm.toFixed(2)} < ${ph.toFixed(2)} < ${pu.toFixed(2)})`);
+  // Absolute floor: the untagged test source must be read as BT.709 (matrixIn), not FFmpeg's BT.601 default.
+  // The 601-in/709-out mismatch measured 23.7 dB at Ultra; the RGB compositing round trip of this
+  // sharp-chroma synthetic source tops out near 35.6 dB, so 33 dB separates the two unambiguously.
+  check(ph >= 33 && pu >= 33, `High and Ultra stay above 33 dB (colour matrix preserved): High ${ph.toFixed(2)}, Ultra ${pu.toFixed(2)}`);
   check(ultra.width === W && ultra.height === H, 'Ultra output resolution == project resolution');
   check(Math.max(custom.width, custom.height) <= 720, `Custom longest side <= 720 (got ${custom.width}×${custom.height})`);
   const kbps = custom.vBitrate / 1000;

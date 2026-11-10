@@ -20,8 +20,11 @@ module.exports = async (win, app, dir) => {
   const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
   try {
     // A background video: a saturated green with a moving test pattern, easy to tell from the button.
+    // Written as a well-formed BT.709 file (matrix + tags): the export reads untagged HD as BT.709 like
+    // players do, so an untagged file converted with FFmpeg's BT.601 default would decode to a different green.
     const bg = path.join(dir, 'background.mp4');
-    execFileSync(ff.ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=0x1faa59:s=${W}x${H}:r=30:d=5`, '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', bg]);
+    execFileSync(ff.ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=0x1faa59:s=${W}x${H}:r=30:d=5`, '-vf', 'scale=out_color_matrix=bt709:out_range=tv',
+      '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', bg]);
     const fixture = { id: 'graphics-smoke', name: 'Graphics', width: W, height: H, ratio: '9:16', fps: 30, media: [{ ...await ff.probe(bg), id: 'bg', name: 'background.mp4', path: bg }],
       videoClips: [{ id: 'v', mediaId: 'bg', in: 0, out: 5, speed: 1 }], overlayClips: [], audioClips: [], textClips: [], effectClips: [],
       exportSettings: { preset: 'custom', custom: { mode: 'crf', crf: 16, codec: 'h264', encoderPreset: 'ultrafast', resCap: 0, fps: 0, audioKbps: 128 } } };
