@@ -30,7 +30,9 @@ ClipCraft for these sessions. Design and decisions: [`docs/design/external-agent
   Each accepted edit is one Undo step. If you change the project during an agent's edit, its next
   call is told so, and the call after that continues from the current timeline.
 - **Activity:** the CraftAI panel shows the agent's steps in a read-only conversation named after
-  it, saved with the project.
+  it, saved with the project. The timeline shows its work as it shows CraftAI's: the clips and range
+  the running tool works on are spotlit with a "<agent> · <tool>" chip, and each finished change leaves
+  a trail that fades a few seconds after the edit ends (docs/agents/agent-editing.md).
 
 ## Tools
 

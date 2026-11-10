@@ -133,4 +133,5 @@ chip for a time range), the scroller reveals an off-screen target without fighti
 finished change leaves a fading trail (1 px ring and ✓). Violet only, no glow, `--r-xs` chips, selection
 ring stays outermost; reduced motion keeps the rings and drops the stripe animation. Details and the
 ownership rules in docs/agents/agent-editing.md. `tests/unit/agents/test-agent-spotlight-ui.cjs` proves
-it in the real app.
+it in the real app. An outside MCP agent (Claude Code, Codex) gets the same spotlight and trail, with its
+name on the chip, so the user sees what it touches wherever the edit comes from.

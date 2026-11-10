@@ -17,10 +17,11 @@ import { useClockTime } from '../../preview/useClockTime.js';
 import { timelineViewport, intersectsViewport, filmstripTiles, timelineClipBox, boxesIntersect } from '../viewport.js';
 import { stackRows, visibleRowRange } from '../rows.js';
 
-// CraftAI spotlight and trail on the timeline (App's agentFocus, docs/agents/agent-editing.md): the clips
+// Agent spotlight and trail on the timeline (App's agentFocus, docs/agents/agent-editing.md): the clips
 // and ranges the running tool works on (live) and the clips this request changed (done), as Maps/Sets the
-// Clip component checks by 'track:id'. One shared empty object when the agent is idle.
-const NO_MARKS = { any: false, live: new Map(), done: new Set(), liveRanges: [], doneRanges: [], liveCaptions: false, doneCaptions: false, liveTitle: '', liveFirstKey: null };
+// Clip component checks by 'track:id'. One shared empty object when the agent is idle. agent names who
+// is editing: CraftAI, or an outside MCP agent by its client name.
+const NO_MARKS = { any: false, live: new Map(), done: new Set(), liveRanges: [], doneRanges: [], liveCaptions: false, doneCaptions: false, liveTitle: '', liveFirstKey: null, agent: 'CraftAI' };
 function buildAgentMarks(focus) {
   if (!focus) return NO_MARKS;
   const live = new Map(), done = new Set(), liveRanges = [], doneRanges = [];
@@ -33,7 +34,7 @@ function buildAgentMarks(focus) {
     for (const r of step.targets?.ranges || []) doneRanges.push(r);
   }
   return { any: true, live, done, liveRanges, doneRanges: doneRanges.slice(-24), liveCaptions: !!focus.live?.targets?.captions,
-    doneCaptions: (focus.trail || []).some((step) => step.targets?.captions), liveTitle, liveFirstKey };
+    doneCaptions: (focus.trail || []).some((step) => step.targets?.captions), liveTitle, liveFirstKey, agent: focus.agent || 'CraftAI' };
 }
 
 const HEADER = 192; // lane-head width: title + layer rows share one control grid (lock/eye/speaker/solo/more) and names get 60px
@@ -1098,7 +1099,7 @@ export default function Timeline({
             <div className="tl-ruler">
               {rangeTool && <span className="tl-range-hint">Drag on the ruler to attach a range</span>}
               {contextRange && <div className="tl-context-ruler" aria-label={`Selected range ${formatTime(contextRange.start_sec)} to ${formatTime(contextRange.end_sec)}`} style={{ left: contextRange.start_sec * pps, width: (contextRange.end_sec - contextRange.start_sec) * pps }} />}
-              {agentMarks.liveRanges.map((r, i) => <div key={`agent-ruler-${i}`} className="tl-agent-ruler" aria-label={`CraftAI: ${agentMarks.liveTitle} ${formatTime(r.start)} to ${formatTime(r.end)}`} style={{ left: r.start * pps, width: Math.max(18, (r.end - r.start) * pps) }}>{(r.end - r.start) * pps > 80 ? agentMarks.liveTitle : ''}</div>)}
+              {agentMarks.liveRanges.map((r, i) => <div key={`agent-ruler-${i}`} className="tl-agent-ruler" aria-label={`${agentMarks.agent}: ${agentMarks.liveTitle} ${formatTime(r.start)} to ${formatTime(r.end)}`} style={{ left: r.start * pps, width: Math.max(18, (r.end - r.start) * pps) }}>{(r.end - r.start) * pps > 80 ? agentMarks.liveTitle : ''}</div>)}
               {markerEls}
               {ticks.map((t) => (
                 <div key={t} className="tick" style={{ left: t * pps }}><span>{formatTime(t).slice(0, 5)}</span></div>
@@ -1232,8 +1233,8 @@ function Clip({ pps, selection, track, selTrack, clip, start, length, label, ico
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu?.(e, st, clip); }}>
       {bg && <div className="clip-bg" style={bg} />}
       {children}
-      {agent === 'live' && agentKey === agentMarks.liveFirstKey && <span className="agent-chip" aria-hidden="true">CraftAI · {agentMarks.liveTitle}</span>}
-      {agent === 'done' && <span className="agent-mark" title="Changed by CraftAI" aria-hidden="true">✓</span>}
+      {agent === 'live' && agentKey === agentMarks.liveFirstKey && <span className="agent-chip" aria-hidden="true">{agentMarks.agent} · {agentMarks.liveTitle}</span>}
+      {agent === 'done' && <span className="agent-mark" title={`Changed by ${agentMarks.agent}`} aria-hidden="true">✓</span>}
       <div className="handle left" onPointerDown={(e) => e.button === 0 && onDown(e, 'left')} />
       <span className="clip-label">{clip.slot && !clip.gap && <span className="rep-badge" title="Replaceable: people put their own video here when they use the template">⇄</span>}{icon}<bdi>{label}</bdi>
       {tags?.length > 0 && (

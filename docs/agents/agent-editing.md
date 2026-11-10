@@ -253,9 +253,15 @@ keeps the trail of the edits that did happen. None of this touches history: the 
 App (`agentFocus`), fed by CraftPilot from the turn's steps, whose `activity.targets` come from
 `src/features/agent/toolTargets.js` (arguments on the running event; reducer actions, a content diff
 that ignores pure ripple shifts, and created ids on the done event). Reads spotlight what they look at
-and leave no trail. External MCP agents produce the same targets but are not rendered yet.
+and leave no trail. An outside MCP agent (docs/agents/external-mcp.md) gets the same treatment: its
+host's activity events feed the same state through `src/features/agent/externalFocus.js` (one edit is
+one run, ended by `complete_edit`, a read-only call, an interruption or Disconnect), and the chip and
+marks carry the client's name ("Claude Code · Adding text") instead of CraftAI. The edit's own Undo
+commit lands in the render that ends the run, so only a history move after that clears the trail.
 `tests/smoke/smoke-agent-spotlight.cjs` (launcher `tests/unit/agents/test-agent-spotlight-ui.cjs`)
-proves all of it in the real app; `tests/unit/agents/test-tool-targets.mjs` pins the mapper.
+proves all of it in the real app; `tests/unit/agents/test-tool-targets.mjs` pins the mapper, and
+`tests/unit/agents/test-external-focus.mjs` the external mapping, which `tests/smoke/smoke-external-agents.cjs`
+shows in the real app over MCP.
 
 Activity expands during a request and collapses after successful replies in
 Agent mode. Reading earlier messages stops automatic scrolling; **Latest activity**

@@ -3,14 +3,18 @@
 // and feeds the agent's activity to the CraftAI panel.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createExternalHost, externalInstructions } from '../features/agent/externalHost.js';
+import { externalFocusStep } from '../features/agent/externalFocus.js';
 
 // appRef.current: { screen(), project(), loadVersion(), dispatch, settle, pilotApp, craftBusy(), projects }
-export function useExternalAgent(appRef, settingsVersion, craftBusy) {
+// onAgentFocus: App's timeline spotlight and trail, fed exactly as CraftPilot feeds it (externalFocus.js).
+export function useExternalAgent(appRef, settingsVersion, craftBusy, onAgentFocus) {
   const [status, setStatus] = useState(null);
   const [approval, setApproval] = useState(null); // { id, client }
   const listeners = useRef(new Set());
   const host = useRef(null);
   const provider = useRef('');
+  const focus = useRef(null), focusOut = useRef(onAgentFocus);
+  focusOut.current = onAgentFocus;
 
   const announce = useCallback(() => {
     if (!host.current || !window.api.externalHostReady) return;
@@ -28,7 +32,11 @@ export function useExternalAgent(appRef, settingsVersion, craftBusy) {
         status: () => app().projects.status(), list: (q) => app().projects.list(q), create: (a) => app().projects.create(a),
         open: (a) => app().projects.open(a), save: (p) => app().projects.save(p), close: () => app().projects.close(),
       },
-      onActivity: (event) => { for (const listener of listeners.current) listener(event); },
+      onActivity: (event) => {
+        const step = externalFocusStep(focus.current, event, `${app().project()?.id}:${app().loadVersion()}`);
+        if (step.changed) { focus.current = step.focus; focusOut.current?.(step.focus); }
+        for (const listener of listeners.current) listener(event);
+      },
     });
     const offs = [
       window.api.onExternalCall(async (req) => {

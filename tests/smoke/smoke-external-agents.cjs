@@ -70,19 +70,28 @@ module.exports = async (win, app, dir) => {
     const refused = await q(`window.api.agentStep({requestId:'smoke-step'})`);
     check('the main process refuses CraftAI requests while the agent works', refused.ok === false && /Test agent is working/.test(refused.error));
 
-    // An edit: changes, then complete_edit until accepted; Undo removes it as one step.
+    // An edit: changes, then complete_edit until accepted; Undo removes it as one step. The timeline shows
+    // the outside agent's work exactly as CraftAI's (docs/agents/agent-editing.md): record every state the
+    // spotlight goes through, since each call is over in one render.
     const pastBefore = await q('window.__fve.history().past.length');
+    await q(`window.__spot=[];new MutationObserver(()=>{const s={ranges:[...document.querySelectorAll('.tl-agent-range')].map(e=>[parseFloat(e.style.left),parseFloat(e.style.width)]),ruler:document.querySelector('.tl-agent-ruler')?.getAttribute('aria-label')||'',done:[...document.querySelectorAll('.clip.agent-done')].map(e=>e.textContent)};const last=window.__spot.at(-1);if(!last||JSON.stringify(last)!==JSON.stringify(s))window.__spot.push(s);}).observe(document.querySelector('.tl-content'),{subtree:true,childList:true,attributes:true,attributeFilter:['class','style']});`);
     const added = await call(agent, 'add_text', { text: 'Hello from MCP', start_sec: 0, duration_sec: 2 });
     check('add_text changes the project and asks for validation', !added.error && added.validation_pending === true && !!added.operation_id);
     const second = await call(agent, 'add_text', { text: 'Second line', start_sec: 2, duration_sec: 2 });
     check('a second change joins the same edit', !second.error && second.validation_pending === true);
     check('the agent edit is open in the editor', await q('!!window.__fve.history().agentEdit&&window.__fve.history().agentEdit.steps.length>=2'));
+    const spot = await q('window.__spot');
+    result.spotlight = spot;
+    check('the timeline spotlit where the agent placed its text, in the agent’s name', spot.some((s) => s.ranges.length === 1 && /^Test agent: Adding text 00:00\.00 to 00:02\.00/.test(s.ruler)));
+    check('each finished change leaves the trail on the created clip', await q(`[...document.querySelectorAll('.clip.agent-done')].map(e=>e.textContent).join('|')`).then((t) => t.includes('Hello from MCP') && t.includes('Second line')) && await q(`document.querySelector('.clip.agent-done .agent-mark')?.title==='Changed by Test agent'`));
+    await shot('external-spotlight-trail.png');
     let done = null;
     for (let i = 0; i < 6 && !done?.ready; i++) done = await call(agent, 'complete_edit');
     result.completeEdit = { ready: done?.ready, attempts: result.calls.filter((c) => c.name === 'complete_edit').length };
     check('complete_edit accepts the edit', done?.ready === true);
     check('the accepted edit is one Undo step', await q(`!window.__fve.history().agentEdit&&window.__fve.history().past.length===${pastBefore + 1}&&window.__fve.rawProject().textClips.length===2`));
     await until(`[...document.querySelectorAll('#craft-ai-panel .pilot-msg.assistant .bubble')].some(b=>b.textContent.includes('Edit complete and validated.'))`);
+    check('the trail stays through the edit’s own Undo commit and holds after the edit ends', await q(`document.querySelectorAll('.clip.agent-done').length===2&&!document.querySelector('.clip.agent-live')&&!document.querySelector('.tl-agent-range')&&!document.querySelector('.timeline.agent-fading')`));
     check('the CraftAI panel shows the agent’s steps in its own session', await q(`document.querySelector('#craft-ai-panel .pilot-reply-heading b').textContent==='Test agent'&&document.querySelectorAll('#craft-ai-panel .pilot-steps li').length>=3`));
     await shot('external-editor-activity.png');
     await q(`document.querySelector('#craft-ai-panel .pilot-undo').click()`);
@@ -90,6 +99,8 @@ module.exports = async (win, app, dir) => {
     check('Undo in the panel removes the whole agent edit', true);
     await q(`window.__fve.dispatch({type:'redo'})`);
     await until('window.__fve.rawProject().textClips.length===2');
+    await wait(250);
+    check('Undo after the edit clears the trail at once (the clips return without it)', await q(`document.querySelectorAll('.clip[data-sel-track=text]').length===2&&!document.querySelector('.clip.agent-done')&&!document.querySelector('.timeline.agent-fading')`));
 
     // The user edits during an open agent edit: the agent's next call is told, the one after works.
     const pending = await call(agent, 'add_text', { text: 'Third', start_sec: 4, duration_sec: 1 });

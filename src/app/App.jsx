@@ -113,6 +113,7 @@ export default function App() {
   // changed this request. Outside the history reducer: it never makes an Undo step or revokes the agent.
   // The run's end starts a 6 s hold, then a fade; a history move afterwards (undo, redo, load) clears it.
   const [agentFocus, setAgentFocus] = useState(null);
+  // An outside MCP agent (useExternalAgent) feeds the same state, so its edits show the same way.
   const onAgentFocus = useCallback((next) => setAgentFocus((prev) => (next ? { ...next, ended: false, fading: false } : prev && !prev.ended ? { ...prev, live: null, ended: true } : prev)), []);
   useEffect(() => {
     if (!agentFocus?.ended) return undefined;
@@ -120,11 +121,12 @@ export default function App() {
     const clear = setTimeout(() => setAgentFocus((f) => (f && f.ended ? null : f)), 6400);
     return () => { clearTimeout(fade); clearTimeout(clear); };
   }, [agentFocus?.ended, agentFocus?.requestId]);
-  const focusHistory = useRef(null);
+  const focusHistory = useRef(null), focusEnded = useRef(false);
   useEffect(() => {
-    const key = `${state.past.length}:${state.future.length}:${projectLoadVersion}`;
-    if (agentFocus?.ended && focusHistory.current !== null && focusHistory.current !== key) setAgentFocus(null);
-    focusHistory.current = key;
+    const key = `${state.past.length}:${state.future.length}:${projectLoadVersion}`, ended = !!agentFocus?.ended;
+    // Only a move after the end counts: an external edit commits its Undo step in the render that ends it.
+    if (ended && focusEnded.current && focusHistory.current !== null && focusHistory.current !== key) setAgentFocus(null);
+    focusHistory.current = key; focusEnded.current = ended;
   }, [state.past.length, state.future.length, projectLoadVersion, agentFocus?.ended]);
   const exportBusy = agentRendering || (!!exporting && !exporting.ready && !exporting.done && !exporting.error);
   useEffect(() => {
@@ -2026,7 +2028,7 @@ export default function App() {
     screen: () => screenRef.current, project: () => projectRef.current, loadVersion: () => loadVersionRef.current,
     dispatch, settle, pilotApp, craftBusy: () => !!agentRunRef.current, projects: agentProjects,
   };
-  const external = useExternalAgent(externalApp, settingsVersion, !!agentRun);
+  const external = useExternalAgent(externalApp, settingsVersion, !!agentRun, onAgentFocus);
   const externalBadge = <ExternalAgentBadge owner={external.owner} onDisconnect={external.disconnect} />;
   const externalApproval = <ExternalAgentApproval approval={external.approval} onAnswer={external.answer} />;
 

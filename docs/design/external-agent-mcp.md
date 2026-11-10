@@ -157,7 +157,9 @@ Deleting projects stays a user action on Home.
 - **Connection indicator** in the top bar and on Home: "Claude Code connected", with Disconnect.
 - **Activity:** external calls send the same tool events CraftAI shows (`describeToolActivity`,
   progress) to a read-only session in the CraftAI panel named after the client, saved with the
-  project's chats. The user can watch every step and undo any edit.
+  project's chats. The user can watch every step and undo any edit. The timeline spotlight and trail
+  (docs/agents/agent-editing.md) follow the same events (`externalFocus.js`), with the client's name
+  on the chip.
 - **Settings > Agents > External agents:** on/off, status, approved clients (remove), the launch
   commands with copy buttons.
 
