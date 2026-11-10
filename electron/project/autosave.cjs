@@ -3,8 +3,10 @@
 // previous one (the old design kept a single shared crash-recovery snapshot that any
 // other project overwrote). A slot is one JSON file per project id:
 //
-//   <root>/<id>.json   { id, title, file, ratio, thumb, updatedAt, project }
-//   <root>/index.json  [{ id, title, file, ratio, thumb, updatedAt }] — newest first
+//   <root>/<id>.json       { id, title, file, ratio, thumb, updatedAt, project }
+//   <root>/chat/<id>.json  the project's CraftAI conversations (project.craftAI), kept apart so a
+//                          chat change never rewrites the document (sidecar.cjs); merged on read
+//   <root>/index.json      [{ id, title, file, ratio, thumb, updatedAt }] — newest first
 //
 // `file` is the project's own .clipcraft file when it has one (the binding: the slot and
 // the file describe the same project id, and opening either finds the same state); it is
@@ -25,6 +27,8 @@ const CAP = 24; // projects kept in the store; the brief's floor is 20
 const ID_OK = /^[A-Za-z0-9_-]{1,80}$/;
 
 const slotPath = (root, id) => (ID_OK.test(String(id || '')) ? path.join(root, `${id}.json`) : null);
+const chatPath = (root, id) => (ID_OK.test(String(id || '')) ? path.join(root, 'chat', `${id}.json`) : null);
+const removeChat = (root, id) => { const f = chatPath(root, id); if (f) { try { fs.unlinkSync(f); } catch { /* none */ } } };
 const indexPath = (root) => path.join(root, 'index.json');
 
 function writeJsonAtomic(file, obj) {
@@ -72,12 +76,14 @@ function prune(root, entries, keepId) {
     if (kept.length < CAP || e.id === keepId) { kept.push(e); continue; }
     const f = slotPath(root, e.id);
     if (f) { try { fs.unlinkSync(f); } catch { /* already gone */ } }
+    removeChat(root, e.id);
   }
   return kept;
 }
 
-// record: { id, title, file, ratio, thumb, updatedAt, projectJson } — projectJson is the
-// project serialized by the renderer (the same JSON a .clipcraft file would hold).
+// record: { id, title, file, ratio, thumb, updatedAt, projectJson, chatJson? } — projectJson is the
+// project document serialized by the renderer (the same JSON a .clipcraft file would hold, without
+// the chat); chatJson is the chat to store beside it (null removes it), or absent to keep the stored one.
 // Returns the stored index entry, or null when the record is unusable.
 function writeSlot(root, record) {
   try {
@@ -97,6 +103,7 @@ function writeSlot(root, record) {
       project,
     };
     writeJsonAtomic(file, slot);
+    if (record.chatJson !== undefined) writeSlotChat(root, slot.id, record.chatJson);
     const entry = { id: slot.id, title: slot.title, file: slot.file, ratio: slot.ratio, thumb: slot.thumb, updatedAt: slot.updatedAt };
     const rest = listSlots(root).filter((e) => e.id !== slot.id);
     const entries = prune(root, [entry, ...rest], slot.id);
@@ -107,12 +114,32 @@ function writeSlot(root, record) {
   }
 }
 
+// The chat beside a slot, written on its own when only the conversation changed. json null removes it.
+function writeSlotChat(root, id, json) {
+  const file = chatPath(root, id);
+  if (!file) return false;
+  if (json == null) { removeChat(root, id); return true; }
+  if (typeof json !== 'string') return false;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.part`;
+  fs.writeFileSync(tmp, json, 'utf8');
+  fs.renameSync(tmp, file);
+  return true;
+}
+
+// A slot with its chat merged back into project.craftAI (the sidecar wins over an embedded legacy chat).
 function readSlot(root, id) {
   const file = slotPath(root, id);
   if (!file) return null;
   try {
     const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return s && s.project ? s : null;
+    if (!s || !s.project) return null;
+    const sidecar = require('./sidecar.cjs');
+    // An embedded chat in a slot newer than its chat file wins (an older ClipCraft wrote the slot).
+    if (sidecar.embeddedWins(file, chatPath(root, id), 'craftAI' in s.project)) return s;
+    let chat = null;
+    try { chat = fs.readFileSync(chatPath(root, id), 'utf8'); } catch { /* no chat stored apart */ }
+    return chat ? { ...s, project: sidecar.mergeChat(s.project, chat) } : s;
   } catch {
     return null;
   }
@@ -123,6 +150,7 @@ function deleteSlot(root, id) {
   if (!file) return false;
   let gone = false;
   try { fs.unlinkSync(file); gone = true; } catch { /* not there */ }
+  removeChat(root, id);
   try {
     const entries = listSlots(root).filter((e) => e.id !== id);
     writeJsonAtomic(indexPath(root), entries);
@@ -137,4 +165,4 @@ function slotForFile(root, filePath) {
   return listSlots(root).find((e) => e.file === filePath) || null;
 }
 
-module.exports = { CAP, writeSlot, readSlot, listSlots, deleteSlot, slotForFile, slotPath };
+module.exports = { CAP, writeSlot, writeSlotChat, readSlot, listSlots, deleteSlot, slotForFile, slotPath, chatPath };

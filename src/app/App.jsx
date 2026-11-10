@@ -34,7 +34,8 @@ import { EXPORT_PRESETS, resolveExport, settingsPatch, storedExportSettings } fr
 import { exportRenderPlan } from '../features/export/renderPlan.js';
 import { agentExportPlan } from '../features/export/agentExport.js';
 import { ExportProgress, exportStages, readExportProfile } from '../features/export/exportProgress.js';
-import { serializeProject } from '../state/projectSerialization.js';
+import { serializeProject, serializeProjectParts } from '../state/projectSerialization.js';
+import { projectDoc, projectChat, classifyChange, mergeChat } from '../state/projectFile.js';
 import CloseDialog from './components/CloseDialog.jsx';
 import TopBar from './components/TopBar.jsx';
 import SettingsDialog from './components/SettingsDialog.jsx';
@@ -237,31 +238,54 @@ export default function App() {
     const { project, file } = autosave.current;
     const version = autosave.current.recoveryVersion = (autosave.current.recoveryVersion || 0) + 1;
     try {
-      const { compact } = await serializeProject(project);
+      const { compact } = await serializeProject(projectDoc(project));
       if (version !== autosave.current.recoveryVersion) return;
       localStorage.setItem('clipcraft.recovery', `{"savedAt":${Date.now()},"project":${compact},"file":${JSON.stringify(file || null)},"unsaved":${!!unsaved}}`);
     } catch {
       // storage full: the next save tries again
     }
   };
+  // The document and its chat sidecar are written apart (docs/architecture/project-file.md):
+  // a.fileChat / a.slotChat remember the chat last written to each, so a timeline edit carries the
+  // chat only when it changed too, and a chat change (writeChat) never rewrites the document.
+  const chatText = async (project) => { const chat = projectChat(project); return chat ? (await serializeProject(chat)).compact : null; };
   const writeFile = async () => {
     const a = autosave.current;
     clearTimeout(a.fileTimer);
     a.fileTimer = null;
+    a.fileDocDirty = false;
     if (!a.file) return true;
-    const file = a.file, project = a.project;
+    const file = a.file, project = a.project, chatStale = a.fileChat !== project.craftAI;
     setSaveState('saving');
     let ok = false;
     try {
       const previous = a.writing || Promise.resolve();
       a.writing = previous.catch(() => {}).then(async () => {
-        const { pretty } = await serializeProject(project);
-        return window.api.autosaveProject(file, pretty);
+        const { pretty } = await serializeProject(projectDoc(project));
+        const done = await window.api.autosaveProject(file, pretty, chatStale ? await chatText(project) : undefined);
+        if (done && chatStale && a.file === file) a.fileChat = project.craftAI;
+        return done;
       });
       ok = await a.writing;
     } catch { /* The save-state pill reports the failed attempt. */ }
     setSaveState(ok ? 'saved' : 'error');
     return ok;
+  };
+  const writeChat = async () => {
+    const a = autosave.current;
+    clearTimeout(a.fileTimer);
+    a.fileTimer = null;
+    if (!a.file) return true;
+    const file = a.file, project = a.project;
+    if (a.fileChat === project.craftAI) return true;
+    try {
+      a.writing = (a.writing || Promise.resolve()).catch(() => {}).then(async () => {
+        const done = await window.api.autosaveProject(file, null, await chatText(project));
+        if (done && a.file === file) a.fileChat = project.craftAI;
+        return done;
+      });
+      return await a.writing;
+    } catch { return false; } // the next chat change retries
   };
   // ---- Per-project autosave slots: Home's switchboard ----
   const [autoSlots, setAutoSlots] = useState([]);
@@ -281,17 +305,37 @@ export default function App() {
     if (!p || !p.id || isTourId(p.id)) return null;
     if (!file && !hasContent(p)) return null;
     const e = recentEntryFor(p, file || '', toFileUrl);
-    const { compact } = await serializeProject(p);
-    return { id: p.id, title: p.name || 'Untitled', file: file || null, ratio: p.ratio || '', thumb: e.thumb, updatedAt: Date.now(), projectJson: compact };
+    const { compact } = await serializeProject(projectDoc(p));
+    const chatStale = autosave.current.slotChat !== p.craftAI;
+    return { id: p.id, title: p.name || 'Untitled', file: file || null, ratio: p.ratio || '', thumb: e.thumb, updatedAt: Date.now(), projectJson: compact,
+      ...(chatStale ? { chatJson: await chatText(p) } : {}) };
   };
   const writeSlotNow = async (p = autosave.current.project, file = autosave.current.file) => {
     const a = autosave.current;
     clearTimeout(a.slotTimer);
     a.slotTimer = null;
+    a.slotDocDirty = false;
     try {
       a.slotWriting = (a.slotWriting || Promise.resolve()).catch(() => {}).then(async () => {
         const rec = await slotRecord(p, file);if (!rec) return;
         await window.api.slotWrite(rec);refreshSlots();
+        a.slotDocId = p.id;
+        if (rec.chatJson !== undefined && a.project.craftAI === p.craftAI) a.slotChat = p.craftAI;
+      });
+      await a.slotWriting;
+    } catch { /* the next change retries */ }
+  };
+  // Only the chat changed: write the slot's chat file alone (the whole slot when it has none yet).
+  const writeSlotChatNow = async () => {
+    const a = autosave.current, p = a.project;
+    if (a.slotDocId !== p.id) return writeSlotNow();
+    clearTimeout(a.slotTimer);
+    a.slotTimer = null;
+    if (a.slotChat === p.craftAI || !p.id || isTourId(p.id)) return;
+    try {
+      a.slotWriting = (a.slotWriting || Promise.resolve()).catch(() => {}).then(async () => {
+        await window.api.slotWriteChat?.(p.id, await chatText(p));
+        if (a.project.craftAI === p.craftAI) a.slotChat = p.craftAI;
       });
       await a.slotWriting;
     } catch { /* the next change retries */ }
@@ -314,6 +358,15 @@ export default function App() {
   };
   useEffect(() => {
     const a = autosave.current;
+    // Which part changed (docs/architecture/project-file.md). A load counts as both: a file that
+    // still embeds its chat gets its sidecar on the first write, and the last-written marks reset.
+    const loaded = a.seenLoad !== projectLoadVersion, previous = a.seen;
+    a.seen = project; a.seenLoad = projectLoadVersion;
+    if (loaded) { a.fileChat = undefined; a.slotChat = undefined; }
+    const change = classifyChange(previous, project);
+    const docChanged = loaded || change.doc, chatChanged = loaded || change.chat;
+    if (!docChanged && !chatChanged) return;
+    if (docChanged) { a.fileDocDirty = true; a.slotDocDirty = true; }
     // At most once a second, and always the latest project (thumbnails arriving keep changing it).
     if (!a.timer) {
       a.timer = setTimeout(() => {
@@ -326,13 +379,13 @@ export default function App() {
     }
     if (a.file) {
       clearTimeout(a.fileTimer);
-      a.fileTimer = setTimeout(writeFile, 1500);
+      a.fileTimer = setTimeout(() => (a.fileDocDirty ? writeFile() : writeChat()), 1500);
     }
     // The project's own autosave slot, a second after the last change (true debounce:
     // thumbnail arrivals keep pushing it out, the write always carries the latest state).
     clearTimeout(a.slotTimer);
-    a.slotTimer = setTimeout(() => { a.slotTimer = null; writeSlotNow(); }, 1000);
-  }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
+    a.slotTimer = setTimeout(() => { a.slotTimer = null; (a.slotDocDirty ? writeSlotNow : writeSlotChatNow)(); }, 1000);
+  }, [project, projectLoadVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const startupProject = autosave.current.project;
     let saved = null;
@@ -1476,7 +1529,7 @@ export default function App() {
     const p = projectRef.current;
     const previousFile = a.file;
     clearTimeout(a.fileTimer);a.fileTimer = null;
-    const { pretty } = await serializeProject(p);
+    const { doc, chat } = await serializeProjectParts(p);
     await a.writing?.catch(() => {});
     const res = await window.api.saveProject(pretty, previousFile, { saveAs, name: p.name });
     if (!res) return false;
@@ -1489,6 +1542,7 @@ export default function App() {
     const unchanged = a.project === p;
     clearTimeout(a.fileTimer);a.fileTimer = null;
     a.file = res;
+    a.fileChat = p.craftAI;
     if (!unchanged) a.fileTimer = setTimeout(writeFile, 1500);
     setSaveState(unchanged ? 'saved' : 'saving');
     pushRecent(recentOf(a.project, res));
@@ -1501,7 +1555,7 @@ export default function App() {
     try {
       const res = await window.api.openProject();
       if (!res) return;
-      const p = await adoptFileBinding(normalizeProject(JSON.parse(res.json)), res.file);
+      const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
       await flushAutosave(); // the current project keeps its last changes (file + slot)
       autosave.current.file = res.file;
       dispatch({ type: 'load', project: p });
@@ -1575,7 +1629,7 @@ export default function App() {
       return { error: 'That project file could not be found any more, so it was removed from recents.' };
     }
     try {
-      const p = await adoptFileBinding(normalizeProject(JSON.parse(res.json)), res.file);
+      const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
       await flushAutosave();
       autosave.current.file = res.file;
       dispatch({ type: 'load', project: p });
@@ -2003,11 +2057,12 @@ export default function App() {
       }
       const p = projectRef.current;
       clearTimeout(a.fileTimer); a.fileTimer = null;
-      const { pretty } = await serializeProject(p);
+      const { doc, chat } = await serializeProjectParts(p);
       await a.writing?.catch(() => {});
       const res = await window.api.saveProjectAgent(pretty, target, a.file);
       if (res?.error) return { error: res.error };
       a.file = res.file;
+      a.fileChat = p.craftAI;
       setSaveState('saved');
       pushRecent(recentOf(p, res.file));
       await keepRecovery(false);

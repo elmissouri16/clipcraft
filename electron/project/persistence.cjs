@@ -12,6 +12,8 @@ if (!isMainThread) {
         const [file, json] = args;
         fs.writeFileSync(`${file}.part`, json, 'utf8');fs.renameSync(`${file}.part`, file);value = true;
       } else if (kind === 'slot') value = slots.writeSlot(...args);
+      else if (kind === 'chat') value = require('./sidecar.cjs').writeChat(...args);
+      else if (kind === 'slotChat') value = slots.writeSlotChat(...args);
       else throw new Error('Unknown persistence operation.');
       parentPort.postMessage({ id, value });
     } catch (error) { parentPort.postMessage({ id, error: error.message }); }
@@ -45,6 +47,9 @@ if (!isMainThread) {
     }
     writeProject(file, json) { return this.request('project', [file, json]); }
     writeSlot(root, record) { return this.request('slot', [root, record]); }
+    // The chat sidecar of a project file (null removes it), and a slot's chat on its own.
+    writeChat(file, json) { return this.request('chat', [file, json]); }
+    writeSlotChat(root, id, json) { return this.request('slotChat', [root, id, json]); }
     async close() {
       const worker = this.worker;this.worker = null;
       for (const request of this.pending.values()) request.reject(new Error('Project writer closed.'));

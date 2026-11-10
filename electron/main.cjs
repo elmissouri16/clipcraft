@@ -523,7 +523,7 @@ const persistence = new (require('./project/persistence.cjs').ProjectPersistence
 ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
   try {
     if (file && projectFiles.has(file) && !opts.saveAs) {
-      await persistence.writeProject(file, json);
+      await writeProjectFiles(file, json, opts.chat);
       return file;
     }
     const name = String(opts.name || 'project').replace(/[\\/:*?"<>|]+/g, '').trim() || 'project';
@@ -533,16 +533,24 @@ ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
       filters: [{ name: 'Project', extensions: ['json'] }],
     });
     if (res.canceled) return null;
-    await persistence.writeProject(res.filePath, json);
+    await writeProjectFiles(res.filePath, json, opts.chat);
     projectFiles.add(res.filePath);
     return res.filePath;
   } catch (e) {
     return { error: `Could not save the project: ${e.message}` };
   }
+const sidecar = require('./project/sidecar.cjs');
+// The document, then its chat sidecar (docs/architecture/project-file.md): chat undefined keeps the
+// sidecar as it is, null removes it. The sidecar lands after the document, as the chat log is the
+// expendable part of the pair.
+const writeProjectFiles = async (file, json, chat) => {
+  if (json != null) await persistence.writeProject(file, json);
+  if (chat !== undefined) await persistence.writeChat(file, chat);
+};
 });
 // An external agent's save_project with a path (docs/design/external-agent-mcp.md): no dialog, so only a
 // new *.clipcraft.json in an existing folder, or the project's own file; never another existing file.
-ipcMain.handle('project:saveAgent', async (_e, json, target, current) => {
+ipcMain.handle('project:saveAgent', async (_e, json, target, current, chat) => {
   try {
     if (typeof target !== 'string' || !path.isAbsolute(target)) return { error: 'Give an absolute path ending in .clipcraft.json.' };
     const file = path.resolve(target);
@@ -550,18 +558,18 @@ ipcMain.handle('project:saveAgent', async (_e, json, target, current) => {
     if (!fs.existsSync(path.dirname(file)) || !fs.statSync(path.dirname(file)).isDirectory()) return { error: `The folder ${path.dirname(file)} does not exist.` };
     const own = typeof current === 'string' && current && path.resolve(current) === file;
     if (fs.existsSync(file) && !own) return { error: `${file} already exists. Choose a new file name; existing files are never overwritten.` };
-    await persistence.writeProject(file, json);
+    await writeProjectFiles(file, json, chat);
     projectFiles.add(file);
     return { file };
   } catch (e) {
     return { error: `Could not save the project: ${e.message}` };
   }
 });
-// Auto save: rewrites an already chosen project file.
-ipcMain.handle('project:autosave', async (_e, file, json) => {
+// Auto save: rewrites an already chosen project file (json), its chat sidecar (chat), or both.
+ipcMain.handle('project:autosave', async (_e, file, json, chat) => {
   if (!projectFiles.has(file)) return false;
   try {
-    await persistence.writeProject(file, json);
+    await writeProjectFiles(file, json, chat);
     return true;
   } catch {
     return false;
@@ -576,9 +584,10 @@ ipcMain.handle('project:open', async () => {
   });
   if (res.canceled) return null;
   const pf = require("./project/projectfile.cjs");
-  const file = res.filePaths[0];
+  const file = sidecar.documentFor(res.filePaths[0]); // a picked chat sidecar opens its document
   projectFiles.add(file);
-  return { file, json: await pf.refreshSizes(pf.checkGenerated(fs.readFileSync(file, 'utf8'), mediaCacheDir()), probe) };
+  const text = fs.readFileSync(file, 'utf8');
+  return { file, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
 });
 
 // Reopen a known project file by path (Home screen recents): same refresh as project:open,
@@ -588,7 +597,8 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
     if (!filePath || !fs.existsSync(filePath)) return null;
     const pf = require("./project/projectfile.cjs");
     projectFiles.add(filePath);
-    return { file: filePath, json: await pf.refreshSizes(pf.checkGenerated(fs.readFileSync(filePath, 'utf8'), mediaCacheDir()), probe) };
+    const text = fs.readFileSync(filePath, 'utf8');
+    return { file: filePath, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(filePath, text) };
   } catch {
     return null;
   }
@@ -620,6 +630,7 @@ const closeNow = () => {
   clearTimeout(closeTimer);
   allowClose = true;
   if (win && !win.isDestroyed()) win.close();
+ipcMain.handle('slots:writeChat', (_e, id, json) => persistence.writeSlotChat(autosaveDir(), id, json));
 };
 ipcMain.handle('app:closeNow', () => closeNow());
 ipcMain.handle('app:closeCancel', () => clearTimeout(closeTimer));

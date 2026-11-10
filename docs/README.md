@@ -1,6 +1,7 @@
 # Contributor documentation
 
 - [Project structure and development commands](architecture/project-structure.md)
+- [The project file and its chat sidecar](architecture/project-file.md)
 - [Reorganization validation](architecture/reorganization-validation.md)
 - [Agent editing](agents/agent-editing.md)
 - [Editorial agent: plans, transcript cuts, critique and beats](agents/editorial-agent.md)

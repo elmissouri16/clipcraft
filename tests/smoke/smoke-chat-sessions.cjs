@@ -11,6 +11,9 @@ module.exports = async (win, app, dir) => {
   const stage = process.env.FVE_CHAT_STAGE || 'prepare';
   const result = { stage, errors: [] };
   const projectFile = path.join(dir, 'sessions.clipcraft.json');
+  // The chat log is saved beside the document (docs/architecture/project-file.md).
+  const chatFile = path.join(dir, 'sessions.clipcraft.chat.json');
+  const withChat = (file) => ({ ...JSON.parse(fs.readFileSync(file, 'utf8')), craftAI: JSON.parse(fs.readFileSync(chatFile, 'utf8')) });
   const metaFile = path.join(dir, 'sessions-meta.json');
   const ai = require("../../electron/agents/ai.cjs");
   const settings = require("../../electron/system/settings.cjs");
@@ -97,10 +100,20 @@ module.exports = async (win, app, dir) => {
       await draft('Keep this first-session draft');
       await click('button[aria-label=Save]');
       await until('document.querySelector(".save-state")?.textContent.includes("Saved") || document.querySelector(".save-status")?.textContent.includes("Saved")');
-      const saved = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+      const saved = withChat(projectFile);
       assert.equal(saved.craftAI.sessions.length, 2);
       assert.equal(saved.craftAI.activeSessionId, firstId);
+      assert.equal(JSON.parse(fs.readFileSync(projectFile, 'utf8')).craftAI, undefined, 'the document holds no chat');
       result.projectFileSaved = true;
+      // A chat change writes only the sidecar: the document's bytes stay as saved.
+      const docBefore = fs.readFileSync(projectFile, 'utf8');
+      await draft('A later draft, chat only');
+      for (let i = 0; i < 100 && !fs.readFileSync(chatFile, 'utf8').includes('A later draft, chat only'); i++) await wait(100);
+      assert.ok(fs.readFileSync(chatFile, 'utf8').includes('A later draft, chat only'), 'the sidecar carries the new draft');
+      assert.equal(fs.readFileSync(projectFile, 'utf8'), docBefore, 'the document was not rewritten for a chat change');
+      result.chatOnlyWriteSparesDocument = true;
+      await draft('Keep this first-session draft');
+      for (let i = 0; i < 100 && !fs.readFileSync(chatFile, 'utf8').includes('Keep this first-session draft'); i++) await wait(100);
       await home();
       await openFile();
       assert.equal(await q('document.querySelector(".pilot-input textarea").value'), 'Keep this first-session draft');
@@ -140,12 +153,30 @@ module.exports = async (win, app, dir) => {
       win.webContents.send('app:closeRequest');
       for (let i = 0; !closeCalled && i < 100; i++) await wait(50);
       assert.equal(closeCalled, true);
-      const closingFile = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+      const closingFile = withChat(projectFile);
       const closingSlot = await q(`window.api.slotRead(${JSON.stringify(closingFile.id)})`);
       for (const p of [closingFile, closingSlot.project]) {
         assert.equal(p.craftAI.sessions.find((s) => s.id === firstId).draft, 'Saved immediately at close');
       }
       result.closeFlushesLatestChat = true;
+      // An older project that still embeds its chat opens as before, and the first write moves the
+      // chat into the sidecar and saves the document without it (docs/architecture/project-file.md).
+      const legacyFile = path.join(dir, 'legacy.clipcraft.json'), legacyChat = path.join(dir, 'legacy.clipcraft.chat.json');
+      fs.writeFileSync(legacyFile, JSON.stringify({ id: 'legacy-embed', name: 'Legacy embed', ratio: '16:9', width: 640, height: 360, fps: 30, media: [], videoClips: [], overlayClips: [], audioClips: [], effectClips: [],
+        textClips: [{ id: 'lt', text: 'Legacy title', start: 0, duration: 1 }],
+        craftAI: { version: 1, sessions: [{ id: 'ls', title: 'Legacy chat', messages: [], contents: [], draft: 'Legacy draft', timelineAttachments: [], images: [], videos: [], queue: [], queuePaused: false }], activeSessionId: 'ls' } }));
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [legacyFile] });
+      await home(); await openFile();
+      await until('document.querySelector(".pilot-input textarea")?.value === "Legacy draft"');
+      await q("window.__fve.dispatch({ type: 'setProject', patch: { name: 'Legacy moved' } })");
+      for (let i = 0; i < 100 && !fs.existsSync(legacyChat); i++) await wait(100);
+      assert.ok(fs.existsSync(legacyChat), 'the first write after opening a legacy file creates its sidecar');
+      const movedDoc = JSON.parse(fs.readFileSync(legacyFile, 'utf8'));
+      assert.equal(movedDoc.name, 'Legacy moved');
+      assert.equal(movedDoc.craftAI, undefined, 'the document no longer embeds the chat');
+      assert.equal(JSON.parse(fs.readFileSync(legacyChat, 'utf8')).sessions[0].draft, 'Legacy draft', 'the sidecar carries the legacy chat');
+      result.legacyChatMovesToSidecar = true;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [projectFile] });
       fs.writeFileSync(metaFile, JSON.stringify({ firstId, unsavedId }));
     } else {
       const { firstId, unsavedId } = JSON.parse(fs.readFileSync(metaFile, 'utf8'));

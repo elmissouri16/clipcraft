@@ -9,7 +9,8 @@ src/
   main.jsx                 Renderer entry point
   app/                     Application shell and app-level UI
   components/ui/           Reusable controls
-  state/                   Project normalization, reducer and history
+  state/                   Project normalization, reducer, history and the project file split
+                           (projectFile.js: document vs chat sidecar, docs/architecture/project-file.md)
   styles/                  Application and frame-inspection CSS
   features/
     agent/                 Agent loops, tools, context and chat UI
@@ -35,7 +36,7 @@ electron/
   graphics/                Motion graphics sandbox, runtime and renderer
   library/                 Assets, stock, sounds, generation and templates
   media/                   FFmpeg, proxies, geometry and media analysis
-  project/                 Saved projects, autosaves and favorites
+  project/                 Saved projects, their chat sidecars, autosaves and favorites
   recording/               Recording service, windows and preloads
   system/                  Settings, updates, telemetry and cancellation
 tests/

@@ -45,7 +45,7 @@ The six project tools come first, then the native editor list (`nativeTools()` i
 | `list_projects` | Home's projects, newest first, each with an id for `open_project` |
 | `create_project` | a new project in one of Home's five formats (16:9, 9:16, 1:1, 4:5, 21:9) |
 | `open_project` | by id from `list_projects`, or by the path of a `.clipcraft.json` |
-| `save_project` | to the project's file, or with `path` to a new `.clipcraft.json` (never overwrites another file) |
+| `save_project` | to the project's file, or with `path` to a new `.clipcraft.json` (never overwrites another file); the chat log goes beside it as `.clipcraft.chat.json` (docs/architecture/project-file.md) |
 | `close_project` | back to Home |
 
 Image generation is offered only when CraftAI's assistant is Codex (it needs that sign-in). Your

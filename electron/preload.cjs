@@ -104,7 +104,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('media:visuals', handler);
   },
   saveProject: (json, file, opts) => ipcRenderer.invoke('project:save', json, file, opts),
-  autosaveProject: (file, json) => ipcRenderer.invoke('project:autosave', file, json),
+  autosaveProject: (file, json, chat) => ipcRenderer.invoke('project:autosave', file, json, chat),
   closeNow: () => ipcRenderer.invoke('app:closeNow'),
   closeCancel: () => ipcRenderer.invoke('app:closeCancel'),
   onCloseRequest: (fn) => {
@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld('api', {
   openProjectPath: (filePath) => ipcRenderer.invoke('project:openPath', filePath),
   slotWrite: (record) => ipcRenderer.invoke('slots:write', record),
   slotList: () => ipcRenderer.invoke('slots:list'),
+  slotWriteChat: (id, json) => ipcRenderer.invoke('slots:writeChat', id, json),
   slotForFile: (filePath) => ipcRenderer.invoke('slots:forFile', filePath),
   slotRead: (id) => ipcRenderer.invoke('slots:read', id),
   slotDelete: (id) => ipcRenderer.invoke('slots:delete', id),
@@ -169,7 +170,7 @@ contextBridge.exposeInMainWorld('api', {
   externalUninstall: id => ipcRenderer.invoke('external:uninstall', id),
   externalManualConfig: () => ipcRenderer.invoke('external:manualConfig'),
   externalCraftBusy: busy => ipcRenderer.invoke('external:craftBusy', busy),
-  saveProjectAgent: (json, target, current) => ipcRenderer.invoke('project:saveAgent', json, target, current),
+  saveProjectAgent: (json, target, current, chat) => ipcRenderer.invoke('project:saveAgent', json, target, current, chat),
   onExternalCall: cb => { const handler = (_event, req) => cb(req); ipcRenderer.on('external:call', handler); return () => ipcRenderer.removeListener('external:call', handler); },
   onExternalCancel: cb => { const handler = (_event, req) => cb(req); ipcRenderer.on('external:cancel', handler); return () => ipcRenderer.removeListener('external:cancel', handler); },
   onExternalStatus: cb => { const handler = (_event, req) => cb(req); ipcRenderer.on('external:status', handler); return () => ipcRenderer.removeListener('external:status', handler); },

@@ -1,3 +1,5 @@
+import { projectDoc, projectChat } from './projectFile.js';
+
 // The three persistence destinations share one serialization of an immutable
 // snapshot. Bound the cache so history cannot retain a string copy per edit.
 export function createProjectSerializer(makeWorker) {
@@ -32,7 +34,7 @@ export function createProjectSerializer(makeWorker) {
       catch (error) { pending.delete(id);reject(error); }
     });
     const entry = { project, promise };recent.push(entry);
-    if (recent.length > 2) recent.shift();
+    if (recent.length > 4) recent.shift();
     promise.catch(() => { const index = recent.indexOf(entry);if (index >= 0) recent.splice(index, 1); });
     return promise;
   };
@@ -40,3 +42,11 @@ export function createProjectSerializer(makeWorker) {
 }
 
 export const serializeProject = createProjectSerializer(() => new Worker(new URL('./projectSerializer.worker.js', import.meta.url), { type: 'module' }));
+
+// The document and the chat as separate strings (docs/architecture/project-file.md): chat is null
+// when the project has no conversations worth storing.
+export async function serializeProjectParts(project) {
+  const chat = projectChat(project);
+  const [doc, chatOut] = await Promise.all([serializeProject(projectDoc(project)), chat ? serializeProject(chat) : null]);
+  return { doc, chat: chatOut };
+}
