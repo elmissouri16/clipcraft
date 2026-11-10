@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, canvasFor, clipLayer, emptyProject, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
+import { LAYERED, canvasFor, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
 import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
 import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
 import { useExternalAgent } from './useExternalAgent.js';
@@ -1751,6 +1751,11 @@ export default function App() {
       const progress = new ExportProgress(stages, { storage, profile: readExportProfile(storage), publish: update => {
         if (exportCanceled.current) return;
         publish(e => e && !e.done && !e.error ? { ...e, ...update } : e);
+  // The rendered cover (export:coverFrame's per-project poster file) is the home card's picture;
+  // the timestamp lets the card reload the file when the same path holds a new render.
+  const changePosterImage = (file) => {
+    dispatch({ type: 'setProject', patch: { posterImage: file, posterImageAt: Date.now() } });
+  };
         window.api.exportActivity?.({active:true,progress:update.progress}).catch(() => {});
       } });
       publish({ ready:false, project, eff, target, name, review, progress:0, stage:review ? 'Preparing section preview' : 'Preparing your video', startedAt:performance.now() });
@@ -1777,14 +1782,12 @@ export default function App() {
       progress.start('finish');let size = res.size, coverNote = null;
       if (typeof project.posterAt === 'number') {
         try {
-          const slot = videoLayout(project.videoClips).find(l => !l.clip.gap && project.posterAt >= l.start && project.posterAt <= l.end);
-          const media = slot && project.media.find(m => m.id === slot.clip.mediaId);
-          if (media && (media.type === 'video' || media.type === 'image')) {
-            const at = media.type === 'video' ? (slot.clip.in || 0) + (project.posterAt - slot.start) * (slot.clip.speed || 1) : 0;
-            const cov = await window.api.exportCover(res.file,media.path,at);
-            if (cov.ok) { if (cov.size) size = cov.size; }
-            else coverNote = 'The cover picture could not be embedded — the video itself is complete.';
-          }
+          // The embedded cover is the EXPORTED frame at the chosen time — overlays, graphics and
+          // text included, what a viewer sees — never a frame of the main-track source.
+          const at = Math.min(Math.max(0, project.posterAt), Math.max(0, exportDuration(project) - 1 / (project.fps || 30)));
+          const cov = await window.api.exportCover(res.file,res.file,at);
+          if (cov.ok) { if (cov.size) size = cov.size; }
+          else coverNote = 'The cover picture could not be embedded — the video itself is complete.';
         } catch { coverNote = 'The cover picture could not be embedded — the video itself is complete.'; }
       }
       // Once encoding has published the finished file, completing the optional
@@ -2201,7 +2204,7 @@ export default function App() {
         onClose={() => { if(exportRunning.current)return; if(exporting.target?.frameDir)window.api.exportAbort(exporting.target.frameDir);setExporting(null); }} onShow={() => window.api.showInFolder(exporting.file)}
         onOpen={() => window.api.openFile(exporting.file)} onPickTarget={pickExportTarget}
         onRename={renameExport} onSettings={changeExportSettings} onResolution={changeExportResolution}
-        onPosterAt={changePosterAt} />}
+        onPosterAt={changePosterAt} onPosterImage={changePosterImage} />}
     </div>
   );
 }

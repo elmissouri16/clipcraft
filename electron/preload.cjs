@@ -122,6 +122,7 @@ contextBridge.exposeInMainWorld('api', {
   exportBegin: (suggested) => ipcRenderer.invoke('export:begin', suggested),
   exportCover: (file, mediaPath, at) => ipcRenderer.invoke('export:cover', file, mediaPath, at),
   frameGrab: (mediaPath, at) => ipcRenderer.invoke('media:frame', mediaPath, at),
+  exportCoverFrame: (project, at) => ipcRenderer.invoke('export:coverFrame', project, at),
   exportCaps: () => ipcRenderer.invoke('export:caps'),
   // Text layer: begin, then one call per frame (pixels, or { blank: n } / { same: n }), then end (frame count).
   exportTextBegin: (dir, width, height, fps, options) => ipcRenderer.invoke('export:textBegin', dir, width, height, fps, options),

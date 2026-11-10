@@ -793,7 +793,7 @@ ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
     const out = path.join(mediaCacheDir(), `${key}-frame.jpg`);
     if (!fs.existsSync(out)) {
       await new Promise((resolve, reject) => execFile(ffmpegPath,
-        ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-q:v', '3', out],
+        ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-vf', 'format=rgb24', '-q:v', '3', out],
         (e) => (e ? reject(e) : resolve())));
       // Prune older grabs (keep the newest 16) so scrubbing the cover chooser cannot fill the cache.
       try {
@@ -809,9 +809,44 @@ ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
   }
 });
 
-// Embed the chosen poster frame as the MP4's attached cover picture: grab the frame from the source
-// media, then a stream-copy remux adds it as attached_pic (the original file is only replaced once
-// the remux succeeds, so a failure leaves the export untouched).
+// The Export dialog's cover preview: the COMPOSITED timeline frame at `at` seconds — main track,
+// overlays, graphics and text, exactly what the export shows — rendered by the offscreen preview
+// renderer that also serves the agent's inspect_frames (captureTimelineFrame), 1024 px long edge,
+// as a JPEG in the media cache. Cached per project content + time (the newest 32 grabs are kept),
+// and the latest render is also copied to a stable per-project poster file for the home card.
+// Earlier versions grabbed a frame of the main-track SOURCE, which showed nothing of a project
+// whose content lives on overlay tracks (a flat background image with graphics over it).
+ipcMain.handle('export:coverFrame', async (_e, project, at) => {
+  try {
+    const { planFrames } = require("./agents/agentFrames.cjs");
+    const { craftAI, posterAt, posterImage, posterImageAt, ...snapshot } = project || {};
+    const t = Math.max(0, Number(at) || 0);
+    const key = require('crypto').createHash('sha1').update(`${JSON.stringify(snapshot)}|${t.toFixed(3)}`).digest('hex').slice(0, 16);
+    const dir = mediaCacheDir();
+    const out = path.join(dir, `${key}-cover.jpg`);
+    if (!fs.existsSync(out)) {
+      const [plan] = await planFrames(snapshot, 'timeline', undefined, [t]);
+      const bytes = await captureTimelineFrame(plan);
+      fs.writeFileSync(out, bytes);
+      try {
+        const grabs = fs.readdirSync(dir).filter((f) => f.endsWith('-cover.jpg')).map((f) => path.join(dir, f))
+          .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+        for (const f of grabs.slice(32)) { try { fs.rmSync(f); } catch { /* in use */ } }
+      } catch { /* cache dir unavailable */ }
+    }
+    let poster = null;
+    const id = String(snapshot.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (id) { poster = path.join(dir, `poster-${id}.jpg`); fs.copyFileSync(out, poster); }
+    return { ok: true, path: out, poster };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Embed the chosen poster frame as the MP4's attached cover picture: grab the frame from
+// `mediaPath` at `at` — the renderer passes the exported file itself, so the cover is the
+// exported frame, overlays included — then a stream-copy remux adds it as attached_pic (the
+// original file is only replaced once the remux succeeds, so a failure leaves the export untouched).
 ipcMain.handle('export:cover', async (event, file, mediaPath, at) => {
   const { execFile } = require('child_process');
   const { ffmpegPath } = require("./media/ffmpeg.cjs");
@@ -821,7 +856,9 @@ ipcMain.handle('export:cover', async (event, file, mediaPath, at) => {
     if (!fs.existsSync(file) || !fs.existsSync(mediaPath)) throw new Error('missing file');
     tmp = fs.mkdtempSync(path.join(path.dirname(file), '.clipcraft-cover-'));
     const cover = path.join(tmp, 'cover.jpg');
-    await run(['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-q:v', '3', cover]);
+    // Through RGB: JPEG viewers read the picture with the BT.601 convention, so the video's BT.709
+    // YUV must not be copied into the JPEG as-is (that shifted saturated colours: 22.9 dB vs 43.6 dB).
+    await run(['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', '-vf', 'format=rgb24', '-q:v', '3', cover]);
     const out = path.join(tmp, 'with-cover.mp4');
     await run(['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-i', cover, '-map', '0', '-map', '1', '-c', 'copy', '-disposition:v:1', 'attached_pic', out]);
     fs.renameSync(out, file);

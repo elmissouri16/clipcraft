@@ -16,6 +16,14 @@ module.exports=async(win,app,dir)=>{
   const media={...await ff.probe(source),id:'m',path:source,name:'Pattern'};
   const p={id:'export-ux',name:'Export UX',width:640,height:360,fps:30,ratio:'16:9',posterAt:.2,background:'#000000',media:[media],videoClips:[{id:'v',mediaId:'m',in:0,out:12,speed:1,effects:['grain']}],overlayClips:[],audioClips:[],textClips:[{id:'t',text:'Export ETA',start:0,duration:12,x:.5,y:.8}],effectClips:[]};
   await q('window.__fve.load('+JSON.stringify(p)+')');await wait(200);
+  // The Export dialog's cover is the COMPOSITED frame at the poster time (export:coverFrame), not
+  // a frame of the main-track source: open the dialog, wait for the render, close it again.
+  await q('document.querySelector(".btn-export").click()');await until('!!document.querySelector(".x-cover img[data-cover=composite]")',30000);
+  result.coverPreview=await q('document.querySelector(".x-cover img[data-cover=composite]").getAttribute("src")');
+  const coverFile=decodeURIComponent(result.coverPreview.replace(/^file:\/+/,'/'));
+  check('the cover preview is a rendered timeline frame in the media cache',/-cover\.jpg$/.test(coverFile)&&fs.existsSync(coverFile)&&fs.statSync(coverFile).size>1000);
+  check('the rendered cover becomes the project card picture',await q('/poster-export-ux\\.jpg/.test(window.__fve.rawProject().posterImage||"")'));
+  await q('[...document.querySelectorAll(".modal-backdrop button")].find(b=>b.textContent.trim()==="Cancel").click()');await until('!document.querySelector(".modal-backdrop")');
   const file=path.join(dir,'ui-export.mp4'),sentinel=Buffer.from('previous export stays safe');fs.writeFileSync(file,sentinel);
   const canceled=q('window.__fve.exportNow()');
   await until('document.querySelector(".x-enc-stage")?.textContent.includes("Rendering effects")');
@@ -39,6 +47,17 @@ module.exports=async(win,app,dir)=>{
   result.output=await ff.probe(file);check('the saved video is valid',result.output.hasVideo&&Math.abs(result.output.duration-12)<.1);
   const streams=JSON.parse(execFileSync(ff.ffprobePath,['-v','quiet','-show_streams','-of','json',file],{encoding:'utf8'})).streams;
   check('the cover is embedded without altering the main video',streams.some(s=>s.disposition?.attached_pic===1));
+  // The embedded cover is the exported frame at the poster time (text overlay and grain included),
+  // so it matches that frame closely; a frame of the bare source would not.
+  const {spawnSync}=require('node:child_process');
+  const coverJpg=path.join(dir,'cover.jpg'),frameAt=path.join(dir,'frame-at-poster.png');
+  execFileSync(ff.ffmpegPath,['-v','error','-y','-i',file,'-map','0:v:1','-c','copy','-frames:v','1','-f','image2',coverJpg]); // the embedded JPEG bytes
+  execFileSync(ff.ffmpegPath,['-v','error','-y','-ss',String(p.posterAt),'-i',file,'-map','0:v:0','-frames:v','1',frameAt]);
+  const psnrOf=(a,b)=>{const err=spawnSync(ff.ffmpegPath,['-hide_banner','-i',a,'-i',b,'-filter_complex','[0:v][1:v]psnr','-f','null','-']).stderr.toString();const m=/average:(inf|[\d.]+)/.exec(err);return m?(m[1]==='inf'?99:parseFloat(m[1])):NaN;};
+  result.coverPsnr={exportedFrame:psnrOf(coverJpg,frameAt),source:psnrOf(coverJpg,source)};
+  // 35 dB: the JPEG of the exported frame decoded as JPEG viewers decode it (BT.601 convention). A cover
+  // written with the video's BT.709 values measured 22.9 dB here — a visible shift of saturated colours.
+  check('the embedded cover is the exported frame at the poster time, in JPEG colour conventions',result.coverPsnr.exportedFrame>=35&&result.coverPsnr.exportedFrame>result.coverPsnr.source);
   check('no unfinished output is left in the destination',!fs.readdirSync(dir).some(n=>n.startsWith('.clipcraft-export-')||n.startsWith('.clipcraft-cover-')));
   result.dockUpdates=dock.length;result.blockers=blockers.length;
   fs.writeFileSync(path.join(dir,'done.png'),(await win.capturePage()).toPNG());

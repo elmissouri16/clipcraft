@@ -20,24 +20,33 @@ import { formatElapsed, formatRemaining } from '../exportProgress.js';
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.floor((s % 1) * 10))}`;
 const fmtMB = (mb) => (mb >= 100 ? mb.toFixed(0) : mb.toFixed(1));
 
-// The cover preview ALWAYS shows a full-resolution frame of the original media at the cover
-// time (grabbed by the main process via media:frame — never a proxy, never a thumbnail-sprite
-// frame; the sprite only fills in for the first instant while the grab is on its way, and the
-// previous grab stays up while scrubbing until the new one lands). The frame shown is the
-// frame the export embeds: coverTargetFor maps the timeline time exactly like the embed does.
-function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt, readOnly = false }) {
+// The cover preview shows the COMPOSITED frame at the cover time — main track, overlays,
+// graphics and text, the picture the export embeds — rendered by the main process
+// (export:coverFrame, the offscreen preview renderer). The previous render stays up while
+// scrubbing until the new one lands; before the first render the main-track source (its image,
+// or its thumbnail sprite) fills in. A landed render also becomes the project card picture.
+// Without export:coverFrame (older hosts) the preview falls back to a full-resolution frame of the
+// main-track source at the mapped time (media:frame), which is blind to overlay tracks.
+function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt, onPosterImage, readOnly = false }) {
   const dur = exportDuration(project);
   const target = coverTargetFor(project, coverT);
-  const tKey = target && target.kind === 'video' ? `${target.media.path}|${target.at.toFixed(2)}` : null;
-  const [frame, setFrame] = useState(null); // { key, url } — the latest full-res grab
+  const fps = project.fps || 30;
+  const at = Math.min(Math.max(0, coverT), Math.max(0, dur - 1 / fps)); // inside the timeline: the last frame at most
+  const composite = typeof window.api?.exportCoverFrame === 'function';
+  const tKey = composite ? `composite|${at.toFixed(3)}` : target && target.kind === 'video' ? `${target.media.path}|${target.at.toFixed(2)}` : null;
+  const [frame, setFrame] = useState(null); // { key, url } — the latest render / grab
   useEffect(() => {
-    if (!tKey || !window.api?.frameGrab) return undefined;
+    if (!tKey) return undefined;
+    if (!composite && !window.api?.frameGrab) return undefined;
     let live = true;
     const h = setTimeout(() => {
-      window.api.frameGrab(target.media.path, target.at)
-        .then((r) => { if (live && r && r.ok) setFrame({ key: tKey, url: toFileUrl(r.path) }); })
-        .catch(() => {});
-    }, 120);
+      const grab = composite ? window.api.exportCoverFrame(project, at) : window.api.frameGrab(target.media.path, target.at);
+      grab.then((r) => {
+        if (!live || !r || !r.ok) return;
+        setFrame({ key: tKey, url: toFileUrl(r.path) });
+        if (composite && r.poster && onPosterImage) onPosterImage(r.poster);
+      }).catch(() => {});
+    }, composite ? 200 : 120);
     return () => { live = false; clearTimeout(h); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tKey]);
@@ -46,10 +55,10 @@ function Cover({ project, coverT, setCoverT, choosing, setChoosing, onPosterAt, 
   return (
     <div className="x-cover-col">
       <div className="x-cover" style={{ ...(spriteStyle || {}), '--cover-ratio': project.width / project.height, aspectRatio: `${project.width} / ${project.height}` }}>
-        {target && target.kind === 'image' && <img src={toFileUrl(target.media.path)} alt="" draggable={false} />}
-        {target && target.kind === 'video' && frame && <img src={frame.url} alt="" draggable={false} />}
+        {frame && <img src={frame.url} alt="" draggable={false} data-cover={composite ? 'composite' : 'source'} />}
+        {!frame && target && target.kind === 'image' && <img src={toFileUrl(target.media.path)} alt="" draggable={false} data-cover="placeholder" />}
         {!target && <Clapperboard size={30} className="x-cover-icon" />}
-        {target && target.kind === 'video' && !frame && !spriteStyle && <Clapperboard size={30} className="x-cover-icon" />}
+        {!frame && target && target.kind === 'video' && !spriteStyle && <Clapperboard size={30} className="x-cover-icon" />}
       </div>
       {!readOnly && (
       <button type="button" className="btn btn-sm x-cover-btn" onClick={() => setChoosing(!choosing)}>
@@ -71,7 +80,7 @@ function Row({ label, children }) {
   return <div className="x-row"><span className="x-row-label">{label}</span><div className="x-row-ctl">{children}</div></div>;
 }
 
-export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen, onStart, onPickTarget, onRename, onSettings, onResolution, onPosterAt }) {
+export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen, onStart, onPickTarget, onRename, onSettings, onResolution, onPosterAt, onPosterImage }) {
   const [choosing, setChoosing] = useState(false);
   const [details, setDetails] = useState(false);
   const [encodingDetails, setEncodingDetails] = useState(false);
@@ -162,7 +171,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
               <h3 id="export-title">Exporting video</h3>
             </div>
             <div className="x-enc-body">
-              <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={false} setChoosing={setChoosing} onPosterAt={onPosterAt} readOnly />
+              <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={false} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} readOnly />
               <div className="x-specs">
                 {[...specs,...(encodingDetails?extraSpecs:[])].map(([k, v]) => (
                   <div key={k} className="export-summary-row"><span>{k}</span><b>{v}</b></div>
@@ -226,7 +235,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
         <div className="x-body">
-          <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={choosing} setChoosing={setChoosing} onPosterAt={onPosterAt} />
+          <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={choosing} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} />
           <div className="x-form">
             <Row label="Name">
               <input type="text" value={state.name || ''} onChange={(e) => onRename(e.target.value)} aria-label="Output file name" />

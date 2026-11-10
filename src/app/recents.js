@@ -8,6 +8,12 @@
 import { videoLayout } from "../state/store.js";
 
 export function recentEntryFor(p, path, urlFor) {
+  // The cover rendered in the Export dialog (project.posterImage, the composited frame at the
+  // chosen time) is the card picture when the project has one; posterImageAt busts the browser's
+  // cache of that per-project file. The source-derived thumbnails below are the fallback.
+  if (p && p.posterImage) {
+    return { path, name: p.name, ratio: p.ratio, modifiedAt: Date.now(), thumb: { kind: 'image', src: `${urlFor(p.posterImage)}?v=${p.posterImageAt || 0}` } };
+  }
   const media = (p && p.media) || [];
   const byId = new Map(media.map((m) => [m.id, m]));
   let vid = null;

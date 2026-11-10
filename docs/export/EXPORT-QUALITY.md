@@ -78,6 +78,31 @@ Ultra. Real footage loses far less, but "near-lossless" at Ultra now describes t
 chroma round trip. Ultra's audio measures 222k because a pure 440 Hz sine cannot fill a
 320k AAC allocation — the 320k argument itself is pinned by an args-level assertion.
 
+## Cover picture (fixed 2026-11-09)
+
+The Export dialog's cover chooser scrubs a timeline time (`project.posterAt`). Three things follow
+from it, and all three are the **composited** frame — main track, overlays, graphics and text:
+
+- **Preview:** `export:coverFrame` (main process) renders the timeline frame at that time with the
+  offscreen preview renderer that also serves the agent's `inspect_frames` (`captureTimelineFrame`),
+  1024 px long edge, cached in the media cache per project content + time (newest 32 kept). The
+  dialog debounces scrubbing by 200 ms and keeps the previous render up until the next lands.
+- **Embedded cover:** after encoding, the frame is grabbed from the **exported file** at that time and
+  muxed in as `attached_pic` (`export:cover`), so the cover is what a viewer sees.
+- **Project card:** each landed render is also copied to `poster-<project id>.jpg` in the media cache
+  and recorded as `project.posterImage` (+ `posterImageAt` for cache busting); `recentEntryFor` shows
+  it first. It refreshes whenever the Export dialog opens, so edits made after choosing a cover show
+  on the card once the dialog has been opened again.
+
+Before this, all three used a frame of the **main-track source** at the mapped source time, which
+showed a blank card for any project whose content sits on overlay tracks (a flat background image
+with graphics over it, the common CraftAI layout). JPEG grabs (`export:cover`, `media:frame`) now go
+through RGB (`format=rgb24`) before the JPEG encode: JPEG viewers decode with the BT.601 convention,
+and copying the video's BT.709 YUV into the JPEG shifted saturated colours (measured 22.9 dB against
+the exported frame; 43.6 dB through RGB). `tests/smoke/smoke-export-ux.cjs` checks the preview is a
+rendered `-cover.jpg`, the card poster is recorded, and the embedded JPEG matches the exported frame
+at ≥ 35 dB.
+
 ## Slow image zooms
 
 Animated uniform zooms without rotation use cubic fractional-pixel sampling in
