@@ -6,7 +6,7 @@ import Dropdown from "../../components/ui/Dropdown.jsx";
 import { AudioLines, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, Eye, EyeOff, Film, Gauge, Info, Keyboard, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import ShortcutSettings from './ShortcutSettings.jsx';
 import { ENGINE_NAMES, defaultSpeech, piperVoicesOf, usableEngines } from '../../features/audio/voiceDefault.js';
-import { SUPPORT_URL } from './HomeScreen.jsx';
+
 // Providers come from the preset table (shared/providers.json): name, key page, hint, default address.
 const PROVIDERS = PRESETS;
 
@@ -208,8 +208,10 @@ const SECTION_GROUPS = [
 ];
 const SECTIONS = SECTION_GROUPS.flatMap(g => g.items);
 
-export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, updateReady = false, initialSection = 'ai' }) {
-  const [section, setSection] = useState(initialSection);
+export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, initialSection = 'ai' }) {
+  const [section, setSection] = useState(initialSection === 'stock' || initialSection.startsWith('services') ? 'services' : initialSection);
+  const [serviceTarget, setServiceTarget] = useState((initialSection.startsWith('services:') ? initialSection.slice('services:'.length) : '') || (initialSection === 'stock' ? 'pixabay' : ''));
+  const openService = target => { setServiceTarget(target || ''); setSection('services'); };
   const [saved, setSaved] = useState(null); // public settings from the main process
   const paneRef = useRef(null);
   const dialogRef = useRef(null);
@@ -407,12 +409,8 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
               </div>
             ))}
             <div className="set2-app-links">
-              <button type="button" className="about-btn" onClick={() => { onClose();onAbout(); }}
-                aria-label="About ClipCraft" title={updateReady ? 'An update is available' : 'Version and updates'}>
-                <Info size={15} /><span>About ClipCraft</span>{updateReady && <i className="update-dot" aria-hidden="true" />}
-              </button>
-              <button type="button" onClick={() => window.api.openHelp(SUPPORT_URL)} aria-label="Support ClipCraft on PayPal" title="Support ClipCraft's development on PayPal">
-                <img src="./paypal.svg" alt="" className="paypal-mark" draggable={false} /><span>Support the project</span>
+              <button type="button" className="about-btn" onClick={() => { onClose();onAbout(); }} aria-label="About ClipCraft" title="Version and source">
+                <Info size={15} /><span>About ClipCraft</span>
               </button>
             </div>
           </nav>

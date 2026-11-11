@@ -1375,23 +1375,24 @@ module.exports = async function smoke(win, app, dir) {
     return app.quit();
   }
   if (process.env.FVE_SMOKE_MODE === 'about') {
-    // About and updates, with FVE_UPDATE_URL on a local server that announces a newer version: the startup notice,
-    // the dot on Settings, then Settings > About and its "Check for updates".
+    // Settings > About: the full version, the repository links, and no update machinery anywhere.
+    win.webContents.setBackgroundThrottling(false); win.show(); // a hidden window hands capturePage a stale frame
     const q = run;
     const until = async (js, ms) => { for (let t = 0; t < ms; t += 250) { if (await q(js)) return true; await wait(250); } return false; };
     try {
-      result.notice = await until(`!!document.querySelector('.update-note')`, 15000);
-      result.noticeText = await q(`document.querySelector('.update-note b')?.textContent || ''`);
-      result.dot = await q(`!!document.querySelector('.settings-btn .update-dot')`);
-      await shot('about-notice.png');
-      await q(`document.querySelector('.topbar .settings-btn').click()`);
+      await until(`!!window.__fve && !!document.querySelector('.home-frame-card')`, 15000);
+      result.noDot = await q(`!document.querySelector('.update-dot') && !document.querySelector('.update-note')`);
+      result.homeVersion = await q(`document.querySelector('.home-ver')?.textContent || ''`);
+      await q(`document.querySelector('.home-settings').click()`); // Home's own Settings control
       await until(`!!document.querySelector('.settings .about-btn')`, 5000);
       await q(`document.querySelector('.settings .about-btn').click()`);
-      await wait(500);
-      result.version = await q(`document.querySelector('.about-version')?.textContent || ''`);
-      await q(`[...document.querySelectorAll('.modal.about button')].find((b) => b.textContent.includes('Check for updates')).click()`);
-      result.checked = await until(`!!document.querySelector('.about-update, .about-status.ok, .about-status.error')`, 15000);
-      result.status = await q(`(document.querySelector('.about-update b, .about-status') || {}).textContent || ''`);
+      await until(`/Version \\d/.test(document.querySelector('.about-vpill')?.textContent || '')`, 5000);
+      result.version = await q(`document.querySelector('.about-vpill')?.textContent || ''`);
+      result.noUpdateUi = await q(`![...document.querySelectorAll('.modal.about button')].some((b) => /update/i.test(b.textContent))`);
+      result.repoLinks = await q(`[...document.querySelectorAll('.modal.about button')].filter((b) => /GitHub|Source code/.test(b.textContent)).length`);
+      result.sameVersion = result.version === result.homeVersion; // one format everywhere
+      result.open = await q(`[document.querySelector('.modal.about') && 'about', document.querySelector('.settings2') && 'settings'].filter(Boolean).join('+')`);
+      await q('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))'); await wait(150);
       await shot('about-dialog.png');
     } catch (e) {
       result.error = e.message;

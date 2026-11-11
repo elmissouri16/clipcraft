@@ -16,7 +16,6 @@ module.exports=async(win,app,dir)=>{
     const markup=name=>renderToStaticMarkup(React.createElement(Icon,{name}));
     await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');
     await q('document.querySelector(".home-frame-card").click()');await until('!!document.querySelector(".topbar")');
-    await until('!!document.querySelector(".welcome-go")');await q('document.querySelector(".welcome-go").click()');
     const ff=require('../../electron/media/ffmpeg.cjs'),{execFileSync}=require('node:child_process');
     const wave=path.join(dir,'wave.png');
     execFileSync(ff.ffmpegPath,['-v','error','-y','-f','lavfi','-i','aevalsrc=0.25*sin(440*2*PI*t)*(0.3+0.7*sin(2*PI*0.8*t)^2):s=16000:d=8','-filter_complex','showwavespic=s=320x100:colors=0xc6c8df','-frames:v','1',wave]);

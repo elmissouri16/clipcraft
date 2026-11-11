@@ -38,7 +38,7 @@ electron/
   media/                   FFmpeg, proxies, geometry and media analysis
   project/                 Saved projects, their chat sidecars, autosaves and favorites
   recording/               Recording service, windows and preloads
-  system/                  Settings, updates, telemetry and cancellation
+  system/                  Settings, telemetry and cancellation
 tests/
   unit/<feature>/          Standalone Node regression suites
   smoke/                   Real Electron UI checks and their dispatcher

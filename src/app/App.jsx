@@ -41,8 +41,7 @@ import TopBar from './components/TopBar.jsx';
 import SettingsDialog from './components/SettingsDialog.jsx';
 import { actionFor, setActiveKeymap, WORKS_IN_FIELDS } from './keymap.js';
 import { showAlert, askConfirm } from './dialogs.js';
-import { AboutDialog, UpdateNotice, useUpdateCheck } from './components/About.jsx';
-import WelcomeCard from './components/WelcomeCard.jsx';
+import { AboutDialog } from './components/About.jsx';
 import ScreenRecordDialog from "../features/recording/components/ScreenRecordDialog.jsx";
 import { useScreenRecorder } from "../features/recording/useScreenRecorder.js";
 import CraftAI from "../features/agent/components/CraftPilot.jsx";
@@ -153,33 +152,6 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quality, setQuality] = useState('full'); // Playback quality: which scaled copy the player uses
   const [aboutOpen, setAboutOpen] = useState(false);
-  // ---- First run: the welcome card shows exactly once (flag in settings.json via
-  // firstrun IPC); About replays the card on demand. ----
-  // B3 (2026-11-01): the multi-step tour became this single card. The persisted flag
-  // keeps its name (tourSeen) so profiles that already saw the tour count as seen and
-  // never get the card; the trigger and the dismissal chain are unchanged.
-  const [welcomeOpen, setWelcomeOpen] = useState(false);
-  // W6 (2026-11-01): the first-run surface no longer fires at app launch on the Home
-  // screen. It starts the first time the user ENTERS a project (the editor), once
-  // only. tourSeen stays null until the persisted flags load, so a fast first click
-  // can't slip past it either way.
-  const [tourSeen, setTourSeen] = useState(null);
-  // The first-run flow is the Welcome card only — nothing chains after it.
-  useEffect(() => {
-    let alive = true;
-    Promise.resolve(window.api.firstRunGet?.()).then((f) => {
-      if (!alive || !f) return;
-      setTourSeen(!!f.tourSeen);
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  const closeWelcome = useCallback(() => {
-    setWelcomeOpen(false);
-    setTourSeen(true);
-    window.api.firstRunSet?.({ tourSeen: true }).catch(() => {});
-  }, []);
-  const [update, setUpdate] = useUpdateCheck(); // manual update check state (About dialog)
-  const [updateSeen, setUpdateSeen] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0); // bumps when Settings closes so the assistant re-reads the AI setup
   const [dragOver, setDragOver] = useState(false);
   const duration = projectDuration(project);
@@ -206,12 +178,6 @@ export default function App() {
   const [screen, setScreen] = useState('home'); // 'home' | 'editor'
   const screenRef = useRef(screen);
   screenRef.current = screen;
-  // W6 deferred welcome trigger: the first entry into the editor with the first-run
-  // surface unseen opens the welcome card (declared here, after `screen`). The pack
-  // prompt is NOT moved — it still chains off closeWelcome, exactly as before.
-  useEffect(() => {
-    if (screen === 'editor' && tourSeen === false && !welcomeOpen) setWelcomeOpen(true);
-  }, [screen, tourSeen, welcomeOpen]);
   const [recents, setRecents] = useState(() => {
     try { return JSON.parse(localStorage.getItem('clipcraft.recents') || '[]'); } catch { return []; }
   });
@@ -2133,9 +2099,8 @@ export default function App() {
         {externalApproval}
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
         {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
-          onAbout={() => setAboutOpen('settings')} updateReady={!!update?.newer} />}
-        {aboutOpen && <AboutDialog update={update} onUpdate={setUpdate} onClose={() => { setAboutOpen(false); setUpdateSeen(true); if (aboutOpen === 'settings') setSettingsOpen(true); }}
-          onWelcome={() => setAboutOpen(false)} />}
+          onAbout={() => setAboutOpen('settings')} />}
+        {aboutOpen && <AboutDialog onClose={() => { setAboutOpen(false); if (aboutOpen === 'settings') setSettingsOpen(true); }} />}
       </div>
     );
   }
@@ -2146,8 +2111,7 @@ export default function App() {
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
       <TopBar agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
-        onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }}
-        updateReady={!!update?.newer} />
+        onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }} />
 
       <div className="agent-workspace-tools" hidden={!agentMode}>
         <button className="btn btn-sm" aria-expanded={agentDrawer === 'media'} onClick={() => { setTab('media'); setAgentDrawer(d => d === 'media' ? null : 'media'); }}>Media</button>
@@ -2224,15 +2188,12 @@ export default function App() {
           <button className="icon-btn" aria-label="Close" onClick={() => setRecoveredNote(false)}>×</button>
         </div>
       )}
-            {!updateSeen && !aboutOpen && <UpdateNotice update={update} onDismiss={() => setUpdateSeen(true)} />}
-      {aboutOpen && <AboutDialog update={update} onUpdate={setUpdate} onClose={() => { setAboutOpen(false); setUpdateSeen(true); if (aboutOpen === 'settings') setSettingsOpen(true); }}
-        onWelcome={() => { setAboutOpen(false); setWelcomeOpen(true); }} />}
-      {welcomeOpen && <WelcomeCard onClose={closeWelcome} />}
+      {aboutOpen && <AboutDialog onClose={() => { setAboutOpen(false); if (aboutOpen === 'settings') setSettingsOpen(true); }} />}
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
       {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
-        onAbout={() => setAboutOpen('settings')} updateReady={!!update?.newer}
+        onAbout={() => setAboutOpen('settings')}
         onProxiesCleared={(deleted) => projectRef.current.media.forEach((m) => {
           if (m.lightProxy && deleted.includes(m.lightProxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { lightProxy: null } });
           if (m.proxies) {

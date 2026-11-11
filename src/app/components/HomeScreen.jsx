@@ -103,10 +103,10 @@ const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list' 
 
 export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved, agentBadge = null, onSettings }) {
   const [fps, setFps] = useState(30);
-  // The version reads the real app version (package.json via app:version).
+  // The full app version (package.json via app:version), shown the same way as in About.
   const [version, setVersion] = useState('');
   useEffect(() => {
-    window.api?.appVersion?.().then((v) => { if (v) setVersion(v.split('.').slice(0, 2).join('.')); }).catch(() => {});
+    window.api?.appVersion?.().then((v) => { if (v) setVersion(v); }).catch(() => {});
   }, []);
   const [view, setView] = useState(readView);
   const chooseView = (v) => { setView(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* the choice just isn't remembered */ } };

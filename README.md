@@ -23,12 +23,10 @@
 </p>
 
 <p align="center">
-  💜 <b>Support the project:</b> <a href="https://paypal.me/hamzaAbika">paypal.me/hamzaAbika</a> — if ClipCraft saves you time, a small tip keeps it free for everyone.
 </p>
 
 <p align="center">
   <a href="https://clipcrafts.pages.dev">Website</a> ·
-  <a href="https://instagram.com/hamza_abika">Instagram</a> ·
   <a href="https://github.com/hamzaabika/clipcraft/releases/tag/v1.1.0">Release 1.1.0</a>
 </p>
 
@@ -381,18 +379,12 @@ regressions.
 
 ## Updates
 
-ClipCraft checks for updates manually from **About → Check for updates** and downloads new versions in-app. Nothing auto-installs and nothing phones home.
+ClipCraft does not check for updates and nothing phones home. New versions are published on the GitHub Releases page, which **About** links to.
 
 ## Originality
 
 ClipCraft is an original application, designed and built from scratch. It is not a fork, port, or copy of any other editor's code. Contributions are welcome — and everything contributed must be original work: no code, assets, icons, text, or designs taken from any other application.
 
-## Support the project
-
-ClipCraft is free and stays free. If it helps you, you can:
-
-- ⭐ **Star the repo** and share it with a creator who'd use it.
-- 💜 **Tip via PayPal:** [paypal.me/hamzaAbika](https://paypal.me/hamzaAbika) — the same Support spot lives in the app (top bar and Home screen).
 
 ## Ownership & License
 
@@ -405,6 +397,5 @@ See [LICENSE](./LICENSE) for the full MIT text.
 ---
 
 <p align="center">
-  Designed and built by <b>Hamza Abika</b> — <a href="https://instagram.com/hamza_abika">@hamza_abika</a><br>
   <sub>Open source under the MIT License · Copyright © 2026 Hamza Abika</sub>
 </p>

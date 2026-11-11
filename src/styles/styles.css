@@ -188,31 +188,13 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--primary)
 .project-name:focus { background: var(--surface-1) !important; border-color: var(--primary) !important; }
 .ratio-select { width: auto !important; flex: none; height: 26px !important; font-size: 12px; padding: 0 6px !important; color: var(--text-2); }
 .top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; }
-/* Ko-fi: a quiet line of thanks and a warm coffee pill, left of Open */
-.kofi-btn { display: flex; align-items: center; gap: 9px; border: 0; background: none; padding: 0; cursor: default; color: var(--text-3); font-size: 12px; }
-.kofi-cta { white-space: nowrap; transition: color var(--t-fast); }
-.kofi-cta .heart { font-style: normal; color: #825cfb; display: inline-block; }
-.kofi-pill {
-  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); white-space: nowrap;
-  font-weight: 600; color: #ffc04d; background: rgba(255, 170, 0, 0.12); border: 1px solid rgba(255, 170, 0, 0.4);
-  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
-}
-.kofi-btn:hover .kofi-cta { color: var(--text-2); }
-.kofi-btn:hover .kofi-pill { background: rgba(255, 170, 0, 0.2); border-color: rgba(255, 170, 0, 0.65); color: #ffd07a; transform: translateY(-1px); }
-.kofi-btn:hover .kofi-cta .heart { animation: kofi-beat 0.9s ease-in-out infinite; }
-.kofi-btn:focus-visible { outline: none; }
-.kofi-btn:focus-visible .kofi-pill { box-shadow: 0 0 0 2px rgba(255, 170, 0, 0.5); }
 @keyframes kofi-beat { 0%, 100% { transform: scale(1); } 30% { transform: scale(1.25); } 60% { transform: scale(0.95); } }
-@media (prefers-reduced-motion: reduce) { .kofi-btn:hover .kofi-cta .heart { animation: none; } }
 .top-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 /* The actions keep their intrinsic width, so they cannot spill over the project
    pill. Collapse labels by the header's width before the name runs out of room. */
-.kofi-short { display: none; }
-@container editor-header (max-width: 1500px) { .kofi-cta { display: none; } }
 @container editor-header (max-width: 1400px) { .top-actions .top-word { display: none; } }
 /* The Support label is NOT a .top-word: the support ask must stay explicit at every
    width (Hamza, 2026-11-02). Shorten it only on narrow editor windows. */
-@container editor-header (max-width: 1280px) { .kofi-pill .kofi-word { display: none; } .kofi-pill .kofi-short { display: inline; } }
 
 .workspace { position: relative; display: grid; grid-template-columns: 384px minmax(0, 1fr) 330px; gap: 6px; min-height: 0; }
 .left, .player, .inspector, .timeline {
@@ -1589,18 +1571,12 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .stats-note-body { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .stats-note-body span { color: var(--text-2, inherit); line-height: 1.45; }
 .stats-note-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.update-note { bottom: auto; top: 64px; }
 .about-btn, .settings-btn { position: relative; }
-.update-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2px var(--bg, #0b0b0f); }
 .modal.about { position: relative; width: 420px; max-width: calc(100vw - 32px); }
 .about-close { position: absolute; top: 10px; right: 10px; }
 .about-logo { width: 64px; height: 64px; border-radius: var(--r-xl); }
 .about h3 { font-size: 20px; font-weight: 500; }
 .about-version { font-variant-numeric: tabular-nums; color: var(--text-2); margin-top: -6px; }
-.about-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
-.about-status.ok { color: #86efac; }
-.about-status.error { color: #fca5a5; }
-.about-update { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 12px; border-radius: var(--r-lg); background: var(--primary-soft); }
 .about-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 .proxy-store { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-bottom: 12px; font-size: 12.5px; }
 .stats-switch { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; cursor: default; }
@@ -2018,39 +1994,19 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
   background: rgba(130, 92, 251, .14); border: 1px solid rgba(130, 92, 251, .4);
   padding: 3px 10px; border-radius: var(--r-pill); font-variant-numeric: tabular-nums; }
 .about-tag { color: var(--text-2); font-size: 13.5px; line-height: 1.55; margin: 6px 4px 0; }
-.about-devcard { margin-top: 20px; padding: 16px 16px 15px; border-radius: 15px;
-  background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
-    linear-gradient(120deg, rgba(130, 92, 251, .65), rgba(130, 92, 251, .12) 55%, rgba(109, 40, 224, .55)) border-box;
-  border: 1px solid transparent; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.about-devlabel { font-size: 10.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
-.about-devname { font-size: 17.5px; font-weight: 650; color: var(--text); }
-.about-devlinks { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
-.btn-ig { background: linear-gradient(92deg, #825cfb, #6d28e0); border: none; color: #fff;
-  box-shadow: 0 6px 18px rgba(109, 40, 224, .35); }
-.btn-ig:hover { filter: brightness(1.1); }
+.about-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
 .about-chips { display: flex; gap: 7px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
 .about-chips span { font-size: 11.5px; color: var(--text-2); background: var(--surface-2);
   border: 1px solid var(--border); padding: 4px 10px; border-radius: var(--r-pill); }
-.about-updates { margin-top: 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; flex: 1 1 auto; min-height: 0; width: 100%; }
 .about-notes { font-size: 12.5px; color: var(--text-2); line-height: 1.55; }
 /* Update card sizing: the dialog is capped at the viewport height and the update card's
    notes area is the one flexible part — it grows with the text (so the release notes read
    in full, not squeezed into a mini scroll box) and absorbs the squeeze on short windows,
    while the title, the buttons and the progress stay pinned and visible. */
 .about2 .about-hero, .about2 .about-devcard, .about2 .about-chips, .about2 .about-tour { flex: none; }
-.about-update { min-height: 0; }
-.about-update > * { flex: none; }
-.about-update > .about-notes { flex: 1 1 auto; min-height: 0; max-height: 420px; overflow-y: auto; display: block; width: 100%;
-  white-space: pre-wrap; overflow-wrap: break-word; padding-right: 4px; }
 /* With an update on offer, the card is the point of the visit: the tagline, the chips and
    the welcome row step aside and the hero + dev card tighten, so the notes and the action
    buttons fit inside the window even on a short laptop screen. */
-.about2.has-update .about-tag, .about2.has-update .about-chips, .about2.has-update .about-tour { display: none; }
-.about2.has-update .about-halo { width: 58px; height: 58px; border-radius: 17px; margin-bottom: 0; }
-.about2.has-update .about-halo img { width: 38px; height: 38px; border-radius: 10px; }
-.about2.has-update h3 { font-size: 24px; }
-.about2.has-update .about-devcard { margin-top: 14px; padding: 12px 16px 11px; }
-.about2.has-update .about-devlinks { margin-top: 8px; }
 .about-dl { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .about-dl-track { width: 100%; height: 7px; border-radius: var(--r-pill); background: var(--surface-3, #20202f); overflow: hidden; }
 .about-dl-fill { height: 100%; border-radius: var(--r-pill); background: linear-gradient(92deg, #a78bfa, #825cfb 55%, #6d28e0); transition: width .25s ease; }
@@ -2217,26 +2173,10 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 .asset-tile-sub { font-size: 10px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .asset-tile.missing { opacity: .55; }
 
-/* ---- First run: welcome card (B3 — replaces the onboarding tour) ---- */
-.welcome-root { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; }
-.welcome-dim { position: absolute; inset: 0; background: rgba(4, 4, 10, 0.62); }
-.welcome-card { position: relative; width: 360px; max-width: calc(100vw - 40px); text-align: center;
-  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-dialog); padding: 30px 30px 26px; }
-.welcome-halo { width: 84px; height: 84px; border-radius: 24px; display: grid; place-items: center; margin: 0 auto 6px;
-  background: radial-gradient(closest-side, rgba(130, 92, 251, .38), rgba(130, 92, 251, .07) 68%, transparent);
-  box-shadow: 0 0 0 1px rgba(130, 92, 251, .35), 0 12px 34px rgba(109, 40, 224, .35); }
-.welcome-halo img { width: 56px; height: 56px; border-radius: 14px; }
-.welcome-card h3 { margin: 8px 0 7px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
-.welcome-card p { margin: 0 0 20px; color: var(--text-2); font-size: 13px; line-height: 1.55; }
-.welcome-go { min-width: 170px; justify-content: center; }
 
-/* ---- Support (PayPal) spots: editor top bar + Home quick tools ---- */
-.paypal-mark { height: 15px; width: auto; display: block; }
 
 /* ---- Asset library lists ---- */
 .assets-pack-more { padding: 4px 2px 8px; display: flex; flex-direction: column; gap: 6px; }
-.about-tour { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; }
 .pack-music-offer { display: flex; flex-direction: column; gap: 6px; }
 
 /* Visual work receipts in CraftAI. */
@@ -2700,7 +2640,7 @@ html[data-platform='darwin'] .topbar :is(button, input, select, textarea, [role=
 /* Home: a draggable strip where a title bar would be. */
 html[data-platform='darwin'] .home-app::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 30px; z-index: 30; -webkit-app-region: drag; }
 /* Anything drawn above the top bar must receive clicks, not drag the window. */
-:is(.modal-backdrop, [role='dialog'], [role='menu'], [role='listbox'], .ctx-menu, .dropdown-list, .transport-menu, .pilot-shell, .update-notice, .welcome-card) { -webkit-app-region: no-drag; }
+:is(.modal-backdrop, [role='dialog'], [role='menu'], [role='listbox'], .ctx-menu, .dropdown-list, .transport-menu, .pilot-shell, .update-notice) { -webkit-app-region: no-drag; }
 
 /* ---------- Sliders: native-style knob and filled track ----------
    A light knob with a soft shadow on a slim track that fills in the accent colour

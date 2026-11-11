@@ -22,7 +22,6 @@
 - [External agents over MCP plan](design/external-agent-mcp.md)
 - [Export quality](export/EXPORT-QUALITY.md)
 - [Effect export storage and failure handling](export/EFFECT-STORAGE.md)
-- [Updates](updates/UPDATES.md)
 - [Piper voices on Windows, Linux and macOS](media/piper-voices.md)
 
 Screenshots and demo media retain their existing paths so external README and

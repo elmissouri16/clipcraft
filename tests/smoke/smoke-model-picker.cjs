@@ -47,9 +47,6 @@ module.exports = async (win, app, dir) => {
     await until('!!document.querySelector(".topbar")');
     const firstRun = await q('window.api.firstRunGet()');
     if (!firstRun.tourSeen) {
-      await until('!!document.querySelector(".welcome-go")');
-      await q('document.querySelector(".welcome-go").click()');
-      await until('!document.querySelector(".welcome-root")');
     }
     await q('document.querySelector("button[aria-label=Settings]").click()');
     await until('!!document.querySelector(".settings select")');

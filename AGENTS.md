@@ -45,7 +45,8 @@ the MIT license grant and may not be used to brand another product.
   reducer; `src/styles/` — application and frame-inspection styles.
 - `electron/main.cjs` and `electron/preload.cjs` — process entry points.
   Services live in `electron/{agents,audio,export,library,media,project,recording,system}/`.
-  Update and pack feeds remain host-gated; the renderer never supplies URLs.
+  Pack feeds remain host-gated; the renderer never supplies URLs. There is no updater:
+  releases are published on the repository's Releases page and About links there.
 - `tests/unit/<feature>/` — standalone Node suites; `tests/smoke/` — Electron
   UI checks; `tests/fixtures/` — test-only executable and service fixtures.
 - `scripts/` — development, validation and content-maintenance commands.

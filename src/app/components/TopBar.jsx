@@ -11,7 +11,7 @@ const SAVE_STATES = {
   error: ['Not saved', 'The project file could not be written. Click Save to choose another place'],
 };
 
-export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, updateReady = false }) {
+export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome }) {
   const [menu, setMenu] = useState(null);
   const set = (patch) => dispatch({ type: 'setProject', patch, transient: true });
   return (
@@ -45,10 +45,7 @@ export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWo
               {saveState === 'error' ? <CircleAlert size={13} /> : null} {SAVE_STATES[saveState][0]}
             </span>
           )}
-          <button className="icon-btn settings-btn" onClick={onSettings} aria-label="Settings"
-            title={updateReady ? 'Settings: an update is available' : 'Settings'}>
-            <Settings size={17} />{updateReady && <i className="update-dot" aria-hidden="true" />}
-          </button>
+          <button className="icon-btn settings-btn" onClick={onSettings} aria-label="Settings" title="Settings"><Settings size={17} /></button>
         </div>
       </div>
       <div className="top-workspace-actions">

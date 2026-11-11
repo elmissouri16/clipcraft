@@ -1003,49 +1003,8 @@ ipcMain.handle('settings:saveServiceKey', (_e, name, key) => {
 });
 ipcMain.handle('settings:clearServiceKey', (_e, name) => settings.clearServiceKey(name));
 
-// ---- About and updates: the version, and (only when the user asks in About) whether the
-// update feed on clipcrafts.pages.dev has a newer one — see updates.cjs. ----
-const updates = require("./system/updates.cjs");
+// ---- About: the app version. There is no updater; releases live on the repository's Releases page. ----
 ipcMain.handle('app:version', () => app.getVersion());
-// Manual checks only (the About dialog); nothing checks automatically at startup.
-ipcMain.handle('updates:check', async () => { lastCheck = await updates.check(); return lastCheck; });
-let lastCheck = null;
-// In-app installer download (progress streamed to the requesting window). Uses ONLY the
-// download URL from the last check — the renderer never supplies a URL.
-ipcMain.handle('updates:download', async (e) => {
-  if (!lastCheck?.newer || !lastCheck.downloadUrl) return { error: 'Check for updates first.' };
-  return updates.downloadInstaller(lastCheck.downloadUrl, {
-    destDir: app.getPath('downloads'),
-    onProgress: (p) => { if (!e.sender.isDestroyed()) e.sender.send('updates:progress', p); },
-  });
-});
-// Opens the installer downloaded above — and only that exact file.
-ipcMain.handle('updates:openInstaller', async () => {
-  const p = updates.lastDownload();
-  if (!p || !fs.existsSync(p)) return { error: 'The downloaded installer is no longer there.' };
-  const { shell } = require('electron');
-  const err = await shell.openPath(p);
-  return err ? { error: err } : { ok: true };
-});
-// One-click install of the file downloaded above (updates.cjs validates that it is exactly
-// that file), then a relaunch into the new version: relaunch() registers the fresh start
-// and this process quits, so the new instance begins only after the package files are fully
-// replaced. Where no silent install exists (macOS), fall back to opening the downloaded
-// file — the same behaviour as updates:openInstaller.
-ipcMain.handle('updates:install', async () => {
-  const r = await updates.installDownloaded({ destDir: app.getPath('downloads') });
-  if (r.unsupported) {
-    const p = updates.lastDownload();
-    if (!p || !fs.existsSync(p)) return { error: 'The downloaded installer is no longer there.' };
-    const { shell } = require('electron');
-    const err = await shell.openPath(p);
-    return err ? { error: err } : { ok: true, opened: true };
-  }
-  if (r.error) return r;
-  app.relaunch();
-  setTimeout(() => app.quit(), 300);
-  return { ok: true, restarting: true };
-});
 
 // ---- Anonymous usage statistics: opt-in, see telemetry.cjs. ----
 const telemetry = require("./system/telemetry.cjs");

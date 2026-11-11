@@ -1,5 +1,5 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const version=require('../../package.json').version.split('.').slice(0,2).join('.');
+const version=require('../../package.json').version; // the full version, shown the same way in About
 module.exports=async(win,app,dir)=>{
  const q=s=>win.webContents.executeJavaScript(s),wait=ms=>new Promise(r=>setTimeout(r,ms)),result={checks:[],layouts:[],errors:[]};
  const until=async(code)=>{const end=Date.now()+20000;while(Date.now()<end){if(await q(code))return;await wait(40);}throw Error('Timed out: '+code);};
@@ -40,6 +40,23 @@ module.exports=async(win,app,dir)=>{
   }
   win.setContentSize(1440,960);await wait(300);
   check('the header offers open, import and record, and the home has no donation link',await q(`(()=>{const a=[...document.querySelectorAll('.home-top .home-action')].map(b=>b.textContent.trim());return a.join('|')==='Open project|Import media|Record screen'&&!document.querySelector('.home img[src*="paypal"]')&&!/support the project|paypal/i.test(document.querySelector('.home').textContent)})()`));
+  // Settings is reachable from Home (voices, agents, keys) through the same control as the editor's top bar.
+  await q('document.querySelector(".home-top .home-settings").click()');
+  await until('!!document.querySelector("#settings-title")');
+  check('a mouse-opened Settings window focuses no control, so no focus ring shows',await q('document.activeElement?.getAttribute("aria-label")!=="Close settings"&&!document.querySelector(".settings2 :focus-visible")'));
+  check('the header opens Settings without a project open',await q('document.querySelector(".home-top .home-settings").getAttribute("aria-label")==="Settings"&&!!document.querySelector("[role=dialog][aria-labelledby=settings-title]")'));
+  fs.writeFileSync(path.join(dir,'home-settings.png'),(await win.capturePage()).toPNG());
+  // A provider that is only a row in shared/providers.json (xAI Grok) is offered like the hand-written ones.
+  await q(`(()=>{const s=document.querySelector('select[aria-label="Provider"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(s,'xai');s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await until('document.querySelector(\'select[aria-label="Provider"]\').value==="xai"');
+  check('a preset-only provider shows its hint and key link from the table',await q(`[...document.querySelectorAll('.set2-note')].some(n=>n.textContent.includes('console.x.ai'))&&[...document.querySelectorAll('.set2-page button')].some(b=>b.textContent.trim()==='Get a key (xAI)')`));
+  await q('document.querySelector(".set2-rail button[data-section=services]").click()');
+  await until('!!document.querySelector(".set2-rail button[data-section=services].on")');
+  check('the API keys page lists the preset provider',await q(`document.querySelector('.set2-pane').textContent.includes('xAI Grok')&&document.querySelector('.set2-pane').textContent.includes('Mistral')`));
+  await q('document.querySelector(".set2-rail button[data-section=ai]").click()'); await until('!!document.querySelector(".set2-rail button[data-section=ai].on")');
+  await q(`document.querySelector('button[aria-label="Close settings"]').click()`);
+  await until('!document.querySelector("#settings-title")');
+  check('closing Settings returns to Home',await q('!!document.querySelector(".home-top")'));
   // The list view: one row per project with format, date and location, remembered across reloads.
   await q('document.querySelector(\'button[aria-label="List view"]\').click()');await until('document.querySelectorAll(".home-list .home-row.home-card").length===5');
   check('list view shows each project with name, format, date and location',await q(`(()=>{const r=document.querySelector('.home-list .home-row.home-card');const cells=[...r.querySelectorAll('.home-row-cell')].map(c=>c.textContent);return r.querySelector('.home-card-name').textContent==='A Good Heart — A Dark Romance'&&cells[0]==='9:16'&&cells[1]==='Today'&&cells[2]==='project-0.clipcraft.json'})()`));

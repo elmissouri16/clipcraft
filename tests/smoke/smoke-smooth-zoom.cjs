@@ -69,8 +69,6 @@ module.exports = async (win, app, dir) => {
     await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');
     await q('document.querySelector(".home-frame-card").click()');
     await until('!!document.querySelector(".topbar")');
-    await until('!!document.querySelector(".welcome-go")');
-    await q('document.querySelector(".welcome-go").click()');
     await q(`window.__fve.load(${JSON.stringify(fixture)})`);
     await q('window.__fve.exportNow()');
     check('real editor exports both image zooms with effects and captions',await q('!!document.querySelector(".modal-icon.ok")'));
