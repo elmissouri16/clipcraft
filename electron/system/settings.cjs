@@ -7,19 +7,10 @@ const path = require('path');
 const { randomUUID } = require('node:crypto');
 const { app, safeStorage } = require('electron');
 
-const PROVIDERS = ['gemini', 'groq', 'ollama', 'openai', 'openrouter', 'claude', 'custom', 'codex-sdk', 'claude-agent-sdk', 'opencode-sdk'];
-const DEFAULT_MODELS = {
-  gemini: 'gemini-3.8-flash',
-  groq: 'openai/gpt-oss-120b',
-  ollama: 'qwen2.5:7b',
-  openai: 'gpt-4o-mini',
-  openrouter: 'openai/gpt-4o-mini',
-  claude: 'claude-haiku-5-5',
-  custom: '',
-  'codex-sdk': '',
-  'claude-agent-sdk': '',
-  'opencode-sdk': '',
-};
+// The provider list and each one's default model come from the preset table (shared/providers.json).
+const providerPresets = require('../agents/providers.cjs');
+const PROVIDERS = providerPresets.ids();
+const DEFAULT_MODELS = providerPresets.defaultModels();
 
 function settingsFile() {
   // UI tests must never touch the real settings.
@@ -191,6 +182,18 @@ function saveServiceKey(name, key) {
 function clearServiceKey(name) {
   const data = read();
   if (data.services) delete data.services[name];
+  write(data);
+  return getPublic();
+}
+
+// Manage credentials without changing the selected assistant, its model or endpoint.
+function saveProviderKey(provider, value) {
+  if (!providerPresets.keyed().includes(provider)) throw new Error('This provider does not use an API key.');
+  const key = String(value || '').trim();
+  if (!key) throw new Error('Paste a key first.');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the key was not saved.');
+  const data = read();
+  data.ai = { ...(data.ai || {}), keys: { ...(data.ai?.keys || {}), [provider]: { enc: safeStorage.encryptString(key).toString('base64'), hint: `…${key.slice(-4)}` } } };
   write(data);
   return getPublic();
 }

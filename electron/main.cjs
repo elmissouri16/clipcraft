@@ -924,13 +924,14 @@ const agentRuntimes = require('./agents/agentRuntime.cjs').createAgentRuntimes({
 localAgents.setRuntimeDirectory(agentRuntimes.root);
 
 // Opens a help page in the browser. Only a short allowlist of known sites is accepted.
-const HELP_HOSTS = new Set(['www.slaycamera.com', 'www.instagram.com', 'elevenlabs.io', 'try.elevenlabs.io', 'pixabay.com', 'aistudio.google.com', 'console.developers.google.com', 'console.cloud.google.com', 'ollama.com', 'console.anthropic.com', 'platform.openai.com', 'developers.openai.com', 'learn.chatgpt.com', 'code.claude.com', 'console.groq.com', 'github.com', 'hamzaabika.com', 'www.hamzaabika.com', 'paypal.me']);
+// Help and key-page links from the renderer open in the system browser when they are https; nothing else
+// (no file:, custom schemes or http) reaches the shell.
 ipcMain.handle('app:openHelp', (_e, url) => {
   try {
     const u = new URL(url);
-    if (u.protocol === 'https:' && HELP_HOSTS.has(u.hostname)) return shell.openExternal(u.toString());
+    if (u.protocol === 'https:') return shell.openExternal(u.toString());
   } catch {
-    // fall through
+    // not a URL
   }
   return false;
 });

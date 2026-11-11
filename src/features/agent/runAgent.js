@@ -1,6 +1,7 @@
 // CraftAI loop: ask the model for a step, run the tools it requests, give the results back, repeat until
 // it answers in plain text. The model lives in the main process (the API key never reaches the interface);
 // the tools run here, next to the project.
+import { providerShortName } from './providers.js';
 import { TOOL_DECLARATIONS, createToolRunner, describeImageProgress } from './tools.js';
 import { createToolCatalog } from './toolCatalog.js';
 import { validateAgentProject } from './validation.js';
@@ -65,7 +66,7 @@ export const editTarget = (name, args = {}) => {
 };
 
 const MAX_STEPS = 40; // a full edit takes many tool calls
-const providerName = (p) => ({ gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama', 'codex-sdk': 'Codex SDK', 'claude-agent-sdk': 'Claude Agent SDK', 'opencode-sdk': 'OpenCode SDK' }[p] || p);
+const providerName = providerShortName;
 
 // Tool arguments shown as a short phrase in the chat.
 export function describeCall(name, args) {

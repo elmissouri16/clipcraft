@@ -1,7 +1,9 @@
 // CraftAI fallback: when the chosen AI fails (overloaded, rate limited, key or model refused, unreachable),
 // the same step goes to the next provider that has a saved key and can use the editing tools.
-const TOOL_PROVIDERS = ['gemini', 'groq', 'openai', 'openrouter', 'claude', 'custom', 'ollama'];
-const NAMES = { gemini: 'Gemini', groq: 'Groq', openai: 'OpenAI', openrouter: 'OpenRouter', claude: 'Claude', custom: 'Custom', ollama: 'Ollama' };
+// Order and names come from the preset table (shared/providers.json): keyed API providers as listed, Ollama last.
+const providers = require('./providers.cjs');
+const TOOL_PROVIDERS = providers.toolProviders();
+const NAMES = providers.shortNames();
 
 // Short reason for the chat ("Gemini was busy, switched to Groq").
 function reason(e) {

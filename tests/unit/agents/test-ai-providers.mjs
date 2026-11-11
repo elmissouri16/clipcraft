@@ -23,6 +23,19 @@ const CONTENTS = [
 ];
 
 async function main() {
+  // --- A preset row is all an OpenAI-compatible service needs (xAI Grok): address, bearer key, chat completions ---
+  responder = () => ({ choices: [{ message: { content: 'hi' } }] });
+  let grokStep = await ai.agentStep({ provider: 'xai', apiKey: 'xai-test', model: 'grok-4', baseUrl: '' }, { system: 'sys', contents: [{ role: 'user', parts: [{ text: 'hello' }] }], tools: TOOLS }, async () => {});
+  assert.equal(lastCall().url, 'https://api.x.ai/v1/chat/completions');
+  assert.equal(lastCall().opts.headers.authorization, 'Bearer xai-test');
+  assert.equal(lastCall().body.model, 'grok-4');
+  assert.equal(grokStep.text, 'hi');
+  assert.equal(ai.openAiBase({ provider: 'mistral', baseUrl: '' }), 'https://api.mistral.ai/v1');
+  assert.equal(ai.openAiBase({ provider: 'deepseek', baseUrl: 'https://proxy.example/v1/' }), 'https://proxy.example/v1');
+  // OpenRouter's attribution headers and nested reasoning field come from the table, on the agent step too.
+  await ai.agentStep({ provider: 'openrouter', apiKey: 'or-test', model: 'openai/gpt-4o-mini', baseUrl: '', reasoningEffort: '' }, { system: 'sys', contents: [{ role: 'user', parts: [{ text: 'hello' }] }], tools: TOOLS }, async () => {});
+  assert.equal(lastCall().opts.headers['x-title'], 'ClipCraft');
+  assert.equal(lastCall().opts.headers['http-referer'], 'https://clipcraft.app');
   // --- OpenAI-compatible agent step (OpenAI) ---
   responder = () => ({ choices: [{ message: { content: '', tool_calls: [{ id: 'x', type: 'function', function: { name: 'cut_range', arguments: '{"start_sec":2}' } }] } }] });
   let step = await ai.agentStep({ provider: 'openai', apiKey: 'sk-test', model: 'gpt-4o-mini', baseUrl: '' },

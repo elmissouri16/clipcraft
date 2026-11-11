@@ -44,7 +44,7 @@ tests/
   smoke/                   Real Electron UI checks and their dispatcher
   fixtures/                Test-only CLIs, servers and service stubs
 scripts/                   Development and maintenance commands
-shared/                    Cross-process contracts and bundled LUT data
+shared/                    Cross-process contracts, the AI provider presets (providers.json) and bundled LUT data
 docs/                      Documentation grouped by subject
 ```
 

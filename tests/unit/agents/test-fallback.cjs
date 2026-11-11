@@ -27,7 +27,8 @@ server.listen(0, async () => {
   try {
     // Order: the chosen provider first, then the others that have a key (and can use tools).
     assert.deepEqual(fallbackOrder('gemini', (p) => p === 'groq'), ['gemini', 'groq']);
-    assert.deepEqual(fallbackOrder('groq', () => true), ['groq', 'gemini', 'openai', 'openrouter', 'claude', 'custom', 'ollama']);
+    // The order is the preset table's (shared/providers.json): keyed API providers as listed, Ollama last.
+    assert.deepEqual(fallbackOrder('groq', () => true), ['groq', 'gemini', 'openai', 'openrouter', 'claude', 'xai', 'mistral', 'deepseek', 'custom', 'ollama']);
     assert.deepEqual(fallbackOrder('gemini', () => false), ['gemini']);
 
     // Gemini overloaded: retried, then Groq answers the same step.

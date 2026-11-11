@@ -1,9 +1,14 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { PRESETS, nativeAgentName } from '../../features/agent/providers.js';
+import ServiceConnections from './ServiceConnections.jsx';
+import { SettingsPage, SettingsGroup } from './SettingsLayout.jsx';
 import Dropdown from "../../components/ui/Dropdown.jsx";
 import { AudioLines, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, Eye, EyeOff, Film, Gauge, Info, Keyboard, Loader2, Server, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import ShortcutSettings from './ShortcutSettings.jsx';
 import { ENGINE_NAMES, defaultSpeech, piperVoicesOf, usableEngines } from '../../features/audio/voiceDefault.js';
 import { SUPPORT_URL } from './HomeScreen.jsx';
+// Providers come from the preset table (shared/providers.json): name, key page, hint, default address.
+const PROVIDERS = PRESETS;
 
 const PROVIDERS = [
   { id: 'gemini', name: 'Google Gemini', needsKey: true, hint: 'The easiest key is a free one from Google AI Studio (starts with AIza). Vertex AI express keys (AQ.…) work too once the API is enabled for their project.', keyUrl: 'https://aistudio.google.com/app/apikey', keyUrlLabel: 'Get a free key (AI Studio)' },
@@ -20,31 +25,7 @@ const PROVIDERS = [
   { id: 'opencode-sdk', name: 'OpenCode (native)', needsKey: false, sdk: true, hint: 'Uses the providers you connected in OpenCode (opencode auth login), including its free models. No API key, Node or npm needed; the native engine can be downloaded here. Model ids are provider/model, e.g. opencode/claude-fable-5-2.', keyUrl: 'https://opencode.ai/docs/', keyUrlLabel: 'OpenCode docs' },
 
 // Display name of a native agent in the runtime controls.
-const nativeName = (id) => ({ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' })[id] || 'the agent';
-// Page and group primitives: every settings page is a header (what it is for)
-// followed by small labelled groups, with page-level actions in a footer.
-function SettingsPage({ title, description, actions, children }) {
-  return (
-    <div className="set2-page">
-      <header className="set2-page-head"><h4>{title}</h4>{description && <p>{description}</p>}</header>
-      <div className="set2-page-body">{children}</div>
-      {actions && <div className="set2-page-actions settings-actions">{actions}</div>}
-    </div>
-  );
-}
-function SettingsGroup({ label, hint, aside, children, className = '' }) {
-  return (
-    <section className={`settings-section set2-group ${className}`}>
-      {(label || hint || aside) && (
-        <div className="set2-group-head">
-          <div>{label && <h5 className="set2-group-label">{label}</h5>}{hint && <p className="set2-group-hint">{hint}</p>}</div>
-          {aside}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
+const nativeName = nativeAgentName;
 
 // Pixabay key for the stock library (Media > Library).
 // Key of an online service (stock media), saved encrypted like the AI keys.

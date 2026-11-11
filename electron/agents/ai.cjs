@@ -2,10 +2,10 @@ const { attachImages, openAiParts, anthropicParts } = require('./agentImages.cjs
 // AI provider layer for the CraftAI assistant. Runs only in the main process so API keys never reach the UI.
 // chat() takes plain messages and returns text; tool calling is added on top of this later.
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
-const GROQ_BASE = 'https://api.groq.com/openai/v1';
-// Providers that speak the OpenAI chat API, with their default address.
-// 'custom' has no default: the user sets the address of any OpenAI-compatible service.
-const OPENAI_LIKE = { openai: 'https://api.openai.com/v1', groq: GROQ_BASE, openrouter: 'https://openrouter.ai/api/v1', custom: '' };
+// Providers are rows of shared/providers.json over four wire protocols (providers.cjs): the OpenAI chat
+// API (OpenAI, Groq, OpenRouter, xAI, Mistral, DeepSeek, Custom), Anthropic, Gemini and Ollama.
+const providers = require('./providers.cjs');
+const { openAiLike } = providers;
 const OLLAMA_DEFAULT = 'http://localhost:11434';
 const localAgents = require('./localAgents.cjs');
 const thinking = require('./thinking.cjs');
@@ -38,7 +38,7 @@ function openAiBase(cfg) {
     return root.endsWith('/v1') ? root : `${root}/v1`;
   }
   if (base) return base;
-  if (OPENAI_LIKE[cfg.provider]) return OPENAI_LIKE[cfg.provider];
+  if (openAiLike(cfg.provider) && providers.baseUrlOf(cfg.provider)) return providers.baseUrlOf(cfg.provider);
   throw new AiError('The Custom provider needs the address of the service. Set it in Settings (for example https://api.example.com/v1).', 0);
 }
 const VERTEX_EXPRESS_BASE = 'https://aiplatform.googleapis.com';
@@ -170,14 +170,14 @@ async function modelCapabilities(cfg, { refresh = false, signal } = {}) {
         } else if (cfg.provider === 'gemini') {
           entry = await http(`${base || GEMINI_BASE}/v1beta/models/${encodeURIComponent(model)}`, {
             headers: { 'x-goog-api-key': cfg.apiKey }, timeoutMs: 10000, signal }, cfg.apiKey);
-        } else if (OPENAI_LIKE[cfg.provider] !== undefined) {
-          const catalog = await http(`${openAiBase(cfg)}/models`, { headers: { authorization: `Bearer ${cfg.apiKey}` }, timeoutMs: 10000, signal }, cfg.apiKey);
+        } else if (openAiLike(cfg.provider)) {
+          const catalog = await http(`${openAiBase(cfg)}/models`, { headers: { authorization: `Bearer ${cfg.apiKey}`, ...providers.headers(cfg.provider) }, timeoutMs: 10000, signal }, cfg.apiKey);
           entry = (catalog?.data || []).find((item) => item.id === model);
         }
       }
       const hasMetadata = cfg.provider === 'claude' ? !!entry?.capabilities?.effort
         : Array.isArray(entry?.reasoning?.supported_efforts) || Array.isArray(entry?.supported_reasoning_efforts) || Array.isArray(entry?.supportedThinkingLevels);
-      const officialBase = { openai: 'https://api.openai.com/v1', groq: GROQ_BASE, gemini: GEMINI_BASE }[cfg.provider];
+      const officialBase = providers.baseUrlOf(cfg.provider) || undefined; // documented levels apply to the service itself, not a proxy
       if (hasMetadata) {
         result.reasoningEfforts = thinking.metadataLevels(cfg.provider, entry);
         result.source = 'model metadata';
@@ -205,7 +205,7 @@ async function selectedThinking(cfg, signal) {
 }
 
 const openAiThinking = (cfg) => cfg.reasoningEffort
-  ? cfg.provider === 'openrouter' ? { reasoning: { effort: cfg.reasoningEffort } } : { reasoning_effort: cfg.reasoningEffort }
+  ? providers.reasoningField(cfg.provider) === 'reasoning.effort' ? { reasoning: { effort: cfg.reasoningEffort } } : { reasoning_effort: cfg.reasoningEffort }
   : reasoning(cfg.model);
 
 // One Gemini generateContent call. Tries the endpoint that matches the key type, then the other one.
@@ -272,9 +272,9 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
     return j?.message?.content || '';
   }
 
-  if (OPENAI_LIKE[provider] !== undefined) {
+  if (openAiLike(provider)) {
     const j = await http(`${openAiBase(cfg)}/chat/completions`, {
-      headers: { authorization: `Bearer ${apiKey}`, ...(provider === 'openrouter' ? { 'http-referer': 'https://clipcraft.app', 'x-title': 'ClipCraft' } : {}) },
+      headers: { authorization: `Bearer ${apiKey}`, ...providers.headers(provider) },
       body: { model, max_tokens: maxTokens, ...openAiThinking(cfg), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
       timeoutMs,
     }, apiKey);
@@ -348,7 +348,7 @@ async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeou
 async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, timeoutMs = 90000, signal }) {
   if (thinking.usesResponses(cfg)) return responsesAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
   // Groq counts max_tokens in its per-minute budget: ask for what a step needs (a tool call or a short answer).
-  if (OPENAI_LIKE[cfg.provider] !== undefined || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: Math.min(maxTokens, 1024), timeoutMs, signal });
+  if (openAiLike(cfg.provider) || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: Math.min(maxTokens, 1024), timeoutMs, signal });
   if (cfg.provider === 'claude') return anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
   if (cfg.provider !== 'gemini') {
     throw new AiError('Unknown AI provider. Choose one in Settings.', 0);
@@ -504,7 +504,7 @@ async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeou
   const capability = await selectedThinking(cfg, signal);
   if (cfg.provider === 'ollama' && capability) return ollamaAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }, capability);
   const j = await http(`${base}/chat/completions`, {
-    headers: { ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
+    headers: { ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}), ...providers.headers(cfg.provider) },
     body: {
       model: normalizeModel(cfg.provider, cfg.model),
       max_tokens: maxTokens,
@@ -605,7 +605,7 @@ async function testConnection(cfg) {
     let suggest = e.suggestModel;
     // The key works but cannot use this model (not on the account, blocked in the project, retired): ask which
     // models it can use and offer one, preferring models that handle CraftAI's tools well.
-    if (e.status === 404 && OPENAI_LIKE[cfg.provider]) {
+    if (e.status === 404 && openAiLike(cfg.provider) && providers.baseUrlOf(cfg.provider)) {
       const list = await listModels(cfg);
       if (list.ok && !list.models.includes(cfg.model)) {
         const prefer = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'gpt-4o-mini', 'llama-3.1-8b-instant'];
@@ -637,8 +637,8 @@ async function listModels(cfg, {refresh=false}={}) {
     } else if (provider === 'ollama') {
       const j = await http(`${base || 'http://localhost:11434'}/api/tags`, {});
       ids = (j?.models || []).map((m) => m.name);
-    } else if (OPENAI_LIKE[provider] !== undefined) {
-      const j = await http(`${openAiBase({ provider, baseUrl: base })}/models`, { headers: { authorization: `Bearer ${apiKey}` } }, apiKey);
+    } else if (openAiLike(provider)) {
+      const j = await http(`${openAiBase({ provider, baseUrl: base })}/models`, { headers: { authorization: `Bearer ${apiKey}`, ...providers.headers(provider) } }, apiKey);
       // Groq also lists speech and safety models: keep the chat ones.
       ids = (j?.data || []).filter((m) => m.active !== false && !/whisper|tts|guard|orpheus|playai/i.test(m.id)).map((m) => m.id);
     } else if (provider === 'claude') {

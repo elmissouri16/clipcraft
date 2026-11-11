@@ -132,7 +132,7 @@ Glitch & digital, film looks, light leaks and more — stack effects on any clip
 
 ## CraftAI
 
-CraftAI is an AI editing assistant inside the editor: one-click looks, or just say what to do — cut the filler, style the captions, apply a look — and watch it work on your timeline. It works with **your provider and your key** — Gemini, OpenAI, Anthropic, Groq, OpenRouter, Ollama and more — and it shows its work: you stay in control of every change.
+CraftAI is an AI editing assistant inside the editor: one-click looks, or just say what to do — cut the filler, style the captions, apply a look — and watch it work on your timeline. It works with **your provider and your key** — Gemini, OpenAI, Anthropic, xAI Grok, Mistral, DeepSeek, Groq, OpenRouter, Ollama and more — and it shows its work: you stay in control of every change.
 
 ## Native AI agents
 
