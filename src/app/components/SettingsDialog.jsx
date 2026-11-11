@@ -215,7 +215,9 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
   const dialogRef = useRef(null);
   const opener = useRef(document.activeElement);
   useEffect(() => () => { if (opener.current?.isConnected) opener.current.focus({ preventScroll: true }); }, []);
-  useEffect(() => { if (saved) dialogRef.current?.querySelector('button[aria-label="Close settings"]')?.focus({ preventScroll: true }); }, [!!saved]);
+  // Focus starts on the dialog itself, never on a control: a mouse-opened window shows no focus ring
+  // (desktop convention), Tab then reaches the rail first, and Enter does not close it by accident.
+  useEffect(() => { dialogRef.current?.focus({ preventScroll: true }); }, []);
   useLayoutEffect(() => { if (paneRef.current) paneRef.current.scrollTop = 0; }, [section]);
   const [provider, setProvider] = useState('gemini');
   const [model, setModel] = useState('');
@@ -304,7 +306,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
     const controls = [...dialogRef.current.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(el => el.getClientRects().length);
     const first = controls[0], last = controls.at(-1);
     if (!first) { event.preventDefault(); return; }
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
   if (!saved) return null;
@@ -382,7 +384,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, upd
   };
 
   return (
-    <div ref={dialogRef} onKeyDown={dialogKeys} className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={dialogRef} tabIndex={-1} onKeyDown={dialogKeys} className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal settings settings2">
         <div className="settings-head">
           <h3 id="settings-title">Settings</h3>

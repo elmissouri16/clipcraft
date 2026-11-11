@@ -2128,7 +2128,8 @@ export default function App() {
           onRecordStart={startRecording}
           unsavedNote={unsavedNote}
           onRestoreUnsaved={restoreUnsaved}
-          onDiscardUnsaved={discardUnsaved} agentBadge={externalBadge} />
+          onDiscardUnsaved={discardUnsaved} agentBadge={externalBadge}
+          onSettings={() => setSettingsOpen(true)} />
         {externalApproval}
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
         {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}

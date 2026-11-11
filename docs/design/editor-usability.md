@@ -57,7 +57,17 @@ Settings groups its pages in the rail: **General** (Performance, Shortcuts),
 page opens with a title and one line saying what it is for, followed by small
 labelled groups; the Assistant page splits into Provider, Connection (a one-line
 agent status with the path trimmed) and Model, with Test and Save in a footer
-that stays visible while scrolling.
+that stays visible while scrolling. Settings uses a compact desktop rail with
+small inset keyboard focus, flat selection with a narrow accent marker, and
+quiet section labels. Forms use restrained group borders and tighter spacing.
+
+Settings stays a centred window (2026-11-11). A flush full-window version was
+tried and rejected: it covered the top bar and the traffic lights and read as
+out of place. Inside the window the rail group labels use the 10.5 px uppercase
+section tier and page titles the 13 px tier with one quiet line under them, so
+the pages read as desktop preferences. Home has the same Settings control in its
+header as the editor's top bar. `tests/smoke/smoke-ui-review.cjs` screenshots
+every page and records the computed styles of its building blocks.
 
 ## Keyboard shortcuts
 

@@ -2695,6 +2695,7 @@ html, body { overscroll-behavior: none; }
 /* Title bar integration (macOS hiddenInset): the top bar drags the window; controls stay clickable. */
 html[data-platform='darwin'] .topbar { padding-left: 86px; }
 html[data-platform='darwin'] .topbar { -webkit-app-region: drag; }
+.home-settings { margin-left: 4px; }
 html[data-platform='darwin'] .topbar :is(button, input, select, textarea, [role='button'], [role='tab'], .project-meta, .dropdown, .workspace-switch, .top-export) { -webkit-app-region: no-drag; }
 /* Home: a draggable strip where a title bar would be. */
 html[data-platform='darwin'] .home-app::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 30px; z-index: 30; -webkit-app-region: drag; }
@@ -2881,3 +2882,14 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 .tl-agent-seam { position: absolute; top: 26px; bottom: 0; z-index: 3; width: 0; border-left: 1px solid var(--primary); pointer-events: none; transition: opacity 400ms var(--ease); }
 .timeline.agent-fading .clip.agent-done::before, .timeline.agent-fading .agent-mark, .timeline.agent-fading .tl-agent-seam { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .clip.agent-live::after { animation: none; } }
+
+/* ---------- Settings window: desktop rail and page headers (v14, docs/design/editor-usability.md) ----------
+   The window stays centred (a flush full-window version was tried and read as out of place). Inside it the rail
+   labels use the 10.5 px uppercase section tier, page titles the 13 px tier with one quiet line under them, and
+   hints the 11.5 px caption size, so the pages read as desktop preferences rather than a web settings page. */
+.settings2 .set2-rail-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-3); padding: 0 10px 5px; }
+.settings2 .set2-rail { gap: 14px; }
+.settings2 .set2-page-head h4 { font-size: 13px; font-weight: 650; letter-spacing: 0; }
+.settings2 .set2-page-head p { margin-top: 3px; font-size: 12px; color: var(--text-3); }
+.settings2 .set2-group-hint, .settings2 .set2-note { font-size: 11.5px; }
+.modal-backdrop:focus, .modal-backdrop:focus-visible { outline: none; } /* the dialog root takes initial focus without a ring */

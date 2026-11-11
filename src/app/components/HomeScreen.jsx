@@ -1,12 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { Film, FolderOpen, Import, LayoutGrid, List, Monitor, Search, Trash2, X } from 'lucide-react';
-
-// The developer's Instagram — shown in the About dialog.
-export const DEV_INSTAGRAM_URL = 'https://www.instagram.com/hamza_abika/';
-
-// Support ClipCraft's development — the developer's PayPal.me page, opened in the system browser
-// (app:openHelp allowlist) from the Settings rail.
-export const SUPPORT_URL = 'https://paypal.me/hamzaAbika';
+import { Film, FolderOpen, Import, LayoutGrid, List, Monitor, Search, Trash2, X, Settings } from 'lucide-react';
 
 // ClipCraft home: a header with the three ways in (open, import, record), a compact row of formats
 // for a new project, and the projects themselves as a grid or a list. One quiet surface: no hero,
@@ -108,7 +101,7 @@ function RemoveDialog({ project, onCancel, onConfirm }) {
 
 const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; } };
 
-export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved, agentBadge = null }) {
+export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRemoveRecent, onImportMedia, onRecordStart, unsavedNote, onRestoreUnsaved, onDiscardUnsaved, agentBadge = null, onSettings }) {
   const [fps, setFps] = useState(30);
   // The version reads the real app version (package.json via app:version).
   const [version, setVersion] = useState('');
@@ -136,6 +129,9 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           <button type="button" className="btn home-action" onClick={onOpen}><FolderOpen size={15} /><span>Open project</span></button>
           <button type="button" className="btn home-action" onClick={onImportMedia}><Import size={15} /><span>Import media</span></button>
           <button type="button" className="btn home-action" onClick={() => onRecordStart?.(fps)}><Monitor size={15} /><span>Record screen</span></button>
+          {/* Settings reachable before a project is open (voices, agents, external MCP agents, keys): the
+              same control as the editor's top bar. */}
+          {onSettings && <button type="button" className="icon-btn settings-btn home-settings" onClick={onSettings} aria-label="Settings" title="Settings"><Settings size={17} /></button>}
         </nav>
       </header>
 
