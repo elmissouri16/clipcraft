@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, Diamond } from 'lucide-react';
 import { addKeys, keyAt, keyTimes, removeKeys } from "../../features/timeline/anim.js";
+import { t } from '../../i18n/index.js';
 
 // Keyframe control of one or more properties: jump to the previous keyframe, add / remove the
 // keyframe at the playhead (filled diamond when there is one), jump to the next keyframe.
@@ -23,20 +24,20 @@ export default function KeyNav({ clip, props, lt, getLt = () => lt, start, fps, 
     if(target!==undefined)onSeek(start+target);
   };
   return (
-    <span className="keynav" role="group" aria-label={`${label} keyframes`}>
+    <span className="keynav" role="group" aria-label={t('key-nav.label_keyframes', { label })}>
       {times.length > 0 && (
-        <button type="button" className="kf-step" disabled={prev === undefined} aria-label={`Previous ${label} keyframe`}
-          title="Previous keyframe" onClick={() => jump(-1)}><ChevronLeft size={12} /></button>
+        <button type="button" className="kf-step" disabled={prev === undefined} aria-label={t('key-nav.previous_label_keyframe', { label })}
+          title={t('key-nav.previous_keyframe')} onClick={() => jump(-1)}><ChevronLeft size={12} /></button>
       )}
       <button type="button" className={`kf-btn ${on ? 'on' : ''}`} disabled={!inside} aria-pressed={on}
-        aria-label={on ? `Remove ${label} keyframe` : `Add ${label} keyframe`}
-        title={inside ? (on ? 'Remove keyframe' : 'Add keyframe') : 'Move the playhead over the clip to add a keyframe'}
+        aria-label={on ? t('key-nav.remove_label_keyframe', { label }) : t('key-nav.add_label_keyframe', { label })}
+        title={inside ? (on ? t('key-nav.remove_keyframe') : t('key-nav.add_keyframe')) : t('key-nav.move_the_playhead_over_the_clip')}
         onClick={toggle}>
         <Diamond size={12} fill={on ? 'currentColor' : 'none'} />
       </button>
       {times.length > 0 && (
-        <button type="button" className="kf-step" disabled={next === undefined} aria-label={`Next ${label} keyframe`}
-          title="Next keyframe" onClick={() => jump(1)}><ChevronRight size={12} /></button>
+        <button type="button" className="kf-step" disabled={next === undefined} aria-label={t('key-nav.next_label_keyframe', { label })}
+          title={t('key-nav.next_keyframe')} onClick={() => jump(1)}><ChevronRight size={12} /></button>
       )}
     </span>
   );

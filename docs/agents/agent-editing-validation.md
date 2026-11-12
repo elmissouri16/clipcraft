@@ -46,7 +46,6 @@ Existing failing suite files (all reproduced at the starting commit):
 - `test-anim.cjs`
 - `test-assets.cjs`
 - `test-audiofx.cjs`
-- `test-bundled-templates.cjs`
 - `test-captions-linux.cjs`
 - `test-captions.cjs`
 - `test-enhance.cjs`
@@ -57,7 +56,6 @@ Existing failing suite files (all reproduced at the starting commit):
 - `test-retired-background-removal.cjs`
 - `test-soundza.cjs`
 - `test-srt.mjs`
-- `test-telemetry.cjs`
 - `test-textanim-export.cjs`
 - `test-textanim-word-export.cjs`
 - `test-textsmooth-export.cjs`

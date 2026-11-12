@@ -101,8 +101,8 @@ module.exports = async (win, app, dir) => {
       await until(`document.querySelector('.pilot-model').textContent === 'header-custom-model' && !document.querySelector('.pilot-model-menu')`);
       assert.equal((await q('window.api.settingsGet()')).models[provider], 'header-custom-model');
       await headerOpen();
-      await until(`[...document.querySelectorAll('.pilot-model-options [role=option]')].some(b => b.textContent === ${JSON.stringify(wanted)})`);
-      await q(`[...document.querySelectorAll('.pilot-model-options [role=option]')].find(b => b.textContent === ${JSON.stringify(wanted)}).click()`);
+      await until(`[...document.querySelectorAll('.pilot-model-options [role=option]')].some(b => b.value === ${JSON.stringify(wanted)})`);
+      await q(`[...document.querySelectorAll('.pilot-model-options [role=option]')].find(b => b.value === ${JSON.stringify(wanted)}).click()`);
       await until(`document.querySelector('.pilot-model').textContent === ${JSON.stringify(wanted)} && !document.querySelector('.pilot-model-menu')`);
       assert.equal((await q('window.api.settingsGet()')).models[provider], wanted);
       assert.equal(await q(`document.querySelector('.pilot-input textarea').value`), 'Keep this unsent draft');

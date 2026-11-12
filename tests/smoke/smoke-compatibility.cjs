@@ -31,7 +31,7 @@ module.exports = async (win, app, dir) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixture] });
     for (const project of [{ videoClips: null }, { media: {} }, { textClips: [null] }]) {
       fs.writeFileSync(fixture, JSON.stringify(project));
-      await q('window.__alerts = []; document.querySelector("button[aria-label=Open]").click()');
+      await q('window.__alerts = []'); await q(`document.querySelector('button[aria-label="Project menu"]').click()`); await until('!!document.querySelector(".ctx-menu")'); await q(`[...document.querySelectorAll('.ctx-menu button')].find((b) => b.textContent.trim().startsWith("Open project")).click()`);
       await until('window.__alerts.length > 0');
       assert.match(await q('window.__alerts[0]'), /Invalid project/);
       assert.equal(await q('window.__fve.exportData().project.name'), 'Keep this edit');
@@ -49,7 +49,7 @@ module.exports = async (win, app, dir) => {
     result.checks.push('invalid direct loads preserve the undo history');
 
     fs.writeFileSync(fixture, JSON.stringify({ name: 'Legacy project', media: [], videoClips: [] }));
-    await q('document.querySelector("button[aria-label=Open]").click()');
+    await q(`document.querySelector('button[aria-label="Project menu"]').click()`); await until('!!document.querySelector(".ctx-menu")'); await q(`[...document.querySelectorAll('.ctx-menu button')].find((b) => b.textContent.trim().startsWith("Open project")).click()`);
     await until('document.querySelector(".project-name")?.value === "Legacy project"');
     assert.equal(await q('window.__fve.exportData().project.fps'), 30);
     result.checks.push('legacy project opens with compatible defaults');

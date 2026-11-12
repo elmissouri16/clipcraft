@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Music, Plus, SlidersHorizontal,
-  Sparkles, Trash2, Type, Upload, WandSparkles, X, Layers, ChevronDown, ChevronRight, ChevronUp, MonitorUp, LayoutTemplate,
+  Sparkles, Trash2, Type, Upload, WandSparkles, X, Layers, ChevronDown, ChevronRight, ChevronUp, MonitorUp, LayoutTemplate, Mic, List,
 } from 'lucide-react';
 import AssetsTab from './AssetsPanel.jsx';
 import { useAssets } from '../useAssets.js';
@@ -18,30 +18,33 @@ import { parseSRT, regroupSegments } from "../../text/subtitles.js";
 import { EFFECTS, EFFECT_GROUPS, FILTERS, TRANSITIONS } from "../../effects/effects.js";
 import { dragProps } from "../../timeline/dnd.js";
 import Slider from "../../../components/ui/Slider.jsx";
+import Dropdown from '../../../components/ui/Dropdown.jsx';
 import SearchBox from "../../../components/ui/SearchBox.jsx";
-import AudioLibrary, { MUSIC_TAGS, SFX_TAGS, SOUNDZA_TAGS, TROLL_TAGS } from "../../audio/components/AudioLibrary.jsx";
-import StockLibrary, { CHIPS as STOCK_CHIPS } from './StockLibrary.jsx';
+import AudioLibrary from "../../audio/components/AudioLibrary.jsx";
+import StockLibrary from './StockLibrary.jsx';
 import { TabFrame } from './TabFrame.jsx';
 import { FxThumb } from "../../effects/previews.jsx";
 import MediaFavorites from './MediaFavorites.jsx';
 import { FavStar, favFile } from "../../../app/favorites.jsx";
 import { TemplateGrid } from "../../text/components/TextInspector.jsx";
 import { TEMPLATE_CATEGORIES, TEXT_TEMPLATES } from "../../text/catalog.js";
+import { t, tn, formatNumber } from '../../../i18n/index.js';
+import { catalogLabel, catalogName, filterLabel } from '../../../i18n/catalog.js';
 
 export const TABS = [
-  { id: 'media', icon: Film, name: 'Media' },
-  { id: 'audio', icon: Music, name: 'Audio' },
-  { id: 'assets', icon: LayoutTemplate, name: 'Assets' },
-  { id: 'text', icon: Type, name: 'Text' },
-  { id: 'effects', icon: WandSparkles, name: 'Effects' },
-  { id: 'transitions', icon: Blend, name: 'Transitions' },
-  { id: 'captions', icon: CaptionsIcon, name: 'Captions' },
-  { id: 'filters', icon: Contrast, name: 'Filters' },
-  { id: 'adjust', icon: SlidersHorizontal, name: 'Adjust' },
+  { id: 'media', icon: Film, name: t('app.media') },
+  { id: 'audio', icon: Music, name: t('edit-plan-card.audio') },
+  { id: 'assets', icon: LayoutTemplate, name: t('assets-panel.assets') },
+  { id: 'text', icon: Type, name: t('tts.text') },
+  { id: 'effects', icon: WandSparkles, name: t('library.effects') },
+  { id: 'transitions', icon: Blend, name: t('library.transitions') },
+  { id: 'captions', icon: CaptionsIcon, name: t('edit-plan-card.captions') },
+  { id: 'filters', icon: Contrast, name: t('audio-fx.filters') },
+  { id: 'adjust', icon: SlidersHorizontal, name: t('grade.adjust') },
 ];
 
 // Default category of each tab (the side column remembers the last one per tab).
-const SUB_DEFAULT = { media: 'yours', audio: 'music:Vlog', text: 'All' };
+const SUB_DEFAULT = { media: 'yours', audio: 'auto', text: 'All' };
 
 export default function LeftPanel(props) {
   const { tab, setTab } = props;
@@ -49,7 +52,8 @@ export default function LeftPanel(props) {
   const activeTab = TABS.some((t) => t.id === tab) ? tab : 'media';
   const [sub, setSubState] = useState(SUB_DEFAULT);
   const setSub = (id) => setSubState((s) => ({ ...s, [activeTab]: id }));
-  const p = { ...props, sub: sub[activeTab], setSub };
+  const browserMemory = useRef(new Map());
+  const p = { ...props, sub: sub[activeTab], setSub, browserMemory: browserMemory.current };
   const dockRef = useRef(null);
   const [scroll, setScroll] = useState({ up: false, down: false });
   const measure = () => {
@@ -77,8 +81,8 @@ export default function LeftPanel(props) {
   return (
     <aside className="left">
       <div className="dock-wrap tabbar-wrap">
-        {scroll.up && <button className="dock-arrow tabbar-arrow up" onClick={() => scrollDock(-1)} aria-label="More tabs above"><ChevronUp size={14} /></button>}
-        <nav className="dock tabbar" aria-label="Library" ref={dockRef} onScroll={measure}>
+        {scroll.up && <button className="dock-arrow tabbar-arrow up" onClick={() => scrollDock(-1)} aria-label={t('library.more_tabs_above')}><ChevronUp size={14} /></button>}
+        <nav className="dock tabbar" aria-label={t('library.library')} ref={dockRef} onScroll={measure}>
           {TABS.map((t) => {
             const Icon = t.icon;
             return (
@@ -89,7 +93,7 @@ export default function LeftPanel(props) {
             );
           })}
         </nav>
-        {scroll.down && <button className="dock-arrow tabbar-arrow down" onClick={() => scrollDock(1)} aria-label="More tabs below"><ChevronDown size={14} /></button>}
+        {scroll.down && <button className="dock-arrow tabbar-arrow down" onClick={() => scrollDock(1)} aria-label={t('library.more_tabs_below')}><ChevronDown size={14} /></button>}
       </div>
       <div className="library">
         {activeTab === 'media' && <MediaTab {...p} />}
@@ -132,7 +136,7 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
     <div className={`asset ${peeking ? 'peeking' : ''}`} tabIndex={0} {...dragProps({ kind: 'media', id: m.id, mediaType: m.type })} onKeyDown={onKeyDown}
       onClick={(e) => { if (onPeek && !e.target.closest('button')) onPeek(m.id); }}
       onDoubleClick={() => onAdd(m.id)}
-      title={`${m.name}\n${onPeek ? 'Click to watch it in the player · ' : ''}Drag to the timeline or double-click${onRemove ? '\nDelete: remove from the project' : ''}`}>
+      title={[m.name, onPeek ? t('library.click_to_watch_drag_or_double_click') : t('library.drag_to_the_timeline_or_double_click'), onRemove ? t('library.delete_remove_from_the_project') : ''].filter(Boolean).join('\n')}>
       <div className="asset-thumb">
         {m.type === 'video' && (m.poster ? (
           // W4b: the dedicated poster frame fills the card (object-fit: cover) — a portrait
@@ -156,19 +160,19 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
           </div>
         )}
         {m.type !== 'image' && <span className="asset-dur">{formatTime(m.duration).slice(0, 5)}</span>}
-        {m.optimizing && <span className="asset-opt" title="Making a light preview copy so this video plays smoothly. Export uses the original.">Optimizing…</span>}
+        {m.optimizing && <span className="asset-opt" title={t('library.making_a_light_preview_copy_so_this_video')}>{t('library.optimizing')}</span>}
         {!m.optimizing && proxyPrefOn() && previewPath(m) !== (m.proxy || m.path) && (
-          <span className="asset-opt proxy" title="Plays from a scaled proxy copy at the current playback quality. Export uses the original at full quality.">Proxy</span>
+          <span className="asset-opt proxy" title={t('library.plays_from_a_scaled_proxy_copy_at_the_curr')}>{t('library.proxy')}</span>
         )}
-        {m.graphic && <span className="asset-badge graphic" title="Motion graphic: edit its text and data in the inspector">Graphic</span>}
-        <button className="asset-add" onClick={() => onAdd(m.id)} aria-label={`Add ${m.name} to the timeline`} title={m.graphic ? 'Add over the whole frame at the playhead' : undefined}><Plus size={14} /></button>
+        {m.graphic && <span className="asset-badge graphic" title={t('library.motion_graphic_edit_its_text_and_data_in_t')}>{t('library.graphic')}</span>}
+        <button className="asset-add" onClick={() => onAdd(m.id)} aria-label={t('library.add_name_to_the_timeline', { name: m.name })} title={m.graphic ? t('library.add_over_the_whole_frame_at_the_playhead') : undefined}><Plus size={14} /></button>
         {onOverlay && m.type !== 'audio' && !m.graphic && (
-          <button className="asset-add overlay" onClick={() => onOverlay(m.id)} aria-label={`Add ${m.name} as an overlay`}
-            title="Add as overlay (picture in picture)"><Layers size={13} /></button>
+          <button className="asset-add overlay" onClick={() => onOverlay(m.id)} aria-label={t('library.add_name_as_an_overlay', { name: m.name })}
+            title={t('library.add_as_overlay_picture_in_picture')}><Layers size={13} /></button>
         )}
         {m.path && <FavStar entry={favFile(m)} className="asset-star" />}
         {onRemove && (
-          <button className="asset-remove" onClick={() => onRemove(m.id)} aria-label={`Remove ${m.name}`} title="Remove from the project (Delete)"><Trash2 size={12} /></button>
+          <button className="asset-remove" onClick={() => onRemove(m.id)} aria-label={t('library.remove_name', { name: m.name })} title={t('library.remove_from_the_project_delete')}><Trash2 size={12} /></button>
         )}
       </div>
       <div className="asset-name">{m.name}</div>
@@ -176,14 +180,14 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
   );
 }
 
-function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onStockAdd, onAddFile, onOpenSettings, stockKey, sub, setSub, onRecordScreen, onPeek, peekId }) {
+function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onStockAdd, onAddFile, onOpenSettings, stockKey, sub, setSub, onRecordScreen, onPeek, peekId, browserMemory }) {
   const visual = media; // videos, photos and audio
   // One source switcher replaces the old second rail: Yours / Favorites / Stock live in a
   // segmented control at the top of the panel; Stock adds a kind switch + category chips.
   const [kind, chip] = sub.split(':');
   const view = sub === 'favorites' ? 'favorites' : (kind === 'video' || kind === 'photo') ? 'stock' : 'yours';
-  const [lastStock, setLastStock] = useState('video:Trending');
-  const goStock = (id) => { setLastStock(id); setSub(id); };
+  const [lastStock, setLastStock] = useState(browserMemory.get('stock:last') || 'video:Trending');
+  const goStock = id => { setLastStock(id); browserMemory.set('stock:last', id); const [k, c] = id.split(':'); browserMemory.set(`stock:category:${k}`, c); setSub(id); };
   // The kind tree over this project's media (Hamza's reference): Media by kind, plus a
   // Generated branch — Speech (text-to-speech output) and Processed (detach / reverse /
   // stabilize renders). Counts are computed live from the registry (src/features/library/assetsLib.js);
@@ -199,65 +203,53 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
   );
   return (
     <TabFrame>
-      <Head title="Media" hint={view === 'yours' ? 'Videos, photos and audio in this project' : view === 'favorites' ? 'Your starred media, in every project' : 'Free stock from Pixabay'}>
-        <div className="head-btns">
-          <button className="btn btn-sm" onClick={onRecordScreen} title="Record your screen, a window, the computer sound, the microphone and the camera"><MonitorUp size={14} /> Record</button>
-          <button className="btn btn-primary btn-sm" onClick={onImport}><Upload size={14} /> Import</button>
-        </div>
+      <Head title={t('app.media')} hint={view === 'yours' ? t('library.videos_photos_and_audio_in_this_project') : view === 'favorites' ? t('library.your_starred_media_in_every_project') : t('library.stock_photos_and_videos')}>
+        {view === 'yours' && <div className="head-btns">
+          <button className="btn btn-sm" onClick={onRecordScreen} title={t('library.record_your_screen_a_window_the_computer_s')}><MonitorUp size={14} /> {t('audio.record')}</button>
+          <button className="btn btn-primary btn-sm" onClick={onImport}><Upload size={14} /> {t('audio.import')}</button>
+        </div>}
       </Head>
-      <div className="src-seg seg-tabs" role="tablist" aria-label="Media source">
-        <button role="tab" aria-selected={view === 'yours'} className={view === 'yours' ? 'on' : ''} onClick={() => setSub('yours')}>This project</button>
-        <button role="tab" aria-selected={view === 'favorites'} className={view === 'favorites' ? 'on' : ''} onClick={() => setSub('favorites')}>Favorites</button>
-        <button role="tab" aria-selected={view === 'stock'} className={view === 'stock' ? 'on' : ''} onClick={() => goStock(lastStock)}>Stock</button>
+      <div className="browser-media-source"><Dropdown ariaLabel={t('library.media_source')} value={view} options={[{ value: 'yours', label: t('library.this_project') }, { value: 'favorites', label: t('library.favorites') }, { value: 'stock', label: t('library.stock') }]} onChange={value => value === 'stock' ? goStock(lastStock) : setSub(value)} /></div>
+      <div className="src-seg seg-tabs" role="tablist" aria-label={t('library.media_source')}>
+        <button role="tab" aria-selected={view === 'yours'} className={view === 'yours' ? 'on' : ''} onClick={() => setSub('yours')}>{t('library.this_project')}</button>
+        <button role="tab" aria-selected={view === 'favorites'} className={view === 'favorites' ? 'on' : ''} onClick={() => setSub('favorites')}>{t('library.favorites')}</button>
+        <button role="tab" aria-selected={view === 'stock'} className={view === 'stock' ? 'on' : ''} onClick={() => goStock(lastStock)}>{t('library.stock')}</button>
       </div>
-      {view === 'stock' && (
-        <>
-          <div className="src-kind seg-tabs small" role="tablist" aria-label="Stock kind">
-            <button role="tab" aria-selected={kind === 'video'} className={kind === 'video' ? 'on' : ''} onClick={() => goStock('video:Trending')}>Videos</button>
-            <button role="tab" aria-selected={kind === 'photo'} className={kind === 'photo' ? 'on' : ''} onClick={() => goStock('photo:Trending')}>Photos</button>
-          </div>
-          <div className="chips scroll-x src-chips" role="group" aria-label="Stock category">
-            {STOCK_CHIPS[kind].map(([c]) => (
-              <button key={c} className={`chip ${chip === c ? 'on' : ''}`} aria-pressed={chip === c} onClick={() => goStock(`${kind}:${c}`)}>{c}</button>
-            ))}
-          </div>
-        </>
-      )}
       {view === 'yours' ? (
         !visual.length ? (
           <button className="dropzone" onClick={onImport}>
             <span className="dz-icon"><ImagePlus size={26} /></span>
-            <b>Import media</b>
-            <span>Drag videos, photos and audio here from Explorer, or click to browse</span>
+            <b>{t('home.import_media')}</b>
+            <span>{t('library.drag_videos_photos_and_audio_here_from_exp')}</span>
           </button>
         ) : (
           <>
             <label className="media-filter">
-              <span>Show</span>
-              <select aria-label="Filter project media" value={treeSel} onChange={e => setTreeSel(e.target.value)}>
-                {[['all', 'All media', counts.all], ['video', 'Video', counts.video], ['audio', 'Audio', counts.audio], ['image', 'Images', counts.image], ['graphic', 'Graphics', counts.graphic], ['speech', 'Generated speech', counts.speech], ['processed', 'Processed', counts.processed]].map(([id, label, n]) => <option key={id} value={id}>{label} · {n}</option>)}
+              <span>{t('library.show')}</span>
+              <select aria-label={t('library.filter_project_media')} value={treeSel} onChange={e => setTreeSel(e.target.value)}>
+                {[['all', t('library.all_media'), counts.all], ['video', t('pack.video'), counts.video], ['audio', t('edit-plan-card.audio'), counts.audio], ['image', t('library.images'), counts.image], ['graphic', t('library.graphics'), counts.graphic], ['speech', t('library.generated_speech'), counts.speech], ['processed', t('library.processed'), counts.processed]].map(([id, label, n]) => <option key={id} value={id}>{label} · {n}</option>)}
               </select>
             </label>
             <div className="media-tree">
               <button className="mt-head" aria-expanded={treeOpen.media} onClick={() => setTreeOpen((o) => ({ ...o, media: !o.media }))}>
-                {treeOpen.media ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>Media</span>
+                {treeOpen.media ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>{t('app.media')}</span>
               </button>
               {treeOpen.media && (
                 <div className="mt-nodes">
-                  {treeNode('all', 'All media', counts.all)}
-                  {treeNode('video', 'Video', counts.video)}
-                  {treeNode('audio', 'Audio', counts.audio)}
-                  {treeNode('image', 'Images', counts.image)}
+                  {treeNode('all', t('library.all_media'), counts.all)}
+                  {treeNode('video', t('pack.video'), counts.video)}
+                  {treeNode('audio', t('edit-plan-card.audio'), counts.audio)}
+                  {treeNode('image', t('library.images'), counts.image)}
                 </div>
               )}
               <button className="mt-head" aria-expanded={treeOpen.gen} onClick={() => setTreeOpen((o) => ({ ...o, gen: !o.gen }))}>
-                {treeOpen.gen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>Generated</span>
+                {treeOpen.gen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}<span>{t('library.generated')}</span>
               </button>
               {treeOpen.gen && (
                 <div className="mt-nodes">
-                  {treeNode('graphic', 'Graphics', counts.graphic)}
-                  {treeNode('speech', 'Speech', counts.speech)}
-                  {treeNode('processed', 'Processed', counts.processed)}
+                  {treeNode('graphic', t('library.graphics'), counts.graphic)}
+                  {treeNode('speech', t('library.speech'), counts.speech)}
+                  {treeNode('processed', t('library.processed'), counts.processed)}
                 </div>
               )}
             </div>
@@ -267,12 +259,12 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
               </div>
             ) : (
               <p className="empty-note">{treeSel === 'graphic'
-                ? 'No graphics yet — charts, callouts and other graphics CraftAI draws land here.'
+                ? t('library.no_graphics_yet')
                 : treeSel === 'speech'
-                ? 'No generated speech yet — voice-overs you make with Text to speech land here.'
+                ? t('library.no_generated_speech_yet')
                 : treeSel === 'processed'
-                  ? 'No processed renders yet — detached, reversed and stabilized renders land here.'
-                  : 'Nothing of this kind in the project yet.'}</p>
+                  ? t('library.no_processed_renders_yet')
+                  : t('library.nothing_of_this_kind_in_the_project_yet')}</p>
             )}
           </>
         )
@@ -282,7 +274,7 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
         </div>
       ) : (
         <div className="pad-block">
-          <StockLibrary kind={kind} chip={chip} onStockAdd={onStockAdd} onOpenSettings={onOpenSettings} hasKey={stockKey} />
+          <StockLibrary browserMemory={browserMemory} onNavigate={goStock} kind={kind} chip={chip} onStockAdd={onStockAdd} onOpenSettings={onOpenSettings} hasKey={stockKey} />
         </div>
       )}
     </TabFrame>
@@ -290,62 +282,61 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
 }
 
 function AudioTab(props) {
-  const { sub, setSub } = props;
-  // One audio surface: a source switcher (chips) on top, then the source's own category
-  // chips — no second rail. Sub ids keep the exact values AudioLibrary routes on.
-  const [group, subTag] = sub.includes(':') ? sub.split(':') : [sub, ''];
-  const view = group === 'yours' && subTag === 'favorites' ? 'favorites' : group;
-  const sources = [
-    ['music', 'Music'], ['sfx', 'Sound FX'], ['soundza', 'Soundza'], ['trolls', 'Trolls'], ['yours', 'Your audio'],
-    ['favorites', 'Favorites'], ['tts', 'Text to speech'], ['credits', 'Credits'],
-  ];
-  const firstOf = { music: 'music:Vlog', sfx: 'sfx:Transition', soundza: 'soundza:Whoosh', trolls: 'trolls:Trending', yours: 'yours', favorites: 'yours:favorites', tts: 'tts', credits: 'credits' };
-  // The asset pack's music collections lead the Music chips when the pack is installed
-  // (sub ids 'music:pack:<collection>', routed by AudioLibrary to PackMusic).
+  const { sub, setSub, browserMemory } = props;
   const lib = useAssets();
-  const packSubs = lib ? [...new Set(lib.items.filter((i) => i.group === 'Music').map((i) => i.sub))]
-    .sort((a, b) => (a === 'Library' ? -1 : b === 'Library' ? 1 : a.localeCompare(b))) : [];
-  // The pack's sound effects lead the Sound FX chips (sub ids 'sfx:pack:<collection>',
-  // routed by AudioLibrary to the pack list) — pack audio lives in Audio, with the
-  // music, not in Assets (Hamza, 2026-11-01).
-  const packSfxSubs = lib ? [...new Set(lib.items.filter((i) => i.group === 'Sound FX' && i.sub).map((i) => i.sub))] : [];
-  const catChips = view === 'music' ? [...packSubs.map((s) => [`music:pack:${s}`, `${s}`]), ...MUSIC_TAGS.map(([c]) => [`music:${c}`, c])]
-    : view === 'sfx' ? [...packSfxSubs.map((s) => [`sfx:pack:${s}`, `${s}`]), ...SFX_TAGS.map(([c]) => [`sfx:${c}`, c])]
-    : view === 'soundza' ? SOUNDZA_TAGS.map(([c]) => [`soundza:${c}`, c])
-    : view === 'trolls' ? TROLL_TAGS.map(([c]) => [`trolls:${c}`, c])
-    : null;
-  return (
-    <TabFrame>
-      <Head title="Audio" hint={view === 'music' ? 'Free music for your videos' : view === 'sfx' ? 'Sound effects, ready to search' : view === 'soundza' ? 'Sound effects from Soundza' : view === 'trolls' ? 'Meme sounds from MyInstants' : view === 'tts' ? 'Turn text into a voice-over' : view === 'credits' ? 'Credit lines for sounds on the timeline' : view === 'favorites' ? 'Your starred sounds, in every project' : 'Imported audio and voice-overs'} />
-      <div className="chips scroll-x src-chips" role="tablist" aria-label="Audio source">
-        {sources.map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={view === id} className={`chip src-chip ${view === id ? 'on' : ''}`}
-            onClick={() => setSub(firstOf[id])}>{label}</button>
-        ))}
-      </div>
-      {catChips && (
-        <div className="chips scroll-x src-chips" role="group" aria-label="Audio category">
-          {catChips.map(([id, label]) => (
-            <button key={id} className={`chip ${sub === id ? 'on' : ''}`} aria-pressed={sub === id} onClick={() => setSub(id)}>{label}</button>
-          ))}
-        </div>
-      )}
-      <div className="pad-block">
-        <AudioLibrary {...props} section={sub} onShowCredits={() => setSub('credits')} onAddMedia={props.onAdd} MediaCard={MediaCard} />
-      </div>
-    </TabFrame>
-  );
+  const packSubs = lib ? [...new Set(lib.items.filter(i => i.group === 'Music' && i.sub).map(i => i.sub))].sort((a, b) => a === 'Library' ? -1 : b === 'Library' ? 1 : a.localeCompare(b)) : [];
+  const packSfxSubs = lib ? [...new Set(lib.items.filter(i => i.group === 'Sound FX' && i.sub).map(i => i.sub))] : [];
+  const pack = sub?.includes(':pack:');
+  const group = sub?.split(':')[0];
+  const tool = ['tts', 'credits'].includes(sub);
+  const destination = pack ? 'library' : group === 'yours' && sub !== 'yours:favorites' ? 'project' : ['favorites', 'yours:favorites'].includes(sub) ? 'favorites' : 'online';
+  const navigate = id => {
+    const target = id.includes(':pack:') ? 'library' : id === 'yours' ? 'project' : ['favorites', 'yours:favorites'].includes(id) ? 'favorites' : ['tts', 'credits'].includes(id) ? null : 'online';
+    if (target === 'online' && ['sfx', 'soundza'].includes(id.split(':')[0])) browserMemory.set('audio:effects:selected', id);
+    if (target) { browserMemory.set(`audio:destination:${target}`, id); browserMemory.set('audio:last', target); }
+    if (['music','sfx','soundza','trolls'].includes(id.split(':')[0])) browserMemory.set(`audio:kind:${id.includes(':pack:') ? 'library' : 'online'}:${id.split(':')[0]}`, id);
+    setSub(id);
+  };
+  useEffect(() => {
+    if (sub !== 'auto' || !lib) return;
+    navigate(packSubs.length ? `music:pack:${packSubs[0]}` : 'music:All');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub, lib]);
+  const changeDestination = id => navigate(browserMemory.get(`audio:destination:${id}`) || ({ library: `music:pack:${packSubs[0] || 'Library'}`, online: 'music:All', project: 'yours', favorites: 'favorites' })[id]);
+  const localKind = group === 'sfx' ? 'sfx' : 'music';
+  const onlineKind = group === 'soundza' ? 'sfx' : group;
+  const switchKind = id => (pack ? localKind : onlineKind) === id ? undefined : navigate((!pack && id === 'sfx' ? browserMemory.get('audio:effects:selected') : null) || browserMemory.get(`audio:kind:${pack ? 'library' : 'online'}:${id}`) || (pack ? `${id}:pack:${(id === 'music' ? packSubs : packSfxSubs)[0] || 'Library'}` : `${id}:${id === 'trolls' ? 'Trending' : 'All'}`));
+  const kinds = [['music', t('library.music')], ['sfx', t('library.sound_effects')], ...(pack ? [] : [['trolls', t('library.memes')]])];
+  const navigation = <div className="browser-audio-kind">
+    <div className="browser-kind-compact"><Dropdown ariaLabel={t('library.audio_content_type')} value={pack ? localKind : onlineKind} options={kinds.map(([value, label]) => ({ value, label }))} onChange={switchKind} /></div>
+    <div className="seg-tabs browser-kinds" aria-label={pack ? t('library.library_audio_kind') : t('library.online_audio_kind')}>
+      {kinds.map(([id,label]) => <button key={id} className={(pack ? localKind : onlineKind) === id ? 'on' : ''} aria-pressed={(pack ? localKind : onlineKind) === id} onClick={() => switchKind(id)}>{label}</button>)}
+    </div>
+    {pack && <Dropdown ariaLabel={t('library.library_collection')} value={sub.slice(sub.indexOf(':pack:') + 6)} options={(localKind === 'music' ? packSubs : packSfxSubs).length ? (localKind === 'music' ? packSubs : packSfxSubs).map(value => ({ value, label: catalogLabel('pack_sub', value) })) : [{ value: 'Library', label: !lib ? t('library.loading_collections') : t('library.no_collections_installed') }]} onChange={value => navigate(`${localKind}:pack:${value}`)} />}
+  </div>;
+  const providerControl = onlineKind === 'sfx' && <div className="browser-field"><span>{t('settings.provider')}</span><Dropdown ariaLabel={t('library.audio_provider')} value={group === 'soundza' ? 'soundza' : 'sfx'} options={[{ value: 'sfx', label: 'Openverse + SFXMint' }, { value: 'soundza', label: 'Soundza' }]} onChange={value => navigate(browserMemory.get(`audio:kind:online:${value}`) || `${value}:All`)} /></div>;
+  const destinations = [['library', t('library.library')], ['online', t('library.online')], ['project', t('library.this_project')], ['favorites', t('library.favorites')]];
+  return <TabFrame>
+    <Head title={t('edit-plan-card.audio')} hint={tool ? sub === 'tts' ? t('library.generate_speech_for_your_video') : t('library.publication_credits_for_images_and_audio') : t('library.browse_your_library_or_find_audio_online')}>
+      <div className="head-btns audio-browser-actions"><button aria-label={t('tts.text_to_speech')} title={t('tts.text_to_speech')} className={`btn btn-sm ${sub === 'tts' ? 'on' : ''}`} onClick={() => setSub('tts')}><Mic size={13} /><span>{t('tts.text_to_speech')}</span></button><button aria-label={t('audio.credits')} title={t('audio.credits')} className={`btn btn-sm ${sub === 'credits' ? 'on' : ''}`} onClick={() => setSub('credits')}><List size={13} /><span>{t('audio.credits')}</span></button></div>
+    </Head>
+    <div className="browser-audio-source"><Dropdown ariaLabel={t('library.audio_source')} value={tool ? 'tool' : destination} options={[...(tool ? [{ value: 'tool', label: sub === 'tts' ? t('tts.text_to_speech') : t('audio.credits') }] : []), ...destinations.map(([value, label]) => ({ value, label }))]} onChange={id => id !== 'tool' && changeDestination(id)} /></div>
+    <div className="seg-tabs browser-destinations" aria-label={t('library.audio_source')}>{destinations.map(([id,label]) => <button key={id} className={!tool && sub !== 'auto' && destination === id ? 'on' : ''} aria-pressed={!tool && sub !== 'auto' && destination === id} onClick={() => changeDestination(id)}>{label}</button>)}</div>
+    <div className="pad-block">
+      {sub === 'auto' ? <p className="empty-note">{t('library.loading_your_audio_library')}</p> : <AudioLibrary {...props} onSectionChange={navigate} section={sub} browserMemory={browserMemory} navigation={navigation} providerControl={providerControl} onShowCredits={() => setSub('credits')} onAddMedia={props.onAdd} />}
+    </div>
+  </TabFrame>;
 }
 
 function TextTab({ onAddText, sub, setSub }) {
   return (
     <TabFrame>
-      <Head title={sub === 'All' ? 'Text templates' : sub} hint="Click or drag a style to the timeline">
-        <button className="btn btn-primary btn-sm" onClick={() => onAddText({})}><Plus size={14} /> Add text</button>
+      <Head title={sub === 'All' ? t('library.text_templates') : catalogLabel('text_cat', sub)} hint={t('library.click_or_drag_a_style_to_the_timeline')}>
+        <button className="btn btn-primary btn-sm" onClick={() => onAddText({})}><Plus size={14} /> {t('inspector.add_text')}</button>
       </Head>
-      <div className="chips scroll-x src-chips" role="group" aria-label="Text template category">
+      <div className="chips scroll-x src-chips" role="group" aria-label={t('library.text_template_category')}>
         {TEMPLATE_CATEGORIES.map((c) => (
-          <button key={c} className={`chip ${sub === c ? 'on' : ''}`} aria-pressed={sub === c} onClick={() => setSub(c)}>{c}</button>
+          <button key={c} className={`chip ${sub === c ? 'on' : ''}`} aria-pressed={sub === c} onClick={() => setSub(c)}>{catalogLabel('text_cat', c)}</button>
         ))}
       </div>
       <div className="pad-block">
@@ -357,7 +348,7 @@ function TextTab({ onAddText, sub, setSub }) {
 
 function NeedClip({ target }) {
   if (target) return null;
-  return <p className="hint">Select a picture clip (main track or overlay) in the timeline, or drag an item onto a clip.</p>;
+  return <p className="hint">{t('library.select_a_picture_clip_main_track_or_overla')}</p>;
 }
 
 function EffectsTab({ target, updateTarget, clipSelected, onAddFreeEffect, onAddTextOver }) {
@@ -368,29 +359,28 @@ function EffectsTab({ target, updateTarget, clipSelected, onAddFreeEffect, onAdd
   // the playhead, as an object you can move and stretch over several clips.
   const pick = (id) => (clipSelected && target ? toggle(id) : onAddFreeEffect(id));
   const q = query.trim().toLowerCase();
-  const groups = EFFECT_GROUPS.map((g) => [g, EFFECTS.filter((e) => e.group === g && (!q || e.name.toLowerCase().includes(q)))]).filter(([, list]) => list.length);
+  // The search matches the shown (translated) name and the English catalog name alike.
+  const groups = EFFECT_GROUPS.map((g) => [g, EFFECTS.filter((e) => e.group === g && (!q || e.name.toLowerCase().includes(q) || catalogName('effect', e).toLowerCase().includes(q)))]).filter(([, list]) => list.length);
   return (
     <>
-      <Head title="Effects" hint={clipSelected ? 'Click to add to (or remove from) the selected clip' : 'Click to add on the Effects track at the playhead, or drag onto a clip'} />
-      <div className="panel-search"><SearchBox value={query} onChange={setQuery} placeholder="Search effects…" ariaLabel="Search effects" /></div>
-      <p className="hint fx-mode">{clipSelected
-        ? 'On the selected clip: the effect lasts the whole clip. Click an empty spot of the timeline to add free effects instead.'
-        : 'On the Effects track: move it and stretch it over any part of the video. Select a clip first to put the effect on that clip.'}</p>
+      <Head title={t('library.effects')} hint={clipSelected ? t('library.click_to_add_to_or_remove_from_selected') : t('library.click_to_add_on_the_effects_track')} />
+      <div className="panel-search"><SearchBox value={query} onChange={setQuery} placeholder={t('library.search_effects')} ariaLabel={t('library.search_effects_2')} /></div>
+      <p className="hint fx-mode">{clipSelected ? t('library.on_the_selected_clip_effect_lasts') : t('library.on_the_effects_track_move_and_stretch')}</p>
       {clipSelected && target && onAddTextOver && (
         <div className="pad-x">
-          <button className="btn btn-sm" onClick={() => onAddTextOver(target.start, Math.max(0.1, target.end - target.start))}><Type size={14} /> Add text over this clip</button>
+          <button className="btn btn-sm" onClick={() => onAddTextOver(target.start, Math.max(0.1, target.end - target.start))}><Type size={14} /> {t('library.add_text_over_this_clip')}</button>
         </div>
       )}
-      {!groups.length && <p className="hint pad-x">No effects match that search.</p>}
+      {!groups.length && <p className="hint pad-x">{t('library.no_effects_match_that_search')}</p>}
       {groups.map(([g, list]) => (
         <div key={g} className="fx-group">
-          <span className="lib-group-name pad-x">{g}</span>
+          <span className="lib-group-name pad-x">{catalogLabel('effect_group', g)}</span>
           <div className="tile-grid">
             {list.map((e) => (
               <button key={e.id} className={`tile ${fx.includes(e.id) ? 'on' : ''}`} onClick={() => pick(e.id)}
                 aria-pressed={fx.includes(e.id)} {...dragProps({ kind: 'effect', id: e.id })}>
                 <span className="tile-preview fx-live"><FxThumb kind="effect" id={e.id} /></span>
-                <span className="tile-label">{e.name}</span>
+                <span className="tile-label">{catalogName('effect', e)}</span>
               </button>
             ))}
           </div>
@@ -410,6 +400,8 @@ function TransitionsTab({ target, updateTarget }) {
   const [favs, setFavs] = useState(() => loadFavorites());
   const toggleFav = (slug) => { const next = toggleFavorite(favs, slug); setFavs(next); saveFavorites(localStorage, next); };
   const engineById = Object.fromEntries(TRANSITIONS.map((t) => [t.id, t]));
+  // Shown name of the engine transition a catalog item runs (the data keeps the English engineName).
+  const engineLabel = (e) => catalogName('transition', engineById[e.engineId] || { id: e.engineId, name: e.engineName });
   const applyEngine = (engineId, fxDuration) => {
     if (!ok) return;
     // Zoom/scale transitions feel best eased: new ones start on Smooth (the curve editor can change it).
@@ -423,8 +415,8 @@ function TransitionsTab({ target, updateTarget }) {
       <span className="tile-label">{label}</span>
       {extra?.badge && <span className="tile-badge">{extra.badge}</span>}
       {extra?.slug && (
-        <span className={`tile-star ${favs.has(extra.slug) ? 'on' : ''}`} role="button" aria-label={favs.has(extra.slug) ? 'Remove from favourites' : 'Save as favourite'}
-          title={favs.has(extra.slug) ? 'Remove from favourites' : 'Save as favourite'}
+        <span className={`tile-star ${favs.has(extra.slug) ? 'on' : ''}`} role="button" aria-label={favs.has(extra.slug) ? t('library.remove_from_favourites') : t('library.save_as_favourite')}
+          title={favs.has(extra.slug) ? t('library.remove_from_favourites') : t('library.save_as_favourite')}
           onClick={(e) => { e.stopPropagation(); toggleFav(extra.slug); }}
           onPointerDown={(e) => e.stopPropagation()}>★</span>
       )}
@@ -436,61 +428,61 @@ function TransitionsTab({ target, updateTarget }) {
     : collection.startsWith('pack:') ? e.pack === collection.slice(5)
     : e.collection === collection);
   const catalogList = COLLECTION_ITEMS.filter((e) => inSelection(e)
-    && (!q || e.name.toLowerCase().includes(q) || e.behavior.toLowerCase().includes(q) || e.family.toLowerCase().includes(q) || e.engineName.toLowerCase().includes(q)));
+    && (!q || e.name.toLowerCase().includes(q) || catalogName('collection_item', e).toLowerCase().includes(q) || e.behavior.toLowerCase().includes(q) || e.family.toLowerCase().includes(q) || e.engineName.toLowerCase().includes(q) || engineLabel(e).toLowerCase().includes(q)));
   return (
     <>
-      <Head title="Transitions" hint="Between the previous clip and the selected one" />
-      {!ok && <p className="hint">Select a clip (not the first one), or drag a transition onto a clip.</p>}
+      <Head title={t('library.transitions')} hint={t('library.between_the_previous_clip_and_selected')} />
+      {!ok && <p className="hint">{t('library.select_a_clip_not_the_first_one_or_drag_a')}</p>}
       <div className="field pad">
-        <span>Duration <b>{dur.toFixed(1)}s</b></span>
+        <span>{t('animation-panel.duration')} <b>{t('library.seconds_value', { value: formatNumber(dur, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}</b></span>
         <input type="range" min="0.2" max="2" step="0.1" value={dur} onChange={(e) => {
           const d = Number(e.target.value);
           setDur(d);
           if (ok && cur) updateTarget({ transition: { ...cur, duration: d } });
         }} />
       </div>
-      <div className="seg-tabs tr-view" role="group" aria-label="Transition library">
-        <button className={view === 'catalog' ? 'on' : ''} aria-pressed={view === 'catalog'} onClick={() => setView('catalog')}>Catalog · {COLLECTION_ITEMS.length}</button>
-        <button className={view === 'classic' ? 'on' : ''} aria-pressed={view === 'classic'} onClick={() => setView('classic')}>Built-in</button>
+      <div className="seg-tabs tr-view" role="group" aria-label={t('library.transition_library')}>
+        <button className={view === 'catalog' ? 'on' : ''} aria-pressed={view === 'catalog'} onClick={() => setView('catalog')}>{t('library.catalog_count', { count: COLLECTION_ITEMS.length })}</button>
+        <button className={view === 'classic' ? 'on' : ''} aria-pressed={view === 'classic'} onClick={() => setView('classic')}>{t('library.built_in')}</button>
       </div>
       {view === 'classic' && (
         <div className="tile-grid">
           <button className={`tile ${ok && !cur ? 'on' : ''}`} onClick={() => ok && updateTarget({ transition: null })}>
             <span className="tile-preview"><X size={20} /></span>
-            <span className="tile-label">None</span>
+            <span className="tile-label">{t('grade.none')}</span>
           </button>
-          {TRANSITIONS.map((t, i) => tile(t.id, t.id, t.name, { pair: i % 6 }))}
+          {TRANSITIONS.map((t, i) => tile(t.id, t.id, catalogName('transition', t), { pair: i % 6 }))}
         </div>
       )}
       {view === 'catalog' && (
         <>
           <div className="field pad">
-            <SearchBox placeholder={`Search ${COLLECTION_ITEMS.length} transitions…`} value={query} onChange={setQuery} ariaLabel="Search transitions" />
+            <SearchBox placeholder={t('library.search_count_transitions', { count: COLLECTION_ITEMS.length })} value={query} onChange={setQuery} ariaLabel={t('library.search_transitions')} />
           </div>
-          <div className="chips pad-x" role="group" aria-label="Transition collection">
-            <button className={`chip ${collection === 'All' ? 'on' : ''}`} aria-pressed={collection === 'All'} onClick={() => setCollection('All')}>All · {COLLECTION_ITEMS.length}</button>
-            <button className={`chip ${collection === 'fav' ? 'on' : ''}`} aria-pressed={collection === 'fav'} onClick={() => setCollection('fav')}>★ Saved · {favs.size}</button>
+          <div className="chips pad-x" role="group" aria-label={t('library.transition_collection')}>
+            <button className={`chip ${collection === 'All' ? 'on' : ''}`} aria-pressed={collection === 'All'} onClick={() => setCollection('All')}>{t('library.all_count', { count: COLLECTION_ITEMS.length })}</button>
+            <button className={`chip ${collection === 'fav' ? 'on' : ''}`} aria-pressed={collection === 'fav'} onClick={() => setCollection('fav')}>{t('library.saved_count', { count: favs.size })}</button>
             {COLLECTIONS.map((c) => (
-              <button key={c.id} className={`chip ${collection === c.id ? 'on' : ''}`} aria-pressed={collection === c.id} onClick={() => setCollection(c.id)}>{c.name}</button>
+              <button key={c.id} className={`chip ${collection === c.id ? 'on' : ''}`} aria-pressed={collection === c.id} onClick={() => setCollection(c.id)}>{catalogName('collection', c)}</button>
             ))}
             {PACKS.map((p) => (
-              <button key={p.id} className={`chip ${collection === `pack:${p.id}` ? 'on' : ''}`} aria-pressed={collection === `pack:${p.id}`} onClick={() => setCollection(`pack:${p.id}`)}>{p.name} Pack</button>
+              <button key={p.id} className={`chip ${collection === `pack:${p.id}` ? 'on' : ''}`} aria-pressed={collection === `pack:${p.id}`} onClick={() => setCollection(`pack:${p.id}`)}>{t('library.name_pack', { name: catalogName('pack', p) })}</button>
             ))}
           </div>
-          <p className="hint pad-x">Tiles run the real engine transition on real photos. “Adapted” names run the closest engine transition — shown on the tile. Pack tiles are all true engine transitions. ★ saves a favourite.</p>
-          {!catalogList.length && <p className="hint pad-x">{collection === 'fav' && !query ? 'No favourites yet — tap ★ on a tile to save one here.' : 'No transitions match that search.'}</p>}
+          <p className="hint pad-x">{t('library.tiles_run_the_real_engine_transition_on_re')}</p>
+          {!catalogList.length && <p className="hint pad-x">{collection === 'fav' && !query ? t('library.no_favourites_yet_tap_star') : t('library.no_transitions_match_that_search')}</p>}
           {COLLECTIONS.filter((c) => collection === 'All' || collection === 'fav' || c.id === collection).map((c, ci) => {
             const list = catalogList.filter((e) => e.collection === c.id && (collection !== 'All' || !e.pack));
             if (!list.length) return null;
             return (
               <div key={c.id} className="fx-group">
-                <span className="lib-group-name pad-x">{c.name} · {list.length}</span>
+                <span className="lib-group-name pad-x">{catalogName('collection', c)} · {list.length}</span>
                 <div className="tile-grid">
-                  {list.map((e, i) => tile(e.slug, e.engineId, e.name, {
+                  {list.map((e, i) => tile(e.slug, e.engineId, catalogName('collection_item', e), {
                     slug: e.slug,
                     pair: (ci + i) % 6,
-                    badge: e.status === 'adapted' ? 'Adapted' : null,
-                    title: `${e.behavior}\nBest for: ${e.bestFor || '—'}\nUses: ${e.engineName}${e.status === 'adapted' ? ' (adapted)' : ''}`,
+                    badge: e.status === 'adapted' ? t('library.adapted') : null,
+                    title: [e.behavior, t('library.best_for_value', { value: e.bestFor || '-' }), t(e.status === 'adapted' ? 'library.uses_engine_adapted' : 'library.uses_engine', { engine: engineLabel(e) })].join('\n'),
                   }))}
                 </div>
               </div>
@@ -501,13 +493,13 @@ function TransitionsTab({ target, updateTarget }) {
             if (!list.length) return null;
             return (
               <div key={p.id} className="fx-group">
-                <span className="lib-group-name pad-x">{p.name} Pack · {list.length}</span>
+                <span className="lib-group-name pad-x">{t('library.name_pack_count', { name: catalogName('pack', p), count: list.length })}</span>
                 <div className="tile-grid">
-                  {list.map((e, i) => tile(e.slug, e.engineId, e.name, {
+                  {list.map((e, i) => tile(e.slug, e.engineId, catalogName('collection_item', e), {
                     slug: e.slug,
                     pair: (pi + i + 2) % 6,
                     badge: null,
-                    title: `${e.behavior}\nBest for: ${e.bestFor || '—'}\nUses: ${e.engineName}`,
+                    title: [e.behavior, t('library.best_for_value', { value: e.bestFor || '-' }), t('library.uses_engine', { engine: engineLabel(e) })].join('\n'),
                   }))}
                 </div>
               </div>
@@ -520,19 +512,19 @@ function TransitionsTab({ target, updateTarget }) {
 }
 
 const CAPTION_LANGS = [
-  { id: 'auto', name: 'Auto-detect' }, { id: 'ar', name: 'Arabic (incl. Darija)' }, { id: 'fr', name: 'French' },
-  { id: 'en', name: 'English' }, { id: 'es', name: 'Spanish' }, { id: 'de', name: 'German' }, { id: 'tr', name: 'Turkish' },
+  { id: 'auto', name: t('library.auto_detect') }, { id: 'ar', name: t('library.arabic_incl_darija') }, { id: 'fr', name: t('library.french') },
+  { id: 'en', name: t('library.english') }, { id: 'es', name: t('library.spanish') }, { id: 'de', name: t('library.german') }, { id: 'tr', name: t('library.turkish') },
 ];
 
 // Speech models, each downloaded on first use: base is quick; large-v3-turbo is much better at Arabic; darija is a
 // Whisper medium trained on Moroccan Darija (Arabic only). Only the ones the app can download are listed.
 const CAPTION_MODELS = [
-  { id: 'base', name: 'Fast (base)', size: '150 MB' },
-  { id: 'turbo', name: 'Accurate: Arabic (large-v3-turbo)', size: '575 MB' },
-  { id: 'darija', name: 'Moroccan Darija (whisper-medium-darija)', size: '540 MB', arabicOnly: true },
+  { id: 'base', name: t('library.model_fast', { model: 'base' }), size: '150 MB' },
+  { id: 'turbo', name: t('library.model_accurate_arabic', { model: 'large-v3-turbo' }), size: '575 MB' },
+  { id: 'darija', name: t('library.model_moroccan_darija', { model: 'whisper-medium-darija' }), size: '540 MB', arabicOnly: true },
 ];
 
-function CaptionsTab({ onAddText, captions, project, dispatch }) {
+function CaptionsTab({ onAddText, captions, project, dispatch, onOpenSettings, settingsVersion }) {
   const [lang, setLang] = useState('auto');
   const [model, setModel] = useState('base');
   // Cloud engines (item O): the user's own provider key, saved through the same encrypted
@@ -540,16 +532,12 @@ function CaptionsTab({ onAddText, captions, project, dispatch }) {
   const [engine, setEngine] = useState('local');
   const [provider, setProvider] = useState('groq');
   const [cloudModel, setCloudModel] = useState('');
-  const [keyField, setKeyField] = useState('');
   const [savedKeys, setSavedKeys] = useState({});
-  const [keyNote, setKeyNote] = useState('');
-  const [testNote, setTestNote] = useState(null);
-  const [testing, setTesting] = useState(false);
   useEffect(() => {
     let live = true;
     window.api.settingsGet().then((st) => { if (live) setSavedKeys(st.serviceKeys || {}); });
     return () => { live = false; };
-  }, []);
+  }, [settingsVersion]);
   const CLOUD_PROVIDERS = [
     { id: 'groq', name: 'Groq', def: 'whisper-large-v3-turbo' },
     { id: 'openai', name: 'OpenAI', def: 'whisper-1' },
@@ -559,22 +547,6 @@ function CaptionsTab({ onAddText, captions, project, dispatch }) {
   const cloudMeta = CLOUD_PROVIDERS.find((p) => p.id === provider);
   const keyService = `cap-${provider}`;
   const savedHint = savedKeys[keyService];
-  const saveKey = async () => {
-    if (!keyField.trim()) return;
-    const res = await window.api.settingsSaveServiceKey(keyService, keyField.trim());
-    if (!res.ok) { setKeyNote(res.error || 'The key could not be saved.'); return; }
-    setSavedKeys(res.settings.serviceKeys || {});
-    setKeyField('');
-    setTestNote(null);
-    setKeyNote('Key saved. For your security it is never shown again.');
-  };
-  const testKey = async () => {
-    setTesting(true);
-    setTestNote(null);
-    const res = await window.api.testCaptionsCloud(provider, keyField.trim() || undefined);
-    setTesting(false);
-    setTestNote(res.ok ? { ok: true, text: `${cloudMeta.name} accepted the key.` } : { ok: false, text: res.error || 'Test failed.' });
-  };
   const models = CAPTION_MODELS.filter((m) => !captions.available || captions.available.includes(m.id));
   const modelInfo = CAPTION_MODELS.find((m) => m.id === model);
   const needsDownload = !captions.models?.[model];
@@ -600,10 +572,10 @@ function CaptionsTab({ onAddText, captions, project, dispatch }) {
     e.target.value = '';
     if (!f) return;
     const cues = regroupSegments(parseSRT(await f.text()), wpl);
-    if (!cues.length) { setSrtNote('No subtitle cues were found in that file.'); return; }
-    const t = TEXT_TEMPLATES.find((x) => x.id === srtTplId) || tpl;
-    dispatch({ type: 'importSrtCaptions', style: { ...t.patch, template: t.id }, segments: cues.map((c) => ({ ...c, id: uid() })) });
-    setSrtNote(`Imported ${cues.length} subtitle${cues.length > 1 ? 's' : ''} from ${f.name}.`);
+    if (!cues.length) { setSrtNote(t('library.no_subtitle_cues_were_found_in_that_file')); return; }
+    const style = TEXT_TEMPLATES.find((x) => x.id === srtTplId) || tpl;
+    dispatch({ type: 'importSrtCaptions', style: { ...style.patch, template: style.id }, segments: cues.map((c) => ({ ...c, id: uid() })) });
+    setSrtNote(tn('library.imported_count_subtitles_from_file', cues.length, { file: f.name }));
   };
   const pickSrtStyle = (t) => {
     setSrtTplId(t.id);
@@ -612,32 +584,32 @@ function CaptionsTab({ onAddText, captions, project, dispatch }) {
   const busy = !!captions.busy;
   return (
     <>
-      <Head title="Captions" hint="Local Whisper, or a cloud engine with your own key" />
+      <Head title={t('edit-plan-card.captions')} hint={t('library.local_whisper_or_a_cloud_engine')} />
       <div className="card">
         <div className="card-row">
           <span className="card-icon accent"><Sparkles size={18} /></span>
           <div>
-            <b>Auto captions</b>
+            <b>{t('library.auto_captions')}</b>
             <p>{engine === 'local'
-              ? <>Whisper runs on your computer.{needsDownload && ` First use of this model downloads ~${modelInfo.size}.`}</>
-              : <>Transcribed by {cloudMeta.name} with your API key — usually much faster.</>}</p>
+              ? (needsDownload ? t('library.whisper_runs_first_use_downloads', { size: modelInfo.size }) : t('library.whisper_runs_on_your_computer'))
+              : t('library.transcribed_by_provider_with_your_key', { provider: cloudMeta.name })}</p>
           </div>
         </div>
-        <div className="proj-seg cap-engines" role="radiogroup" aria-label="Caption engine">
+        <div className="proj-seg cap-engines" role="radiogroup" aria-label={t('library.caption_engine')}>
           <button type="button" role="radio" aria-checked={engine === 'local'} className={engine === 'local' ? 'on' : ''}
-            disabled={busy} onClick={() => setEngine('local')}>Local · free</button>
+            disabled={busy} onClick={() => setEngine('local')}>{t('library.local_free')}</button>
           <button type="button" role="radio" aria-checked={engine === 'cloud'} className={engine === 'cloud' ? 'on' : ''}
-            disabled={busy} onClick={() => setEngine('cloud')}>Cloud · API key</button>
+            disabled={busy} onClick={() => setEngine('cloud')}>{t('library.cloud_api_key')}</button>
         </div>
         <label className="field">
-          <span>Language</span>
+          <span>{t('settings.language')}</span>
           <select value={modelInfo.arabicOnly && engine === 'local' ? 'ar' : lang} disabled={busy || (engine === 'local' && modelInfo.arabicOnly)} onChange={(e) => setLang(e.target.value)}>
             {CAPTION_LANGS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </label>
         {engine === 'local' ? (
           <label className="field">
-            <span>Model</span>
+            <span>{t('settings.model')}</span>
             <select value={model} disabled={busy} onChange={(e) => setModel(e.target.value)}>
               {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
@@ -645,108 +617,87 @@ function CaptionsTab({ onAddText, captions, project, dispatch }) {
         ) : (
           <>
             <label className="field">
-              <span>Provider</span>
-              <select value={provider} disabled={busy} onChange={(e) => { setProvider(e.target.value); setTestNote(null); setKeyNote(''); }}>
+              <span>{t('settings.provider')}</span>
+              <select value={provider} disabled={busy} onChange={(e) => { setProvider(e.target.value); }}>
                 {CLOUD_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
             <label className="field">
-              <span>Model</span>
-              <input type="text" value={cloudModel} disabled={busy} placeholder={cloudMeta.def} aria-label={`${cloudMeta.name} model`}
+              <span>{t('settings.model')}</span>
+              <input type="text" value={cloudModel} disabled={busy} placeholder={cloudMeta.def} aria-label={t('library.provider_model', { provider: cloudMeta.name })}
                 onChange={(e) => setCloudModel(e.target.value)} />
             </label>
-            <label className="field">
-              <span>{cloudMeta.name} API key {savedHint && <b className="cap-saved">saved ({savedHint})</b>}</span>
-              <input type="password" value={keyField} disabled={busy} autoComplete="off"
-                placeholder={savedHint ? 'Paste a new key to replace the saved one' : `Paste your ${cloudMeta.name} key`}
-                aria-label={`${cloudMeta.name} API key`} onChange={(e) => setKeyField(e.target.value)} />
-            </label>
-            <div className="cap-key-actions">
-              <button className="btn btn-sm" disabled={busy || !keyField.trim()} onClick={saveKey}>Save key</button>
-              <button className="btn btn-sm" disabled={busy || testing || (!savedHint && !keyField.trim())} onClick={testKey}>
-                {testing ? 'Testing…' : 'Test connection'}
-              </button>
-              {savedHint && !keyField && (
-                <button className="btn btn-sm btn-ghost" disabled={busy} onClick={async () => {
-                  const st = await window.api.settingsClearServiceKey(keyService);
-                  setSavedKeys(st.serviceKeys || {}); setKeyNote('Key removed.'); setTestNote(null);
-                }}>Remove key</button>
-              )}
-            </div>
-            {keyNote && <p className="muted small">{keyNote}</p>}
-            {testNote && <p className={`small ${testNote.ok ? 'cap-test-ok' : 'error-text'}`}>{testNote.text}</p>}
-            <p className="muted small">Cloud engines send the clip's audio to {cloudMeta.name} — only when you generate. The local engine stays free and fully offline.</p>
+            <div className="card cap-key-status"><b>{t('library.provider_api_key', { provider: cloudMeta.name })}</b><p className="muted small">{savedHint ? t('library.key_saved_hint', { hint: savedHint }) : t('library.no_key_saved_add_one_in_settings')}</p><button className="btn btn-sm" disabled={busy} onClick={() => onOpenSettings?.(`services:cap-${provider}`)}>{savedHint ? t('settings.manage_api_key') : t('settings.add_api_key')}</button></div>
+            <p className="muted small">{t('library.cloud_engines_send_audio_to_provider', { provider: cloudMeta.name })}</p>
           </>
         )}
         {engine === 'local' && lang === 'ar' && model === 'base' && (
-          <p className="muted small">For Arabic, the Accurate model gets far more words right{models.some((m) => m.id === 'darija') ? ', and the Darija one is made for Moroccan Darija' : ''} (both take longer).</p>
+          <p className="muted small">{models.some((m) => m.id === 'darija') ? t('library.for_arabic_accurate_and_darija_models') : t('library.for_arabic_the_accurate_model')}</p>
         )}
         <label className="field">
-          <span>Transcribe</span>
+          <span>{t('library.transcribe')}</span>
           <select value={source} disabled={busy} onChange={(e) => setSource(e.target.value)}>
-            <option value="all">Video + Audio track</option>
-            <option value="video">Video clips only</option>
-            <option value="audio">Audio track only</option>
+            <option value="all">{t('library.video_audio_track')}</option>
+            <option value="video">{t('library.video_clips_only')}</option>
+            <option value="audio">{t('library.audio_track_only')}</option>
           </select>
         </label>
         <label className="field">
-          <span>Max line length <b>{len}</b></span>
+          <span>{t('library.max_line_length')} <b>{len}</b></span>
           <input type="range" min="16" max="80" step="2" value={len} disabled={busy} onChange={(e) => setLen(Number(e.target.value))} />
         </label>
         <label className="field">
-          <span>Words per line <b>{wpl ? wpl : 'No limit'}</b></span>
-          <input type="range" min="0" max="12" step="1" value={wpl} disabled={busy} onChange={(e) => setWpl(Number(e.target.value))} aria-label="Words per caption line" />
+          <span>{t('library.words_per_line')} <b>{wpl ? formatNumber(wpl) : t('library.no_limit')}</b></span>
+          <input type="range" min="0" max="12" step="1" value={wpl} disabled={busy} onChange={(e) => setWpl(Number(e.target.value))} aria-label={t('library.words_per_caption_line')} />
         </label>
         <button className="btn btn-primary btn-block" disabled={busy || !(project.videoClips.length || project.audioClips.length) || (engine === 'cloud' && !savedHint)}
           onClick={() => (engine === 'cloud'
             ? captions.run({ engine: 'cloud', provider, model: cloudModel.trim() || undefined, language: lang, maxLen: len, wordsPerLine: wpl, source, style: { ...tpl.patch, template: tpl.id } })
             : captions.run({ language: modelInfo.arabicOnly ? 'ar' : lang, maxLen: len, wordsPerLine: wpl, source, model, style: { ...tpl.patch, template: tpl.id } }))}>
-          {busy ? 'Working…' : count ? 'Regenerate' : 'Generate captions'}
+          {busy ? t('library.working') : count ? t('library.regenerate') : t('library.generate_captions')}
         </button>
-        {engine === 'cloud' && !savedHint && <p className="muted small">Save your {cloudMeta.name} API key to generate with the cloud engine.</p>}
+        {engine === 'cloud' && !savedHint && <p className="muted small">{t('library.add_your_provider_key_in_settings', { provider: cloudMeta.name })}</p>}
         {busy && (
           <div className="progress-block" aria-live="polite">
-            <span>{captions.stage} · {Math.round((captions.progress || 0) * 100)}%</span>
+            <span>{captions.stage} · {formatNumber(captions.progress || 0, { style: 'percent', maximumFractionDigits: 0 })}</span>
             <div className="progress"><div style={{ width: `${(captions.progress || 0) * 100}%` }} /></div>
           </div>
         )}
         {captions.error && <CaptionError error={captions.error} />}
-        {!(project.videoClips.length || project.audioClips.length) && <p className="muted">Add a video or an audio clip to the timeline first.</p>}
+        {!(project.videoClips.length || project.audioClips.length) && <p className="muted">{t('library.add_a_video_or_an_audio_clip_to_the_timeli')}</p>}
       </div>
       <div className="card">
-        <b>Caption style</b>
-        <p className="muted">{count ? `Applies to all ${count} captions.` : 'Used when you generate captions.'}</p>
+        <b>{t('library.caption_style')}</b>
+        <p className="muted">{count ? tn('library.applies_to_all_count_captions', count) : t('library.used_when_you_generate_captions')}</p>
         <TemplateGrid captionOnly activeId={tplId} onPick={pickStyle} />
         {count > 0 && (
           <button className="btn btn-ghost btn-sm" onClick={() => dispatch({ type: 'setCaptions', segments: [] })}>
-            <Trash2 size={14} /> Remove auto captions
+            <Trash2 size={14} /> {t('library.remove_auto_captions')}
           </button>
         )}
       </div>
       <div className="card">
-        <b>Subtitles (.srt)</b>
-        <p className="muted">{srtCount
-          ? `${srtCount} imported subtitle${srtCount > 1 ? 's' : ''} on the timeline, at their exact file timings. Select one on the timeline to edit it; the inspector's “Apply to all main captions” covers bulk edits.`
-          : 'Import a SubRip file: every cue becomes an editable caption clip at its exact time in the file.'}</p>
-        <input ref={srtFileRef} type="file" accept=".srt" hidden onChange={onSrtFile} aria-label="Choose an .srt subtitle file" />
-        <button className="btn btn-sm" onClick={() => srtFileRef.current?.click()}><Upload size={14} /> Import .srt file…</button>
-        <p className="muted small">The Words per line setting above applies to imported cues too: longer cues are split into consecutive lines inside their own time span.</p>
+        <b>{t('library.subtitles_srt')}</b>
+        <p className="muted">{srtCount ? tn('library.count_imported_subtitles_on_the_timeline', srtCount) : t('library.import_a_subrip_file_every_cue')}</p>
+        <input ref={srtFileRef} type="file" accept=".srt" hidden onChange={onSrtFile} aria-label={t('library.choose_an_srt_subtitle_file')} />
+        <button className="btn btn-sm" onClick={() => srtFileRef.current?.click()}><Upload size={14} /> {t('library.import_srt_file')}</button>
+        <p className="muted small">{t('library.the_words_per_line_setting_above_applies_t')}</p>
         {srtNote && <p className="muted small">{srtNote}</p>}
         {srtCount > 0 && (
           <>
-            <p className="muted small">Template for all imported subtitles:</p>
+            <p className="muted small">{t('library.template_for_all_imported_subtitles')}</p>
             <TemplateGrid captionOnly activeId={srtTplId} onPick={pickSrtStyle} />
             <button className="btn btn-ghost btn-sm" onClick={() => dispatch({ type: 'removeSrtCaptions' })}>
-              <Trash2 size={14} /> Remove imported subtitles
+              <Trash2 size={14} /> {t('library.remove_imported_subtitles')}
             </button>
           </>
         )}
       </div>
       <div className="card">
-        <b>Manual caption</b>
-        <p className="muted">A caption line at the bottom of the frame, at the playhead.</p>
+        <b>{t('library.manual_caption')}</b>
+        <p className="muted">{t('library.a_caption_line_at_the_bottom_of_the_frame')}</p>
         <button className="btn btn-sm" onClick={() => onAddText({ size: 44, y: 0.9, box: true, boxColor: '#000000', outline: false, font: 'segoe', anim: 'none' })}>
-          <Plus size={14} /> Add caption
+          <Plus size={14} /> {t('library.add_caption')}
         </button>
       </div>
     </>
@@ -758,11 +709,11 @@ function CaptionError({ error }) {
   const [msg, logPath] = error.split('\n\nFull log: ');
   return (
     <div className="error-box" role="alert">
-      <b>Couldn't generate captions</b>
+      <b>{t('library.couldnt_generate_captions')}</b>
       <p>{msg.replace('Auto captions failed.\n', '')}</p>
       {logPath && (
         <button className="btn btn-ghost btn-sm" onClick={() => window.api.showInFolder(logPath.trim())}>
-          <FolderOpen size={14} /> Open log
+          <FolderOpen size={14} /> {t('library.open_log')}
         </button>
       )}
     </div>
@@ -772,7 +723,7 @@ function CaptionError({ error }) {
 // With several clips selected in the timeline, the Filters and Adjust tabs change all of them.
 function ManyNote({ count }) {
   if (count < 2) return null;
-  return <p className="hint many">Applies to the {count} selected clips.</p>;
+  return <p className="hint many">{tn('library.applies_to_the_count_selected_clips', count)}</p>;
 }
 
 // Scope: "Selected clip" puts the look on one clip (several when several are selected); "Whole video"
@@ -793,58 +744,58 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
   const canSave = !whole && !!target && current !== 'none' && !current.startsWith('lut:');
   return (
     <>
-      <Head title="Filters" hint={whole ? 'Click a look: it goes over the whole video · hold a tile to compare before/after' : 'Click or drag onto a clip · hold a tile to compare before/after'} />
+      <Head title={t('audio-fx.filters')} hint={whole ? t('library.click_a_look_whole_video_hold_to_compare') : t('library.click_or_drag_onto_a_clip_hold_to_compare')} />
       {onWholeVideoFilter && (
-        <div className="seg-tabs small filter-scope" role="radiogroup" aria-label="Apply filters to">
-          <button type="button" className={!whole ? 'on' : ''} aria-pressed={!whole} onClick={() => setScope('clip')}>Selected clip</button>
-          <button type="button" className={whole ? 'on' : ''} aria-pressed={whole} onClick={() => setScope('video')}>Whole video</button>
+        <div className="seg-tabs small filter-scope" role="radiogroup" aria-label={t('library.apply_filters_to')}>
+          <button type="button" className={!whole ? 'on' : ''} aria-pressed={!whole} onClick={() => setScope('clip')}>{t('library.selected_clip')}</button>
+          <button type="button" className={whole ? 'on' : ''} aria-pressed={whole} onClick={() => setScope('video')}>{t('library.whole_video')}</button>
         </div>
       )}
-      {whole && <p className="hint">The look goes on the Effects track over everything — pictures, overlays and graphics — for the whole video. Trim or move it on the timeline to limit it.</p>}
+      {whole && <p className="hint">{t('library.the_look_goes_on_the_effects_track_over_ev')}</p>}
       {!whole && <NeedClip target={target} />}
       {!whole && <ManyNote count={selectedCount} />}
       {has && current !== 'none' && (
         <div className="pad-block filter-k">
-          <Slider dispatch={dispatch} label={`${filterName(current)} intensity`} value={k} min={0} max={100} step={1}
-            fmt={(v) => `${Math.round(v)}`} onChange={(v) => apply({ filterIntensity: v })} />
+          <Slider dispatch={dispatch} label={t('library.name_intensity', { name: filterLabel(current, filterName(current)) })} value={k} min={0} max={100} step={1}
+            fmt={(v) => formatNumber(Math.round(v))} onChange={(v) => apply({ filterIntensity: v })} />
         </div>
       )}
       <div className="look-cat">
-        <div className="look-cat-title">My presets</div>
+        <div className="look-cat-title">{t('library.my_presets')}</div>
         {target && (
           <div className="preset-save">
-            <input type="text" value={presetName} placeholder="Preset name…" aria-label="Preset name" onChange={(e) => setPresetName(e.target.value)} />
+            <input type="text" value={presetName} placeholder={t('library.preset_name')} aria-label={t('library.preset_name_2')} onChange={(e) => setPresetName(e.target.value)} />
             <button className="btn btn-sm" disabled={!canSave || !presetName.trim()}
-              title={current.startsWith('lut:') ? 'LUT looks live in the LUT library, not in presets' : 'Save the selected clip’s filter, intensity and adjustments as a preset'}
-              onClick={() => { storePresets(upsertPreset(presets, target.clip, presetName)); setPresetName(''); }}>Save current look</button>
+              title={current.startsWith('lut:') ? t('library.lut_looks_live_in_the_lut_library') : t('library.save_the_selected_clips_look_as_a_preset')}
+              onClick={() => { storePresets(upsertPreset(presets, target.clip, presetName)); setPresetName(''); }}>{t('library.save_current_look')}</button>
           </div>
         )}
         {!!presets.length && (
           <div className="tile-grid">
             {presets.map((pr) => (
-              <button key={pr.name} className={`tile ${has && current === pr.filter ? 'on' : ''}`} title={`${pr.name} — ${filterName(pr.filter)} at ${Math.round(pr.filterIntensity)}%`}
+              <button key={pr.name} className={`tile ${has && current === pr.filter ? 'on' : ''}`} title={t('library.preset_name_filter_at_percent', { name: pr.name, filter: filterLabel(pr.filter, filterName(pr.filter)), percent: formatNumber(Math.round(pr.filterIntensity)) })}
                 onClick={() => (whole ? apply({ filter: pr.filter, filterIntensity: pr.filterIntensity }) : target && updateTarget(presetPatch(pr)))}>
                 <span className="tile-preview filter-thumb"><LookThumb filterId={pr.filter === 'none' ? null : pr.filter} /></span>
                 <span className="tile-label">{pr.name}</span>
-                <span className="tile-star" role="button" aria-label={`Delete preset ${pr.name}`} title="Delete preset"
+                <span className="tile-star" role="button" aria-label={t('library.delete_preset_name', { name: pr.name })} title={t('library.delete_preset')}
                   onClick={(e) => { e.stopPropagation(); storePresets(removePreset(presets, pr.name)); }}
                   onPointerDown={(e) => e.stopPropagation()}>×</span>
               </button>
             ))}
           </div>
         )}
-        {!presets.length && <p className="hint">No saved presets yet. Pick a filter, set its intensity, name it and save — it applies with one click afterwards.</p>}
+        {!presets.length && <p className="hint">{t('library.no_saved_presets_yet_pick_a_filter_set_its')}</p>}
       </div>
       {FILTER_CATS.map((cat) => (
         <div key={cat} className="look-cat">
-          <div className="look-cat-title">{cat}</div>
+          <div className="look-cat-title">{catalogLabel('filter_cat', cat)}</div>
           <div className="tile-grid">
             {FILTERS.filter((f) => f.cat === cat).map((f) => (
               <button key={f.id} className={`tile ${current === f.id && has ? 'on' : ''}`}
                 onClick={() => apply({ filter: f.id })} {...dragProps({ kind: 'filter', id: f.id })}
                 onPointerDown={() => setCompareId(f.id)} onPointerUp={() => setCompareId(null)} onPointerLeave={() => setCompareId(null)}>
                 <span className="tile-preview filter-thumb"><LookThumb filterId={f.id === 'none' ? null : f.id} plain={compareId === f.id} /></span>
-                <span className="tile-label">{f.name}</span>
+                <span className="tile-label">{catalogName('filter', f)}</span>
               </button>
             ))}
           </div>
@@ -885,56 +836,56 @@ function LutBrowser({ target, updateTarget, dispatch, project, current }) {
       if (!res || res.canceled) return;
       if (res.error) { setErr(res.error); return; }
       if (res.path) storeLib(addLutEntry(lib, { name: res.name, path: res.path }));
-    } catch (e) { setErr(e.message || 'Import failed.'); }
+    } catch (e) { setErr(e.message || t('library.import_failed')); }
     finally { setBusy(false); }
   };
   const cats = [...new Set(BUNDLED_LUTS.map((l) => l.cat))];
   return (
     <div className="look-cat">
-      <div className="look-cat-title">LUT browser</div>
+      <div className="look-cat-title">{t('library.lut_browser')}</div>
       {cats.map((cat) => (
         <div key={cat}>
-          <div className="look-cat-title sub">{cat} <span className="dim">bundled · slay (CC BY 4.0)</span></div>
+          <div className="look-cat-title sub">{catalogLabel('lut_cat', cat)} <span className="dim">{t('library.bundled_slay_cc_by_4_0')}</span></div>
           <div className="tile-grid">
             {BUNDLED_LUTS.filter((l) => l.cat === cat).map((l) => {
               // A bundled LUT tile is a filter like the others: picking it replaces the current filter; None removes it.
               const id = `lut:${l.file}`;
               return (
-                <button key={l.file} className={`tile ${target && current === id ? 'on' : ''}`} title={`LUT ${l.name}`}
+                <button key={l.file} className={`tile ${target && current === id ? 'on' : ''}`} title={t('library.lut_name', { name: catalogName('lut', l) })}
                   onClick={() => target && updateTarget({ filter: id })}>
                   <span className="tile-preview filter-thumb"><LookThumb lutRef={l.ref} /></span>
-                  <span className="tile-label">{l.name}</span>
+                  <span className="tile-label">{catalogName('lut', l)}</span>
                 </button>
               );
             })}
           </div>
         </div>
       ))}
-      <div className="look-cat-title sub">My LUTs <span className="dim">.cube, 3D or 1D</span></div>
+      <div className="look-cat-title sub">{t('library.my_luts')} <span className="dim">{t('library.cube_3d_or_1d')}</span></div>
       <div className="preset-save">
-        <button className="btn btn-sm" disabled={busy} onClick={importCube}>{busy ? 'Importing…' : 'Import .cube'}</button>
-        {target && clipLutPath && <span className="dim">Intensity: Adjust &gt; Basic &gt; LUT</span>}
+        <button className="btn btn-sm" disabled={busy} onClick={importCube}>{busy ? t('library.importing') : t('grade.import_cube')}</button>
+        {target && clipLutPath && <span className="dim">{t('library.intensity_adjust_basic_lut')}</span>}
       </div>
       {err && <p className="hint pad-x" role="alert">⚠ {err}</p>}
       {!!lib.length && (
         <div className="tile-grid">
           {lib.map((e) => (
-            <button key={e.path} className={`tile ${clipLutPath === e.path ? 'on' : ''}`} title={`${e.name} — ${e.path}`}
+            <button key={e.path} className={`tile ${clipLutPath === e.path ? 'on' : ''}`} title={`${e.name}\n${e.path}`}
               onClick={() => applyImported(e)}>
               <span className="tile-preview filter-thumb"><LookThumb lutRef={{ path: e.path }} /></span>
               <span className="tile-label">{e.name}</span>
-              <span className="tile-star" role="button" aria-label={`Remove ${e.name} from the library`} title="Remove from library (keeps the file)"
+              <span className="tile-star" role="button" aria-label={t('library.remove_name_from_the_library', { name: e.name })} title={t('library.remove_from_library_keeps_the_file')}
                 onClick={(ev) => { ev.stopPropagation(); storeLib(removeLutEntry(lib, e.path)); }}
                 onPointerDown={(ev) => ev.stopPropagation()}>×</span>
-              <span className="tile-badge clickable" role="button" title="Apply this LUT to every video clip"
+              <span className="tile-badge clickable" role="button" title={t('library.apply_this_lut_to_every_video_clip')}
                 onClick={(ev) => { ev.stopPropagation(); applyImportedToAll(e); }}
-                onPointerDown={(ev) => ev.stopPropagation()}>All</span>
+                onPointerDown={(ev) => ev.stopPropagation()}>{t('library.all_2')}</span>
             </button>
           ))}
         </div>
       )}
-      {!lib.length && <p className="hint">Import a .cube file to keep it here. Invalid files are rejected with the reason shown.</p>}
-      <p className="hint">One filter at a time: a new one replaces the current one, None removes it. Imported LUTs apply through the grade LUT slot, so their intensity lives in Adjust.</p>
+      {!lib.length && <p className="hint">{t('library.import_a_cube_file_to_keep_it_here_invalid')}</p>}
+      <p className="hint">{t('library.one_filter_at_a_time_a_new_one_replaces_th')}</p>
     </div>
   );
 }
@@ -943,7 +894,7 @@ function AdjustTab({ media: library = [], target, updateTarget, dispatch, select
   const media = target && library.find((m) => m.id === target.clip.mediaId);
   return (
     <>
-      <Head title="Adjust" hint="Color and light of the clip" />
+      <Head title={t('grade.adjust')} hint={t('library.color_and_light_of_the_clip')} />
       <NeedClip target={target} />
       <ManyNote count={selectedCount} />
       {target && (

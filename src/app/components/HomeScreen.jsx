@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Film, FolderOpen, Import, LayoutGrid, List, Monitor, Search, Trash2, X, Settings } from 'lucide-react';
+import { t, tn, formatDate, formatDateTime } from '../../i18n/index.js';
 
 // ClipCraft home: a header with the three ways in (open, import, record), a compact row of formats
 // for a new project, and the projects themselves as a grid or a list. One quiet surface: no hero,
@@ -7,18 +8,18 @@ import { Film, FolderOpen, Import, LayoutGrid, List, Monitor, Search, Trash2, X,
 
 // ratio -> the sizeFor() short side that yields the labelled pixel size.
 export const PRESETS = [
-  { ratio: '16:9', label: 'Landscape', use: 'YouTube, desktop', size: '1920 × 1080', short: 1080 },
-  { ratio: '9:16', label: 'Vertical', use: 'Reels, TikTok, Shorts', size: '1080 × 1920', short: 1080 },
-  { ratio: '1:1', label: 'Square', use: 'Feed posts', size: '1080 × 1080', short: 1080 },
-  { ratio: '4:5', label: 'Portrait', use: 'Feed portrait', size: '1080 × 1350', short: 1080 },
-  { ratio: '21:9', label: 'Ultrawide', use: 'Cinematic', size: '2520 × 1080', short: 1080 },
+  { ratio: '16:9', label: t('home.landscape'), use: t('home.youtube_desktop'), size: '1920 × 1080', short: 1080 },
+  { ratio: '9:16', label: t('home.vertical'), use: t('home.reels_tiktok_shorts'), size: '1080 × 1920', short: 1080 },
+  { ratio: '1:1', label: t('home.square'), use: t('home.feed_posts'), size: '1080 × 1080', short: 1080 },
+  { ratio: '4:5', label: t('home.portrait'), use: t('home.feed_portrait'), size: '1080 × 1350', short: 1080 },
+  { ratio: '21:9', label: t('home.ultrawide'), use: t('home.cinematic'), size: '2520 × 1080', short: 1080 },
 ];
 const FPS = [24, 30, 60];
 const VIEW_KEY = 'clipcraft.homeView';
 
 const fmtDate = (ts) => {
   try {
-    return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return formatDate(ts);
   } catch {
     return '';
   }
@@ -29,14 +30,14 @@ const relDate = (ts) => {
   if (!ts) return '';
   const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((startOf(new Date()) - startOf(new Date(ts))) / 864e5);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
+  if (days <= 0) return t('home.today');
+  if (days === 1) return t('home.yesterday');
+  if (days < 7) return tn('home.days_ago', days);
   return fmtDate(ts);
 };
 
 // Where a project lives: its file name, or the automatic save.
-const placeOf = (r) => (r.path ? String(r.path).split(/[\\/]/).pop() : r.slotId ? 'Auto-saved' : '');
+const placeOf = (r) => (r.path ? String(r.path).split(/[\\/]/).pop() : r.slotId ? t('home.auto_saved') : '');
 
 // The format as an outline at its true proportions, fitted in a fixed box.
 function FormatShape({ ratio }) {
@@ -80,19 +81,19 @@ function RemoveDialog({ project, onCancel, onConfirm }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
-  const name = String(project.name || 'Untitled').slice(0, 80), onlyAutoSaved = !project.path;
+  const name = String(project.name || t('home.untitled')).slice(0, 80), onlyAutoSaved = !project.path;
   return (
     <div className="modal-backdrop close-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="remove-title" aria-describedby="remove-text"
       onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="modal close-modal">
         <div className="modal-icon error"><Trash2 size={22} /></div>
-        <h3 id="remove-title" dir="auto">{onlyAutoSaved ? `Delete “${name}”?` : `Remove “${name}” from projects?`}</h3>
+        <h3 id="remove-title" dir="auto">{onlyAutoSaved ? t('home.delete_name', { name }) : t('home.remove_name_from_projects', { name })}</h3>
         <p id="remove-text" className="muted">{onlyAutoSaved
-          ? 'This project was only auto-saved and has no file, so it will be deleted permanently. This cannot be undone.'
-          : `The project file stays on disk (${placeOf(project)}) and can be opened again. Its auto-saved copy is deleted, so changes never saved to the file are lost.`}</p>
+          ? t('home.this_project_was_only_auto_saved')
+          : t('home.the_project_file_stays_on_disk', { file: placeOf(project) })}</p>
         <div className="modal-actions">
-          <button ref={cancel} type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-          <button type="button" className="btn btn-danger" onClick={onConfirm}><Trash2 size={14} /> {onlyAutoSaved ? 'Delete project' : 'Remove'}</button>
+          <button ref={cancel} type="button" className="btn btn-ghost" onClick={onCancel}>{t('app.cancel')}</button>
+          <button type="button" className="btn btn-danger" onClick={onConfirm}><Trash2 size={14} /> {onlyAutoSaved ? t('home.delete_project') : t('home.remove')}</button>
         </div>
       </div>
     </div>
@@ -122,16 +123,16 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
         <div className="home-brand">
           <img src="./logo.png" alt="" className="home-logo" draggable={false} />
           <span className="home-name">ClipCraft</span>
-          <span className="home-ver">{version ? `Version ${version}` : 'ClipCraft'}</span>
+          <span className="home-ver">{version ? t('home.version', { version }) : 'ClipCraft'}</span>
         </div>
-        <nav className="home-actions" aria-label="Start">
+        <nav className="home-actions" aria-label={t('home.start')}>
           {agentBadge}
-          <button type="button" className="btn home-action" onClick={onOpen}><FolderOpen size={15} /><span>Open project</span></button>
-          <button type="button" className="btn home-action" onClick={onImportMedia}><Import size={15} /><span>Import media</span></button>
-          <button type="button" className="btn home-action" onClick={() => onRecordStart?.(fps)}><Monitor size={15} /><span>Record screen</span></button>
+          <button type="button" className="btn home-action" onClick={onOpen}><FolderOpen size={15} /><span>{t('home.open_project')}</span></button>
+          <button type="button" className="btn home-action" onClick={onImportMedia}><Import size={15} /><span>{t('home.import_media')}</span></button>
+          <button type="button" className="btn home-action" onClick={() => onRecordStart?.(fps)}><Monitor size={15} /><span>{t('home.record_screen')}</span></button>
           {/* Settings reachable before a project is open (voices, agents, external MCP agents, keys): the
               same control as the editor's top bar. */}
-          {onSettings && <button type="button" className="icon-btn settings-btn home-settings" onClick={onSettings} aria-label="Settings" title="Settings"><Settings size={17} /></button>}
+          {onSettings && <button type="button" className="icon-btn settings-btn home-settings" onClick={onSettings} aria-label={t('home.settings')} title={t('home.settings')}><Settings size={17} /></button>}
         </nav>
       </header>
 
@@ -139,28 +140,28 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
         {unsavedNote && (
           <div className="home-recover" role="status">
             <div>
-              <b>Recover a previous session</b>
-              <span> A local recovery copy is available ({new Date(unsavedNote.savedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}).</span>
+              <b>{t('home.recover_a_previous_session')}</b>
+              <span> {t('home.a_local_recovery_copy_is_available_time', { time: formatDateTime(unsavedNote.savedAt) })}</span>
             </div>
             <div className="home-recover-actions">
-              <button className="btn btn-primary btn-sm" onClick={onRestoreUnsaved}>Restore</button>
-              <button className="btn btn-sm" onClick={onDiscardUnsaved}>Discard</button>
+              <button className="btn btn-primary btn-sm" onClick={onRestoreUnsaved}>{t('home.restore')}</button>
+              <button className="btn btn-sm" onClick={onDiscardUnsaved}>{t('home.discard')}</button>
             </div>
           </div>
         )}
 
         <section className="home-section" aria-labelledby="home-new-title">
           <div className="home-section-head">
-            <h2 id="home-new-title">New project</h2>
-            <span className="home-seg home-fps" role="group" aria-label="Frame rate">
+            <h2 id="home-new-title">{t('home.new_project')}</h2>
+            <span className="home-seg home-fps" role="group" aria-label={t('home.frame_rate')}>
               {FPS.map((f) => (
-                <button key={f} type="button" className={fps === f ? 'on' : ''} aria-pressed={fps === f} onClick={() => setFps(f)}>{f} fps</button>
+                <button key={f} type="button" className={fps === f ? 'on' : ''} aria-pressed={fps === f} onClick={() => setFps(f)}>{t('home.fps_value', { fps: f })}</button>
               ))}
             </span>
           </div>
           <div className="home-formats">
             {PRESETS.map((p) => (
-              <button key={p.ratio} type="button" className="home-frame-card" onClick={() => onNew(p, fps)} aria-label={`New ${p.ratio} project`} title={`${p.label} · ${p.use}`}>
+              <button key={p.ratio} type="button" className="home-frame-card" onClick={() => onNew(p, fps)} aria-label={t('home.new_ratio_project', { ratio: p.ratio })} title={`${p.label} · ${p.use}`}>
                 <FormatShape ratio={p.ratio} />
                 <span className="home-format-text">
                   <b>{p.ratio}</b>
@@ -174,17 +175,17 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
 
         <section className="home-section home-recents" aria-labelledby="home-recent-title">
           <div className="home-section-head">
-            <h2 id="home-recent-title">Projects {recents.length > 0 && <span className="home-count">{recents.length}</span>}</h2>
+            <h2 id="home-recent-title">{t('home.projects')} {recents.length > 0 && <span className="home-count">{recents.length}</span>}</h2>
             {recents.length > 0 && (
               <div className="home-tools">
                 <span className="home-search-wrap">
                   <Search size={14} aria-hidden="true" />
-                  <input type="search" className="home-search" placeholder="Search projects" value={query}
-                    onChange={(e) => setQuery(e.target.value)} aria-label="Search recent projects" />
+                  <input type="search" className="home-search" placeholder={t('home.search_projects')} value={query}
+                    onChange={(e) => setQuery(e.target.value)} aria-label={t('home.search_recent_projects')} />
                 </span>
-                <span className="home-seg home-view" role="group" aria-label="Project view">
-                  <button type="button" className={view === 'grid' ? 'on' : ''} aria-pressed={view === 'grid'} aria-label="Grid view" title="Grid" onClick={() => chooseView('grid')}><LayoutGrid size={14} /></button>
-                  <button type="button" className={view === 'list' ? 'on' : ''} aria-pressed={view === 'list'} aria-label="List view" title="List" onClick={() => chooseView('list')}><List size={14} /></button>
+                <span className="home-seg home-view" role="group" aria-label={t('home.project_view')}>
+                  <button type="button" className={view === 'grid' ? 'on' : ''} aria-pressed={view === 'grid'} aria-label={t('home.grid_view')} title={t('home.grid')} onClick={() => chooseView('grid')}><LayoutGrid size={14} /></button>
+                  <button type="button" className={view === 'list' ? 'on' : ''} aria-pressed={view === 'list'} aria-label={t('home.list_view')} title={t('home.list')} onClick={() => chooseView('list')}><List size={14} /></button>
                 </span>
               </div>
             )}
@@ -193,26 +194,26 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           {!recents.length && (
             <div className="home-empty">
               <Film size={22} aria-hidden="true" />
-              <p><b>No projects yet</b></p>
-              <p className="muted">Choose a format above, or open a project file. Projects you open or save appear here.</p>
+              <p><b>{t('home.no_projects_yet')}</b></p>
+              <p className="muted">{t('home.choose_a_format_above_or_open_a_project_fi')}</p>
             </div>
           )}
-          {recents.length > 0 && !shown.length && <p className="home-none muted">No projects match “{query}”.</p>}
+          {recents.length > 0 && !shown.length && <p className="home-none muted">{t('home.no_projects_match_query', { query })}</p>}
 
           {shown.length > 0 && view === 'grid' && (
             <div className="home-grid">
               {shown.map((r) => {
-                const resume = r === latest, name = r.name || 'Untitled';
+                const resume = r === latest, name = r.name || t('home.untitled');
                 return (
                   <div key={r.slotId || r.path} className={`home-card${resume ? ' home-card-latest' : ''}`}>
-                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name} aria-label={`${resume ? 'Resume' : 'Open'} ${name}`}>
+                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name} aria-label={resume ? t('home.resume_name', { name }) : t('home.open_name', { name })}>
                       <span className="home-card-thumb"><RecentThumb r={r} /></span>
                       <span className="home-card-body">
                         <b className="home-card-name" dir="auto">{name}</b>
-                        <span className="home-card-meta">{[r.ratio || '16:9', relDate(r.modifiedAt), r.slotId && !r.path ? 'Auto-saved' : ''].filter(Boolean).join(' · ')}</span>
+                        <span className="home-card-meta">{[r.ratio || '16:9', relDate(r.modifiedAt), r.slotId && !r.path ? t('home.auto_saved') : ''].filter(Boolean).join(' · ')}</span>
                       </span>
                     </button>
-                    <button type="button" className="icon-btn home-card-x" aria-label={`Remove ${name}`} title="Remove" onClick={() => setRemoving(r)}><X size={13} /></button>
+                    <button type="button" className="icon-btn home-card-x" aria-label={t('settings.remove_name', { name })} title={t('home.remove')} onClick={() => setRemoving(r)}><X size={13} /></button>
                   </div>
                 );
               })}
@@ -220,22 +221,22 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
           )}
 
           {shown.length > 0 && view === 'list' && (
-            <div className="home-list" role="table" aria-label="Projects">
+            <div className="home-list" role="table" aria-label={t('home.projects')}>
               <div className="home-row home-row-head" role="row">
-                <span role="columnheader">Name</span><span role="columnheader">Format</span><span role="columnheader">Modified</span><span role="columnheader">Location</span><span />
+                <span role="columnheader">{t('home.name')}</span><span role="columnheader">{t('home.format')}</span><span role="columnheader">{t('home.modified')}</span><span role="columnheader">{t('home.location')}</span><span />
               </div>
               {shown.map((r) => {
-                const resume = r === latest, name = r.name || 'Untitled';
+                const resume = r === latest, name = r.name || t('home.untitled');
                 return (
                   <div key={r.slotId || r.path} className={`home-row home-card${resume ? ' home-card-latest' : ''}`} role="row">
-                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name} aria-label={`${resume ? 'Resume' : 'Open'} ${name}`}>
+                    <button type="button" className="home-card-open" onClick={() => onOpenRecent(r)} title={r.path || name} aria-label={resume ? t('home.resume_name', { name }) : t('home.open_name', { name })}>
                       <span className="home-card-thumb"><RecentThumb r={r} placeholder={16} /></span>
                       <b className="home-card-name" dir="auto">{name}</b>
                     </button>
                     <span className="home-row-cell" role="cell">{r.ratio || '16:9'}</span>
                     <span className="home-row-cell home-card-meta" role="cell">{relDate(r.modifiedAt)}</span>
                     <span className="home-row-cell home-row-place" role="cell" title={r.path || ''}>{placeOf(r)}</span>
-                    <button type="button" className="icon-btn home-card-x" aria-label={`Remove ${name}`} title="Remove" onClick={() => setRemoving(r)}><X size={13} /></button>
+                    <button type="button" className="icon-btn home-card-x" aria-label={t('settings.remove_name', { name })} title={t('home.remove')} onClick={() => setRemoving(r)}><X size={13} /></button>
                   </div>
                 );
               })}

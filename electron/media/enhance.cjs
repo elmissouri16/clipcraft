@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { t } = require('../system/i18n.cjs');
 
 const num = (v) => Number(v.toFixed(3)).toString();
 const STRENGTHS = ['light', 'standard', 'strong'];
@@ -79,7 +80,7 @@ function measureNoise(ffmpegPath, item, from, to, isCanceled = () => false) {
         e.canceled = true;
         return reject(e);
       }
-      if (code !== 0 || !sums.length) return reject(new Error(`Could not measure the clip's sound. ${err.trim().split('\n').pop() || ''}`.trim()));
+      if (code !== 0 || !sums.length) return reject(new Error(t('main.could_not_measure_clip_sound', { reason: err.trim().split('\n').pop() || '' }).trim()));
       sums.sort((a, b) => a - b);
       const p5 = sums[Math.min(sums.length - 1, Math.floor(sums.length * 0.05))];
       resolve(10 * Math.log10(p5 + 1e-12));
@@ -113,7 +114,7 @@ function run(ffmpegPath, args, cwd, onTime, isCanceled, len) {
         e.canceled = true;
         reject(e);
       } else if (code === 0) resolve();
-      else reject(new Error(`Voice enhancement failed: ${err.trim().split('\n').pop() || `FFmpeg exited with ${code}`}`));
+      else reject(new Error(t('main.voice_enhancement_failed', { reason: err.trim().split('\n').pop() || t('main.ffmpeg_exited_with', { code }) })));
     });
   });
 }

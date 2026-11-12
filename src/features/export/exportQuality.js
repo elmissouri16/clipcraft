@@ -10,12 +10,14 @@
 //   If neither is available the summary states the H.264 fallback.
 // - Choosing an fps above the timeline's duplicates frames (the fps filter resamples) — noted.
 // - project.crf stays in sync for back-compat: picking a preset (or a Custom CRF) writes its CRF.
+import { t } from '../../i18n/index.js';
 
+// name and blurb are display text (the language is settled before this module evaluates).
 export const EXPORT_PRESETS = {
-  low: { name: 'Low', mode: 'crf', crf: 28, bitrateMbps: 0, encoderPreset: 'fast', audioKbps: 96, resCap: 720, fps: 0, codec: 'h264', blurb: 'Smallest file' },
-  medium: { name: 'Medium', mode: 'crf', crf: 23, bitrateMbps: 0, encoderPreset: 'medium', audioKbps: 128, resCap: 1080, fps: 0, codec: 'h264', blurb: 'Balanced' },
-  high: { name: 'High', mode: 'crf', crf: 18, bitrateMbps: 0, encoderPreset: 'slow', audioKbps: 192, resCap: 0, fps: 0, codec: 'h264', blurb: 'Full quality' },
-  ultra: { name: 'Ultra', mode: 'crf', crf: 14, bitrateMbps: 0, encoderPreset: 'veryslow', audioKbps: 320, resCap: 0, fps: 0, codec: 'h264', blurb: 'Near-lossless' },
+  low: { name: t('export.preset_low'), mode: 'crf', crf: 28, bitrateMbps: 0, encoderPreset: 'fast', audioKbps: 96, resCap: 720, fps: 0, codec: 'h264', blurb: t('export.smallest_file') },
+  medium: { name: t('export.preset_medium'), mode: 'crf', crf: 23, bitrateMbps: 0, encoderPreset: 'medium', audioKbps: 128, resCap: 1080, fps: 0, codec: 'h264', blurb: t('export.balanced') },
+  high: { name: t('export.preset_high'), mode: 'crf', crf: 18, bitrateMbps: 0, encoderPreset: 'slow', audioKbps: 192, resCap: 0, fps: 0, codec: 'h264', blurb: t('export.full_quality') },
+  ultra: { name: t('export.preset_ultra'), mode: 'crf', crf: 14, bitrateMbps: 0, encoderPreset: 'veryslow', audioKbps: 320, resCap: 0, fps: 0, codec: 'h264', blurb: t('export.near_lossless') },
 };
 export const EXPORT_PRESET_ORDER = ['low', 'medium', 'high', 'ultra', 'custom'];
 export const CUSTOM_DEFAULTS = { mode: 'crf', crf: 20, bitrateMbps: 12, resCap: 0, fps: 0, codec: 'h264', encoderPreset: 'veryfast', audioKbps: 192 };
@@ -78,17 +80,17 @@ export function resolveExport(project, caps = {}) {
   const notes = [];
   if (codecFamily === 'h265' && !libx265 && !hardware) {
     codecFamily = 'h264';
-    notes.push('H.265 (libx265) is not available in this build — exporting H.264 instead.');
+    notes.push(t('export.h265_not_available_h264_instead'));
   } else if (codecFamily === 'h265') {
-    notes.push(hardware ? 'H.265 uses Apple hardware encoding; software fallback is available if encoding fails.' : 'H.265 encodes in software (libx265) in this build.');
+    notes.push(hardware ? t('export.h265_apple_hardware_encoding') : t('export.h265_software_libx265'));
   }
-  if (resCap && longest <= resCap) notes.push(`Project is ${W}×${H} — under the ${resCap} cap, so it exports at project size (never upscaled).`);
-  if (!resCap && stored.preset === 'ultra') notes.push(`Exports at the project's full ${W}×${H} — Ultra never upscales.`);
-  if (fpsChoice && fpsChoice > (project.fps || 30)) notes.push(`Timeline is ${project.fps} fps — frames are duplicated to reach ${fpsChoice} fps (no new motion).`);
+  if (resCap && longest <= resCap) notes.push(t('export.project_under_cap', { width: W, height: H, cap: resCap }));
+  if (!resCap && stored.preset === 'ultra') notes.push(t('export.ultra_never_upscales', { width: W, height: H }));
+  if (fpsChoice && fpsChoice > (project.fps || 30)) notes.push(t('export.frames_duplicated_to_reach_fps', { fps: project.fps, target: fpsChoice }));
 
   return {
     preset: stored.preset,
-    presetName: stored.preset === 'custom' ? 'Custom' : EXPORT_PRESETS[stored.preset].name,
+    presetName: stored.preset === 'custom' ? t('curve-editor.custom') : EXPORT_PRESETS[stored.preset].name,
     codecFamily,
     codecLabel: codecFamily === 'h265' ? hardware ? 'H.265 · VideoToolbox' : 'H.265 · libx265' : 'H.264',
     mode,
@@ -124,15 +126,15 @@ export function estimateExport(eff, durationSec) {
 // The pre-export summary rows, rendered by the Export dialog from the resolved object.
 export function summaryRows(eff, project) {
   const rows = [
-    ['Preset', eff.presetName],
-    ['Codec', eff.codecLabel],
-    ['Resolution', eff.outW === project.width && eff.outH === project.height
-      ? `${eff.outW}×${eff.outH} (project size)`
-      : `${eff.outW}×${eff.outH} (scaled from ${project.width}×${project.height})`],
-    ['Frame rate', eff.fpsChoice ? `${eff.outFps} fps (from ${project.fps})` : `${eff.outFps} fps (project)`],
-    ['Quality', eff.mode === 'crf' ? `CRF ${eff.crf}` : `Target bitrate ${eff.bitrateMbps} Mbps`],
-    ['Encoder preset', eff.encoderPreset],
-    ['Audio', `AAC ${eff.audioKbps} kbps`],
+    [t('export.preset'), eff.presetName],
+    [t('export.codec'), eff.codecLabel],
+    [t('export.resolution'), eff.outW === project.width && eff.outH === project.height
+      ? t('export.size_project_size', { width: eff.outW, height: eff.outH })
+      : t('export.size_scaled_from', { width: eff.outW, height: eff.outH, fromWidth: project.width, fromHeight: project.height })],
+    [t('home.frame_rate'), eff.fpsChoice ? t('export.fps_from', { fps: eff.outFps, from: project.fps }) : t('export.fps_project', { fps: eff.outFps })],
+    [t('export.quality'), eff.mode === 'crf' ? `CRF ${eff.crf}` : t('export.target_bitrate_mbps', { mbps: eff.bitrateMbps })],
+    [t('inspector.encoder_preset'), eff.encoderPreset],
+    [t('edit-plan-card.audio'), `AAC ${eff.audioKbps} kbps`],
   ];
   return rows;
 }

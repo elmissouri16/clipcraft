@@ -2,36 +2,37 @@
 // contrast, highlights, shadows, whites, blacks, brilliance, sharpen, clarity, grain (particles), fade, vignette.
 // Our own formulas, written in the effects' expression language: gradeExpr() becomes one GPU pass, drawn by the
 // player and by the export's effects pass alike (src/features/effects/apply.js), so both show the same picture.
+import { t } from '../../i18n/index.js';
 
 export const GRADE_GROUPS = [
   {
-    name: 'Color',
+    name: t('clip.color'),
     items: [
-      { id: 'temp', name: 'Temp', min: -100, max: 100, track: 'linear-gradient(90deg, #3b5bdb, #8a8f98, #fcc419)' },
-      { id: 'tint', name: 'Tint', min: -100, max: 100, track: 'linear-gradient(90deg, #2f9e44, #8a8f98, #d6336c)' },
-      { id: 'saturation', name: 'Saturation', min: -100, max: 100, track: 'linear-gradient(90deg, #6b6b6b, #e03131)' },
+      { id: 'temp', name: t('grade.temp'), min: -100, max: 100, track: 'linear-gradient(90deg, #3b5bdb, #8a8f98, #fcc419)' },
+      { id: 'tint', name: t('grade.tint'), min: -100, max: 100, track: 'linear-gradient(90deg, #2f9e44, #8a8f98, #d6336c)' },
+      { id: 'saturation', name: t('grade.saturation'), min: -100, max: 100, track: 'linear-gradient(90deg, #6b6b6b, #e03131)' },
     ],
   },
   {
-    name: 'Lightness',
+    name: t('grade.lightness'),
     items: [
-      { id: 'exposure', name: 'Exposure', min: -100, max: 100 },
-      { id: 'contrast', name: 'Contrast', min: -100, max: 100 },
-      { id: 'highlight', name: 'Highlight', min: -100, max: 100 },
-      { id: 'shadow', name: 'Shadow', min: -100, max: 100 },
-      { id: 'whites', name: 'Whites', min: -100, max: 100 },
-      { id: 'blacks', name: 'Blacks', min: -100, max: 100 },
-      { id: 'brilliance', name: 'Brilliance', min: -100, max: 100 },
+      { id: 'exposure', name: t('grade.exposure'), min: -100, max: 100 },
+      { id: 'contrast', name: t('grade.contrast'), min: -100, max: 100 },
+      { id: 'highlight', name: t('grade.highlight'), min: -100, max: 100 },
+      { id: 'shadow', name: t('text.shadow'), min: -100, max: 100 },
+      { id: 'whites', name: t('grade.whites'), min: -100, max: 100 },
+      { id: 'blacks', name: t('grade.blacks'), min: -100, max: 100 },
+      { id: 'brilliance', name: t('grade.brilliance'), min: -100, max: 100 },
     ],
   },
   {
-    name: 'Effects',
+    name: t('library.effects'),
     items: [
-      { id: 'sharpen', name: 'Sharpen', min: 0, max: 100 },
-      { id: 'clarity', name: 'Clarity', min: 0, max: 100 },
-      { id: 'particles', name: 'Particles', min: 0, max: 100 },
-      { id: 'fade', name: 'Fade', min: 0, max: 100 },
-      { id: 'vignette', name: 'Vignette', min: -100, max: 100 },
+      { id: 'sharpen', name: t('grade.sharpen'), min: 0, max: 100 },
+      { id: 'clarity', name: t('grade.clarity'), min: 0, max: 100 },
+      { id: 'particles', name: t('grade.particles'), min: 0, max: 100 },
+      { id: 'fade', name: t('grade.fade'), min: 0, max: 100 },
+      { id: 'vignette', name: t('grade.vignette'), min: -100, max: 100 },
     ],
   },
 ];
@@ -40,14 +41,14 @@ export const DEFAULT_GRADE = Object.fromEntries(GRADE_KEYS.map((k) => [k, 0]));
 
 // HSL: eight color ranges (hue centers in degrees), each with hue / saturation / lightness from -100 to 100.
 export const HSL_COLORS = [
-  { id: 'red', name: 'Red', hue: 0, css: '#ef4444' },
-  { id: 'orange', name: 'Orange', hue: 30, css: '#f97316' },
-  { id: 'yellow', name: 'Yellow', hue: 60, css: '#eab308' },
-  { id: 'green', name: 'Green', hue: 120, css: '#22c55e' },
-  { id: 'cyan', name: 'Cyan', hue: 180, css: '#06b6d4' },
-  { id: 'blue', name: 'Blue', hue: 240, css: '#3b82f6' },
-  { id: 'purple', name: 'Purple', hue: 275, css: '#a855f7' },
-  { id: 'magenta', name: 'Magenta', hue: 315, css: '#ec4899' },
+  { id: 'red', name: t('grade.red'), hue: 0, css: '#ef4444' },
+  { id: 'orange', name: t('grade.orange'), hue: 30, css: '#f97316' },
+  { id: 'yellow', name: t('grade.yellow'), hue: 60, css: '#eab308' },
+  { id: 'green', name: t('grade.green'), hue: 120, css: '#22c55e' },
+  { id: 'cyan', name: t('grade.cyan'), hue: 180, css: '#06b6d4' },
+  { id: 'blue', name: t('grade.blue'), hue: 240, css: '#3b82f6' },
+  { id: 'purple', name: t('grade.purple'), hue: 275, css: '#a855f7' },
+  { id: 'magenta', name: t('grade.magenta'), hue: 315, css: '#ec4899' },
 ];
 const hslOn = (hsl) => HSL_COLORS.some((c) => hsl?.[c.id] && (hsl[c.id].h || hsl[c.id].s || hsl[c.id].l));
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
 import React from 'react';
+import { t } from '../i18n/index.js';
 
 // Favorites shared by every panel (one list for the whole app, kept by the main process across projects).
 let entries = null;
@@ -53,7 +54,7 @@ export function FavStar({ entry, className = '' }) {
   const on = has(entry.key);
   return (
     <button className={`fav-star ${on ? 'on' : ''} ${className}`} aria-pressed={on}
-      aria-label={on ? 'Remove from favorites' : 'Add to favorites'} title={on ? 'Remove from favorites' : 'Add to favorites'}
+      aria-label={t(on ? 'favorites.remove_from_favorites' : 'favorites.add_to_favorites')} title={t(on ? 'favorites.remove_from_favorites' : 'favorites.add_to_favorites')}
       onClick={(e) => { e.stopPropagation(); toggle(entry); }} onDoubleClick={(e) => e.stopPropagation()}>
       <Star size={13} fill={on ? 'currentColor' : 'none'} />
     </button>

@@ -84,7 +84,7 @@ const MAX_WAIT_SEC = 65, RATE_RETRIES = 3;
 let sleep = wait;
 
 async function request(fetchImpl, key, endpoint, { model, onWait, ...options } = {}) {
-  if (!key) throw new Error('Add your Gemini TTS API key in Settings > Speech generation.');
+  if (!key) throw new Error('Add your Gemini TTS API key in Settings > API keys > Google Gemini (Voice generation).');
   let serverRetry = true, rateRetries = 0;
   for (;;) {
     let res;
@@ -146,7 +146,7 @@ function validateWav(buf) {
 const pending = new Map();
 async function speak(fetchImpl, key, outDir, { text, voiceId = DEFAULT_VOICE, model = DEFAULT_MODEL, style = '', speed = 1, signal, onWait } = {}) {
   checkAbort(signal);
-  if (!key) throw new Error('Add your Gemini TTS API key in Settings > Speech generation.');
+  if (!key) throw new Error('Add your Gemini TTS API key in Settings > API keys > Google Gemini (Voice generation).');
   const transcript = String(text || '').trim(), delivery = String(style || '').trim();
   if (!transcript) throw new Error('Type some text first.');
   if (transcript.length > MAX_TEXT) throw new Error(`Keep each speech passage to ${MAX_TEXT} characters or fewer. Split longer narration into separate clips.`);

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import Dropdown from "../../../components/ui/Dropdown.jsx";
+import { t } from '../../../i18n/index.js';
 
-const EFFORT_LABELS = Object.assign(Object.create(null), { none: 'None', off: 'Off', on: 'On', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra', persistent: 'Persistent' });
+const EFFORT_LABELS = Object.assign(Object.create(null), { none: t('grade.none'), off: t('pilot.off'), on: t('pilot.on'), minimal: t('pilot.minimal'), low: t('pilot.low'), medium: t('pilot.medium'), high: t('pilot.high'), xhigh: t('pilot.extra_high'), max: t('pilot.max'), ultra: t('pilot.ultra'), persistent: t('pilot.persistent') });
 
 // The model badge is also the quick picker. Changes apply to the next message;
 // only the active provider's model preference is written by the main process.
@@ -35,7 +36,7 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     setCustom('');
     window.api.aiModels({ provider, executablePath, refresh:refresh>0 }).then((catalog) => {
       if (!alive) return;
-      if (!catalog.ok) { setError(catalog.error || 'Could not load models. Enter a model ID below.'); return; }
+      if (!catalog.ok) { setError(catalog.error || t('pilot.could_not_load_models_enter_a_model_id')); return; }
       setModels(catalog.models || []);
       setModelLabels(catalog.modelLabels || {});
       setCached(!!catalog.fromCache);
@@ -51,7 +52,7 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     window.api.aiModelCapabilities({ provider, model: config.modelId, executablePath, refresh: refresh > 0 }).then((result) => {
       if (!alive) return;
       if (result.ok) setCapability(result);
-      else setEffortError(result.error || 'Could not check thinking levels.');
+      else setEffortError(result.error || t('pilot.could_not_check_thinking_levels'));
     }).catch((err) => { if (alive) setEffortError(err.message); })
       .finally(() => { if (alive) setEffortLoading(false); });
     return () => { alive = false; };
@@ -74,7 +75,7 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     setError('');
     try {
       const result = await write();
-      if (!result.ok) { setError(result.error || 'Could not save this selection.'); return; }
+      if (!result.ok) { setError(result.error || t('pilot.could_not_save_this_selection')); return; }
       onSaved(result.settings);
       if (close) { setOpen(false); badge.current?.focus(); }
     } catch (err) { setError(err.message); }
@@ -104,57 +105,57 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
   return (
     <div ref={root} className="pilot-model-wrap" onKeyDown={onKeyDown}>
       <button ref={badge} className="pilot-model" type="button" disabled={disabled || saving || !config}
-        title={config ? `${config.provider} · ${config.model}${config.reasoningEffort ? ` · ${EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort} thinking` : ''} — choose model and thinking level` : 'Loading AI settings'}
-        aria-label="Choose AI model" aria-haspopup="dialog" aria-expanded={open}
+        title={config ? config.reasoningEffort ? t('pilot.model_badge_with_thinking', { provider: config.provider, model: config.model, effort: EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort }) : t('pilot.model_badge', { provider: config.provider, model: config.model }) : t('pilot.loading_ai_settings')}
+        aria-label={t('pilot.choose_ai_model')} aria-haspopup="dialog" aria-expanded={open}
         onClick={() => setOpen((value) => !value)}>
-        <span>{config?.model || 'Choose model'}</span><ChevronDown size={12} />
+        <span>{config?.model || t('pilot.choose_model')}</span><ChevronDown size={12} />
       </button>
       {open && (
-        <section className="pilot-model-menu" role="dialog" aria-label="AI model selection">
+        <section className="pilot-model-menu" role="dialog" aria-label={t('pilot.ai_model_selection')}>
           <div className="pilot-model-menu-head">
-            <b>Choose model</b>
-            <button className="icon-btn" type="button" aria-label="Refresh AI models" disabled={loading || saving}
+            <b>{t('pilot.choose_model')}</b>
+            <button className="icon-btn" type="button" aria-label={t('pilot.refresh_ai_models')} disabled={loading || saving}
               onClick={() => setRefresh((value) => value + 1)}>
               {loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
             </button>
           </div>
-          <div className="pilot-model-options" role="listbox" aria-label="Available AI models">
-            {[{ id: '', label: config.sdk ? 'Default from installed CLI' : 'Provider default' },
+          <div className="pilot-model-options" role="listbox" aria-label={t('pilot.available_ai_models')}>
+            {[{ id: '', label: config.sdk ? t('pilot.default_from_installed_cli') : t('pilot.provider_default') },
               ...choices.map((id) => ({ id, label: modelLabels[id] || id }))].map(({ id, label }) => (
-              <button key={id} type="button" role="option" disabled={saving}
+              <button key={id} type="button" role="option" value={id} disabled={saving}
                 aria-selected={config.modelId === id} onClick={() => choose(id)}>
-                <span>{label}</span>{config.modelId === id && <Check size={14} />}
+                <span className="pilot-model-option-text"><span>{label}</span>{id && label !== id && <small>{id}</small>}</span>{config.modelId === id && <Check size={14} />}
               </button>
             ))}
           </div>
-          {loading && <small className="muted">Loading models…</small>}
-          {!loading && cached && <small className="muted">Choices from the CLI’s cached catalog.</small>}
+          {loading && <small className="muted">{t('pilot.loading_models')}</small>}
+          {!loading && cached && <small className="muted">{t('pilot.choices_from_the_clis_cached_catalog')}</small>}
           {(
             <div className="pilot-effort-control">
-              <label>Thinking effort</label>
-              <Dropdown ariaLabel="Thinking effort" value={config.reasoningEffort || ''}
+              <label>{t('pilot.thinking_effort')}</label>
+              <Dropdown ariaLabel={t('pilot.thinking_effort')} value={config.reasoningEffort || ''}
                 disabled={saving || (effortLoading && !config.reasoningEffort) || (!efforts.length && !config.reasoningEffort)}
                 options={[
-                  { value: '', label: config.sdk ? 'CLI default' : 'Default' },
+                  { value: '', label: config.sdk ? t('pilot.cli_default') : t('pilot.default') },
                   ...efforts.map((effort) => ({ value: effort, label: EFFORT_LABELS[effort] || effort })),
                   ...(config.reasoningEffort && !efforts.includes(config.reasoningEffort)
-                    ? [{ value: config.reasoningEffort, label: `${EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort} (unavailable)`, disabled: true }] : []),
+                    ? [{ value: config.reasoningEffort, label: t('pilot.effort_unavailable', { effort: EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort }), disabled: true }] : []),
                 ]} onChange={chooseEffort} />
-              {effortLoading && <small className="muted">Checking allowed thinking levels…</small>}
+              {effortLoading && <small className="muted">{t('pilot.checking_allowed_thinking_levels')}</small>}
               {effortError && <small className="pilot-model-error" role="alert">{effortError}</small>}
-              {!effortLoading && !effortError && !efforts.length && <small className="muted">{capability?.note || 'This model has no reported thinking options.'}</small>}
-              {!effortLoading && efforts.length > 0 && <small className="muted">Allowed for this model · saved separately for each provider and model.</small>}
+              {!effortLoading && !effortError && !efforts.length && <small className="muted">{capability?.note || t('pilot.this_model_has_no_reported_thinking_options')}</small>}
+              {!effortLoading && efforts.length > 0 && <small className="muted">{t('pilot.allowed_for_this_model_saved_separately')}</small>}
             </div>
           )}
           {error && <p className="pilot-model-error" role="alert">{error}</p>}
           <form className="pilot-model-custom" onSubmit={(event) => { event.preventDefault(); if (custom.trim()) choose(custom.trim()); }}>
-            <input type="text" aria-label="Custom AI model ID" value={custom} disabled={saving} spellCheck={false}
-              placeholder="Custom model ID" onChange={(event) => setCustom(event.target.value)} />
+            <input type="text" aria-label={t('pilot.custom_ai_model_id')} value={custom} disabled={saving} spellCheck={false}
+              placeholder={t('settings.custom_model_id')} onChange={(event) => setCustom(event.target.value)} />
             <button type="submit" className="btn btn-sm" disabled={saving || !custom.trim()}>
-              {saving ? <Loader2 size={13} className="spin" /> : 'Use'}
+              {saving ? <Loader2 size={13} className="spin" /> : t('pilot.use')}
             </button>
           </form>
-          <small className="muted">Applies to your next message. Saved automatically.</small>
+          <small className="muted">{t('pilot.applies_to_your_next_message_saved')}</small>
         </section>
       )}
     </div>

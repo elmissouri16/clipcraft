@@ -2,6 +2,7 @@
 // one of four wire protocols; both helper modules read the same rows; the invariants every row must keep so
 // that adding a provider is a row and nothing else. Usage: node tests/unit/agents/test-provider-presets.mjs
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { PRESETS, providerById, providerShortName, nativeAgentName } from '../../../src/features/agent/providers.js';
 const main = createRequire(import.meta.url)('../../../electron/agents/providers.cjs');
@@ -11,9 +12,10 @@ const PROTOCOLS = new Set(['openai', 'anthropic', 'gemini', 'ollama', 'native'])
 check('both sides read the same rows', JSON.stringify(PRESETS) === JSON.stringify(main.PRESETS) && PRESETS.length >= 10);
 check('ids are unique, lower-case slugs', new Set(PRESETS.map((p) => p.id)).size === PRESETS.length && PRESETS.every((p) => /^[a-z][a-z0-9-]*$/.test(p.id)));
 check('every row names a known protocol', PRESETS.every((p) => PROTOCOLS.has(p.protocol)));
-check('every row has a display name, a short name and a hint', PRESETS.every((p) => p.name && p.short && typeof p.hint === 'string' && p.hint.length > 10));
+const en = JSON.parse(fs.readFileSync(new URL('../../../shared/i18n/en.json', import.meta.url), 'utf8'));
+check('every row has a short name, and its display name and hint live in the dictionary', PRESETS.every((p) => p.short && typeof en[`providers.${p.id}.name`] === 'string' && typeof en[`providers.${p.id}.hint`] === 'string' && en[`providers.${p.id}.hint`].length > 10));
 check('OpenAI-compatible rows carry their address, except Custom which the user supplies', PRESETS.filter((p) => p.protocol === 'openai').every((p) => p.id === 'custom' ? p.baseUrl === '' : /^https?:\/\/\S+\/v1$/.test(p.baseUrl)));
-check('API rows that store a key link to a key page over https; natives link to setup', PRESETS.filter((p) => p.needsKey && p.id !== 'custom').every((p) => /^https:\/\//.test(p.keyUrl) && p.keyUrlLabel) && PRESETS.filter((p) => p.protocol === 'native').every((p) => p.sdk && !p.needsKey && p.agentName && /^https:\/\//.test(p.keyUrl)));
+check('API rows that store a key link to a key page over https with a dictionary label; natives link to setup', PRESETS.filter((p) => p.needsKey && p.id !== 'custom').every((p) => /^https:\/\//.test(p.keyUrl) && en[`providers.${p.id}.key_label`]) && PRESETS.filter((p) => p.protocol === 'native').every((p) => p.sdk && !p.needsKey && p.agentName && /^https:\/\//.test(p.keyUrl)));
 check('defaultModel is a string on every row and empty only where the service or agent picks', PRESETS.every((p) => typeof p.defaultModel === 'string') && PRESETS.filter((p) => !p.defaultModel).every((p) => p.id === 'custom' || p.protocol === 'native'));
 check('reasoningField, when set, is one of the two OpenAI-style spellings', PRESETS.every((p) => !p.reasoningField || ['reasoning_effort', 'reasoning.effort'].includes(p.reasoningField)));
 check('headers, when set, are a flat string map', PRESETS.every((p) => !p.headers || Object.values(p.headers).every((v) => typeof v === 'string')));

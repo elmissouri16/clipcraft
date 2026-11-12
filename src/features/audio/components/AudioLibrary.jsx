@@ -1,9 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Copy, ExternalLink, KeyRound, Loader2, Mic, Music, Pause, Play, Plus, Search, Square, Upload, WifiOff, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, KeyRound, Loader2, Mic, Music, Pause, Play, Plus, Square, Upload, WifiOff } from 'lucide-react';
 import { formatTime, toFileUrl } from "../../../state/store.js";
 import { FavStar, favLibrary, useFavorites } from "../../../app/favorites.jsx";
 import TextToSpeech from './TextToSpeech.jsx';
 import PackMusic from './PackMusic.jsx';
+import OpenverseNotice from '../../library/components/OpenverseNotice.jsx';
+import BrowserControls, { BrowserField, CREDIT_OPTIONS, creditSummary } from '../../library/components/BrowserControls.jsx';
+import { useBrowserState } from '../../library/browserState.js';
+import { projectCredits } from '../../library/credits.js';
+import { t, tn } from '../../../i18n/index.js';
 
 // Chip label -> search words. Openverse matches titles and tags, so some genres search better under another word.
 export const MUSIC_TAGS = [
@@ -37,6 +42,9 @@ export const TROLL_TAGS = [
   ['Fail', 'fail'], ['Wow', 'wow'], ['Airhorn', 'airhorn'], ['Sus', 'among us'], ['Sad', 'sad violin'], ['Scream', 'scream'],
   ['Fart', 'fart'], ['Anime', 'anime'], ['Gaming', 'game over'],
 ];
+
+// A chip's label in the UI language; the English label stays the chip's id (sections are `kind:Label`).
+export const tagLabel = (label) => (label === 'All' ? t('audio.all_categories') : t(`audio.tag_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`));
 
 // One shared player for previews: play() resolves the file (online sounds are downloaded once
 // into the library folder) and plays it. Soundza results carry a preview link: the main
@@ -78,137 +86,113 @@ function Row({ item, preview, onAdd, adding, fav = item.path ? null : favLibrary
   const playing = preview.id === item.id;
   return (
     <div className={`lib-row ${playing ? 'on' : ''}`} onDoubleClick={() => onAdd(item)}>
-      <button className="lib-play" onClick={() => preview.toggle(item)} aria-label={playing ? `Stop ${item.title}` : `Play ${item.title}`}>
+      <button className="lib-play" onClick={() => preview.toggle(item)} aria-label={playing ? t('audio.stop_item', { title: item.title }) : t('audio.play_item', { title: item.title })}>
         {playing && preview.loading ? <Loader2 size={15} className="spin" /> : playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
       </button>
       <div className="lib-meta">
         <b title={item.title}>{item.title}</b>
         <span className="lib-sub">
           <span>{item.provider === 'sfxmint' || item.provider === 'soundza' ? (item.category || '').replace(/^./, (c) => c.toUpperCase()) || item.creator : item.creator}{item.duration ? ` · ${formatTime(item.duration).slice(0, 5)}` : ''}</span>
+          {item.license === 'unknown' && <i className="lic unknown">{t('audio.licence_unknown')}</i>}
           {item.license && item.license !== 'unknown' && (
-            <i className={`lic ${item.license}`} title={item.license === 'by' ? 'Free to use with a credit to the artist' : 'Free to use, no credit needed'}>
-              {item.license === 'by' ? 'Credit' : 'Free'}
+            <i className={`lic ${item.license}`} title={item.license === 'by' ? t('audio.free_to_use_with_a_credit') : t('audio.free_to_use_no_credit_needed')}>
+              {item.license === 'by' ? t('audio.credit_required') : t('audio.no_credit_required')}
             </i>
           )}
         </span>
       </div>
+      {item.origin === 'openverse' && <button className="icon-btn sm" aria-label={t('audio.view_source_for', { title: item.title })} title={t('audio.original_source_and_licence')} onDoubleClick={e => e.stopPropagation()} onClick={() => window.api.openverseSource(item)}><ExternalLink size={13} /></button>}
       {fav && <FavStar entry={fav} />}
-      <button className="lib-add" onClick={() => onAdd(item)} aria-label={`Add ${item.title} at the playhead`} title="Add at the playhead" disabled={adding === item.id}>
+      <button className="lib-add" onClick={() => onAdd(item)} aria-label={t('audio.add_item_at_the_playhead', { title: item.title })} title={t('audio.add_at_the_playhead')} disabled={adding === item.id}>
         {adding === item.id ? <Loader2 size={15} className="spin" /> : <Plus size={16} />}
       </button>
     </div>
   );
 }
 
-function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag }) {
-  const [q, setQ] = useState('');
-  const [ownTag, setTag] = useState(tags[0][0]);
-  const tag = fixedTag || ownTag;
+function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, onSectionChange, navigation, providerControl, browserMemory }) {
+  const [state, patch] = useBrowserState(browserMemory, `audio:search:${kind}`, { q: '', term: '', licenses: 'cc0' });
+  const { q, term, licenses } = state;
+  const request = useRef(0);
+  const openverse = kind !== 'trolls';
+  const tag = fixedTag || 'All';
+  const chip = tags.find(([label]) => label === tag);
+  const query = [term.trim(), chip?.[1] || ''].filter(Boolean).join(' ') || (kind === 'music' ? 'background music' : kind === 'trolls' ? '' : 'sound effect');
   const [res, setRes] = useState({ results: [], page: 0, pages: 0, loading: false, error: '' });
-  const chip = tags.find(([label]) => label === tag) || tags[0];
-  const query = q.trim() || chip[1];
-  const load = async (page) => {
-    setRes((r) => ({ ...r, loading: true, error: '', ...(page === 1 ? { results: [] } : {}) }));
-    const out = await window.api.librarySearch({ kind, q: query, category: q.trim() ? '' : chip[2], page });
-    if (out.error) return setRes((r) => ({ ...r, loading: false, error: out.error }));
-    setRes((r) => ({ results: page === 1 ? out.results : [...r.results, ...out.results], page: out.page, pages: out.pages, loading: false, error: '' }));
+  const source = kind === 'music' ? 'Openverse' : kind === 'trolls' ? 'MyInstants' : 'Openverse + SFXMint';
+  const section = kind === 'sfxall' ? 'sfx' : kind;
+  const load = async page => {
+    const seq = ++request.current;
+    setRes(r => ({ ...r, loading: true, error: '', ...(page === 1 ? { results: [] } : {}) }));
+    try {
+      const out = await window.api.librarySearch({ kind, q: query, licenses, category: !term.trim() ? chip?.[2] : '', page });
+      if (seq !== request.current) return;
+      if (out.error) return setRes(r => ({ ...r, loading: false, error: out.error }));
+      setRes(r => ({ results: page === 1 ? out.results : [...r.results, ...out.results], page: out.page, pages: out.pages, loading: false, error: '' }));
+    } catch (e) { if (seq === request.current) setRes(r => ({ ...r, loading: false, error: e.message })); }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setQ(''); }, [fixedTag]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(1); }, [tag, kind]);
-  return (
-    <>
-      <form className="lib-search" onSubmit={(e) => { e.preventDefault(); load(1); }}>
-        <Search size={14} aria-hidden="true" />
-        <input type="search" value={q} placeholder={kind === 'music' ? 'Search music' : kind === 'trolls' ? 'Search meme sounds' : 'Search sound effects'} aria-label="Search the library"
-          onChange={(e) => setQ(e.target.value)} />
-        {q && <button type="button" className="lib-search-clear" aria-label="Clear search" onClick={() => setQ('')}><X size={13} /></button>}
-      </form>
-      {!fixedTag && <div className="chips scroll-x">
-        {tags.map(([t]) => (
-          <button key={t} className={`chip ${!q.trim() && tag === t ? 'on' : ''}`} onClick={() => { setQ(''); setTag(t); }}>{t}</button>
-        ))}
-      </div>}
-      {res.error && (
-        <div className="lib-error"><WifiOff size={15} /> <span>{res.error}</span> <button className="btn btn-sm" onClick={() => load(1)}>Retry</button></div>
-      )}
-      <div className="lib-list">
-        {res.results.map((it) => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}
-        {res.loading && <div className="lib-loading"><Loader2 size={16} className="spin" /> Loading…</div>}
-        {!res.loading && !res.error && !res.results.length && <p className="empty-note">Nothing found for “{query || tag}”.</p>}
-        {!res.loading && res.page < res.pages && res.results.length > 0 && (
-          <button className="btn btn-ghost btn-sm lib-more" onClick={() => load(res.page + 1)}>Load more</button>
-        )}
-      </div>
-    </>
-  );
+  useEffect(() => {
+    load(1); return () => { request.current++; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, tag, licenses, term]);
+  return <>
+    <BrowserControls query={q} onQuery={q => patch({ q, ...(!q ? { term: '' } : {}) })} onSearch={() => q === term ? load(1) : patch({ term: q })}
+      placeholder={kind === 'music' ? t('audio.search_online_music') : kind === 'trolls' ? t('audio.search_meme_sounds') : t('audio.search_sound_effects')} ariaLabel={t('audio.search_the_library')} navigation={navigation}
+      summary={<>{source}{` · ${openverse ? creditSummary(licenses) : t('audio.licence_unknown')}`}{chip && ` · ${tagLabel(tag)}`}</>}
+      onReset={() => { patch({ licenses: 'cc0' }); onSectionChange(`${section}:All`); }}>
+      {providerControl}
+      <BrowserField label={kind === 'music' ? t('audio.genre') : t('audio.category')} ariaLabel={t('audio.audio_category')} value={tag} onChange={value => onSectionChange(`${section}:${value}`)} options={[{ value: 'All', label: tagLabel('All') }, ...tags.map(([value]) => ({ value, label: tagLabel(value) }))]} />
+      {openverse && <BrowserField label={t('audio.copyright_attribution')} ariaLabel={t('audio.audio_licences')} value={licenses} onChange={licenses => patch({ licenses })} options={CREDIT_OPTIONS} />}
+      {openverse && <p className="browser-filter-help">{t('audio.cc_by_includes_cc0_results_and_media_that')}</p>}
+    </BrowserControls>
+    {res.error && <div className="lib-error"><WifiOff size={15} /><span>{res.error}</span><button className="btn btn-sm" onClick={() => load(1)}>{t('audio.retry')}</button></div>}
+    <div className="lib-list">{res.results.map(it => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}</div>
+    {res.loading && <div className="lib-loading"><Loader2 size={16} className="spin" /> {t('settings.loading')}</div>}
+    {!res.loading && !res.error && !res.results.length && <div className="browser-empty"><p>{term ? t('audio.no_matches_on_source_for_term', { source, term }) : t('audio.no_matches_on_source', { source })}</p>{openverse && licenses === 'cc0' && <button className="btn btn-sm" onClick={() => patch({ licenses: 'attribution' })}>{t('audio.include_credit_required_media')}</button>}</div>}
+    {!res.loading && res.page < res.pages && res.results.length > 0 && <button className="btn btn-ghost btn-sm lib-more" onClick={() => load(res.page + 1)}>{t('audio.load_more')}</button>}
+    {openverse ? <OpenverseNotice /> : <p className="lib-note">{t('audio.meme_sounds_from_myinstants_their_rights_a')}</p>}
+  </>;
 }
 
-// Soundza search: needs the user's free Soundza key (Settings); without one it shows the same
-// "get a free key" card the stock library uses. Results preview from Soundza's preview links;
-// adding downloads the full file once, through the shared library-add flow.
-function SoundzaSearch({ fixedTag, preview, onAdd, adding, onOpenSettings }) {
+function SoundzaSearch({ fixedTag, preview, onAdd, adding, onOpenSettings, navigation, providerControl, browserMemory, settingsVersion, onSectionChange }) {
   const [hasKey, setHasKey] = useState(null);
-  const [q, setQ] = useState('');
+  const [state, patch] = useBrowserState(browserMemory, 'audio:search:soundza', { q: '', term: '' });
+  const { q, term } = state;
+  const request = useRef(0);
+  const tag = fixedTag || 'All';
+  const chip = SOUNDZA_TAGS.find(([label]) => label === tag);
   const [res, setRes] = useState({ results: [], page: 0, pages: 0, loading: false, error: '' });
-  const chip = SOUNDZA_TAGS.find(([label]) => label === fixedTag) || SOUNDZA_TAGS[0];
-  useEffect(() => { window.api.soundzaStatus().then((s) => setHasKey(!!s.hasKey)).catch(() => setHasKey(false)); }, []);
-  const load = async (page) => {
-    setRes((r) => ({ ...r, loading: true, error: '', ...(page === 1 ? { results: [] } : {}) }));
-    const out = await window.api.soundzaSearch({ ...chip[1], q: q.trim(), page });
-    if (out.error) return setRes((r) => ({ ...r, loading: false, error: out.error }));
-    setRes((r) => ({ results: page === 1 ? out.results : [...r.results, ...out.results], page: out.page, pages: out.pages, loading: false, error: '' }));
+  useEffect(() => { let alive = true; window.api.soundzaStatus().then(s => { if (alive) setHasKey(!!s.hasKey); }).catch(() => { if (alive) setHasKey(false); }); return () => { alive = false; }; }, [settingsVersion]);
+  const load = async page => {
+    const seq = ++request.current;
+    setRes(r => ({ ...r, loading: true, error: '', ...(page === 1 ? { results: [] } : {}) }));
+    try {
+      const out = await window.api.soundzaSearch({ ...chip?.[1], q: term.trim() || chip?.[1]?.q || '', page });
+      if (seq !== request.current) return;
+      if (out.error) return setRes(r => ({ ...r, loading: false, error: out.error }));
+      setRes(r => ({ results: page === 1 ? out.results : [...r.results, ...out.results], page: out.page, pages: out.pages, loading: false, error: '' }));
+    } catch (e) { if (seq === request.current) setRes(r => ({ ...r, loading: false, error: e.message })); }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setQ(''); }, [fixedTag]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (hasKey) load(1); }, [fixedTag, hasKey]);
-
-  if (hasKey === null) return <div className="lib-loading"><Loader2 size={16} className="spin" /> Loading…</div>;
-  if (!hasKey) {
-    return (
-      <div className="card stock-key">
-        <div className="card-row">
-          <span className="card-icon"><KeyRound size={18} /></span>
-          <div>
-            <b>Free sound effects from Soundza</b>
-            <p>Search a big free library of whooshes, impacts, UI sounds and foley, and drop them straight onto your timeline. Soundza needs a free API key: create an account, copy a key from the developer keys page, then paste it in Settings.</p>
-          </div>
-        </div>
-        <div className="stock-key-actions">
-          <button className="btn btn-sm" onClick={() => window.api.openHelp('https://soundza.com/developers/keys')}><ExternalLink size={13} /> Get a free key</button>
-          <button className="btn btn-primary btn-sm" onClick={onOpenSettings}>Open Settings</button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <>
-      <form className="lib-search" onSubmit={(e) => { e.preventDefault(); load(1); }}>
-        <Search size={14} aria-hidden="true" />
-        <input type="search" value={q} placeholder="Search sound effects" aria-label="Search Soundza"
-          onChange={(e) => setQ(e.target.value)} />
-        {q && <button type="button" className="lib-search-clear" aria-label="Clear search" onClick={() => setQ('')}><X size={13} /></button>}
-      </form>
-      {res.error && (
-        <div className="lib-error"><WifiOff size={15} /> <span>{res.error}</span> <button className="btn btn-sm" onClick={() => load(1)}>Retry</button></div>
-      )}
-      <div className="lib-list">
-        {res.results.map((it) => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}
-        {res.loading && <div className="lib-loading"><Loader2 size={16} className="spin" /> Loading…</div>}
-        {!res.loading && !res.error && !res.results.length && <p className="empty-note">Nothing found for “{q.trim() || fixedTag}”.</p>}
-        {!res.loading && res.page < res.pages && res.results.length > 0 && (
-          <button className="btn btn-ghost btn-sm lib-more" onClick={() => load(res.page + 1)}>Load more</button>
-        )}
-      </div>
-      <p className="lib-note">Powered by <a href="#" onClick={(e) => { e.preventDefault(); window.api.openHelp('https://soundza.com'); }}>soundza</a> — free sounds under the Soundza Standard License.</p>
-    </>
-  );
+  useEffect(() => { if (hasKey) load(1); return () => { request.current++; }; // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasKey, tag, term]);
+  return <>
+    <BrowserControls query={q} onQuery={q => patch({ q, ...(!q ? { term: '' } : {}) })} onSearch={() => term === q ? hasKey && load(1) : patch({ term: q })} placeholder={t('audio.search_sound_effects')} ariaLabel={t('audio.search_soundza')} navigation={navigation} summary={<>Soundza{chip && ` · ${tagLabel(tag)}`}</>} disabled={!hasKey} onReset={() => { onSectionChange('soundza:All'); }}>
+      {providerControl}
+      <BrowserField label={t('audio.category')} ariaLabel={t('audio.audio_category')} value={tag} onChange={value => onSectionChange(`soundza:${value}`)} options={[{ value: 'All', label: tagLabel('All') }, ...SOUNDZA_TAGS.map(([value]) => ({ value, label: tagLabel(value) }))]} />
+    </BrowserControls>
+    {hasKey === null ? <p className="empty-note">{t('audio.checking_soundza_connection')}</p> : !hasKey ? <div className="card stock-key"><div className="card-row"><span className="card-icon"><KeyRound size={18} /></span><div><b>{t('audio.connect_soundza')}</b><p>{t('audio.add_a_soundza_key_in_settings_api_keys_to')}</p></div></div><div className="stock-key-actions"><button className="btn btn-sm" onClick={() => window.api.openHelp('https://soundza.com/developers/keys')}><ExternalLink size={13} /> {t('audio.get_a_free_key')}</button><button className="btn btn-primary btn-sm" onClick={() => onOpenSettings?.('services:soundza')}>{t('settings.add_api_key')}</button></div></div> : <>
+      {res.error && <div className="lib-error"><WifiOff size={15} /><span>{res.error}</span><button className="btn btn-sm" onClick={() => load(1)}>{t('audio.retry')}</button></div>}
+      <div className="lib-list">{res.results.map(it => <Row key={it.id} item={it} preview={preview} onAdd={onAdd} adding={adding} />)}</div>
+      {res.loading && <div className="lib-loading"><Loader2 size={16} className="spin" /> {t('settings.loading')}</div>}
+      {!res.loading && !res.error && !res.results.length && <p className="empty-note">{t('audio.no_matches_on_soundza_with_the_current_fil')}</p>}
+      {!res.loading && res.page < res.pages && res.results.length > 0 && <button className="btn btn-ghost btn-sm lib-more" onClick={() => load(res.page + 1)}>{t('audio.load_more')}</button>}
+    </>}
+    <p className="lib-note">{t('audio.sounds_from_soundza_under_the_soundza_stan')}</p>
+  </>;
 }
 
 // Audio panel: Music, Sound effects and Yours (imported audio and voice-over).
-export default function AudioLibrary({ media, project, onImport, onAddMedia, onLibraryAdd, onAddFile, onTtsAdd, selectedText, onOpenSettings, settingsVersion, recorder, onStartRecord, MediaCard, onRemoveMedia, onPeek, peekId, onShowCredits, section = 'music:Vlog' }) {
+export default function AudioLibrary({ media, project, onImport, onAddMedia, onLibraryAdd, onAddFile, onTtsAdd, selectedText, onOpenSettings, settingsVersion, recorder, onStartRecord, MediaCard, onRemoveMedia, onPeek, peekId, onShowCredits, onSectionChange, navigation, providerControl, browserMemory, section = 'music:All' }) {
   // Split on the FIRST colon only: pack sections carry a second one ('music:pack:Library').
   const [group, sub] = section.includes(':') ? [section.slice(0, section.indexOf(':')), section.slice(section.indexOf(':') + 1)] : [section, ''];
   const view = group === 'yours' && sub === 'favorites' ? 'favorites' : group;
@@ -230,9 +214,7 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
     if (res?.error) setAddError(res.error);
   };
 
-  // Credit lines for CC BY sounds used on the timeline.
-  const used = new Set([...project.audioClips, ...project.videoClips, ...(project.overlayClips || [])].map((c) => c.mediaId));
-  const credits = media.filter((m) => m.credit && m.credit.license === 'by' && used.has(m.id)).map((m) => m.credit.line);
+  const credits = projectCredits({ ...project, media });
   const copyCredits = async () => {
     await navigator.clipboard.writeText(credits.join('\n'));
     setCopied(true);
@@ -243,65 +225,37 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
   return (
     <>
       {(preview.error || addError) && <p className="error-text">{preview.error || addError}</p>}
-      {credits.length > 0 && view !== 'credits' && <div className="lib-credit-reminder">
-        <button type="button" className="lib-credit-link" onClick={onShowCredits} title="View attribution for sounds used on the timeline">
-          {credits.length} {credits.length === 1 ? 'credit' : 'credits'} needed
+      {credits.length > 0 && ['yours', 'favorites'].includes(view) && <div className="lib-credit-reminder">
+        <button type="button" className="lib-credit-link" onClick={onShowCredits} title={t('audio.view_attribution_for_media_used_on_the_tim')}>
+          {tn('audio.credits_needed_count', credits.length)}
         </button>
-        <button type="button" className="icon-btn sm" onClick={copyCredits} aria-label={copied ? 'Credits copied' : 'Copy credits'} title={copied ? 'Copied' : 'Copy credits'}>
+        <button type="button" className="icon-btn sm" onClick={copyCredits} aria-label={copied ? t('audio.credits_copied') : t('audio.copy_credits')} title={copied ? t('audio.copied') : t('audio.copy_credits')}>
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>
       </div>}
 
-      {view === 'music' && (sub.startsWith('pack:') ? (
-        <PackMusic collection={sub.slice(5)} onAddFile={onAddFile} />
-      ) : (
-        <>
-          <div className="tab-title">Music · {sub}</div>
-          <OnlineSearch kind="music" tags={MUSIC_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} />
-        </>
-      ))}
-
-      {view === 'sfx' && (sub.startsWith('pack:') ? (
-        <PackMusic group="Sound FX" collection={sub.slice(5)} onAddFile={onAddFile} />
-      ) : (
-        <>
-          <div className="tab-title">Sound effects · {sub}</div>
-          <p className="lib-src-note">Free for any video. Sounds marked “Credit” need a credit line (listed under Credits).</p>
-          <OnlineSearch kind="sfxall" tags={SFX_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} />
-        </>
-      ))}
-
-      {view === 'soundza' && (
-        <>
-          <div className="tab-title">Soundza · {sub}</div>
-          <SoundzaSearch fixedTag={sub} preview={preview} onAdd={add} adding={adding} onOpenSettings={onOpenSettings} />
-        </>
-      )}
-
-      {view === 'trolls' && (
-        <>
-          <div className="tab-title">Trolls · {sub}</div>
-          <OnlineSearch kind="trolls" tags={TROLL_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} />
-          <p className="lib-note">Sounds from <a href="#" onClick={(e) => { e.preventDefault(); window.api.openHelp('https://www.myinstants.com'); }}>MyInstants</a>.</p>
-        </>
-      )}
+      {(view === 'music' || view === 'sfx') && (sub.startsWith('pack:') ? (
+        <PackMusic key={`${view}:${sub}`} group={view === 'music' ? 'Music' : 'Sound FX'} collection={sub.slice(5)} onAddFile={onAddFile} navigation={navigation} browserMemory={browserMemory} />
+      ) : <OnlineSearch key={view} kind={view === 'music' ? 'music' : 'sfxall'} tags={view === 'music' ? MUSIC_TAGS : SFX_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} onSectionChange={onSectionChange} navigation={navigation} providerControl={providerControl} browserMemory={browserMemory} />)}
+      {view === 'soundza' && <SoundzaSearch fixedTag={sub} preview={preview} onAdd={add} adding={adding} onOpenSettings={onOpenSettings} onSectionChange={onSectionChange} navigation={navigation} providerControl={providerControl} browserMemory={browserMemory} settingsVersion={settingsVersion} />}
+      {view === 'trolls' && <OnlineSearch key="trolls" kind="trolls" tags={TROLL_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} onSectionChange={onSectionChange} navigation={navigation} browserMemory={browserMemory} />}
 
       {view === 'favorites' && (
         <>
-          <div className="tab-title">Favorite sounds</div>
+          <div className="tab-title">{t('audio.favorite_sounds')}</div>
           {!favs.length && (
-            <p className="empty-note">Click the star on any sound (music, sound effects or your own audio) to keep it here for all your projects.</p>
+            <p className="empty-note">{t('audio.click_the_star_on_any_sound_music_sound_ef')}</p>
           )}
           <div className="lib-list">
             {favs.map((e) => (e.source === 'file' ? (
               e.missing ? (
                 <div key={e.key} className="lib-row missing" title={e.item.path}>
-                  <div className="lib-meta"><b>{e.item.name}</b><span className="lib-sub"><span>File moved or deleted</span></span></div>
+                  <div className="lib-meta"><b>{e.item.name}</b><span className="lib-sub"><span>{t('audio.file_moved_or_deleted')}</span></span></div>
                   <FavStar entry={e} />
                 </div>
               ) : (
                 <Row key={e.key} preview={preview} adding={adding} fav={e}
-                  item={{ id: e.key, title: e.item.name, path: e.item.path, provider: 'file', creator: 'Your file', duration: e.item.duration }}
+                  item={{ id: e.key, title: e.item.name, path: e.item.path, provider: 'file', creator: t('audio.your_file'), duration: e.item.duration }}
                   onAdd={async () => { setAdding(e.key); const r = await onAddFile(e.item.path); setAdding(null); if (r?.error) setAddError(r.error); }} />
               )
             ) : (
@@ -315,29 +269,28 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
 
       {view === 'credits' && (
         <>
-          <div className="tab-title">Credits</div>
+          <div className="tab-title">{t('audio.credits')}</div>
           {!credits.length && (
-            <p className="empty-note">No sound on the timeline needs a credit. CC0 sounds never do;
-              music and sound effects marked “Credit” list their credit line here once you use them.</p>
+            <p className="empty-note">{t('audio.no_media_on_the_timeline_requires_cc_by_at')}</p>
           )}
         </>
       )}
 
       {view === 'yours' && (
         <>
-          <div className="tab-title">Your audio <button className="btn btn-primary btn-sm" onClick={onImport}><Upload size={14} /> Import</button></div>
+          <div className="tab-title">{t('audio.this_projects_audio')} <button className="btn btn-primary btn-sm" onClick={onImport}><Upload size={14} /> {t('audio.import')}</button></div>
           <div className={`card rec ${recorder.recording ? 'live' : ''}`}>
             <div className="card-row">
               <span className="card-icon"><Mic size={18} /></span>
               <div>
-                <b>Voice-over</b>
-                <p>Recorded from the playhead and added to the Audio track</p>
+                <b>{t('audio.voice_over')}</b>
+                <p>{t('audio.recorded_from_the_playhead_and_added_to_th')}</p>
               </div>
             </div>
             {recorder.recording ? (
-              <button className="btn btn-danger" onClick={recorder.stop}><Square size={13} /> Stop · {Math.round(recorder.seconds)}s</button>
+              <button className="btn btn-danger" onClick={recorder.stop}><Square size={13} /> {t('audio.stop_after_seconds', { seconds: Math.round(recorder.seconds) })}</button>
             ) : (
-              <button className="btn" onClick={onStartRecord}><span className="rec-dot" /> Record</button>
+              <button className="btn" onClick={onStartRecord}><span className="rec-dot" /> {t('audio.record')}</button>
             )}
             {recorder.error && <p className="error-text">{recorder.error}</p>}
           </div>
@@ -346,21 +299,21 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
               {audio.map((m) => <MediaCard key={m.id} m={m} onAdd={onAddMedia} onRemove={onRemoveMedia} onPeek={onPeek} peeking={peekId === m.id} />)}
             </div>
           ) : (
-            <p className="empty-note"><Music size={14} /> Import MP3, WAV or M4A files, or add music from the library.</p>
+            <p className="empty-note"><Music size={14} /> {t('audio.import_mp3_wav_or_m4a_files_or_add_music_f')}</p>
           )}
         </>
       )}
 
       {credits.length > 0 && view === 'credits' && (
         <div className="card lib-credits">
-          <b>Credits needed</b>
-          <p>These CC BY sounds are on the timeline. Paste the credits in your video description.</p>
+          <b>{t('audio.credits_needed')}</b>
+          <p>{t('audio.these_cc_by_images_and_sounds_are_on_the_t')}</p>
           <pre>{credits.join('\n')}</pre>
-          <button className="btn btn-sm" onClick={copyCredits}>{copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy credits</>}</button>
+          <button className="btn btn-sm" onClick={copyCredits}>{copied ? <><Check size={13} /> {t('audio.copied')}</> : <><Copy size={13} /> {t('audio.copy_credits')}</>}</button>
         </div>
       )}
-      {(view === 'music' || view === 'credits') && (
-        <p className="lib-note">Only CC0, public domain and CC BY sounds are shown: free to use in your videos; CC BY needs a credit.</p>
+      {view === 'credits' && (
+        <p className="lib-note">{t('audio.openverse_searches_use_cc0_by_default_with')}</p>
       )}
     </>
   );

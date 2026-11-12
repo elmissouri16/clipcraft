@@ -4,14 +4,16 @@
 // as they did. Overshoot's control points push y past 1 on purpose (the curve settles from beyond the
 // target); the solver therefore never clamps its output, only its input.
 
+import { t } from '../../i18n/index.js';
+
 export const EASE_PRESETS = [
-  { id: 'linear', name: 'Linear', pts: [0, 0, 1, 1] },
-  { id: 'smooth', name: 'Smooth', pts: [0.42, 0, 0.58, 1] },
-  { id: 'easeIn', name: 'Ease In', pts: [0.42, 0, 1, 1] },
-  { id: 'easeOut', name: 'Ease Out', pts: [0, 0, 0.58, 1] },
-  { id: 'snapIn', name: 'Snap In', pts: [0.16, 1, 0.3, 1] },
-  { id: 'snapOut', name: 'Snap Out', pts: [0.7, 0, 0.84, 0] },
-  { id: 'overshoot', name: 'Overshoot', pts: [0.34, 1.56, 0.64, 1] },
+  { id: 'linear', name: t('animation.linear'), pts: [0, 0, 1, 1] },
+  { id: 'smooth', name: t('animation.smooth'), pts: [0.42, 0, 0.58, 1] },
+  { id: 'easeIn', name: t('animation.ease_in'), pts: [0.42, 0, 1, 1] },
+  { id: 'easeOut', name: t('animation.ease_out'), pts: [0, 0, 0.58, 1] },
+  { id: 'snapIn', name: t('animation.snap_in'), pts: [0.16, 1, 0.3, 1] },
+  { id: 'snapOut', name: t('animation.snap_out'), pts: [0.7, 0, 0.84, 0] },
+  { id: 'overshoot', name: t('animation.overshoot'), pts: [0.34, 1.56, 0.64, 1] },
 ];
 const BY_ID = new Map(EASE_PRESETS.map((p) => [p.id, p]));
 export const isCustomEase = (e) => !!e && typeof e === 'object'

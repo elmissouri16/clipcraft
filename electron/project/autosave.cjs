@@ -135,12 +135,12 @@ function readSlot(root, id) {
     const s = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!s || !s.project) return null;
     const sidecar = require('./sidecar.cjs');
-    // An embedded chat in a slot newer than its chat file wins (an older ClipCraft wrote the slot).
-    if (sidecar.embeddedWins(file, chatPath(root, id), 'craftAI' in s.project)) return s;
-    let chat = null;
-    try { chat = fs.readFileSync(chatPath(root, id), 'utf8'); } catch { /* no chat stored apart */ }
+    // An embedded chat with content in a slot newer than its chat file wins (an older ClipCraft wrote the slot).
+    if (sidecar.embeddedWins(file, chatPath(root, id), s.project.craftAI)) return s;
+    const chat = sidecar.readChatFile(chatPath(root, id)); // throws when the file is held: the caller reports it
     return chat ? { ...s, project: sidecar.mergeChat(s.project, chat) } : s;
-  } catch {
+  } catch (error) {
+    if (error?.code === 'CHAT_UNREADABLE') throw error;
     return null;
   }
 }

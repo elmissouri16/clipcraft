@@ -10,8 +10,10 @@ const RUN = 'p1:0', targets = { clips: [{ track: 'video', id: 'v1' }], ranges: [
 const tool = (id, status, extra = {}) => ({ type: 'tool', editId: 'e1', client: 'Claude Code', id, name: 'trim_clip', label: 'Trimming', status, activity: { title: 'Trimming a clip', ...extra } });
 
 let step = externalFocusStep(null, { type: 'edit-start', editId: 'e1', client: 'Claude Code' }, RUN);
-check('an edit start opens a run keyed on the project and named after the client', step.changed && step.focus.runKey === RUN && step.focus.requestId === 'e1' && step.focus.agent === 'Claude Code' && step.focus.live === null && step.focus.trail.length === 0);
+check('an edit start alone opens no run: reads open edits too, and a held trail must survive them', step.changed === false && step.focus === null);
+check('a read without targets in a fresh edit opens no run either', externalFocusStep(null, tool('native-0', 'running'), RUN).changed === false);
 step = externalFocusStep(step.focus, tool('native-0', 'running', { targets }), RUN);
+check('the first tool with targets opens the run keyed on the project and named after the client', step.changed && step.focus.runKey === RUN && step.focus.requestId === 'e1' && step.focus.agent === 'Claude Code' && step.focus.trail.length === 0);
 check('a running tool with targets is the live spotlight, with the tool title and a step id unique to the edit', step.changed && step.focus.live.id === 'e1:native-0' && step.focus.live.title === 'Trimming a clip' && step.focus.live.targets === targets);
 const progress = externalFocusStep(step.focus, tool('native-0', 'running', { targets }), RUN);
 check('a progress update keeps the same live step id', progress.focus.live.id === 'e1:native-0');
@@ -30,7 +32,7 @@ check('the trail keeps the last 24 changes', many.trail.length === 24 && many.tr
 step = externalFocusStep(step.focus, { type: 'edit-end', editId: 'e1', reason: 'validated', changed: true }, RUN);
 check('the edit end ends the run (null starts the hold and fade)', step.changed && step.focus === null);
 check('an end with no run open changes nothing', externalFocusStep(null, { type: 'agent-released', client: 'Claude Code' }, RUN).changed === false);
-check('a tool event with no run open changes nothing', externalFocusStep(null, tool('native-0', 'running', { targets }), RUN).changed === false);
+check('a read-only edit after a finished one leaves the held trail alone', externalFocusStep(null, { type: 'edit-end', editId: 'e2', reason: 'read', changed: false }, RUN).changed === false);
 check('malformed events never throw', externalFocusStep(null, null, RUN).changed === false && externalFocusStep(step.focus, 'x', RUN).changed === false && externalFocusStep({ runKey: RUN, requestId: 'e1', agent: 'x', live: null, trail: [] }, { type: 'tool', editId: 'e1', id: 'q', status: 'done' }, RUN).focus.trail.length === 0);
 const released = externalFocusStep({ runKey: RUN, requestId: 'e1', agent: 'x', live: null, trail: [] }, { type: 'agent-released', client: 'x' }, RUN);
 check('Disconnect during an edit ends the run', released.changed && released.focus === null);

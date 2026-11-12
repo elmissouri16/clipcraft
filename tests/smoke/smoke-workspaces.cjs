@@ -64,9 +64,9 @@ module.exports = async (win, app, dir) => {
     fs.writeFileSync(path.join(dir,'agent-portrait.png'),(await win.capturePage()).toPNG());
     await q('window.__fve.dispatch({type:"setProject",patch:{ratio:"16:9",width:320,height:180},transient:true})');
     await q('window.__fve.select({track:"text",id:"title"});window.__fve.seek(3)');await wait(100);
-    await click('.pilot-context-actions button');await until('!!document.querySelector(".pilot-context-chip")');
+    await click('.pilot-attach-selection');await until('!!document.querySelector(".pilot-context-chip")');
     await mode('edit');await mode('agent');
-    check('selection, playhead, attachment survive switching',await q('!document.querySelector(".pilot-context-actions button").disabled&&window.__fve.currentTime()===3&&!!document.querySelector(".pilot-context-chip")'));
+    check('selection, playhead, attachment survive switching',await q('!document.querySelector(".pilot-attach-selection").disabled&&window.__fve.currentTime()===3&&!!document.querySelector(".pilot-context-chip")'));
     await q('document.querySelector(".pilot-context-chip .icon-btn").click()');
     await type('Rename this project');await until('!document.querySelector("button[aria-label=Send]").disabled');await click('button[aria-label=Send]');
     await until('!!document.querySelector("button[aria-label=Stop]")');await mode('edit');await mode('agent');

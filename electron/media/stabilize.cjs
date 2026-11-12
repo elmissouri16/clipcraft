@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { t } = require('../system/i18n.cjs');
 
 // smoothing: frames averaged on each side for the camera path (more = steadier, more zoom); shakiness / accuracy
 // of the analysis; zoom: extra zoom in percent on top of the automatic one; optzoom: 2 lets the transform pick
@@ -55,8 +56,8 @@ function run(ffmpegPath, args, cwd, onTime, isCanceled) {
       } else if (code === 0) resolve();
       else {
         const memory = /malloc|cannot allocate memory|out of memory/i.test(err);
-        reject(new Error(memory ? 'Not enough memory to stabilize this clip (is disk C: full? Windows needs free space there).'
-          : `Stabilization failed: ${err.trim().split('\n').pop() || `FFmpeg exited with ${code}`}`));
+        reject(new Error(memory ? t('main.not_enough_memory_to_stabilize')
+          : t('main.stabilization_failed', { reason: err.trim().split('\n').pop() || t('main.ffmpeg_exited_with', { code }) })));
       }
     });
   });

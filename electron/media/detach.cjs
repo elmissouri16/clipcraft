@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { t } = require('../system/i18n.cjs');
 
 const num = (v) => Number(v.toFixed(3)).toString();
 
@@ -34,7 +35,7 @@ function run(ffmpegPath, args, cwd, onTime, isCanceled) {
         e.canceled = true;
         reject(e);
       } else if (code === 0) resolve();
-      else reject(new Error(`Detach audio failed: ${err.trim().split('\n').pop() || `FFmpeg exited with ${code}`}`));
+      else reject(new Error(t('main.detach_audio_failed', { reason: err.trim().split('\n').pop() || t('main.ffmpeg_exited_with', { code }) })));
     });
   });
 }

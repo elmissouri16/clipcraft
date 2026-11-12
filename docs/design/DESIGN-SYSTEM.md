@@ -1,35 +1,64 @@
 # ClipCraft Design System
 
-## Design language v13 (applied, 2026-11-07)
+## Design language v14: flat desktop (applied, 2026-11-09)
 
 The authoritative component layer is the last section of `src/styles/styles.css`
-("ClipCraft design language (v13)"). Earlier passes remain for structure; where they
-disagree, v13 wins. The rules:
+("ClipCraft design language (v14, flat desktop)"). Earlier passes remain for structure;
+where they disagree, v14 wins. The goal of v14 is that ClipCraft reads as a native
+desktop editor (Final Cut, Resolve, Xcode), not as a web page in a window. The rules:
 
-- **One radius scale** (`--r-xs 4 · --r-s 6 · --r-sm 8 · --r-md 10 · --r-lg 12 ·
-  --r-xl 16 · --r-2xl 20 · --r-pill`). Controls 8, compact controls (≤ 24 px) 6,
-  control groups/menus/callouts 10, cards/tiles/sections 12, decks and dialogs 16,
-  pills only for chips, tags, transport and tool clusters. Every hard-coded radius
-  outside the preserved brand surfaces (Home, About, welcome, logo, CraftAI launcher)
-  now uses a token.
-- **One control height**: `--control-h 32px`, `--control-h-sm 28px`.
-- **Glow is earned**: brand gradient + glow only on Export, Play and the active dock
-  tab. Primary buttons are solid `--primary` with a top hairline highlight; hover
-  lightens (`--primary-hover`).
+- **Flush shell.** Panels fill the window edge to edge and meet at one-pixel dividers
+  (`--divider`). No floating cards, no panel radius, no drop shadows, no gradient fills,
+  no ambient glow on the canvas. The top bar is 44 px, flat, with a bottom divider; the
+  transport is a flush 40 px strip under the stage; the timeline toolbar is 36 px.
+  `src/app/useLayout.js` and the splitter offsets in `src/app/App.jsx` encode the same
+  geometry (gap 0, frame 0, top bar 44).
+- **One tight radius scale** (`--r-xs 3 · --r-s 4 · --r-sm 5 · --r-md 6 · --r-lg 8 ·
+  --r-xl 10 · --r-2xl 12`). Controls and chips 5, menus and control groups 6, cards and
+  tiles 8, dialogs 10. `--r-pill` is reserved for status dots, progress tracks and
+  scrollbar thumbs; no control, chip, tag or bar is a pill.
+- **One control height**: `--control-h 28px`, `--control-h-sm 24px`; body text 12.5 px.
+- **Flat controls.** `.btn` is a solid `--surface-3` fill with no border; hover steps to
+  `--surface-4`, press to `--surface-2`. Ghost and icon buttons are transparent and use
+  the interaction tokens `--hover` (white 6 %) and `--press` (white 10 %). Primary,
+  danger and Export are solid `--primary` / `--danger`, hover `--primary-hover`, press
+  `--primary-2`. Nothing moves, scales, brightens or glows on interaction; motion is
+  `--t-fast 90ms` / `--t-med 160ms`.
+- **Fields** sit in a darker well (`--bg`) with a 1 px `--border-strong` hairline;
+  hover lightens the border, focus colours it `--primary`. There is no focus ring.
+- **Focus** everywhere else is a 1 px inset `--focus` outline (buttons, tiles, rows,
+  menu items). Two treatments in total; do not add a third.
+- **No gradients, no glow.** Gradients remain only where they carry information: the
+  slider's filled track, striped clip states, loading skeletons, level meters, scroll
+  fades and tile preview art. The brand is one solid violet.
 - **One selected state per family**: segmented controls (`.seg-tabs`, `.proj-seg`,
-  `.proj-ratios`, `.workspace-switch`) use a raised neutral thumb (`--surface-4` +
-  `--raise-selected`); chips and tiles use the soft brand tint; inspector navigation
-  is always underline tabs (`.ci-tabs`, also for the text inspector).
+  `.proj-ratios`, `.workspace-switch`, `.home-seg`) sit in a `--bg` well and mark the
+  choice with a flat `--surface-4` thumb; chips, tiles, rows and the dock use the soft
+  brand tint (`--primary-soft` + `--accent-text`); the active dock page adds a 2 px
+  `--primary` bar on its left edge, as the Settings rail does; inspector navigation is
+  underline tabs.
+- **Dialogs and menus** are flat `--surface-2` / `--surface-3` sheets with a 1 px
+  `--border-strong` and a small shadow (`--shadow` for dialogs, `--shadow-menu` for
+  menus and popovers). No backdrop blur. The About halo, gradient wordmark and
+  gradient-border card are gone; Home, About and CraftPilot follow
+  the same rules as the editor.
+- **Four shared components.** The last section of the stylesheet maps every one-off card,
+  row and option class onto four patterns, so a change there changes all of them: a
+  **well** (`--bg`, hairline, holds a list of options or a set of controls), a **card**
+  (flat `--surface-2`, no hairline, holds content), an **option** (selectable row, tile or
+  toggle: transparent in a well or a card when standalone, `--surface-3` on hover,
+  `--primary-soft` + `--accent-text` when on, never a border or ring) and a **thumbnail**
+  (the one place a border carries selection, because the fill is a picture). New UI joins
+  one of these four lists rather than drawing its own box.
 - **Calm guidance**: `.hint` is a neutral callout; only `role="alert"` uses a warning
-  colour.
-- **Two label tiers**: deck titles 11 px/700/0.09em uppercase `--text-2`; section
-  labels 10.5 px/700/0.09em uppercase `--text-3`.
-- **Neutral readouts**: player format tag and time readouts are neutral and tabular.
-- **Even grids**: choice grids never centre a lone last option.
+  colour. **Two label tiers**: panel titles 11 px/700/0.09em uppercase `--text-2`;
+  section labels 10.5 px/700/0.09em uppercase `--text-3`. **Neutral readouts**: format
+  tag and time readouts are neutral and tabular. **Even grids**: choice grids never
+  centre a lone last option.
 
-This resolves divergences D1 (scrollbars already single), D2 (buttons now 8 px, the
-control radius), D4 (panel search converged on one 32 px spec), D5 (one segmented
-dialect) and D6 (dialogs share the 16 px deck radius) below.
+Superseded by v14 in the original spec below: §4 Radii, §5 Elevation, §7 Buttons,
+Inputs, Search, Segmented, Chips, Panels & decks, Dialogs and Menus, and divergence
+rulings D2 and D6. The token tables (§1 colour, §2 type, §3 spacing) still apply.
 
 ---
 

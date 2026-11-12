@@ -3,6 +3,7 @@ import { Music, Pause, Play, Plus, X } from 'lucide-react';
 import { formatTime, previewPath, toFileUrl } from "../../../state/store.js";
 import { applyElementVolume, resumeAudioGraph, subscribePreviewAudio, wireElement } from "../../audio/audioTap.js";
 import PreviewVolume from "../../audio/components/PreviewVolume.jsx";
+import { t } from '../../../i18n/index.js';
 
 // Watches a media item from the Media panel before it is on the timeline: click a card and it
 // plays in the player at its own shape (tall stays tall, wide stays wide). Space plays / pauses, ← / → step a
@@ -11,13 +12,13 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
   const el = useRef(null);
   const scrubRef = useRef(null);
   const tcRef = useRef(null);
-  const [t, setT] = useState(0);
+  const [at, setAt] = useState(0);
   const [playing, setPlaying] = useState(false);
   const still = m.type === 'image';
   const dur = still ? 0 : m.duration || 0;
 
   useEffect(() => {
-    setT(0);
+    setAt(0);
     setPlaying(!still);
   }, [m.id]);
   useEffect(() => {
@@ -54,10 +55,10 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
   const seek = (to) => {
     const x = Math.max(0, Math.min(dur, to));
     if (el.current && !still) el.current.currentTime = x;
-    setT(x);
+    setAt(x);
   };
   const keys = useRef({});
-  keys.current = { seek, t, onClose };
+  keys.current = { seek, at, onClose };
   useEffect(() => {
     // Capture phase, so the project's own shortcuts (Space plays the timeline) don't also run.
     const onKey = (e) => {
@@ -67,8 +68,8 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
       const k = keys.current;
       if (e.code === 'Space') setPlaying((p) => !p);
       else if (e.key === 'Escape') k.onClose();
-      else if (e.key === 'ArrowLeft') { setPlaying(false); k.seek(k.t - 1 / fps); }
-      else if (e.key === 'ArrowRight') { setPlaying(false); k.seek(k.t + 1 / fps); }
+      else if (e.key === 'ArrowLeft') { setPlaying(false); k.seek(k.at - 1 / fps); }
+      else if (e.key === 'ArrowRight') { setPlaying(false); k.seek(k.at + 1 / fps); }
       else return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -86,7 +87,7 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
         <div className="stage peek-stage" style={{ aspectRatio: `${w} / ${h}`, width: `min(100cqw, calc(100cqh * ${w / h}))` }}>
           {still ? <img src={src} alt="" draggable={false} /> : (
             <video ref={el} src={src} playsInline preload="auto" style={m.type === 'audio' ? { display: 'none' } : undefined}
-              onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} onEnded={() => setPlaying(false)} />
+              onTimeUpdate={(e) => setAt(e.currentTarget.currentTime)} onEnded={() => setPlaying(false)} />
           )}
           {m.type === 'audio' && (
             <div className="peek-audio">
@@ -96,25 +97,25 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
         </div>
       </div>
       {!still && (
-        <input ref={scrubRef} className="peek-scrub" type="range" min={0} max={dur} step={1 / fps} value={t} aria-label="Position"
-          style={{ '--p': `${dur ? (t / dur) * 100 : 0}%` }}
+        <input ref={scrubRef} className="peek-scrub" type="range" min={0} max={dur} step={1 / fps} value={at} aria-label={t('clip.position')}
+          style={{ '--p': `${dur ? (at / dur) * 100 : 0}%` }}
           onChange={(e) => seek(Number(e.target.value))} />
       )}
       <div className="transport">
         <span className="tc peek-name" title={m.name}>
-          {still ? <b>{m.name}</b> : <><b ref={tcRef}>{formatTime(t)}</b><span> / {formatTime(dur)}</span></>}
+          {still ? <b>{m.name}</b> : <><b ref={tcRef}>{formatTime(at)}</b><span> / {formatTime(dur)}</span></>}
         </span>
         <div className="transport-btns">
           {!still && (
-            <button className="play-btn" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause (Space)' : 'Play (Space)'} title="Space">
+            <button className="play-btn" onClick={() => setPlaying((p) => !p)} aria-label={playing ? t('preview.pause_space') : t('preview.play_space')} title={t('media-peek.space')}>
               {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
             </button>
           )}
         </div>
         <span className="tc-spacer peek-actions">
           {!still && <PreviewVolume />}
-          <button className="btn btn-primary btn-sm" onClick={() => onAdd(m)} title="Add to the timeline at the playhead"><Plus size={14} /> Add</button>
-          <button className="icon-btn" onClick={onClose} aria-label="Back to the project (Esc)" title="Back to the project (Esc)"><X size={16} /></button>
+          <button className="btn btn-primary btn-sm" onClick={() => onAdd(m)} title={t('media-peek.add_to_the_timeline_at_the_playhead')}><Plus size={14} /> {t('media-peek.add')}</button>
+          <button className="icon-btn" onClick={onClose} aria-label={t('media-peek.back_to_the_project_esc')} title={t('media-peek.back_to_the_project_esc')}><X size={16} /></button>
         </span>
       </div>
     </div>

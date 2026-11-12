@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, Check, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, Settings, Square, Undo2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, CircleAlert, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, SlidersHorizontal, Square, Undo2, X } from 'lucide-react';
 import { runAgent } from "../runAgent.js";
 import { graphicEdits } from '../../graphics/graphicEdits.js';
 import { makeAgentCtx } from "../agentCtx.js";
@@ -16,13 +16,17 @@ import VideoAttachments from './VideoAttachments.jsx';
 import { MAX_CHAT_VIDEOS, isVideoFile, videoMessagePart } from '../videoAttachments.js';
 import { MAX_CHAT_IMAGES, imageMessageParts } from '../imageAttachments.js';
 import { webSourceUrl } from "../../../../shared/webSource.mjs";
+import { t, tn, rich, formatNumber } from '../../../i18n/index.js';
 
-// Quick actions on the empty state, grouped by what they do; each sends its text as-is.
+// Quick actions on the empty state, grouped by what they do; each sends its text as-is. The text is
+// the user's message to the model, so it stays English; only the group label is panel text.
+const BRAND = 'CraftAI';
+const SDK_AGENTS = { 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' };
 const ACTIONS = [
-  { icon: Scissors, group: 'Cut', text: 'Remove the silences' },
-  { icon: Captions, group: 'Captions', text: 'Add automatic captions' },
-  { icon: MessageCircle, group: 'Ask', text: 'What is said in this video?' },
-  { icon: RectangleVertical, group: 'Format', text: 'Make it vertical 9:16' },
+  { icon: Scissors, group: t('pilot.cut'), text: 'Remove the silences' },
+  { icon: Captions, group: t('edit-plan-card.captions'), text: 'Add automatic captions' },
+  { icon: MessageCircle, group: t('pilot.ask'), text: 'What is said in this video?' },
+  { icon: RectangleVertical, group: t('home.format'), text: 'Make it vertical 9:16' },
 ];
 
 // Tiny formatter: paragraphs, bold, lists and safe source links.
@@ -129,16 +133,16 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const videos = [...new Map([...(target.videos || []), ...(result.videos || [])].map(video => [video.id, video])).values()];
     saveChat({ ...current, sessions: current.sessions.map(s => s.id === sessionId ? { ...s, images: images.slice(0, MAX_CHAT_IMAGES), videos: videos.slice(0, MAX_CHAT_VIDEOS) } : s) });
     if (current.activeSessionId === sessionId) setImageError([...(result.errors || []).map(error => `${error.name ? error.name + ': ' : ''}${error.error}`),
-      ...(images.length > MAX_CHAT_IMAGES ? ['Only six images fit in a message. Additional images were not attached.'] : []),
-      ...(videos.length > MAX_CHAT_VIDEOS ? ['Only three reference videos fit in a message. Additional videos were not attached.'] : [])].join('\n'));
+      ...(images.length > MAX_CHAT_IMAGES ? [t('pilot.only_six_images_fit_in_a_message')] : []),
+      ...(videos.length > MAX_CHAT_VIDEOS ? [t('pilot.only_three_reference_videos_fit')] : [])].join('\n'));
   };
   const attachVideos = async files => {
     if (importingImages.current) return;
     importingImages.current = true; setImagesLoading(true); setImageError('');
     const sessionId = chatRef.current.activeSessionId;
     try {
-      if (!window.api.agentAttachVideos) throw Error('Restart ClipCraft to enable reference videos.');
-      if (files.length > MAX_CHAT_VIDEOS) throw Error('Attach up to three reference videos per message.');
+      if (!window.api.agentAttachVideos) throw Error(t('pilot.restart_to_enable_reference_videos'));
+      if (files.length > MAX_CHAT_VIDEOS) throw Error(t('pilot.attach_up_to_three_reference_videos'));
       mergeAttachments(sessionId, await window.api.agentAttachVideos(files));
     } catch (error) { if (isCurrent() && chatRef.current.activeSessionId === sessionId) setImageError(error.message); }
     finally { importingImages.current = false; if (isCurrent()) setImagesLoading(false); }
@@ -150,11 +154,11 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     try {
       let result;
       if (files) {
-        if (files.length > MAX_CHAT_IMAGES || files.some(file => file.size > 20 * 1024 * 1024)) throw Error('Attach up to six images, up to 20 MB each.');
+        if (files.length > MAX_CHAT_IMAGES || files.some(file => file.size > 20 * 1024 * 1024)) throw Error(t('pilot.attach_up_to_six_images_20_mb_each'));
         const items = await Promise.all(files.map(async file => ({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })));
         result = await window.api.agentPasteImages(items);
       } else {
-        if (!window.api.agentAttachImages) throw Error('Restart ClipCraft to enable image attachments.');
+        if (!window.api.agentAttachImages) throw Error(t('pilot.restart_to_enable_image_attachments'));
         result = await window.api.agentAttachImages();
       }
       if (!isCurrent()) return;
@@ -163,7 +167,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       if (!target) return;
       const merged = [...new Map([...target.images, ...(result.images || [])].map(image => [image.id, image])).values()];
       saveChat({ ...current, sessions: current.sessions.map(s => s.id === sessionId ? { ...s, images: merged.slice(0, MAX_CHAT_IMAGES) } : s) });
-      if (current.activeSessionId === sessionId) setImageError([...(result.errors || []).map(error => `${error.name ? error.name + ': ' : ''}${error.error}`), ...(merged.length > MAX_CHAT_IMAGES ? ['Only six images fit in a message. Additional images were not attached.'] : [])].join('\n'));
+      if (current.activeSessionId === sessionId) setImageError([...(result.errors || []).map(error => `${error.name ? error.name + ': ' : ''}${error.error}`), ...(merged.length > MAX_CHAT_IMAGES ? [t('pilot.only_six_images_fit_in_a_message')] : [])].join('\n'));
     } catch (error) { if (isCurrent() && chatRef.current.activeSessionId === sessionId) setImageError(error.message); }
     finally { importingImages.current = false; if (isCurrent()) { setImagesLoading(false);requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true })); } }
   };
@@ -181,8 +185,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
 
   const emptyTimeline = !getProject().videoClips.length && !getProject().textClips.length && !getProject().audioClips.length && !getProject().overlayClips?.length;
   const suggestions = docked && emptyTimeline ? [
-    { icon: Scissors, group: 'First cut', text: 'Assemble a first cut using my imported media.' },
-    { icon: MessageCircle, group: 'Explore', text: 'Review my imported media and suggest a video structure.' },
+    { icon: Scissors, group: t('pilot.first_cut'), text: 'Assemble a first cut using my imported media.' },
+    { icon: MessageCircle, group: t('pilot.explore'), text: 'Review my imported media and suggest a video structure.' },
   ] : ACTIONS;
 
   const refreshConfig = useCallback(async () => {
@@ -193,10 +197,10 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const status = sdk ? await window.api.aiSdkStatus({ provider: s.provider, executablePath: s.executablePaths?.[s.provider] || '' }) : null;
     if (generation !== configRequest.current) return;
     setConfig({ ready: sdk ? status.ok && status.authenticated !== false : s.provider === 'ollama' || !!s.keys[s.provider],
-      provider: s.provider, model: modelId || (sdk ? `${{ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' }[s.provider]} · CLI default` : ''),
+      provider: s.provider, model: modelId || (sdk ? t('pilot.agent_cli_default', { agent: SDK_AGENTS[s.provider] }) : ''),
       modelId, executablePath: s.executablePaths?.[s.provider] || '',
       reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
-      error: sdk ? status.error || (status.authenticated === false ? `Sign in with ${status.loginCommand}.` : '') : '', sdk });
+      error: sdk ? status.error || (status.authenticated === false ? t('pilot.sign_in_with_command', { command: status.loginCommand }) : '') : '', sdk });
   }, []);
   useEffect(() => {
     refreshConfig();
@@ -242,7 +246,8 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
 
   useEffect(() => {
     if (!open) return;
-    const timer = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100);
+    // Never take focus away from an open modal dialog (Settings, Export, About).
+    const timer = setTimeout(() => { if (!document.querySelector('[role="dialog"][aria-modal="true"]')) inputRef.current?.focus({ preventScroll: true }); }, 100);
     return () => clearTimeout(timer);
   }, [open]);
 
@@ -260,7 +265,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const activeRender=messages.at(-1)?.steps?.find(step=>step.status==='running'&&step.activity?.render);
   const runningStep = messages.at(-1)?.steps?.find(step => step.status === 'running');
   useEffect(() => {
-    onRunStateChange?.(busy ? { runKey, requestId: activeRequest.current, label: runningStep?.label || 'Preparing the next step…', stopping, onStop: stopRequest } : null);
+    onRunStateChange?.(busy ? { runKey, requestId: activeRequest.current, label: runningStep?.label || t('pilot.preparing_the_next_step'), stopping, onStop: stopRequest } : null);
   }, [busy, stopping, runningStep?.label]);
   // Timeline spotlight and trail (App's agentFocus, docs/agents/agent-editing.md): the running step's
   // targets and the finished changes of this turn. Keyed on step ids, apart from the strip effect above.
@@ -277,18 +282,19 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const startTurn = async (item, queued = false, preserveComposer = false) => {
     const msg = item.text.trim();
     // Claim synchronously: two Enter presses cannot start concurrent requests.
+    if (!externalRef.current?.holder) externalRef.current?.yieldEdit?.(); // an idle outside agent's open edit ends here, so this request can begin its own
     if (!msg || activeRequest.current || preparingRequest.current || modelSaving || !config?.ready || !isCurrent() || externalRef.current?.holder) return;
     preparingRequest.current = true;setPreparing(true);
     followLatest.current=true;setAwayFromLatest(false);
     let attached, contextPart;
     try {
       if (item.images?.length) {
-        if (!window.api.agentValidateImages) throw Error('Restart ClipCraft to enable image attachments.');
+        if (!window.api.agentValidateImages) throw Error(t('pilot.restart_to_enable_image_attachments'));
         const validation = await window.api.agentValidateImages(item.images.map(image => image.id));
         if (validation?.error) throw Error(validation.error);
       }
       if (item.videos?.length) {
-        if (!window.api.agentValidateVideos) throw Error('Restart ClipCraft to enable reference videos.');
+        if (!window.api.agentValidateVideos) throw Error(t('pilot.restart_to_enable_reference_videos'));
         const validation = await window.api.agentValidateVideos(item.videos.map(video => video.id));
         if (validation?.error) throw Error(validation.error);
       }
@@ -354,7 +360,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         contents.current.splice(conversationStart);
         if (result.operations?.length || contextPart || item.images?.length || plan) contents.current.push({ role: 'user', parts: [{ text: `Host recovery checkpoint: request stopped. Original request: ${msg}${plan}\n${contextPart ? contextPart + '\n' : ''}Operation outcomes: ${JSON.stringify(result.operations)}\nCompleted edits remain. Read live project state before continuing.` }, ...imageMessageParts(item.images)] });
       }
-      updateLast((last) => ({ ...last, pending: false, steps: last.steps.map(step => step.status === 'running' ? { ...step, status: 'error', detail: result.canceled ? 'Stopped.' : 'Finished.' } : step), text: result.canceled ? 'Stopped.' : result.text || 'Done.', changed: !!ownsUndo, undoRevision, ...(result.tokenUsage ? { tokenUsage: result.tokenUsage } : {}) }), contents.current);
+      updateLast((last) => ({ ...last, pending: false, steps: last.steps.map(step => step.status === 'running' ? { ...step, status: 'error', detail: result.canceled ? t('pilot.stopped_message') : t('pilot.finished') } : step), text: result.canceled ? t('pilot.stopped_message') : result.text || t('pilot.done'), stopped: !!result.canceled, changed: !!ownsUndo, undoRevision, ...(result.tokenUsage ? { tokenUsage: result.tokenUsage } : {}) }), contents.current);
     }
     // Stop, provider errors and manual editing all require explicit queue resume.
     if (result.error || result.canceled || canceled.current) updateSession({ queuePaused: true });
@@ -382,11 +388,11 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   // same activity rows CraftAI shows. Reads before an edit join the reply that follows.
   useEffect(() => external?.subscribe?.((event) => {
     if (!isCurrent() || !['edit-start', 'tool', 'edit-end', 'agent-released'].includes(event.type)) return;
-    const client = event.client || 'External agent', current = chatRef.current;
+    const client = event.client || t('pilot.external_agent'), current = chatRef.current;
     let target = current.sessions.find((s) => s.external === client), sessions = current.sessions, activeSessionId = current.activeSessionId;
     if (!target) {
       if (event.type !== 'edit-start' && event.type !== 'tool') return;
-      target = { ...newChatSession(), title: `${client} (external agent)`, external: client };
+      target = { ...newChatSession(), title: t('pilot.client_external_agent', { client }), external: client };
       sessions = [...sessions, target];
     }
     let messages = target.messages;
@@ -404,14 +410,14 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
       }
     } else if (open && (event.type === 'agent-released' || event.reason !== 'read')) {
       const changed = !!event.changed;
-      const text = event.type === 'agent-released' ? 'Disconnected.'
-        : event.reason === 'validated' ? changed ? 'Edit complete and validated.' : 'Checked. Nothing changed.'
-        : event.reason === 'interrupted' ? 'Interrupted: the project was changed in ClipCraft. Changes made before that were kept.'
-        : event.reason === 'canceled' ? 'Stopped by the agent.'
-        : event.reason === 'released' ? changed ? 'Disconnected. Changes were kept but not validated.' : 'Disconnected.'
-        : changed ? 'Changes kept; the agent moved on without validating them.' : 'Done.';
+      const text = event.type === 'agent-released' ? t('pilot.disconnected')
+        : event.reason === 'validated' ? changed ? t('pilot.edit_complete_and_validated') : t('pilot.checked_nothing_changed')
+        : event.reason === 'interrupted' ? t('pilot.interrupted_the_project_was_changed')
+        : event.reason === 'canceled' ? t('pilot.stopped_by_the_agent')
+        : event.reason === 'released' ? changed ? t('pilot.disconnected_changes_kept_not_validated') : t('pilot.disconnected')
+        : changed ? t('pilot.changes_kept_agent_moved_on') : t('pilot.done');
       messages = messages.map((m, i) => i !== messages.length - 1 ? m : { ...m, pending: false, text,
-        steps: m.steps.map((s) => s.status === 'running' ? { ...s, status: 'error', detail: 'Interrupted.' } : s),
+        steps: m.steps.map((s) => s.status === 'running' ? { ...s, status: 'error', detail: t('pilot.interrupted') } : s),
         changed, undoRevision: changed ? projectRevision(getProject()) : null });
     } else return;
     sessions = sessions.map((s) => s.id === target.id ? { ...s, messages } : s);
@@ -451,46 +457,37 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   return (
     <div className={`pilot-shell ${open ? 'is-open' : ''} ${docked ? 'is-docked' : ''}`}>
       {open && (
-        <section id="craft-ai-panel" className="pilot-panel pilot2" aria-label="CraftAI assistant"
+        <section id="craft-ai-panel" className="pilot-panel pilot2" aria-label={t('pilot.craftai_assistant')}
           onDragOver={event => { if (![...event.dataTransfer.types].includes('Files')) return;event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect = 'copy';setImageDrag(true);onAttachmentDrag?.(); }}
           onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setImageDrag(false); }}
           onDrop={event => { if (!event.dataTransfer.files.length) return;event.preventDefault();event.stopPropagation();setImageDrag(false);onAttachmentDrag?.();attachFiles([...event.dataTransfer.files]); }}>
           <header className="pilot-head">
-            <CraftModelPicker config={config} disabled={busy || preparing} onSavingChange={setModelSaving} onSaved={(s) => {
-              configRequest.current++;
-              const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
-              setConfig((previous) => ({ ...previous, modelId,
-                model: modelId || ({ 'codex-sdk': 'Codex · CLI default', 'claude-agent-sdk': 'Claude · CLI default', 'opencode-sdk': 'OpenCode · CLI default' }[s.provider] || ''),
-                reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
-              }));
-            }} />
-            <button className="icon-btn" onClick={newChat} disabled={busy || preparing || imagesLoading || (!messages.length && !input.trim() && !session.timelineAttachments?.length && !session.videos?.length && !session.images.length && !session.queue.length)} aria-label="New chat" title="New chat"><MessageSquarePlus size={16} /></button>
-            <button className="icon-btn" onClick={onOpenSettings} aria-label="AI settings" title="AI settings"><Settings size={16} /></button>
-            {!docked && <button className="btn btn-sm" onClick={onExpand} title="Expand to Agent mode">Expand</button>}
-            {!docked && <button className="icon-btn" onClick={closePanel} aria-label="Close assistant"><X size={16} /></button>}
+            <span className="pilot-mark" aria-hidden="true"><Zap size={13} /></span>
+            <div className="pilot-session-picker">
+              <Dropdown ariaLabel={t('pilot.chat_sessions')} value={chat.activeSessionId} disabled={busy || preparing || imagesLoading}
+                options={[...chat.sessions].reverse().map((s) => ({ value: s.id, label: s.queue.length ? tn('pilot.session_title_queued', s.queue.length, { title: s.title }) : s.title }))}
+                onChange={selectSession} />
+            </div>
+            <button className="icon-btn" onClick={newChat} disabled={busy || preparing || imagesLoading || (!messages.length && !input.trim() && !session.timelineAttachments?.length && !session.videos?.length && !session.images.length && !session.queue.length)} aria-label={t('pilot.new_chat')} title={t('pilot.new_chat')}><MessageSquarePlus size={16} /></button>
+            <button className="icon-btn" onClick={onOpenSettings} aria-label={t('pilot.ai_settings')} title={t('pilot.ai_settings')}><SlidersHorizontal size={16} /></button>
+            {!docked && <button className="btn btn-sm" onClick={onExpand} title={t('pilot.expand_to_agent_mode')}>{t('pilot.expand')}</button>}
+            {!docked && <button className="icon-btn" onClick={closePanel} aria-label={t('pilot.close_assistant')}><X size={16} /></button>}
           </header>
-
-          <div className="pilot-session-picker">
-            <span className="pilot-section-label">Conversation</span>
-            <Dropdown ariaLabel="Chat sessions" value={chat.activeSessionId} disabled={busy || preparing || imagesLoading}
-              options={[...chat.sessions].reverse().map((s) => ({ value: s.id, label: s.title + (s.queue.length ? ` · ${s.queue.length} queued` : '') }))}
-              onChange={selectSession} />
-          </div>
 
           <div className="pilot-list" ref={listRef} onScroll={event=>{const e=event.currentTarget;followLatest.current=e.scrollHeight-e.scrollTop-e.clientHeight<80;setAwayFromLatest(!followLatest.current);}}>
             {config && !config.ready && !session.external && (
               <div className="pilot-callout">
-                <b>Connect an AI first</b>
-                <p>{config.error || 'Choose an installed Codex or Claude agent, a local Ollama model, or an API provider in Settings.'}</p>
-                <button className="btn btn-primary btn-sm" onClick={onOpenSettings}>Open Settings</button>
+                <b>{t('pilot.connect_an_ai_first')}</b>
+                <p>{config.error || t('pilot.choose_an_installed_agent_or_provider')}</p>
+                <button className="btn btn-primary btn-sm" onClick={onOpenSettings}>{t('pilot.open_settings')}</button>
               </div>
             )}
             {!messages.length && (
               <div className="pilot-welcome">
                 <div className="pilot-logo"><Zap size={22} /></div>
-                <h3>{docked && emptyTimeline ? 'What will you create?' : 'What should we edit?'}</h3>
-                <p>{docked ? (!getProject().media.length && emptyTimeline ? 'Import your footage, then describe the video you want to make.' : emptyTimeline ? 'Your media is ready. Describe the story, style, and length you want.' : 'Describe a change, or attach clips and a time range to focus the edit.') : 'Ask in your own words. I can cut silences, add captions, write titles, change speed or format, apply filters and more.'}</p>
-                {docked && <button className="btn btn-primary" onClick={onImport}>Import media</button>}
+                <h3>{docked && emptyTimeline ? t('pilot.what_will_you_create') : t('pilot.what_should_we_edit')}</h3>
+                <p>{docked ? (!getProject().media.length && emptyTimeline ? t('pilot.import_your_footage_then_describe') : emptyTimeline ? t('pilot.your_media_is_ready_describe_the_story') : t('pilot.describe_a_change_or_attach_clips')) : t('pilot.ask_in_your_own_words')}</p>
+                {docked && <button className="btn btn-primary" onClick={onImport}>{t('home.import_media')}</button>}
                 <div className="pilot-actions">
                   {suggestions.map((a) => {
                     const Icon = a.icon;
@@ -510,21 +507,21 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                   <div className="bubble" dir="auto">
                     <ImageAttachments images={m.images} />
                     <VideoAttachments videos={m.videos} />
-                    {m.timelineAttachments?.length > 0 && <div className="pilot-message-context" aria-label="Attached timeline context">{m.timelineAttachments.map(a => <span key={a.id}><Clock3 size={12} />{timelineAttachmentLabel(a)}</span>)}</div>}
+                    {m.timelineAttachments?.length > 0 && <div className="pilot-message-context" aria-label={t('pilot.attached_timeline_context')}>{m.timelineAttachments.map(a => <span key={a.id}><Clock3 size={12} />{timelineAttachmentLabel(a)}</span>)}</div>}
                     {m.text}
                   </div>
                 ) : (
                   <div className="reply">
-                    <div className="pilot-reply-heading">{session.external ? <Bot size={13} /> : <Zap size={13} />}<b>{session.external || 'CraftAI'}</b><span>{m.pending ? 'Working' : m.error ? 'Needs attention' : m.text === 'Stopped.' ? 'Stopped' : 'Complete'}</span></div>
+                    <div className="pilot-reply-heading">{session.external ? <Bot size={13} /> : <Zap size={13} />}<b>{session.external || BRAND}</b>{(() => { const state = m.pending ? 'working' : m.error ? 'attention' : m.stopped || m.text === 'Stopped.' || m.text === t('pilot.stopped_message') ? 'stopped' : 'complete'; const Icon = state === 'working' ? Loader2 : state === 'attention' ? CircleAlert : state === 'stopped' ? Square : Check; return <span className={`pilot-status ${state}`}><Icon size={11} className={state === 'working' ? 'spin' : undefined} />{state === 'working' ? t('pilot.working') : state === 'attention' ? t('pilot.needs_attention') : state === 'stopped' ? t('pilot.stopped') : t('pilot.complete')}</span>; })()}</div>
                     {m.steps?.length > 0 && (
                       <details className="pilot-turn-activity" open={!docked || m.pending || m.steps.some(s => s.status === 'error') ? true : undefined}>
-                        <summary>{m.pending ? <Loader2 size={12} className="spin" /> : <Check size={12} />}{m.pending ? 'Work in progress' : 'View activity'}<span>{m.steps.length} {m.steps.length === 1 ? 'step' : 'steps'}</span></summary>
+                        <summary>{m.pending ? <Loader2 size={12} className="spin" /> : <Check size={12} />}{m.pending ? t('pilot.work_in_progress') : t('pilot.view_activity')}<span>{tn('pilot.steps', m.steps.length)}</span></summary>
                         <ul className="pilot-steps">
                           {m.steps.map((s) => <ToolActivityRow key={s.id} step={s} onCancel={busy&&s.status==='running'&&s.activity?.render?stopRequest:undefined} />)}
                         </ul>
                       </details>
                     )}
-                    {m.pending && !m.steps?.length && <div className="pilot-thinking"><Loader2 size={14} className="spin" /> Thinking…</div>}
+                    {m.pending && !m.steps?.length && <div className="pilot-thinking"><Loader2 size={14} className="spin" /> {t('pilot.thinking')}</div>}
                     {(() => {
                       const plan = m.steps?.findLast?.(s => s.name === 'propose_edit_plan' && s.status === 'done' && s.activity?.plan);
                       if (!plan) return null;
@@ -536,30 +533,30 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                     })()}
                     {m.text && <div className="bubble" dir="auto"><Rich text={m.text} /></div>}
                     {m.tokenUsage?.inputTokens > 0 && (
-                      <small className="pilot-context-usage" title="Reported by the provider for this reply. Cached input is re-read context, billed at a reduced rate.">
-                        {m.tokenUsage.inputTokens.toLocaleString()} input tokens{m.tokenUsage.cachedInputTokens ? ` (${m.tokenUsage.cachedInputTokens.toLocaleString()} cached)` : ''} · {(m.tokenUsage.outputTokens || 0).toLocaleString()} output
+                      <small className="pilot-context-usage" title={t('pilot.reported_by_the_provider_for_this_reply_ca')}>
+                        {t(m.tokenUsage.cachedInputTokens ? 'pilot.token_usage_with_cached' : 'pilot.token_usage', { input: formatNumber(m.tokenUsage.inputTokens), cached: formatNumber(m.tokenUsage.cachedInputTokens || 0), output: formatNumber(m.tokenUsage.outputTokens || 0) })}
                       </small>
                     )}
                     {!m.tokenUsage && m.contextUsage?.requests > 0 && (
-                      <small className="pilot-context-usage" title="Rough input estimate across this reply's model requests, including conversation and tool schemas. Provider tokenization and SDK overhead can differ.">
-                        ~{Math.ceil(m.contextUsage.inputChars / 4).toLocaleString()} estimated input tokens · {m.contextUsage.requests} {m.contextUsage.requests === 1 ? 'request' : 'requests'}
+                      <small className="pilot-context-usage" title={t('pilot.rough_input_estimate_across_this_replys_mo')}>
+                        {tn('pilot.estimated_input_tokens_requests', m.contextUsage.requests, { tokens: formatNumber(Math.ceil(m.contextUsage.inputChars / 4)) })}
                       </small>
                     )}
                     {m.error && (
                       <div className="pilot-error" role="alert">
-                        <b>{/project changed|no longer owns|editing session/i.test(m.error.error || '') || ['edit_interrupted','edit_timeout','edit_limit'].includes(m.error.code) ? 'Editing was interrupted' : 'Request needs attention'}</b>
+                        <b>{/project changed|no longer owns|editing session/i.test(m.error.error || '') || ['edit_interrupted','edit_timeout','edit_limit'].includes(m.error.code) ? t('pilot.editing_was_interrupted') : t('pilot.request_needs_attention')}</b>
                         <p>{m.error.error}</p>
                         <div className="pilot-error-actions">
-                          {m.error.suggestModel && <button className="btn btn-sm btn-primary" onClick={onOpenSettings}>Change model in Settings</button>}
-                          {m.error.link && <button className="btn btn-sm" onClick={() => window.api.openHelp(m.error.link)}>{m.error.linkLabel || 'Open the Google page'}</button>}
+                          {m.error.suggestModel && <button className="btn btn-sm btn-primary" onClick={onOpenSettings}>{t('pilot.change_model_in_settings')}</button>}
+                          {m.error.link && <button className="btn btn-sm" onClick={() => window.api.openHelp(m.error.link)}>{m.error.linkLabel || t('pilot.open_the_google_page')}</button>}
                           {!m.error.link && !m.error.suggestModel && (/project changed|no longer owns|editing session/i.test(m.error.error || '') || ['edit_interrupted','edit_timeout','edit_limit'].includes(m.error.code)
-                            ? <button className="btn btn-sm" disabled={busy || modelSaving || !config?.ready} onClick={() => startTurn({ text: 'Continue the interrupted request from the current timeline. Read the current project, reuse completed media and edits, and finish the remaining work.', timelineAttachments: [] }, false, true)}>Continue from current timeline</button>
-                            : <button className="btn btn-sm" onClick={onOpenSettings}>Open Settings</button>)}
+                            ? <button className="btn btn-sm" disabled={busy || modelSaving || !config?.ready} onClick={() => startTurn({ text: 'Continue the interrupted request from the current timeline. Read the current project, reuse completed media and edits, and finish the remaining work.', timelineAttachments: [] }, false, true)}>{t('pilot.continue_from_current_timeline')}</button>
+                            : <button className="btn btn-sm" onClick={onOpenSettings}>{t('pilot.open_settings')}</button>)}
                         </div>
                       </div>
                     )}
                     {m.changed && m.undoRevision === projectRevision(getProject()) && !m.pending && (
-                      <button className="pilot-undo" onClick={() => dispatch({ type: 'undo' })}><Undo2 size={13} /> Undo these changes</button>
+                      <button className="pilot-undo" onClick={() => dispatch({ type: 'undo' })}><Undo2 size={13} /> {t('pilot.undo_these_changes')}</button>
                     )}
                   </div>
                 )}
@@ -567,49 +564,66 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
             ))}
           </div>
 
-          {awayFromLatest&&<div className="pilot-latest"><button type="button" onClick={()=>{followLatest.current=true;setAwayFromLatest(false);if(listRef.current)listRef.current.scrollTop=listRef.current.scrollHeight;}}><ArrowDown size={13} />{busy ? 'Latest activity' : 'Latest messages'}</button></div>}
+          {awayFromLatest&&<div className="pilot-latest"><button type="button" onClick={()=>{followLatest.current=true;setAwayFromLatest(false);if(listRef.current)listRef.current.scrollTop=listRef.current.scrollHeight;}}><ArrowDown size={13} />{busy ? t('pilot.latest_activity') : t('pilot.latest_messages')}</button></div>}
           <div className="pilot-composer">
-            {holder && <div className="pilot-external" role="status"><span><b>{holder} is working</b> CraftAI is paused until the outside agent finishes.</span><button type="button" className="btn btn-sm" onClick={external.onDisconnect}>Disconnect</button></div>}
-            {!holder && session.external && <div className="pilot-external" role="status"><span>What <b>{session.external}</b> did in ClipCraft. Start a new chat to use CraftAI.</span><button type="button" className="btn btn-sm" onClick={newChat}><MessageSquarePlus size={13} /> New chat</button></div>}
-            {busy && <div className="pilot-run-status"><Loader2 size={14} className="spin" /><span role="status">{stopping ? 'Stopping…' : runningStep?.label || 'Working on your request…'}</span><button className="pilot-text-btn" onClick={stopRequest} disabled={stopping} aria-label="Stop"><Square size={11} />{stopping ? 'Stopping' : 'Stop'}</button></div>}
+            {holder && <div className="pilot-external" role="status"><span>{rich('pilot.holder_is_working_craftai_is_paused', { holder })}</span><button type="button" className="btn btn-sm" onClick={external.onDisconnect}>{t('external.disconnect')}</button></div>}
+            {!holder && session.external && <div className="pilot-external" role="status"><span>{rich('pilot.what_the_agent_did_start_a_new_chat', { agent: session.external })}</span><button type="button" className="btn btn-sm" onClick={newChat}><MessageSquarePlus size={13} /> {t('pilot.new_chat')}</button></div>}
+            {busy && <div className="pilot-run-status"><Loader2 size={14} className="spin" /><span role="status">{stopping ? t('pilot.stopping_ellipsis') : runningStep?.label || t('pilot.working_on_your_request')}</span><button className="pilot-text-btn" onClick={stopRequest} disabled={stopping} aria-label={t('pilot.stop')}><Square size={11} />{stopping ? t('pilot.stopping') : t('pilot.stop')}</button></div>}
             <MessageQueue key={session.id} items={session.queue} paused={session.queuePaused} busy={busy} disabled={!config?.ready || modelSaving || stopping || preparing}
               onPause={() => updateSession({ queuePaused: true })}
               onResume={() => { setContextError('');updateSession({ queuePaused: false }); }}
               onChange={(id, patch) => { updateSession(s => ({ queue: s.queue.map(item => item.id === id ? { ...item, ...patch } : item) }));setContextError(''); }}
               onRemove={id => { updateSession(s => ({ queue: s.queue.filter(item => item.id !== id) }));setContextError(''); }} />
-            {docked && <div className="pilot-context-actions"><button className="pilot-text-btn" onClick={onAttachSelection} disabled={!hasSelection}><Clock3 size={13} />Attach selected clips</button><span className="muted" title="Shift-drag the timeline ruler to attach a range">or Shift-drag a range</span></div>}
-            {session.timelineAttachments?.length > 0 && (
-              <div className="pilot-timeline-context" aria-label="Timeline context for next message">
-                <span className="pilot-context-hint">Attached timeline · refreshed when sent</span>
-                {session.timelineAttachments.map(a => <div key={a.id} className="pilot-context-chip">
-                  <button type="button" className="pilot-context-jump" onClick={() => app.seekTimeline?.(a.start_sec)} title="Jump to this timeline part"><Clock3 size={13} /><span>{timelineAttachmentLabel(a)}</span></button>
-                  <button type="button" className="icon-btn sm" aria-label={`Remove ${timelineAttachmentLabel(a)} from context`} onClick={() => { updateSession({ timelineAttachments: session.timelineAttachments.filter(item => item.id !== a.id) });setContextError(''); }}><X size={12} /></button>
-                </div>)}
-              </div>
-            )}
             {contextError && <p className="pilot-context-error" role="alert">{contextError}</p>}
-            {session.videos?.length > 0 && <div className="pilot-image-attachments"><VideoAttachments videos={session.videos} onRemove={id => { updateSession({ videos: session.videos.filter(video => video.id !== id) });setContextError(''); }} /></div>}
-            {session.images.length > 0 && <div className="pilot-image-attachments"><ImageAttachments images={session.images} onRemove={id => { updateSession({ images: session.images.filter(image => image.id !== id) });setContextError(''); }} /></div>}
-            {imagesLoading && <div className="pilot-image-loading" role="status"><Loader2 size={13} className="spin" />Preparing attachments…</div>}
-            {imageError && <div className="pilot-image-error" role="alert"><span>{imageError}</span><button type="button" className="icon-btn sm" aria-label="Dismiss attachment error" onClick={() => setImageError('')}><X size={12} /></button></div>}
-            <div className="pilot-input">
-              <button type="button" className="pilot-attach-button" aria-label="Attach images or reference videos" title="Attach images or reference videos · or drop/paste here · up to 6 images and 3 videos" disabled={imagesLoading || preparing || (session.images.length >= MAX_CHAT_IMAGES && (session.videos?.length || 0) >= MAX_CHAT_VIDEOS)} onClick={() => attachFiles(null)}><Paperclip size={17} /></button>
+            <div className={`pilot-input${session.timelineAttachments?.length || session.videos?.length || session.images.length || imagesLoading || imageError ? ' has-attachments' : ''}`}>
+              {(session.timelineAttachments?.length > 0 || session.videos?.length > 0 || session.images.length > 0 || imagesLoading || imageError) && (
+                <div className="pilot-attachments">
+                  {session.timelineAttachments?.length > 0 && (
+                    <div className="pilot-timeline-context" aria-label={t('pilot.timeline_context_for_next_message')} title={t('pilot.attached_timeline_refreshed_when_sent')}>
+                      {session.timelineAttachments.map(a => <div key={a.id} className="pilot-context-chip">
+                  <button type="button" className="pilot-context-jump" onClick={() => app.seekTimeline?.(a.start_sec)} title={t('pilot.jump_to_this_timeline_part')}><Clock3 size={13} /><span>{timelineAttachmentLabel(a)}</span></button>
+                  <button type="button" className="icon-btn sm" aria-label={t('pilot.remove_from_context', { label: timelineAttachmentLabel(a) })} onClick={() => { updateSession({ timelineAttachments: session.timelineAttachments.filter(item => item.id !== a.id) });setContextError(''); }}><X size={12} /></button>
+                </div>)}
+                    </div>
+                  )}
+                  {session.videos?.length > 0 && <div className="pilot-image-attachments"><VideoAttachments videos={session.videos} onRemove={id => { updateSession({ videos: session.videos.filter(video => video.id !== id) });setContextError(''); }} /></div>}
+                  {session.images.length > 0 && <div className="pilot-image-attachments"><ImageAttachments images={session.images} onRemove={id => { updateSession({ images: session.images.filter(image => image.id !== id) });setContextError(''); }} /></div>}
+                  {imagesLoading && <div className="pilot-image-loading" role="status"><Loader2 size={13} className="spin" />{t('pilot.preparing_attachments')}</div>}
+                  {imageError && <div className="pilot-image-error" role="alert"><span>{imageError}</span><button type="button" className="icon-btn sm" aria-label={t('pilot.dismiss_attachment_error')} onClick={() => setImageError('')}><X size={12} /></button></div>}
+                </div>
+              )}
               <textarea ref={inputRef} rows={2} value={input} dir="auto"
-                placeholder={busy || session.queue.length ? 'Add the next instruction…' : 'Describe your next edit…'}
+                placeholder={busy || session.queue.length ? t('pilot.add_the_next_instruction') : t('pilot.describe_your_next_edit')}
                 onPaste={event => { const files = [...event.clipboardData.files];if (files.length) { event.preventDefault();attachFiles(files); } }}
-                onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready || !!holder || !!session.external} aria-label="Message" />
-              <button className="send" onClick={() => send(chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId).draft)} disabled={modelSaving || preparing || imagesLoading || (!input.trim() && !session.images.length && !session.videos?.length) || !config?.ready || !!holder || !!session.external} aria-label={busy || session.queue.length ? 'Queue message' : 'Send'} title={busy || session.queue.length ? 'Add to queue (Enter)' : 'Send (Enter)'}>{preparing ? <Loader2 size={17} className="spin" /> : busy || session.queue.length ? <ListPlus size={17} /> : <ArrowUp size={17} />}</button>
+                onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} disabled={!config?.ready || !!holder || !!session.external} aria-label={t('pilot.message')} />
+              <div className="pilot-input-bar">
+                <div className="pilot-input-tools">
+                  <button type="button" className="pilot-attach-button" aria-label={t('pilot.attach_images_or_reference_videos')} title={t('pilot.attach_images_or_reference_videos_or_drop')} disabled={imagesLoading || preparing || (session.images.length >= MAX_CHAT_IMAGES && (session.videos?.length || 0) >= MAX_CHAT_VIDEOS)} onClick={() => attachFiles(null)}><Paperclip size={17} /></button>
+                  {docked && <button type="button" className="icon-btn sm pilot-attach-selection" onClick={onAttachSelection} disabled={!hasSelection} aria-label={t('pilot.attach_selected_clips')} title={`${t('pilot.attach_selected_clips')} · ${t('pilot.shift_drag_the_timeline_ruler_to_attach_a')}`}><Clock3 size={14} /></button>}
+                </div>
+                <div className="pilot-input-end">
+                  <CraftModelPicker config={config} disabled={busy || preparing} onSavingChange={setModelSaving} onSaved={(s) => {
+              configRequest.current++;
+              const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
+              setConfig((previous) => ({ ...previous, modelId,
+                model: modelId || (SDK_AGENTS[s.provider] ? t('pilot.agent_cli_default', { agent: SDK_AGENTS[s.provider] }) : ''),
+                reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
+              }));
+            }} />
+                  <button className="send" onClick={() => send(chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId).draft)} disabled={modelSaving || preparing || imagesLoading || (!input.trim() && !session.images.length && !session.videos?.length) || !config?.ready || !!holder || !!session.external} aria-label={busy || session.queue.length ? t('pilot.queue_message') : t('pilot.send')} title={busy || session.queue.length ? t('pilot.add_to_queue_enter') : t('pilot.send_enter')}>{preparing ? <Loader2 size={17} className="spin" /> : busy || session.queue.length ? <ListPlus size={17} /> : <ArrowUp size={17} />}</button>
+                </div>
+              </div>
             </div>
-            <div className="pilot-composer-hint"><span>{busy || session.queue.length ? 'Enter to queue · Shift+Enter for a new line' : 'Enter to send · Shift+Enter for a new line'}</span><span>Edits can be undone</span></div>
+            <div className="pilot-composer-hint"><span>{busy || session.queue.length ? t('pilot.enter_to_queue_shift_enter_new_line') : t('pilot.enter_to_send_shift_enter_new_line')}</span></div>
           </div>
-          {imageDrag && <div className="pilot-image-drop" aria-hidden="true"><ImagePlus size={28} /><b>Drop reference images</b><span>Up to 6 images · 20 MB each</span></div>}
+          {imageDrag && <div className="pilot-image-drop" aria-hidden="true"><ImagePlus size={28} /><b>{t('pilot.drop_reference_images')}</b><span>{t('pilot.up_to_6_images_20_mb_each')}</span></div>}
         </section>
       )}
 
       <button hidden={docked} ref={launcherRef} className="pilot-fab" onClick={() => setOpen(true)} aria-expanded={open}
-        aria-controls={open ? 'craft-ai-panel' : undefined} aria-hidden={open || undefined} tabIndex={open ? -1 : 0} aria-label="CraftAI assistant">
+        aria-controls={open ? 'craft-ai-panel' : undefined} aria-hidden={open || undefined} tabIndex={open ? -1 : 0} aria-label={t('pilot.craftai_assistant')}>
         <span className="pilot-fab-icon"><Zap size={17} /></span>
-        <span>{activeRender?`${activeRender.name==='review_section'?'Review':'Export'} ${Math.floor((activeRender.activity.render.progress||0)*100)}%`:busy?'CraftAI working…':'CraftAI'}</span>
+        <span>{activeRender?t(activeRender.name==='review_section'?'pilot.review_percent':'pilot.export_percent',{percent:Math.floor((activeRender.activity.render.progress||0)*100)}):busy?t('pilot.craftai_working'):BRAND}</span>
       </button>
     </div>
   );

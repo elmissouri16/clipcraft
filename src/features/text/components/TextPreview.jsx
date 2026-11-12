@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { drawTextClip } from "../render.js";
 import { fontsReady } from '../fonts.js';
+import { t } from '../../../i18n/index.js';
 
 // Small canvas thumbnail of a text style, rendered with the real text renderer.
 // Static by default (end of the in-animation, second word highlighted); animates while hovered.
@@ -20,7 +21,7 @@ export default function TextPreview({ style, text, hover, width = 150, height = 
     cv.height = Math.round(height * dpr);
     const ctx = cv.getContext('2d');
     // The standard preview line across the template set (Hamza's pick, 2026-11-01).
-    const sample = text || style.text || 'Made with ClipCraft';
+    const sample = text || style.text || t('text.made_with_clipcraft');
     const clip = {
       ...style,
       text: sample,

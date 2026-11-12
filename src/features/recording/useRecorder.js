@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from '../../i18n/index.js';
 
 // Microphone voice-over. start(at) remembers where on the timeline the recording began; when it stops the
 // audio is converted by the main process and onDone(mediaItem, at) is called.
@@ -49,7 +50,7 @@ export function useRecorder(onDone) {
       mrRef.current = mr;
       setRec({ t0: Date.now() });
     } catch (e) {
-      setError(`Microphone unavailable: ${e.message}`);
+      setError(t('record.microphone_unavailable', { error: e.message }));
     }
   }, []);
 

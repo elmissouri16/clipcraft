@@ -16,6 +16,8 @@ import ContextMenu from "../../../components/ui/ContextMenu.jsx";
 import { useClockTime } from '../../preview/useClockTime.js';
 import { timelineViewport, intersectsViewport, filmstripTiles, timelineClipBox, boxesIntersect } from '../viewport.js';
 import { stackRows, visibleRowRange } from '../rows.js';
+import { t, tn } from '../../../i18n/index.js';
+import { catalogName, effectLabel, filterLabel } from '../../../i18n/catalog.js';
 
 // Agent spotlight and trail on the timeline (App's agentFocus, docs/agents/agent-editing.md): the clips
 // and ranges the running tool works on (live) and the clips this request changed (done), as Maps/Sets the
@@ -49,11 +51,11 @@ const rowToLayer = (lane, row, count) => (ABOVE[lane] ? count - 1 - row : row);
 
 // Overlapping clips on a free track get their own row (first row that is free at the clip's start).
 const LANES = [
-  { id: 'effect', name: 'Effects', icon: Sparkles, noMagnet: true },
-  { id: 'text', name: 'Text', icon: Type },
-  { id: 'overlay', name: 'Overlay', icon: Layers },
-  { id: 'video', name: 'Main', icon: Film, main: true },
-  { id: 'audio', name: 'Audio', icon: Music },
+  { id: 'effect', name: t('library.effects'), icon: Sparkles, noMagnet: true },
+  { id: 'text', name: t('tts.text'), icon: Type },
+  { id: 'overlay', name: t('timeline.overlay'), icon: Layers },
+  { id: 'video', name: t('timeline.main'), icon: Film, main: true },
+  { id: 'audio', name: t('edit-plan-card.audio'), icon: Music },
 ];
 
 export default function Timeline({
@@ -124,16 +126,16 @@ export default function Timeline({
     const name = layerName(project, m.track, m.layer);
     const audioCap = m.track === 'audio' || m.track === 'video' || m.track === 'overlay';
     const items = [
-      { label: st.locked ? `Unlock layer — ${name}` : `Lock layer — ${name}`, icon: st.locked ? LockOpen : Lock,
+      { label: t(st.locked ? 'timeline.menu_unlock_layer' : 'timeline.menu_lock_layer', { name }), icon: st.locked ? LockOpen : Lock,
         onClick: () => setLayer(m.track, m.layer, { locked: !st.locked }) },
-      { label: st.hidden ? `Show layer — ${name}` : `Hide layer — ${name}`, icon: st.hidden ? Eye : EyeOff,
+      { label: t(st.hidden ? 'timeline.menu_show_layer' : 'timeline.menu_hide_layer', { name }), icon: st.hidden ? Eye : EyeOff,
         onClick: () => setLayer(m.track, m.layer, { hidden: !st.hidden }) },
     ];
     if (audioCap) {
       items.push(
-        { label: st.muted ? `Unmute layer — ${name}` : `Mute layer — ${name}`, icon: st.muted ? Volume2 : VolumeX,
+        { label: t(st.muted ? 'timeline.menu_unmute_layer' : 'timeline.menu_mute_layer', { name }), icon: st.muted ? Volume2 : VolumeX,
           onClick: () => setLayer(m.track, m.layer, { muted: !st.muted }) },
-        { label: st.solo ? `Solo off — ${name}` : `Solo layer — ${name}`, icon: AudioLines,
+        { label: t(st.solo ? 'timeline.menu_solo_off' : 'timeline.menu_solo_layer', { name }), icon: AudioLines,
           onClick: () => setLayer(m.track, m.layer, { solo: !st.solo }) },
       );
     }
@@ -142,12 +144,12 @@ export default function Timeline({
       ? project.videoClips.filter((c) => !c.gap).length
       : project[LAYERED[m.track]].filter((c) => layerOf(c) === m.layer).length;
     items.push('sep',
-      { label: `Duplicate layer — ${name}`, icon: CopyPlus,
+      { label: t('timeline.menu_duplicate_layer', { name }), icon: CopyPlus,
         onClick: () => dispatch({ type: 'duplicateLayer', track: m.track, layer: m.layer, newIds: Array.from({ length: srcCount }, () => uid()) }) },
-      { label: 'Rename layer…', icon: Pencil,
+      { label: t('timeline.rename_layer'), icon: Pencil,
         onClick: () => setRenaming({ track: m.track, layer: m.layer, draft: layerName(project, m.track, m.layer) }) },
       'sep',
-      { label: 'Delete layer', icon: Trash2, disabled: st.locked, hint: 'Unlock the layer first',
+      { label: t('timeline.delete_layer'), icon: Trash2, disabled: st.locked, hint: t('timeline.unlock_the_layer_first'),
         onClick: () => dispatch({ type: 'deleteLayer', track: m.track, layer: m.layer }) });
     return items;
   };
@@ -189,33 +191,33 @@ export default function Timeline({
       <div key={layer} className={`tl-layer-row ${st.locked ? 'locked' : ''} ${st.hidden ? 'is-hidden' : ''} ${dragHere ? 'drop-hint' : ''}`}
         style={{ height: rowOf(lane), ...(LAYERED[lane] ? {position:'absolute',top:displayRow*rowOf(lane),width:'100%'} : {}) }}>
         {LAYERED[lane] && layerCount(project, lane) > 1 ? (
-          <span className="tl-grip" role="button" aria-label={`Reorder layer ${name}`} title="Drag to reorder this layer"
+          <span className="tl-grip" role="button" aria-label={t('timeline.reorder_layer_name', { name })} title={t('timeline.drag_to_reorder_this_layer')}
             onPointerDown={(e) => startLayerDrag(e, lane, layer)}><GripVertical size={11} /></span>
         ) : (
           <span className="tl-grip-slot" aria-hidden="true" />
         )}
         <span className="tl-layer-name" title={name}>{name}</span>
         <button className={`tl-ctl ${st.locked ? 'on lock' : ''}`} aria-pressed={st.locked}
-          aria-label={`${st.locked ? 'Unlock' : 'Lock'} layer ${name}`} title={st.locked ? 'Unlock layer' : 'Lock layer: clips cannot be selected or edited'}
+          aria-label={t(st.locked ? 'timeline.unlock_layer_name' : 'timeline.lock_layer_name', { name })} title={st.locked ? t('timeline.unlock_layer') : t('timeline.lock_layer_clips_cannot_be_edited')}
           onClick={() => setLayer(lane, layer, { locked: !st.locked })}>{st.locked ? <Lock size={12} /> : <LockOpen size={12} />}</button>
         <button className={`tl-ctl ${st.hidden ? 'on hide' : ''}`} aria-pressed={st.hidden}
-          aria-label={`${st.hidden ? 'Show' : 'Hide'} layer ${name}`} title={st.hidden ? 'Show layer' : 'Hide layer: left out of the preview and the export'}
+          aria-label={t(st.hidden ? 'timeline.show_layer_name' : 'timeline.hide_layer_name', { name })} title={st.hidden ? t('timeline.show_layer') : t('timeline.hide_layer_left_out_of_preview_export')}
           onClick={() => setLayer(lane, layer, { hidden: !st.hidden })}>{st.hidden ? <EyeOff size={12} /> : <Eye size={12} />}</button>
         {audioCap ? (
           <button className={`tl-ctl ${st.muted ? 'on mute' : ''}`} aria-pressed={st.muted}
-            aria-label={`${st.muted ? 'Unmute' : 'Mute'} layer ${name}`} title={st.muted ? 'Unmute layer' : 'Mute layer'}
+            aria-label={t(st.muted ? 'timeline.unmute_layer_name' : 'timeline.mute_layer_name', { name })} title={st.muted ? t('timeline.unmute_layer') : t('timeline.mute_layer')}
             onClick={() => setLayer(lane, layer, { muted: !st.muted })}>{st.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}</button>
         ) : (
           <span className="tl-ctl-slot" aria-hidden="true" />
         )}
         {audioCap ? (
           <button className={`tl-ctl solo ${st.solo ? 'on' : ''}`} aria-pressed={st.solo}
-            aria-label={`Solo layer ${name}`} title={st.solo ? 'Solo off: every layer sounds again' : 'Solo: only soloed layers sound'}
+            aria-label={t('timeline.solo_layer_name', { name })} title={st.solo ? t('timeline.solo_off_every_layer_sounds_again') : t('timeline.solo_only_soloed_layers_sound')}
             onClick={() => setLayer(lane, layer, { solo: !st.solo })}>S</button>
         ) : (
           <span className="tl-ctl-slot" aria-hidden="true" />
         )}
-        <button className="tl-ctl" aria-label={`Layer menu for ${name}`} title="Layer menu"
+        <button className="tl-ctl" aria-label={t('timeline.layer_menu_for_name', { name })} title={t('timeline.layer_menu')}
           onClick={(e) => setLayerMenu({ x: e.clientX, y: e.clientY, track: lane, layer })}><MoreHorizontal size={12} /></button>
       </div>
     );
@@ -229,7 +231,7 @@ export default function Timeline({
   // The inline rename field (a plain render helper, not a component, so the input keeps focus
   // across keystrokes). Enter/blur commits, Esc cancels; an empty name restores the default.
   const layerRenameInput = (track, layer) => (
-    <input className="layer-rename" autoFocus value={renaming.draft} aria-label="Layer name"
+    <input className="layer-rename" autoFocus value={renaming.draft} aria-label={t('timeline.layer_name')}
       onPointerDown={(e) => e.stopPropagation()}
       onChange={(e) => setRenaming({ ...renaming, draft: e.target.value })}
       onKeyDown={(e) => {
@@ -457,7 +459,7 @@ export default function Timeline({
     if (!span) return;
     const edgeTime = mode === 'left' ? span.start : span.start + span.len;
     onSeek(edgeTime);
-    setTrimHud({ x: playheadX(edgeTime, pps, HEADER), text: `${formatTime(edgeTime)} · ${span.len.toFixed(2)}s` });
+    setTrimHud({ x: playheadX(edgeTime, pps, HEADER), text: t('timeline.time_and_length', { time: formatTime(edgeTime), seconds: span.len.toFixed(2) }) });
     if (projectRef.current.snapping) {
       const targets = edgeTimes(clip.id).filter((e) => Math.abs(e - span.start) > 1e-9 && Math.abs(e - (span.start + span.len)) > 1e-9);
       const hit = targets.find((e) => Math.abs(e - edgeTime) * pps < 2);
@@ -530,9 +532,9 @@ export default function Timeline({
   };
   const attachRange = () => onAttachContext?.({ kind: 'range', ...contextRange });
   const rangeMenuItems = contextRange ? [
-    { label: 'Add selected range to CraftAI', icon: MessageSquarePlus, onClick: attachRange },
-    { label: 'Clear selected range', icon: X, onClick: () => setContextRange(null) },
-  ] : [{ label: 'Select range for CraftAI', icon: ScanLine, onClick: () => setRangeTool(true) }];
+    { label: t('timeline.add_selected_range_to_craftai'), icon: MessageSquarePlus, onClick: attachRange },
+    { label: t('timeline.clear_selected_range'), icon: X, onClick: () => setContextRange(null) },
+  ] : [{ label: t('timeline.select_range_for_craftai'), icon: ScanLine, onClick: () => setRangeTool(true) }];
 
   // Box selection: drag on an empty part of the tracks to select every clip the box touches (Ctrl / Shift keeps
   // the clips already selected). A plain click still moves the playhead and clears the selection.
@@ -808,8 +810,8 @@ export default function Timeline({
 
   const visibleMarkers = markers.filter(m=>intersectsViewport(m.time,0,viewport));
   const markerEls = visibleMarkers.map((m) => (
-    <button key={m.id} className="marker" style={{ left: m.time * pps }} aria-label={`Marker at ${formatTime(m.time)}`}
-      title={`Marker ${formatTime(m.time)}${m.label ? ` · ${m.label}` : ''}\nClick to jump here, double-click to remove`}
+    <button key={m.id} className="marker" style={{ left: m.time * pps }} aria-label={t('timeline.marker_at_time', { time: formatTime(m.time) })}
+      title={t(m.label ? 'timeline.marker_title_labeled' : 'timeline.marker_title', { time: formatTime(m.time), label: m.label })}
       onPointerDown={(e) => e.stopPropagation()} onClick={() => onSeek(m.time)}
       onDoubleClick={() => dispatch({ type: 'removeMarker', id: m.id })}>
       <Flag size={11} fill="currentColor" />
@@ -843,13 +845,13 @@ export default function Timeline({
   const lookTags = (track, clip) => {
     const tags = [];
     if (clip.filter && clip.filter !== 'none') {
-      const name = filterName(clip.filter);
-      tags.push({ key: 'filter', label: name, title: `Filter: ${name}`, onRemove: () => dispatch({ type: 'update', track, id: clip.id, patch: { filter: 'none' } }) });
+      const name = filterLabel(clip.filter, filterName(clip.filter));
+      tags.push({ key: 'filter', label: name, title: t('timeline.filter_name', { name }), onRemove: () => dispatch({ type: 'update', track, id: clip.id, patch: { filter: 'none' } }) });
     }
     for (const id of clip.effects || []) {
       const e = effectInfo(id);
-      const name = e?.name || id;
-      tags.push({ key: `fx:${id}`, kind: 'fx', label: name, icon: e?.icon, title: `Effect: ${name} — click to adjust`,
+      const name = effectLabel(e, id);
+      tags.push({ key: `fx:${id}`, kind: 'fx', label: name, icon: e?.icon, title: t('timeline.effect_name_click_to_adjust', { name }),
         onOpen: () => onSelect({ track: 'effect', id: `${track}|${clip.id}|${id}` }),
         onRemove: () => dispatch({ type: 'update', track, id: clip.id, patch: { effects: (clip.effects || []).filter((x) => x !== id) } }) });
     }
@@ -881,8 +883,9 @@ export default function Timeline({
   const rowHeight = (id) => folded[id] ? 32 : (stacks[id] ? Math.max(46, HEAD_TITLE_H + stacks[id].count * rowOf(id) + 8) : undefined);
   const laneCount = id => id === 'effect' ? fxObjects.length : (project[LAYERED[id]] || []).length;
   const foldedSummary = id => {
-    const count = laneCount(id), noun = id === 'effect' ? 'effect' : 'clip', layers = layerCount(project, id);
-    return `${count} ${noun}${count === 1 ? '' : 's'}${LAYERED[id] ? ` · ${layers} ${layers === 1 ? 'layer' : 'layers'}` : ''} · folded`;
+    const items = tn(id === 'effect' ? 'timeline.n_effects' : 'timeline.n_clips', laneCount(id));
+    if (!LAYERED[id]) return t('timeline.folded_summary', { items });
+    return t('timeline.folded_summary_layers', { items, layers: tn('timeline.n_layers', layerCount(project, id)) });
   };
   // The layers of a lane as faint bands; an empty one can be removed. Locked bands get the
   // diagonal treatment, hidden ones fade back — the state is readable without the header.
@@ -897,7 +900,7 @@ export default function Timeline({
       return (
         <div key={`band-${row}`} className={`layer-band ${st.locked ? 'locked' : ''} ${st.hidden ? 'is-hidden' : ''}`} style={{ top: HEAD_TITLE_H + row * rowOf(lane), height: rowOf(lane) - 4 }}>
           {empty && count > 1 && (
-            <button className="layer-remove" title="Remove this empty layer" aria-label="Remove this empty layer"
+            <button className="layer-remove" title={t('timeline.remove_this_empty_layer')} aria-label={t('timeline.remove_this_empty_layer')}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => { e.stopPropagation(); dispatch({ type: 'removeLayer', track: lane, layer }); }}><X size={11} /></button>
           )}
@@ -919,7 +922,7 @@ export default function Timeline({
         return (
           <Clip {...common} key={o.key} track={o.free ? 'effect free' : 'effect bound'} selTrack="effect" clip={o.free ? o.clip : { id: o.key }}
             start={o.start} length={o.duration} row={stacks.effect.rows[o.key]}
-            icon={<span className="clip-emoji">{e?.icon || '✨'}</span>} label={o.free ? e?.name || o.fx : `${e?.name || o.fx} · on clip`}
+            icon={<span className="clip-emoji">{e?.icon || '✨'}</span>} label={o.free ? effectLabel(e, o.fx) : t('timeline.name_on_clip', { name: effectLabel(e, o.fx) })}
             onDown={o.free ? (ev, mode) => startFreeDrag(ev, 'effect', o.clip, mode)
               : (ev, mode) => { ev.stopPropagation(); if (mode === 'move') onSelect({ track: 'effect', id: o.key }); }} />
         );
@@ -952,7 +955,7 @@ export default function Timeline({
             if (l.clip.gap) {
               return (
                 <Clip {...common} key={l.clip.id} track="video gap" selTrack="video" clip={l.clip} start={l.start} length={l.end - l.start}
-                  label="Gap" onDown={(e, mode) => startVideoDrag(e, l.clip, mode)} />
+                  label={t('inspector.gap')} onDown={(e, mode) => startVideoDrag(e, l.clip, mode)} />
               );
             }
             const m = mediaById[l.clip.mediaId];
@@ -969,14 +972,15 @@ export default function Timeline({
           {layout.filter((l) => l.trans > 0 && visible(l.clip.id, l.start, l.trans)).map((l) => {
             const sel = selection?.track === 'transition' && selection.id === l.clip.id;
             const def = TRANSITIONS.find((t) => t.id === l.clip.transition.type);
+            const name = def ? catalogName('transition', def) : l.clip.transition.type;
             return (
               <button key={'tr' + l.clip.id} className={`tr-pill ${sel ? 'on' : ''}`}
                 style={{ left: l.start * pps, width: Math.max(22, l.trans * pps) }}
-                title={`Transition: ${def?.name || l.clip.transition.type} · ${l.trans.toFixed(1)}s\nClick to edit it`}
-                aria-label={`Transition: ${def?.name || l.clip.transition.type}`} aria-pressed={sel}
+                title={t('timeline.transition_title', { name, seconds: l.trans.toFixed(1) })}
+                aria-label={t('timeline.transition_name', { name })} aria-pressed={sel}
                 onPointerDown={(e) => { e.stopPropagation(); onSelect({ track: 'transition', id: l.clip.id }); }}>
                 <ArrowLeftRight size={11} />
-                {l.trans * pps >= 74 && <span className="tr-pill-name">{def?.name || l.clip.transition.type}</span>}
+                {l.trans * pps >= 74 && <span className="tr-pill-name">{name}</span>}
               </button>
             );
           })}
@@ -1010,77 +1014,77 @@ export default function Timeline({
   const canSplit = !!(selection || underPlayhead);
 
   return (
-    <section className={`timeline${agentRun ? ' is-agent-working' : ''}${agentFocus?.fading ? ' agent-fading' : ''}`} aria-label="Timeline" aria-description={agentRun ? 'CraftAI is working. Manual edits interrupt its editing session.' : undefined}>
+    <section className={`timeline${agentRun ? ' is-agent-working' : ''}${agentFocus?.fading ? ' agent-fading' : ''}`} aria-label={t('clip.timeline')} aria-description={agentRun ? t('timeline.craftai_is_working_manual_edits_interrupt') : undefined}>
       <div className="tl-main">
       {overlay}
       <div className="tl-toolbar">
         <div className="tool-group">
-          <div className="seg-icons" role="group" aria-label="Timeline tool">
-            <IconBtn label={withShortcut('Select', 'selectTool')} active={tool === 'select'} onClick={() => setTool('select')}><MousePointer2 size={16} /></IconBtn>
-            <IconBtn label={withShortcut('Razor: click a clip to cut it', 'razorTool')} active={tool === 'razor'} onClick={() => setTool('razor')}><Slice size={16} /></IconBtn>
+          <div className="seg-icons" role="group" aria-label={t('timeline.timeline_tool')}>
+            <IconBtn label={withShortcut(t('timeline.select'), 'selectTool')} active={tool === 'select'} onClick={() => setTool('select')}><MousePointer2 size={16} /></IconBtn>
+            <IconBtn label={withShortcut(t('timeline.razor_click_a_clip_to_cut_it'), 'razorTool')} active={tool === 'razor'} onClick={() => setTool('razor')}><Slice size={16} /></IconBtn>
           </div>
-          <div className="tool-cluster" role="group" aria-label="History">
-            <IconBtn label={withShortcut('Undo', 'undo')} onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo}><Undo2 size={16} /></IconBtn>
-            <IconBtn label={withShortcut('Redo', 'redo')} onClick={() => dispatch({ type: 'redo' })} disabled={!canRedo}><Redo2 size={16} /></IconBtn>
+          <div className="tool-cluster" role="group" aria-label={t('timeline.history')}>
+            <IconBtn label={withShortcut(t('keymap.undo'), 'undo')} onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo}><Undo2 size={16} /></IconBtn>
+            <IconBtn label={withShortcut(t('keymap.redo'), 'redo')} onClick={() => dispatch({ type: 'redo' })} disabled={!canRedo}><Redo2 size={16} /></IconBtn>
           </div>
-          <div className="tool-cluster" role="group" aria-label="Edit">
-            <IconBtn label={withShortcut('Split at playhead', 'split')} onClick={onSplit} disabled={!canSplit}><Scissors size={16} /></IconBtn>
-            <IconBtn label={withShortcut('Delete left of playhead', 'trimLeft')} onClick={() => onTrimSide('left')} disabled={!canTrim('left')}><ArrowLeftToLine size={16} /></IconBtn>
-            <IconBtn label={withShortcut('Delete right of playhead', 'trimRight')} onClick={() => onTrimSide('right')} disabled={!canTrim('right')}><ArrowRightToLine size={16} /></IconBtn>
-            <IconBtn label={withShortcut('Duplicate', 'duplicate')} onClick={onDuplicate} disabled={!selection}><Copy size={16} /></IconBtn>
-            <IconBtn label={withShortcut('Delete', 'delete')} onClick={onDelete} disabled={!selection}><Trash2 size={16} /></IconBtn>
+          <div className="tool-cluster" role="group" aria-label={t('timeline.edit')}>
+            <IconBtn label={withShortcut(t('keymap.split_at_playhead'), 'split')} onClick={onSplit} disabled={!canSplit}><Scissors size={16} /></IconBtn>
+            <IconBtn label={withShortcut(t('keymap.delete_left_of_playhead'), 'trimLeft')} onClick={() => onTrimSide('left')} disabled={!canTrim('left')}><ArrowLeftToLine size={16} /></IconBtn>
+            <IconBtn label={withShortcut(t('keymap.delete_right_of_playhead'), 'trimRight')} onClick={() => onTrimSide('right')} disabled={!canTrim('right')}><ArrowRightToLine size={16} /></IconBtn>
+            <IconBtn label={withShortcut(t('keymap.duplicate'), 'duplicate')} onClick={onDuplicate} disabled={!selection}><Copy size={16} /></IconBtn>
+            <IconBtn label={withShortcut(t('keymap.delete'), 'delete')} onClick={onDelete} disabled={!selection}><Trash2 size={16} /></IconBtn>
           </div>
           {(detachOk || linkMode) && (
-            <div className="tool-cluster" role="group" aria-label="Clip sound and link">
-              {detachOk && <IconBtn label="Detach audio: put the clip's sound on the Audio track, linked" onClick={onDetach}><AudioLines size={16} /></IconBtn>}
-              {linkMode === 'unlink' && <IconBtn label="Unlink audio and video" onClick={onLinkToggle}><Unlink size={16} /></IconBtn>}
-              {linkMode === 'link' && <IconBtn label="Link the selected video and audio clips" onClick={onLinkToggle}><Link2 size={16} /></IconBtn>}
+            <div className="tool-cluster" role="group" aria-label={t('timeline.clip_sound_and_link')}>
+              {detachOk && <IconBtn label={t('timeline.detach_audio_put_the_clips_sound_on_the_au')} onClick={onDetach}><AudioLines size={16} /></IconBtn>}
+              {linkMode === 'unlink' && <IconBtn label={t('timeline.unlink_audio_and_video')} onClick={onLinkToggle}><Unlink size={16} /></IconBtn>}
+              {linkMode === 'link' && <IconBtn label={t('timeline.link_the_selected_video_and_audio_clips')} onClick={onLinkToggle}><Link2 size={16} /></IconBtn>}
             </div>
           )}
-          <div className="tool-cluster" role="group" aria-label="Mark">
-            <IconBtn label={`${withShortcut('Marker at playhead', 'marker')}. Press again on a marker to remove it`} onClick={onMarker}><Flag size={16} /></IconBtn>
+          <div className="tool-cluster" role="group" aria-label={t('timeline.mark')}>
+            <IconBtn label={t('timeline.marker_press_again_to_remove', { label: withShortcut(t('keymap.marker_at_playhead'), 'marker') })} onClick={onMarker}><Flag size={16} /></IconBtn>
           </div>
-          {onAttachContext && <div className="tool-cluster" role="group" aria-label="Timeline context">
-            <IconBtn label="Select range for CraftAI (Shift-drag ruler)" active={rangeTool} onClick={() => setRangeTool(v => !v)}><ScanLine size={16} /></IconBtn>
-            <IconBtn label="Add selected range to CraftAI" disabled={!contextRange} onClick={attachRange}><MessageSquarePlus size={16} /></IconBtn>
+          {onAttachContext && <div className="tool-cluster" role="group" aria-label={t('timeline.timeline_context')}>
+            <IconBtn label={t('timeline.select_range_for_craftai_shift_drag_ruler')} active={rangeTool} onClick={() => setRangeTool(v => !v)}><ScanLine size={16} /></IconBtn>
+            <IconBtn label={t('timeline.add_selected_range_to_craftai')} disabled={!contextRange} onClick={attachRange}><MessageSquarePlus size={16} /></IconBtn>
           </div>}
         </div>
         <div className="tool-group">
-          <div className="tool-cluster" role="group" aria-label="Record and snap">
+          <div className="tool-cluster" role="group" aria-label={t('timeline.record_and_snap')}>
           {recorder.recording ? (
             <button className="rec-pill" onClick={onToggleRecord} aria-pressed="true"
-              title="Stop recording and place the voice-over on the timeline">
+              title={t('timeline.stop_recording_and_place_the_voice_over_on')}>
               <span className="rec-dot" aria-hidden="true" />
               <Square size={12} fill="currentColor" aria-hidden="true" />
-              <span className="rec-stop-label">Stop</span>
+              <span className="rec-stop-label">{t('pilot.stop')}</span>
               <span className="rec-time">{formatTime(recorder.seconds).slice(0, 5)}</span>
               <RecMeter analyserRef={recorder.analyserRef} />
             </button>
           ) : (
             <button className="rec-btn" onClick={onToggleRecord}
-              aria-pressed="false" title="Record a voice-over from the playhead">
+              aria-pressed="false" title={t('timeline.record_a_voice_over_from_the_playhead')}>
               <Mic size={15} />
             </button>
           )}
-          <IconBtn label={`Auto snapping: ${project.snapping ? 'ON' : 'OFF'}`} active={project.snapping}
+          <IconBtn label={t(project.snapping ? 'timeline.auto_snapping_on' : 'timeline.auto_snapping_off')} active={project.snapping}
             onClick={() => dispatch({ type: 'setProject', patch: { snapping: !project.snapping }, transient: true })}><Target size={16} /></IconBtn>
           </div>
           <span className="tl-time"><b>{formatTime(time)}</b> / {formatTime(duration)}</span>
-          <div className="tool-cluster" role="group" aria-label="View">
-            <IconBtn label="Fit the project in the timeline" onClick={fit}><StretchHorizontal size={16} /></IconBtn>
-            <IconBtn label="Zoom out (Ctrl + mouse wheel)" onClick={() => zoomTo(pps / 1.4)}><ZoomOut size={16} /></IconBtn>
-            <input className="zoom" type="range" min="2" max="300" value={pps} aria-label="Zoom timeline"
-              title="Ctrl + mouse wheel: zoom · Shift + mouse wheel: scroll" onChange={(e) => zoomTo(Number(e.target.value))} />
-            <IconBtn label="Zoom in (Ctrl + mouse wheel)" onClick={() => zoomTo(pps * 1.4)}><ZoomIn size={16} /></IconBtn>
+          <div className="tool-cluster" role="group" aria-label={t('timeline.view')}>
+            <IconBtn label={t('timeline.fit_the_project_in_the_timeline')} onClick={fit}><StretchHorizontal size={16} /></IconBtn>
+            <IconBtn label={t('timeline.zoom_out_ctrl_mouse_wheel')} onClick={() => zoomTo(pps / 1.4)}><ZoomOut size={16} /></IconBtn>
+            <input className="zoom" type="range" min="2" max="300" value={pps} aria-label={t('timeline.zoom_timeline')}
+              title={t('timeline.ctrl_mouse_wheel_zoom_shift_mouse_wheel_sc')} onChange={(e) => zoomTo(Number(e.target.value))} />
+            <IconBtn label={t('timeline.zoom_in_ctrl_mouse_wheel')} onClick={() => zoomTo(pps * 1.4)}><ZoomIn size={16} /></IconBtn>
           </div>
         </div>
       </div>
       {agentRun && <div className="tl-agent-status" data-phase={agentRun.stopping ? 'stopping' : !agentOwnsEdit ? 'interrupted' : agentHasChanges ? 'editing' : 'working'}>
         <Loader2 size={13} className="spin" aria-hidden="true" />
-        <strong role="status">{agentRun.stopping ? 'Agent stopping' : !agentOwnsEdit ? 'Agent interrupted' : agentHasChanges ? 'Agent editing' : 'Agent working'}</strong>
-        <span className="tl-agent-detail">{agentOwnsEdit ? agentRun.label : 'Your manual edit takes priority'}</span>
-        <button type="button" className="pilot-text-btn" onClick={onShowAgent}>View chat</button>
-        <button type="button" className="pilot-text-btn" onClick={agentRun.onStop} disabled={agentRun.stopping}>Stop</button>
+        <strong role="status">{t(agentRun.stopping ? 'timeline.agent_stopping' : !agentOwnsEdit ? 'timeline.agent_interrupted' : agentHasChanges ? 'timeline.agent_editing' : 'timeline.agent_working')}</strong>
+        <span className="tl-agent-detail">{agentOwnsEdit ? agentRun.label : t('timeline.your_manual_edit_takes_priority')}</span>
+        <button type="button" className="pilot-text-btn" onClick={onShowAgent}>{t('timeline.view_chat')}</button>
+        <button type="button" className="pilot-text-btn" onClick={agentRun.onStop} disabled={agentRun.stopping}>{t('pilot.stop')}</button>
       </div>}
       <div className={`tl-scroll ${tool === 'razor' ? 'razor' : ''}`} ref={scrollRef}
         onPointerDownCapture={() => { userScrollAt.current = performance.now(); }}
@@ -1097,9 +1101,9 @@ export default function Timeline({
           <div className={`tl-row ruler ${rangeTool ? 'context-selecting' : ''}`} onPointerDown={onAttachContext ? selectContextRange : scrub}>
             <div className="tl-head" />
             <div className="tl-ruler">
-              {rangeTool && <span className="tl-range-hint">Drag on the ruler to attach a range</span>}
-              {contextRange && <div className="tl-context-ruler" aria-label={`Selected range ${formatTime(contextRange.start_sec)} to ${formatTime(contextRange.end_sec)}`} style={{ left: contextRange.start_sec * pps, width: (contextRange.end_sec - contextRange.start_sec) * pps }} />}
-              {agentMarks.liveRanges.map((r, i) => <div key={`agent-ruler-${i}`} className="tl-agent-ruler" aria-label={`${agentMarks.agent}: ${agentMarks.liveTitle} ${formatTime(r.start)} to ${formatTime(r.end)}`} style={{ left: r.start * pps, width: Math.max(18, (r.end - r.start) * pps) }}>{(r.end - r.start) * pps > 80 ? agentMarks.liveTitle : ''}</div>)}
+              {rangeTool && <span className="tl-range-hint">{t('timeline.drag_on_the_ruler_to_attach_a_range')}</span>}
+              {contextRange && <div className="tl-context-ruler" aria-label={t('timeline.selected_range_start_to_end', { start: formatTime(contextRange.start_sec), end: formatTime(contextRange.end_sec) })} style={{ left: contextRange.start_sec * pps, width: (contextRange.end_sec - contextRange.start_sec) * pps }} />}
+              {agentMarks.liveRanges.map((r, i) => <div key={`agent-ruler-${i}`} className="tl-agent-ruler" aria-label={t('timeline.agent_range_start_to_end', { agent: agentMarks.agent, title: agentMarks.liveTitle, start: formatTime(r.start), end: formatTime(r.end) })} style={{ left: r.start * pps, width: Math.max(18, (r.end - r.start) * pps) }}>{(r.end - r.start) * pps > 80 ? agentMarks.liveTitle : ''}</div>)}
               {markerEls}
               {ticks.map((t) => (
                 <div key={t} className="tick" style={{ left: t * pps }}><span>{formatTime(t).slice(0, 5)}</span></div>
@@ -1119,19 +1123,19 @@ export default function Timeline({
                     {/* The title row shares the layer rows' control grid: cell 1 = add,
                         cell 2 (the eye column) = magnet, the rest stay empty slots. */}
                     {LAYERED[l.id] ? (l.id === 'text' && onAddText ? (
-                      <button className="layer-add" title="Add text at the playhead" aria-label="Add text at the playhead"
+                      <button className="layer-add" title={t('timeline.add_text_at_the_playhead')} aria-label={t('timeline.add_text_at_the_playhead')}
                         onClick={() => { unfold(l.id);onAddText({ text: 'Add text' }); }}><Plus size={13} /></button>
                     ) : (
-                      <button className="layer-add" title={`Add a ${l.name.toLowerCase()} layer`} aria-label={`Add a ${l.name} layer`}
+                      <button className="layer-add" title={t('timeline.add_a_lane_layer', { lane: l.name.toLowerCase() })} aria-label={t('timeline.add_a_lane_layer', { lane: l.name })}
                         onClick={() => { unfold(l.id);dispatch({ type: 'addLayer', track: l.id }); }}><Plus size={13} /></button>
                     )) : (
                       <span className="tl-ctl-slot" aria-hidden="true" />
                     )}
                     {!l.noMagnet ? <button className={`magnet-btn ${magnet[l.id] ? 'on' : ''}`} aria-pressed={!!magnet[l.id]}
-                      aria-label={`${l.name} magnet ${magnet[l.id] ? 'on' : 'off'}`}
-                      title={`${l.name} magnet: ${magnet[l.id] ? 'ON' : 'OFF'}\n${l.id === 'video'
-                        ? (magnet[l.id] ? 'Clips close up after a delete or trim' : 'Deleting or trimming leaves a gap')
-                        : (magnet[l.id] ? 'Delete and trim close the gap' : 'Free placement, nothing moves')}`}
+                      aria-label={t(magnet[l.id] ? 'timeline.lane_magnet_on' : 'timeline.lane_magnet_off', { lane: l.name })}
+                      title={t(l.id === 'video'
+                        ? (magnet[l.id] ? 'timeline.magnet_main_on' : 'timeline.magnet_main_off')
+                        : (magnet[l.id] ? 'timeline.magnet_free_on' : 'timeline.magnet_free_off'), { lane: l.name })}
                       onClick={() => dispatch({ type: 'setMagnet', track: l.id, on: !magnet[l.id] })}>
                       <Magnet size={13} />
                     </button> : (
@@ -1140,8 +1144,8 @@ export default function Timeline({
                     <span className="tl-ctl-slot" aria-hidden="true" />
                     <span className="tl-ctl-slot" aria-hidden="true" />
                     {!l.main ? <button type="button" className="tl-ctl tl-fold-toggle"
-                      aria-label={`${folded[l.id] ? 'Expand' : 'Collapse'} ${l.name} tracks`} aria-expanded={!folded[l.id]}
-                      title={`${folded[l.id] ? 'Expand' : 'Collapse'} ${l.name} tracks`}
+                      aria-label={t(folded[l.id] ? 'timeline.expand_lane_tracks' : 'timeline.collapse_lane_tracks', { lane: l.name })} aria-expanded={!folded[l.id]}
+                      title={t(folded[l.id] ? 'timeline.expand_lane_tracks' : 'timeline.collapse_lane_tracks', { lane: l.name })}
                       onClick={() => { setLayerMenu(null);setFolded(current => ({ ...current, [l.id]: !current[l.id] })); }}>
                       <ChevronRight size={13} className={folded[l.id] ? '' : 'expanded'} />
                     </button> : <span className="tl-ctl-slot" aria-hidden="true" />}
@@ -1152,11 +1156,11 @@ export default function Timeline({
                 </div>
                 <div className={laneClass(l.id)} data-lane={l.id} onPointerDown={folded[l.id] ? scrub : startBox}>
                   {folded[l.id] ? <button type="button" className="tl-folded-summary" onPointerDown={e => e.stopPropagation()} onClick={() => unfold(l.id)}
-                    aria-label={`Expand ${l.name} tracks`}>
+                    aria-label={t('timeline.expand_lane_tracks', { lane: l.name })}>
                     {foldedSummary(l.id)}
                   </button> : <>{layerBands(l.id)}{renderLane(l.id)}</>}
                   {l.main && empty && (
-                    <div className="lane-empty"><Film size={16} /> Drag media here to start editing</div>
+                    <div className="lane-empty"><Film size={16} /> {t('timeline.drag_media_here_to_start_editing')}</div>
                   )}
                 </div>
               </div>
@@ -1177,9 +1181,9 @@ export default function Timeline({
       </div>
       <AudioMeter active={playing} />
       {layerMenu && <ContextMenu x={layerMenu.x} y={layerMenu.y} items={layerMenuItems(layerMenu)}
-        onClose={() => setLayerMenu(null)} label="Layer menu" />}
+        onClose={() => setLayerMenu(null)} label={t('timeline.layer_menu')} />}
       {rangeMenu && <ContextMenu x={rangeMenu.x} y={rangeMenu.y} items={rangeMenuItems}
-        onClose={() => setRangeMenu(null)} label="Timeline context menu" />}
+        onClose={() => setRangeMenu(null)} label={t('timeline.timeline_context_menu')} />}
     </section>
   );
 }
@@ -1229,25 +1233,25 @@ function Clip({ pps, selection, track, selTrack, clip, start, length, label, ico
         // Ctrl / Shift + click adds the clip to the selection (or takes it out).
         if ((e.ctrlKey || e.shiftKey || e.metaKey) && onToggle) { e.stopPropagation(); onToggle(st, clip.id); return; }
         onDown(e, 'move');
-      }} title={clip.disabled ? `${label} (deactivated)` : label}
+      }} title={clip.disabled ? t('timeline.label_deactivated', { label }) : label}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu?.(e, st, clip); }}>
       {bg && <div className="clip-bg" style={bg} />}
       {children}
       {agent === 'live' && agentKey === agentMarks.liveFirstKey && <span className="agent-chip" aria-hidden="true">{agentMarks.agent} · {agentMarks.liveTitle}</span>}
-      {agent === 'done' && <span className="agent-mark" title={`Changed by ${agentMarks.agent}`} aria-hidden="true">✓</span>}
+      {agent === 'done' && <span className="agent-mark" title={t('timeline.changed_by_agent', { agent: agentMarks.agent })} aria-hidden="true">✓</span>}
       <div className="handle left" onPointerDown={(e) => e.button === 0 && onDown(e, 'left')} />
-      <span className="clip-label">{clip.slot && !clip.gap && <span className="rep-badge" title="Replaceable: people put their own video here when they use the template">⇄</span>}{icon}<bdi>{label}</bdi>
+      <span className="clip-label">{clip.slot && !clip.gap && <span className="rep-badge" title={t('timeline.replaceable_people_put_their_own_video_her')}>⇄</span>}{icon}<bdi>{label}</bdi>
       {tags?.length > 0 && (
         <span className="clip-tags">
-          {tags.map((t) => (
-            <span key={t.key} className={`clip-tag ${t.kind || ''} ${t.onOpen ? 'clickable' : ''}`} title={t.title}
-              role={t.onOpen ? 'button' : undefined} tabIndex={t.onOpen ? 0 : undefined}
-              onPointerDown={t.onOpen ? (e) => e.stopPropagation() : undefined}
-              onClick={t.onOpen ? (e) => { e.stopPropagation(); t.onOpen(); } : undefined}
-              onKeyDown={t.onOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); t.onOpen(); } } : undefined}>
-              {t.icon && <span className="clip-tag-icon" aria-hidden="true">{t.icon}</span>}{t.label}
-              <button type="button" aria-label={`Remove ${t.label}`} title={`Remove ${t.label}`}
-                onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); t.onRemove(); }}>×</button>
+          {tags.map((tag) => (
+            <span key={tag.key} className={`clip-tag ${tag.kind || ''} ${tag.onOpen ? 'clickable' : ''}`} title={tag.title}
+              role={tag.onOpen ? 'button' : undefined} tabIndex={tag.onOpen ? 0 : undefined}
+              onPointerDown={tag.onOpen ? (e) => e.stopPropagation() : undefined}
+              onClick={tag.onOpen ? (e) => { e.stopPropagation(); tag.onOpen(); } : undefined}
+              onKeyDown={tag.onOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); tag.onOpen(); } } : undefined}>
+              {tag.icon && <span className="clip-tag-icon" aria-hidden="true">{tag.icon}</span>}{tag.label}
+              <button type="button" aria-label={t('timeline.remove_name', { name: tag.label })} title={t('timeline.remove_name', { name: tag.label })}
+                onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); tag.onRemove(); }}>×</button>
             </span>
           ))}
         </span>
@@ -1266,12 +1270,12 @@ function ClipMotion({ clip, length, pps, selected, onKeyDrag }) {
   const times = selected ? keyTimes(clip).filter((t) => t >= -1e-6 && t <= length + 1e-6) : [];
   return (
     <>
-      {a.in && <div className="anim-band in" style={{ width: a.in.duration * pps }} title={`In: ${animById('in', a.in.type).name}`} />}
-      {a.out && <div className="anim-band out" style={{ width: a.out.duration * pps }} title={`Out: ${animById('out', a.out.type).name}`} />}
-      {a.combo && <div className="anim-band combo" title={`Combo: ${animById('combo', a.combo.type).name}`} />}
-      {times.map((t) => (
-        <span key={t} className="kf-dot" style={{ left: t * pps }} title="Keyframe · drag to move it, click to go to it"
-          onPointerDown={(e) => { e.stopPropagation(); onKeyDrag?.(e, t); }} />
+      {a.in && <div className="anim-band in" style={{ width: a.in.duration * pps }} title={t('timeline.in_name', { name: catalogName('animation', animById('in', a.in.type)) })} />}
+      {a.out && <div className="anim-band out" style={{ width: a.out.duration * pps }} title={t('timeline.out_name', { name: catalogName('animation', animById('out', a.out.type)) })} />}
+      {a.combo && <div className="anim-band combo" title={t('timeline.combo_name', { name: catalogName('animation', animById('combo', a.combo.type)) })} />}
+      {times.map((time) => (
+        <span key={time} className="kf-dot" style={{ left: time * pps }} title={t('timeline.keyframe_drag_to_move_it_click_to_go_to_it')}
+          onPointerDown={(e) => { e.stopPropagation(); onKeyDrag?.(e, time); }} />
       ))}
     </>
   );
@@ -1323,7 +1327,7 @@ function videoLabel(clip, m) {
   const tags = [];
   if ((clip.speed || 1) !== 1) tags.push(`${clip.speed}×`);
   // Effects are named badges on the clip (lookTags), not a count in the label.
-  if (clip.muted) tags.push('muted');
+  if (clip.muted) tags.push(t('timeline.muted'));
   return [m?.name ?? '?', ...tags].join(' · ');
 }
 

@@ -9,17 +9,47 @@ const fs = require('node:fs');
 const chatPath = (file) => `${String(file).replace(/\.json$/i, '')}.chat.json`;
 
 const mtime = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return -Infinity; } };
-// An embedded chat newer than the sidecar wins: an older ClipCraft (which saves the chat inside
-// the document) worked on the project after this version last wrote the sidecar. This version never
-// embeds a chat, so a document that holds one and is the newer file carries the latest conversations.
-const embeddedWins = (docFile, chatFile, docEmbedsChat) => docEmbedsChat && mtime(docFile) > mtime(chatFile);
+// The renderer's rule for a chat worth keeping (src/features/agent/chatSessions.js hasChatContent):
+// an older ClipCraft always writes `craftAI`, even for an empty default chat, so only content counts.
+const chatHasContent = (chat) => !!(chat && Array.isArray(chat.sessions) && chat.sessions.some((s) => s && (
+  s.messages?.length || (typeof s.draft === 'string' && s.draft.trim()) || s.timelineAttachments?.length || s.images?.length || s.videos?.length || s.queue?.length)));
+// The chat a document embeds, or null: a cheap text test first, the parse only for files that have one.
+function embeddedChat(documentText) {
+  if (!documentText || !/"craftAI"\s*:/.test(documentText)) return null;
+  try { const chat = JSON.parse(documentText)?.craftAI; return chat && typeof chat === 'object' ? chat : null; } catch { return null; }
+}
+// An embedded chat with content, newer than the sidecar, wins: an older ClipCraft (which saves the chat
+// inside the document) worked on the project after this version last wrote the sidecar. This version
+// never embeds a chat, so a document that holds one and is the newer file carries the latest
+// conversations. An empty embedded chat (the older app's default) never outranks a sidecar: that would
+// drop every conversation after a round trip through the older version.
+const embeddedWins = (docFile, chatFile, embedded) => chatHasContent(embedded) && mtime(docFile) > mtime(chatFile);
+
+const pause = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* no wait available */ } };
+// The text of a chat file, null when there is none. A read that fails for another reason (a sync
+// client or scanner holding the file) is retried, then thrown: opening with an empty chat would make
+// the next save replace the real one. A file that is not JSON is moved aside as <file>.bad, never
+// deleted, and reads as no chat.
+function readChatFile(target) {
+  let text;
+  for (let attempt = 0; ; attempt++) {
+    try { text = fs.readFileSync(target, 'utf8'); break; } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      if (attempt >= 3) { const e = new Error(require('../system/i18n.cjs').t('main.chat_log_unreadable', { code: error.code || error.message })); e.code = 'CHAT_UNREADABLE'; throw e; }
+      pause(60);
+    }
+  }
+  try { const chat = JSON.parse(text); if (chat && typeof chat === 'object' && !Array.isArray(chat)) return text; } catch { /* moved aside below */ }
+  try { fs.renameSync(target, `${target}.bad`); } catch { /* left in place; it still reads as no chat */ }
+  return null;
+}
 
 // The sidecar's text, or null when the project has none or its document's own embedded chat is
 // newer. documentText: the document as read, to tell whether it embeds a chat.
 function readChat(file, documentText = '') {
   const target = chatPath(file);
-  if (embeddedWins(file, target, /"craftAI"\s*:/.test(documentText))) return null;
-  try { return fs.readFileSync(target, 'utf8'); } catch { return null; }
+  if (embeddedWins(file, target, embeddedChat(documentText))) return null;
+  return readChatFile(target);
 }
 // The document for a path the user picked: the sidecar itself, when its document sits next to it.
 function documentFor(file) {
@@ -44,4 +74,4 @@ function mergeChat(project, chatJson) {
   return project;
 }
 
-module.exports = { chatPath, readChat, writeChat, mergeChat, documentFor, embeddedWins };
+module.exports = { chatPath, readChat, readChatFile, writeChat, mergeChat, documentFor, embeddedWins, chatHasContent };

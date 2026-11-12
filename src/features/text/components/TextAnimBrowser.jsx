@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Ban, ChevronDown } from 'lucide-react';
 import TextPreview from './TextPreview.jsx';
-import { textAnimCategories, textAnimPresets } from "../../effects/textAnim.js";
+import { textAnimCategories, textAnimCategoryLabel, textAnimPresets } from "../../effects/textAnim.js";
 import { ANIM_UNITS, INHERENT_UNIT_ANIMS } from "../units.js";
+import { t } from '../../../i18n/index.js';
 
 // Text Animations browser (Text inspector > Animation): In / Out preset packs in collapsible category
 // folders, like the professional preset composers. Hovering a tile plays the preset through the real text
@@ -13,7 +14,8 @@ import { ANIM_UNITS, INHERENT_UNIT_ANIMS } from "../units.js";
 // The Animate control under the tiles picks the preset's unit: the whole text at once, word by word, or
 // letter by letter, with the stagger defined in src/features/text/units.js. It is stored on the same animIn /
 // animOut record as the preset, per In / Out slot.
-const UNIT_LABELS = { whole: 'Whole text', word: 'Word by word', char: 'Letters' };
+// Unit labels: Whole text / Word by word / Letters.
+const UNIT_LABELS = { whole: t('text.whole_text'), word: t('text.word_by_word'), char: t('text.letters') };
 
 export default function TextAnimBrowser({ kind, value, unit = 'whole', baseStyle, sampleText, onPick, onClear, onUnit }) {
   const presets = textAnimPresets(kind);
@@ -33,7 +35,7 @@ export default function TextAnimBrowser({ kind, value, unit = 'whole', baseStyle
   // With a unit smaller than the whole text, the stagger is only visible on a few words: preview on the
   // clip's own text when it has at least two words, otherwise on a short stock phrase.
   const words = (sampleText || '').split(/\s+/).filter(Boolean).length;
-  const previewText = unit === 'whole' || words >= 2 ? sampleText : 'Cut it your way';
+  const previewText = unit === 'whole' || words >= 2 ? sampleText : t('text.cut_it_your_way');
   // The tile previews isolate the animation being browsed: the other slot and the loop are off.
   const styleFor = (p) => (kind === 'in'
     ? { ...baseStyle, animIn: { id: p.anim, dur: p.dur, unit }, animOut: { id: 'none', dur: 0.3 }, animLoop: { id: 'none', speed: 1 } }
@@ -44,12 +46,12 @@ export default function TextAnimBrowser({ kind, value, unit = 'whole', baseStyle
   return (
     <div className="tan">
       <button className={`tan-none ${value === 'none' ? 'on' : ''}`} onClick={onClear} aria-pressed={value === 'none'}>
-        <Ban size={14} aria-hidden="true" /> No animation
+        <Ban size={14} aria-hidden="true" /> {t('text-anim-browser.no_animation')}
       </button>
       {value !== 'none' && (
         <div className="tan-unit">
-          <span className="tan-unit-label">Animate</span>
-          <div className="seg-tabs small" role="group" aria-label="Animation unit">
+          <span className="tan-unit-label">{t('text-anim-browser.animate')}</span>
+          <div className="seg-tabs small" role="group" aria-label={t('text-anim-browser.animation_unit')}>
             {ANIM_UNITS.map((u) => (
               <button key={u} className={unit === u ? 'on' : ''} aria-pressed={unit === u}
                 disabled={inherent || !onUnit} onClick={() => onUnit && onUnit(u)}>
@@ -57,12 +59,12 @@ export default function TextAnimBrowser({ kind, value, unit = 'whole', baseStyle
               </button>
             ))}
           </div>
-          {inherent && <p className="tan-note">This preset already animates per word or letter on its own.</p>}
+          {inherent && <p className="tan-note">{t('text-anim-browser.this_preset_already_animates_per_word_or_l')}</p>}
           {!inherent && unit === 'char' && (
-            <p className="tan-note">Letters animate one by one inside each word. Arabic text animates word by word instead — its letters stay joined.</p>
+            <p className="tan-note">{t('text-anim-browser.letters_animate_one_by_one_inside_each_wor')}</p>
           )}
           {!inherent && unit === 'word' && (
-            <p className="tan-note">Each word plays the same motion in turn, first word to last, inside the duration above.</p>
+            <p className="tan-note">{t('text-anim-browser.each_word_plays_the_same_motion_in_turn_fi')}</p>
           )}
         </div>
       )}
@@ -73,7 +75,7 @@ export default function TextAnimBrowser({ kind, value, unit = 'whole', baseStyle
           <div key={cat} className="tan-cat">
             <button className="tan-cat-head" aria-expanded={open} onClick={() => toggle(cat)}>
               <ChevronDown size={14} className={open ? '' : 'closed'} aria-hidden="true" />
-              <span>{cat}</span>
+              <span>{textAnimCategoryLabel(cat)}</span>
               <span className="tan-count">{list.length}</span>
             </button>
             {open && (

@@ -203,8 +203,9 @@ to remain fully visible; the conversation stays accessible while using those too
 
 Import footage from the empty-state action or Media drawer, then describe the
 video. Suggestions in Agent mode fill the composer for review before sending.
-For an existing edit, **Attach selected clips** and timeline ruler range
-selection focus a request on particular material.
+For an existing edit, the composer's clock button (**Attach selected clips**)
+and timeline ruler range selection focus a request on particular material; the
+model chip beside the Send button changes the model for the next message.
 
 Edits apply live. Stop, activity details, completion receipts, and the current
 request's Undo remain available. Changing workspaces preserves requests,

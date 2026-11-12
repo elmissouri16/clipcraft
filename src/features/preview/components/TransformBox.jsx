@@ -8,6 +8,7 @@ import { pinOffsetAt, stateAtPinned } from "../../timeline/track.js";
 import { resolveStyle, textBox } from "../../text/render.js";
 import { useClockTime } from '../useClockTime.js';
 import { createTimeIndex } from '../../timeline/timeIndex.js';
+import { t } from '../../../i18n/index.js';
 
 // Direct manipulation in the player: click a picture to select it, drag to move, corners to scale,
 // the round handle to rotate. Moves snap to the frame center (with guide lines), rotation to 0 / 90 degrees
@@ -166,11 +167,11 @@ export default function TransformBox({ project, time: pausedTime, clockRef, play
       {guides.y && <div className="tbox-guide h" />}
       {g && (
         <div className="tbox" style={{ left: g.cx, top: g.cy, width: g.w, height: g.h, transform: `translate(-50%, -50%) rotate(${g.rot}deg)` }}
-          onPointerDown={(e) => e.button === 0 && startMove(e, sel)} aria-label="Selected clip on the player">
+          onPointerDown={(e) => e.button === 0 && startMove(e, sel)} aria-label={t('transform-box.selected_clip_on_the_player')}>
           {['nw', 'ne', 'sw', 'se'].map((k) => (
-            <span key={k} className={`tbox-handle ${k}`} onPointerDown={(e) => e.button === 0 && startScale(e, sel)} title="Drag to resize" />
+            <span key={k} className={`tbox-handle ${k}`} onPointerDown={(e) => e.button === 0 && startScale(e, sel)} title={t('transform-box.drag_to_resize')} />
           ))}
-          <span className="tbox-rotate" onPointerDown={(e) => e.button === 0 && startRotate(e, sel)} title="Drag to rotate (Shift: 15° steps)">
+          <span className="tbox-rotate" onPointerDown={(e) => e.button === 0 && startRotate(e, sel)} title={t('transform-box.drag_to_rotate_shift_15_steps')}>
             <RotateCw size={12} />
           </span>
         </div>

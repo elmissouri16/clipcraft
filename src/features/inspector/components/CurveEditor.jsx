@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { EASE_PRESETS, bezierSolver, easeValue, isCustomEase, ptsOf } from "../../effects/easing.js";
+import { t } from '../../../i18n/index.js';
 
 const PX0 = 14; const PX1 = 114; // plot x range (viewBox units); t 0..1 maps across it
 const PY0 = 4; const PY1 = 72; // plot y range (svg coords, top..bottom)
@@ -109,6 +110,7 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
     );
   })() : null;
 
+  const bezierText = `cubic-bezier(${pts.map((n) => (+n.toFixed(2))).join(', ')})`;
   const grip = (which) => {
     const [gx, gy] = gripXY(which);
     const active = activeGrip === which;
@@ -125,7 +127,7 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
 
   return (
     <div className={`curve-editor ${compact ? 'compact' : ''}`}>
-      <div className="curve-chips" role="group" aria-label="Easing preset">
+      <div className="curve-chips" role="group" aria-label={t('curve-editor.easing_preset')}>
         {EASE_PRESETS.map((p) => (
           <button key={p.id} type="button" className={`curve-chip ${activeId === p.id ? 'on' : ''}`} onClick={() => pick(p.id)}>
             <Glyph pts={p.pts} />
@@ -134,21 +136,21 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
         ))}
         {continuous && (
           <button type="button" className={`curve-chip ${activeId === 'continuous' ? 'on' : ''}`} onClick={() => pick('continuous')}
-            title="Flows through this keyframe without stopping">
+            title={t('curve-editor.flows_through_this_keyframe_without_stoppi')}>
             <svg className="curve-glyph" viewBox="0 0 36 18" aria-hidden="true">
               <line x1="2" x2="34" y1="14.5" y2="14.5" className="curve-glyph-base" />
               <path d="M2 14.5C9 14 12 8 18 8.5S27 3 34 2.5" className="curve-glyph-line" fill="none" />
               <circle cx="18" cy="8.5" r="1.6" className="curve-glyph-key" />
             </svg>
-            <span>Continuous</span>
+            <span>{t('curve-editor.continuous')}</span>
           </button>
         )}
         <button type="button" className={`curve-chip ${activeId === 'custom' ? 'on' : ''}`} onClick={() => pick('custom')}>
           <Glyph pts={[0.3, 0.05, 0.7, 0.95]} dashed />
-          <span>Custom</span>
+          <span>{t('curve-editor.custom')}</span>
         </button>
       </div>
-      <svg ref={svgRef} className="curve-graph" viewBox="0 0 120 84" role="img" aria-label="Easing curve"
+      <svg ref={svgRef} className="curve-graph" viewBox="0 0 120 84" role="img" aria-label={t('curve-editor.easing_curve')}
         onPointerMove={onMove} onPointerUp={endDrag} onPointerLeave={endDrag}>
         <defs>
           <filter id="curve-glow" x="-20%" y="-40%" width="140%" height="180%">
@@ -180,7 +182,7 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
       </svg>
       <div className="curve-preview">
         <button type="button" className={`curve-play ${playing ? 'on' : ''}`} onClick={() => setPlaying((p) => !p)}
-          aria-label={playing ? 'Stop motion preview' : 'Play motion preview'} title={playing ? 'Stop preview' : 'Preview this motion'}>
+          aria-label={t(playing ? 'animation.stop_motion_preview' : 'animation.play_motion_preview')} title={t(playing ? 'animation.stop_preview' : 'animation.preview_this_motion')}>
           {playing ? <Pause size={12} /> : <Play size={12} />}
         </button>
         <div className="curve-track" aria-hidden="true">
@@ -188,12 +190,12 @@ export default function CurveEditor({ value, onChange, compact = false, resetVal
           <span ref={dotRef} className="curve-dot" style={{ left: '0%' }} />
         </div>
       </div>
-      {activeId === 'continuous' && <p className="curve-note">Flows through this keyframe without stopping. Shape follows the neighbouring keyframes.</p>}
+      {activeId === 'continuous' && <p className="curve-note">{t('curve-editor.flows_through_this_keyframe_without_stoppi_2')}</p>}
       {!compact && (
         <div className="curve-meta">
-          <span className="curve-bezier">cubic-bezier({pts.map((n) => (+n.toFixed(2))).join(', ')})</span>
+          <span className="curve-bezier">{bezierText}</span>
           <button type="button" className="curve-reset" onClick={() => onChange(resetValue)}>
-            <RotateCcw size={12} /> Reset
+            <RotateCcw size={12} /> {t('hsl-curves.reset')}
           </button>
         </div>
       )}

@@ -5,38 +5,41 @@
 // A combo is a string like "Ctrl+Shift+S": modifiers in the order Ctrl, Alt,
 // Shift, then one key ("A"–"Z", "0"–"9", "Space", "ArrowLeft", "Delete"…).
 // On macOS, Cmd counts as Ctrl so the usual Mac keys work too.
+import { t } from '../i18n/index.js';
 
-export const SHORTCUT_GROUPS = ['Playback', 'Editing', 'Tools', 'File'];
+// The group names are also the headings of the Shortcuts settings, so they are translated once here.
+const GROUP = { playback: t('keymap.playback'), editing: t('keymap.editing'), tools: t('keymap.tools'), file: t('keymap.file') };
+export const SHORTCUT_GROUPS = [GROUP.playback, GROUP.editing, GROUP.tools, GROUP.file];
 
 export const SHORTCUT_ACTIONS = [
-  { id: 'togglePlay', label: 'Play / pause', group: 'Playback', keys: ['Space'] },
-  { id: 'stepBack', label: 'Previous frame', group: 'Playback', keys: ['ArrowLeft'] },
-  { id: 'stepForward', label: 'Next frame', group: 'Playback', keys: ['ArrowRight'] },
-  { id: 'jumpBack', label: 'Back 1 second', group: 'Playback', keys: ['Shift+ArrowLeft'] },
-  { id: 'jumpForward', label: 'Forward 1 second', group: 'Playback', keys: ['Shift+ArrowRight'] },
-  { id: 'goStart', label: 'Go to start', group: 'Playback', keys: ['Home'] },
-  { id: 'fullscreen', label: 'Full-screen player', group: 'Playback', keys: ['F'] },
-  { id: 'split', label: 'Split at playhead', group: 'Editing', keys: ['S', 'Ctrl+B'] },
-  { id: 'duplicate', label: 'Duplicate', group: 'Editing', keys: ['Ctrl+D'] },
-  { id: 'delete', label: 'Delete', group: 'Editing', keys: ['Delete', 'Backspace'] },
-  { id: 'trimLeft', label: 'Delete left of playhead', group: 'Editing', keys: ['Q'] },
-  { id: 'trimRight', label: 'Delete right of playhead', group: 'Editing', keys: ['W'] },
-  { id: 'marker', label: 'Marker at playhead', group: 'Editing', keys: ['M'] },
-  { id: 'copy', label: 'Copy', group: 'Editing', keys: ['Ctrl+C'] },
-  { id: 'cut', label: 'Cut', group: 'Editing', keys: ['Ctrl+X'] },
-  { id: 'paste', label: 'Paste', group: 'Editing', keys: ['Ctrl+V'] },
-  { id: 'extractAudio', label: 'Extract audio', group: 'Editing', keys: ['Ctrl+Shift+S'] },
-  { id: 'undo', label: 'Undo', group: 'Editing', keys: ['Ctrl+Z'] },
-  { id: 'redo', label: 'Redo', group: 'Editing', keys: ['Ctrl+Y', 'Ctrl+Shift+Z'] },
-  { id: 'razorTool', label: 'Razor tool', group: 'Tools', keys: ['B'] },
-  { id: 'selectTool', label: 'Select tool', group: 'Tools', keys: ['V', 'Escape'] },
-  { id: 'save', label: 'Save', group: 'File', keys: ['Ctrl+S'] },
-  { id: 'saveAs', label: 'Save as…', group: 'File', keys: ['Ctrl+Alt+S'] },
+  { id: 'togglePlay', label: t('keymap.play_pause'), group: GROUP.playback, keys: ['Space'] },
+  { id: 'stepBack', label: t('keymap.previous_frame'), group: GROUP.playback, keys: ['ArrowLeft'] },
+  { id: 'stepForward', label: t('keymap.next_frame'), group: GROUP.playback, keys: ['ArrowRight'] },
+  { id: 'jumpBack', label: t('keymap.back_1_second'), group: GROUP.playback, keys: ['Shift+ArrowLeft'] },
+  { id: 'jumpForward', label: t('keymap.forward_1_second'), group: GROUP.playback, keys: ['Shift+ArrowRight'] },
+  { id: 'goStart', label: t('keymap.go_to_start'), group: GROUP.playback, keys: ['Home'] },
+  { id: 'fullscreen', label: t('keymap.full_screen_player'), group: GROUP.playback, keys: ['F'] },
+  { id: 'split', label: t('keymap.split_at_playhead'), group: GROUP.editing, keys: ['S', 'Ctrl+B'] },
+  { id: 'duplicate', label: t('keymap.duplicate'), group: GROUP.editing, keys: ['Ctrl+D'] },
+  { id: 'delete', label: t('keymap.delete'), group: GROUP.editing, keys: ['Delete', 'Backspace'] },
+  { id: 'trimLeft', label: t('keymap.delete_left_of_playhead'), group: GROUP.editing, keys: ['Q'] },
+  { id: 'trimRight', label: t('keymap.delete_right_of_playhead'), group: GROUP.editing, keys: ['W'] },
+  { id: 'marker', label: t('keymap.marker_at_playhead'), group: GROUP.editing, keys: ['M'] },
+  { id: 'copy', label: t('keymap.copy'), group: GROUP.editing, keys: ['Ctrl+C'] },
+  { id: 'cut', label: t('keymap.cut'), group: GROUP.editing, keys: ['Ctrl+X'] },
+  { id: 'paste', label: t('keymap.paste'), group: GROUP.editing, keys: ['Ctrl+V'] },
+  { id: 'extractAudio', label: t('keymap.extract_audio'), group: GROUP.editing, keys: ['Ctrl+Shift+S'] },
+  { id: 'undo', label: t('keymap.undo'), group: GROUP.editing, keys: ['Ctrl+Z'] },
+  { id: 'redo', label: t('keymap.redo'), group: GROUP.editing, keys: ['Ctrl+Y', 'Ctrl+Shift+Z'] },
+  { id: 'razorTool', label: t('keymap.razor_tool'), group: GROUP.tools, keys: ['B'] },
+  { id: 'selectTool', label: t('keymap.select_tool'), group: GROUP.tools, keys: ['V', 'Escape'] },
+  { id: 'save', label: t('close.save'), group: GROUP.file, keys: ['Ctrl+S'] },
+  { id: 'saveAs', label: t('keymap.save_as'), group: GROUP.file, keys: ['Ctrl+Alt+S'] },
 ];
 // Shortcuts that also work while typing in a field.
 export const WORKS_IN_FIELDS = new Set(['save', 'saveAs']);
 // Mouse gestures shown for reference; they are not remappable.
-export const FIXED_GESTURES = [{ label: 'Zoom the timeline', keys: 'Ctrl + mouse wheel' }];
+export const FIXED_GESTURES = [{ label: t('keymap.zoom_the_timeline'), keys: t('keymap.ctrl_mouse_wheel') }];
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || navigator.userAgent || '');
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'Fn', 'OS']);
@@ -118,4 +121,4 @@ export function shortcutHint(id, map = active) {
   const combos = (map[id] || []).slice(0, 2);
   return combos.map(c => comboParts(c).map(p => FRIENDLY[p] || p).join('+').replace('⌘+', '⌘')).join(' / ');
 }
-export const withShortcut = (text, id, map = active) => { const hint = shortcutHint(id, map); return hint ? `${text} (${hint})` : text; };
+export const withShortcut = (text, id, map = active) => { const hint = shortcutHint(id, map); return hint ? t('keymap.label_with_keys', { label: text, keys: hint }) : text; };

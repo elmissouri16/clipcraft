@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from '../../i18n/index.js';
 
 // Screen recording: the chosen screen or window (with the PC's sound and / or the microphone). The camera is
 // recorded as its own file: the bubble on the screen is only a preview (hidden from the capture),
@@ -161,7 +162,7 @@ export function useScreenRecorder(onDone) {
       window.api.screenBar(false);
       window.api.screenCamera(false);
       window.api.screenWindow('restore');
-      const msg = e.name === 'NotAllowedError' ? 'Recording was not allowed (camera or microphone blocked, or the source is gone).' : e.message;
+      const msg = e.name === 'NotAllowedError' ? t('record.recording_not_allowed') : e.message;
       setState({ phase: 'idle', count: 0, seconds: 0, paused: false, error: msg });
     }
   }, [stop, togglePause]);

@@ -34,7 +34,7 @@ export function createProjectSerializer(makeWorker) {
       catch (error) { pending.delete(id);reject(error); }
     });
     const entry = { project, promise };recent.push(entry);
-    if (recent.length > 4) recent.shift();
+    if (recent.length > 2) recent.shift();
     promise.catch(() => { const index = recent.indexOf(entry);if (index >= 0) recent.splice(index, 1); });
     return promise;
   };

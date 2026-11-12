@@ -11,6 +11,7 @@ import { introducedIssues } from './editorial.js';
 import { updateVisualRequirements, markVisualCoverage, nextVisualSamples } from './visualVerification.js';
 import { describeToolActivity, imageActivityProgress } from './toolActivity.js';
 import { activityEvidence, renderActivityProgress } from './activityEvidence.js';
+import { t } from '../../i18n/index.js';
 
 // ctx: the agent context (agentCtx.js). contents: the request's model log (recall_context reads it).
 // tools/catalog: from nativeTools(). isCanceled: the owner's cancel state.
@@ -76,7 +77,7 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     if (call.name === '__native_status') return { ready:settled() };
     const beforeProject = ctx.getProject();
     const id = `native-${index++}`, before = projectRevision(beforeProject);
-    const event = { type:'tool', id, name:call.name, label:call.name === 'complete_edit' ? 'Validating the completed edit' : call.name === 'generate_images' ? 'Generating scene images' : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject), status:'running' };
+    const event = { type:'tool', id, name:call.name, label:call.name === 'complete_edit' ? t('activity.validating_the_completed_edit') : call.name === 'generate_images' ? t('activity.generating_scene_images') : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject), status:'running' };
     activeEvent=event;activeProject=beforeProject;
     imageEvent = ['generate_image','generate_images'].includes(call.name) ? event : null;
     onEvent(event);
@@ -108,8 +109,8 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     if (!['complete_edit','generate_images'].includes(call.name)) remember(call.name, call.args || {}, result, `${requestId}:${id}`, beforeProject);
     contents.push({ role:'model', parts:[{ functionCall:{ name:call.name, args:call.args } }] }, { role:'user', parts:[{ functionResponse:{ name:call.name, response:{ result } } }] });
     onEvent({ type:'tool', id, name:call.name, label:call.name === 'complete_edit'
-      ? result.review_required ? `Checking the edit: ${result.checked_regions} of ${result.total_regions} regions reviewed` : 'Validating the completed edit'
-      : call.name === 'generate_images' ? 'Generating scene images' : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject,result,ctx.getProject(),actions), status:result.error ? 'error' : 'done', detail:stopError?.error || result.error });
+      ? result.review_required ? t('activity.checking_the_edit_regions_reviewed', { checked: result.checked_regions, total: result.total_regions }) : t('activity.validating_the_completed_edit')
+      : call.name === 'generate_images' ? t('activity.generating_scene_images') : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject,result,ctx.getProject(),actions), status:result.error ? 'error' : 'done', detail:stopError?.error || result.error });
     imageEvent = null;
     activeEvent=null;activeProject=null;
     if (result.canceled) { stopped = true;await ctx.api.agentCancel?.(requestId); }

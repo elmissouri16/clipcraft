@@ -1,6 +1,5 @@
 // Audio library: free music / sound effects found through the Openverse API (Jamendo music,
-// Freesound effects). Only licenses that allow use in any video are requested: CC0, Public
-// Domain Mark and CC BY (BY needs a credit line, which the app collects).
+// Freesound effects). CC0 by default; CC BY is an explicit option with saved credits.
 // SFXMint (https://sfxmint.com/api/docs) adds CC0 sound effects with no key; files may be downloaded and kept.
 // (The old built-in effects, synthesized here with FFmpeg, were removed on Hamza's call —
 // they sounded poor and synthetic next to real recordings.)
@@ -8,11 +7,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const API = 'https://api.openverse.org/v1/audio/';
-const LICENSES = 'cc0,pdm,by';
+const openverse = require('./openverse.cjs');
 // Hosts files may come from (after redirects too).
 const FILE_HOSTS = ['jamendo.com', 'freesound.org', 'sfxmint.com', 'myinstants.com'];
-const SFXMINT = 'https://sfxmint.com/api/v1/search';
+const SFXMINT = process.env.FVE_SMOKE && process.env.FVE_SFXMINT_API || 'https://sfxmint.com/api/v1/search';
 const MAX_BYTES = 60 * 1024 * 1024;
 
 const hostOk = (url) => {
@@ -23,25 +21,6 @@ const hostOk = (url) => {
     return false;
   }
 };
-
-// ---- Openverse search ----
-const LICENSE_NAMES = { cc0: 'CC0', pdm: 'Public domain', by: 'CC BY' };
-
-function mapResult(r) {
-  return {
-    id: r.id,
-    title: r.title || 'Untitled',
-    creator: r.creator || 'Unknown',
-    duration: (r.duration || 0) / 1000,
-    license: r.license,
-    licenseName: `${LICENSE_NAMES[r.license] || r.license.toUpperCase()}${r.license === 'by' && r.license_version ? ` ${r.license_version}` : ''}`,
-    licenseUrl: r.license_url,
-    landing: r.foreign_landing_url,
-    url: r.url,
-    provider: r.source || r.provider,
-    providerName: { jamendo: 'Jamendo', freesound: 'Freesound' }[r.source || r.provider] || r.provider,
-  };
-}
 
 // SFXMint: every library sound is CC0 (no credit needed). Search by words, or browse a category.
 async function searchSfxmint(fetchImpl, { q, category }) {
@@ -138,10 +117,10 @@ async function searchMyinstants(fetchImpl, { q, category, page = 1 }) {
 
 // Sound effects from both online sources in one list: SFXMint (category, or the words) on the first page, mixed
 // with Freesound (the words), whose further pages follow. One source failing still shows the other.
-async function searchAllSfx(fetchImpl, { q, category, page = 1 }) {
+async function searchAllSfx(fetchImpl, { q, category, page = 1, licenses }) {
   const [mint, fs_] = await Promise.allSettled([
     page > 1 ? Promise.resolve({ results: [] }) : searchSfxmint(fetchImpl, { q: category ? '' : q, category }),
-    search(fetchImpl, { kind: 'sfx', q, page }),
+    search(fetchImpl, { kind: 'sfx', q, page, licenses }),
   ]);
   if (mint.status === 'rejected' && fs_.status === 'rejected') throw mint.reason;
   const a = mint.status === 'fulfilled' ? mint.value.results : [];
@@ -157,32 +136,16 @@ async function searchAllSfx(fetchImpl, { q, category, page = 1 }) {
 
 // kind: 'music' | 'sfx' (Freesound) | 'sfxmint' | 'sfxall' (both) | 'trolls' (MyInstants).
 // Returns { results, total, page, pages }.
-async function search(fetchImpl, { kind, q, category, page = 1 }) {
+async function search(fetchImpl, { kind, q, category, page = 1, licenses }) {
   if (kind === 'trolls') return searchMyinstants(fetchImpl, { q, category, page });
   if (kind === 'sfxmint') return searchSfxmint(fetchImpl, { q, category });
-  if (kind === 'sfxall') return searchAllSfx(fetchImpl, { q, category, page });
-  const params = new URLSearchParams({
-    q: String(q || '').slice(0, 200) || (kind === 'music' ? 'background music' : 'sound effect'),
-    source: kind === 'music' ? 'jamendo' : 'freesound',
-    license: LICENSES,
-    page_size: '20',
-    page: String(Math.max(1, Math.min(50, page | 0))),
-  });
-  if (kind === 'sfx') params.set('length', 'shortest,short');
-  if (kind === 'music') params.set('category', 'music');
-  const res = await fetchImpl(`${API}?${params}`, { headers: { Accept: 'application/json', 'User-Agent': 'ClipCraft' } });
-  const lib = kind === 'music' ? 'music' : 'sound';
-  if (res.status === 429) throw new Error(`The ${lib} library is busy right now. Try again in a minute.`);
-  if (!res.ok) throw new Error(`The ${lib} library answered ${res.status}.`);
-  const d = await res.json();
-  const results = (d.results || [])
-    .filter((r) => ['cc0', 'pdm', 'by'].includes(r.license) && hostOk(r.url))
-    .map(mapResult);
-  return { results, total: d.result_count || 0, page: d.page || page, pages: d.page_count || 1 };
+  if (kind === 'sfxall') return searchAllSfx(fetchImpl, { q, category, page, licenses });
+  return openverse.search(fetchImpl, { kind, q, page, licenses });
 }
 
 // Downloads (once) an item from search() into dir/online; returns the file path.
 async function download(fetchImpl, dir, item) {
+  if (item?.origin === 'openverse') return (await openverse.download(fetchImpl, dir, item)).path;
   if (!item || !hostOk(item.url) || !/^[\w-]{8,100}$/.test(String(item.id))) throw new Error('This sound cannot be downloaded.');
   const out = path.join(dir, 'online', `${item.id}.mp3`);
   if (fs.existsSync(out)) return out;

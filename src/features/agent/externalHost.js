@@ -120,9 +120,14 @@ export function createExternalHost(app) {
   }
 
   // One call at a time, in arrival order: edit boundaries and project switches never interleave.
+  // A call canceled while it still waits its turn never runs.
+  const withdrawn = new Set();
   function call({ callId, name, args, client: from }) {
     if (from?.name) client = from;
-    const run = () => (PROJECT_NAMES.has(name) ? projectCall(name, args || {}) : editorCall({ callId, name, args: args || {} }));
+    const run = () => {
+      if (withdrawn.delete(callId)) return { error: 'The call was canceled before it ran.', canceled: true };
+      return PROJECT_NAMES.has(name) ? projectCall(name, args || {}) : editorCall({ callId, name, args: args || {} });
+    };
     const task = queue.then(run).catch((error) => ({ error: error.message || 'The call failed.' }));
     queue = task.then(() => {}, () => {});
     return task;
@@ -135,9 +140,16 @@ export function createExternalHost(app) {
     refresh() { declarations = externalTools(app.provider()); return declarations; },
     cancel(callId) {
       const state = current.get(callId);
-      if (!state) return;
+      if (!state) { withdrawn.add(callId); return; }
       state.stopped = true;
       window.api.agentCancel?.(state.token).catch(() => {});
+    },
+    // The agent went idle without complete_edit and CraftAI is about to run: its edit ends (changes
+    // kept, one Undo step) so the editor is free. Nothing happens while one of its calls still runs.
+    yieldEdit() {
+      if (!edit || current.size) return false;
+      closeEdit('interrupted');
+      return true;
     },
     // The agent disconnected, went idle or the user pressed Disconnect.
     async release() {

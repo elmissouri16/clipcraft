@@ -76,15 +76,18 @@ module.exports = async (win, app, dir) => {
   const openSettings = async () => {
     await click('.topbar button[aria-label=Settings]');
     await until('!!document.querySelector(".set2-rail")');
-    await chooseButton('.set2-rail button', 'Voice');
+    await chooseButton('.set2-rail button', 'API keys');
+    await until('!!document.querySelector(\'[data-connection="gemini"] .connection-toggle\')');
+    await click('[data-connection="gemini"] .connection-toggle');
+    await until('!!document.querySelector(\'input[aria-label="Gemini TTS API key"]\')');
   };
   win.webContents.on('console-message', (_e, level, message) => { if (level >= 3) result.errors.push(message); });
   try {
     await until('!!window.__fve && !!document.querySelector(".home-frame-card")');
     await click('.home-frame-card'); await until('!!document.querySelector(".topbar")');
     await q('document.querySelector(".welcome-go")?.click();window.__fve.tab("audio")');
-    await until('[...document.querySelectorAll(".src-chip")].some(b=>b.textContent.trim()==="Text to speech")');
-    await chooseButton('.src-chip', 'Text to speech');
+    await until('!!document.querySelector(\'.audio-browser-actions button[aria-label="Text to speech"]\')');
+    await click('.audio-browser-actions button[aria-label="Text to speech"]');
     await until('!!document.querySelector(".tts")');
     await chooseButton('.tts .seg-tabs button', 'Gemini');
     await until('document.querySelector(".tts .stock-key b")?.textContent==="Gemini TTS key needed"');
@@ -92,13 +95,13 @@ module.exports = async (win, app, dir) => {
     const before = settings.getPublic();
     await openSettings();
     await fill('input[aria-label="Gemini TTS API key"]', key);
-    await chooseButton('.settings-actions button', 'Save key');
+    await chooseButton('[data-service-key="gemini-tts"] .settings-actions button', 'Save key');
     await until('(async()=>!!(await window.api.settingsGet()).serviceKeys["gemini-tts"])()');
     const saved = settings.getPublic();
     check('TTS key is independent of chat credentials', JSON.stringify(saved.keys) === JSON.stringify(before.keys) && saved.provider === before.provider);
     const disk = fs.readFileSync(path.join(dir,'settings-test','settings.json'),'utf8');
     check('key is encrypted and only a hint is exposed', !disk.includes(key) && !JSON.stringify(saved).includes(key) && !!saved.serviceKeys['gemini-tts']);
-    await chooseButton('.settings-actions button', 'Test key');
+    await chooseButton('[data-service-key="gemini-tts"] .settings-actions button', 'Test key');
     await until('document.querySelector(".settings-section .result")?.textContent.includes("model access confirmed")');
     await click('button[aria-label="Close settings"]');
     await until(`!!document.querySelector('select[aria-label="Gemini speech model"]')`);

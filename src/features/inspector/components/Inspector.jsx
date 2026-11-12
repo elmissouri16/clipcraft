@@ -13,6 +13,8 @@ import AudioFxControls from "../../audio/components/AudioFx.jsx";
 import EnhanceVoice from "../../audio/components/EnhanceVoice.jsx";
 import { isLookPatch, lookAction, selectedPictures } from "../../effects/look.js";
 import { clipLenTl, clipStartTl } from "../../timeline/track.js";
+import { t, tn } from '../../../i18n/index.js';
+import { catalogName, effectLabel } from '../../../i18n/catalog.js';
 
 function Num({ label, value, onChange, step = 0.1, min, max }) {
   return <NumBox layout="field" label={label} value={value} step={step} min={min} max={max} onChange={onChange} />;
@@ -34,7 +36,7 @@ const pct = (v) => `${Math.round(v * 100)}%`;
 function ProjectDetails({ project, dispatch, duration }) {
   const set = (patch) => dispatch({ type: 'setProject', patch });
   const setFormat = (ratio, resolution) => set({ ratio, resolution, ratioLocked: project.ratioLocked || ratio !== project.ratio, ...sizeFor(ratio, resolution) });
-  const RESOLUTIONS = [{ id: '480', name: '480p' }, { id: '720', name: '720p (HD)' }, { id: '1080', name: '1080p (Full HD)' }, { id: '1440', name: '1440p (2K)' }, { id: '2160', name: '2160p (4K)' }];
+  const RESOLUTIONS = [{ id: '480', name: t('inspector.480p') }, { id: '720', name: t('inspector.720p_hd') }, { id: '1080', name: t('inspector.1080p_full_hd') }, { id: '1440', name: t('inspector.1440p_2k') }, { id: '2160', name: t('inspector.2160p_4k') }];
   // Export quality: presets + Custom, all resolved by src/features/export/exportQuality.js (the same object the
   // export pipeline consumes — see the Export dialog summary).
   const [caps, setCaps] = useState({ libx265: true });
@@ -47,17 +49,17 @@ function ProjectDetails({ project, dispatch, duration }) {
   const QROWS = [
     { id: 'low', small: 'CRF 28 · ≤720 · AAC 96k' },
     { id: 'medium', small: 'CRF 23 · ≤1080 · AAC 128k' },
-    { id: 'high', small: 'CRF 18 · full size · AAC 192k' },
-    { id: 'ultra', small: 'CRF 14 · full size · AAC 320k' },
-    { id: 'custom', small: 'Your own settings' },
+    { id: 'high', small: t('inspector.crf_18_full_size_aac_192k') },
+    { id: 'ultra', small: t('inspector.crf_14_full_size_aac_320k') },
+    { id: 'custom', small: t('inspector.your_own_settings') },
   ];
   return (
     <div className="fields proj-card">
-      <input className="proj-name" type="text" value={project.name} aria-label="Project name"
+      <input className="proj-name" type="text" value={project.name} aria-label={t('topbar.project_name')}
         onChange={(e) => set({ name: e.target.value })} />
       <div className="proj-group">
-        <span className="proj-label">Aspect ratio</span>
-        <div className="proj-ratios" role="radiogroup" aria-label="Aspect ratio">
+        <span className="proj-label">{t('topbar.aspect_ratio')}</span>
+        <div className="proj-ratios" role="radiogroup" aria-label={t('topbar.aspect_ratio')}>
           {Object.keys(RATIOS).map((r) => (
             <button key={r} type="button" role="radio" aria-checked={project.ratio === r}
               className={`proj-ratio ${project.ratio === r ? 'on' : ''}`} onClick={() => setFormat(r, project.resolution)}>
@@ -67,8 +69,8 @@ function ProjectDetails({ project, dispatch, duration }) {
         </div>
       </div>
       <div className="proj-group">
-        <span className="proj-label">Resolution</span>
-        <div className="proj-seg" role="radiogroup" aria-label="Resolution">
+        <span className="proj-label">{t('export.resolution')}</span>
+        <div className="proj-seg" role="radiogroup" aria-label={t('export.resolution')}>
           {RESOLUTIONS.map((o) => (
             <button key={o.id} type="button" role="radio" aria-checked={String(project.resolution) === o.id}
               className={String(project.resolution) === o.id ? 'on' : ''} onClick={() => setFormat(project.ratio, Number(o.id))}>{o.name}</button>
@@ -76,8 +78,8 @@ function ProjectDetails({ project, dispatch, duration }) {
         </div>
       </div>
       <div className="proj-group">
-        <span className="proj-label">Frame rate</span>
-        <div className="proj-seg" role="radiogroup" aria-label="Frame rate">
+        <span className="proj-label">{t('home.frame_rate')}</span>
+        <div className="proj-seg" role="radiogroup" aria-label={t('home.frame_rate')}>
           {[24, 25, 30, 50, 60].map((f) => (
             <button key={f} type="button" role="radio" aria-checked={project.fps === f}
               className={project.fps === f ? 'on' : ''} onClick={() => set({ fps: f })}>{f} fps</button>
@@ -85,57 +87,57 @@ function ProjectDetails({ project, dispatch, duration }) {
         </div>
       </div>
       <div className="proj-group">
-        <span className="proj-label">Export quality</span>
-        <div className="proj-quality" role="radiogroup" aria-label="Export quality">
+        <span className="proj-label">{t('inspector.export_quality')}</span>
+        <div className="proj-quality" role="radiogroup" aria-label={t('inspector.export_quality')}>
           {QROWS.map((o) => (
             <button key={o.id} type="button" role="radio" aria-checked={stored.preset === o.id}
               className={`proj-qrow ${stored.preset === o.id ? 'on' : ''}`} onClick={() => setPreset(o.id)}>
-              <span>{o.id === 'custom' ? 'Custom' : EXPORT_PRESETS[o.id].name}</span><small>{o.small}</small>
+              <span>{o.id === 'custom' ? t('curve-editor.custom') : EXPORT_PRESETS[o.id].name}</span><small>{o.small}</small>
             </button>
           ))}
         </div>
         {stored.preset === 'custom' && (
           <div className="export-custom">
-            <div className="proj-seg" role="radiogroup" aria-label="Quality mode">
-              {[['crf', 'CRF'], ['bitrate', 'Bitrate']].map(([id, name]) => (
+            <div className="proj-seg" role="radiogroup" aria-label={t('export.quality_mode')}>
+              {[['crf', 'CRF'], ['bitrate', t('export.bitrate')]].map(([id, name]) => (
                 <button key={id} type="button" role="radio" aria-checked={custom.mode === id}
                   className={custom.mode === id ? 'on' : ''} onClick={() => setCustom({ mode: id })}>{name}</button>
               ))}
             </div>
             {custom.mode === 'crf' ? (
               <label className="field">
-                <span>CRF · {custom.crf}</span>
-                <input type="range" min="0" max="51" step="1" value={custom.crf} aria-label="Custom CRF"
+                <span>{t('inspector.crf_value', { value: custom.crf })}</span>
+                <input type="range" min="0" max="51" step="1" value={custom.crf} aria-label={t('inspector.custom_crf')}
                   onChange={(e) => setCustom({ crf: Number(e.target.value) })} />
               </label>
             ) : (
               <label className="field">
-                <span>Video bitrate · {custom.bitrateMbps} Mbps</span>
-                <input type="range" min="1" max="60" step="1" value={custom.bitrateMbps} aria-label="Custom bitrate"
+                <span>{t('inspector.video_bitrate_mbps', { value: custom.bitrateMbps })}</span>
+                <input type="range" min="1" max="60" step="1" value={custom.bitrateMbps} aria-label={t('inspector.custom_bitrate')}
                   onChange={(e) => setCustom({ bitrateMbps: Number(e.target.value) })} />
               </label>
             )}
             <div className="export-custom-row">
-              <span className="export-custom-label">Max size</span>
-              <div className="proj-seg" role="radiogroup" aria-label="Resolution cap">
+              <span className="export-custom-label">{t('inspector.max_size')}</span>
+              <div className="proj-seg" role="radiogroup" aria-label={t('inspector.resolution_cap')}>
                 {RES_CAPS.map((c) => (
                   <button key={c} type="button" role="radio" aria-checked={custom.resCap === c}
-                    className={custom.resCap === c ? 'on' : ''} onClick={() => setCustom({ resCap: c })}>{c === 0 ? 'Original' : c}</button>
+                    className={custom.resCap === c ? 'on' : ''} onClick={() => setCustom({ resCap: c })}>{c === 0 ? t('inspector.original') : c}</button>
                 ))}
               </div>
             </div>
             <div className="export-custom-row">
-              <span className="export-custom-label">Frame rate</span>
-              <div className="proj-seg" role="radiogroup" aria-label="Export frame rate">
+              <span className="export-custom-label">{t('home.frame_rate')}</span>
+              <div className="proj-seg" role="radiogroup" aria-label={t('inspector.export_frame_rate')}>
                 {FPS_CHOICES.map((f) => (
                   <button key={f} type="button" role="radio" aria-checked={custom.fps === f}
-                    className={custom.fps === f ? 'on' : ''} onClick={() => setCustom({ fps: f })}>{f === 0 ? 'Project' : f}</button>
+                    className={custom.fps === f ? 'on' : ''} onClick={() => setCustom({ fps: f })}>{f === 0 ? t('inspector.project') : f}</button>
                 ))}
               </div>
             </div>
             <div className="export-custom-row">
-              <span className="export-custom-label">Codec</span>
-              <div className="proj-seg" role="radiogroup" aria-label="Codec">
+              <span className="export-custom-label">{t('export.codec')}</span>
+              <div className="proj-seg" role="radiogroup" aria-label={t('export.codec')}>
                 {[['h264', 'H.264'], ['h265', 'H.265']].map(([id, name]) => (
                   <button key={id} type="button" role="radio" aria-checked={custom.codec === id}
                     disabled={id === 'h265' && !caps.libx265}
@@ -143,12 +145,12 @@ function ProjectDetails({ project, dispatch, duration }) {
                 ))}
               </div>
             </div>
-            {!caps.libx265 && <p className="export-note-line">H.265 is not available in this build — H.264 only.</p>}
-            <Select label="Encoder preset" value={custom.encoderPreset}
+            {!caps.libx265 && <p className="export-note-line">{t('inspector.h_265_is_not_available_in_this_build_h_264')}</p>}
+            <Select label={t('inspector.encoder_preset')} value={custom.encoderPreset}
               options={ENCODER_PRESETS.map((p) => ({ id: p, name: p }))} onChange={(v) => setCustom({ encoderPreset: v })} />
             <div className="export-custom-row">
-              <span className="export-custom-label">Audio kbps</span>
-              <div className="proj-seg" role="radiogroup" aria-label="Audio bitrate">
+              <span className="export-custom-label">{t('inspector.audio_kbps')}</span>
+              <div className="proj-seg" role="radiogroup" aria-label={t('inspector.audio_bitrate')}>
                 {AUDIO_RATES.map((a) => (
                   <button key={a} type="button" role="radio" aria-checked={custom.audioKbps === a}
                     className={custom.audioKbps === a ? 'on' : ''} onClick={() => setCustom({ audioKbps: a })}>{a}</button>
@@ -158,17 +160,17 @@ function ProjectDetails({ project, dispatch, duration }) {
           </div>
         )}
         <p className="export-effective">
-          Exports at {eff.outW}×{eff.outH} · {eff.outFps} fps · {eff.mode === 'crf' ? `CRF ${eff.crf}` : `${eff.bitrateMbps} Mbps`} · {eff.codecLabel} · AAC {eff.audioKbps}k
+          {t('inspector.exports_at', { width: eff.outW, height: eff.outH, fps: eff.outFps, quality: eff.mode === 'crf' ? `CRF ${eff.crf}` : `${eff.bitrateMbps} Mbps`, codec: eff.codecLabel, audio: eff.audioKbps })}
         </p>
         {eff.notes.map((n) => <p key={n} className="export-note-line">{n}</p>)}
       </div>
       <label className="field row proj-bg">
-        <span>Background</span>
+        <span>{t('inspector.background')}</span>
         <input type="color" value={project.background} onChange={(e) => set({ background: e.target.value })} />
       </label>
       <div className="proj-stats">
         <span>{project.width}×{project.height} · {formatTime(duration)}</span>
-        <span>{project.videoClips.length} clips · {project.textClips.length} texts · {project.audioClips.length} audio</span>
+        <span>{[tn('inspector.n_clips', project.videoClips.length), tn('inspector.n_texts', project.textClips.length), tn('inspector.n_audio', project.audioClips.length)].join(' · ')}</span>
       </div>
     </div>
   );
@@ -180,7 +182,7 @@ function TransitionPanel({ project, selection, dispatch }) {
   const i = clips.findIndex((c) => c.id === selection.id);
   const clip = clips[i];
   const tr = clip && clip.transition;
-  if (!tr) return <div className="fields"><div className="info dim">This transition was removed.</div></div>;
+  if (!tr) return <div className="fields"><div className="info dim">{t('inspector.this_transition_was_removed')}</div></div>;
   const def = TRANSITIONS.find((t) => t.id === tr.type);
   const set = (transition) => dispatch({ type: 'update', track: 'video', id: clip.id, patch: { transition } });
   // A transition can use at most half of each clip it joins.
@@ -194,34 +196,34 @@ function TransitionPanel({ project, selection, dispatch }) {
   return (
     <div className="fields">
       <div className="fx-head"><span className="fx-icon"><Blend size={18} /></span>
-        <div><b>{def?.name || tr.type}</b><span className="dim">between clip {i} and clip {i + 1}</span></div></div>
+        <div><b>{def ? catalogName('transition', def) : tr.type}</b><span className="dim">{t('inspector.between_clip_and_clip', { a: i, b: i + 1 })}</span></div></div>
       <div className="insp-card">
-        <div className="insp-card-title">Transition</div>
+        <div className="insp-card-title">{t('inspector.transition')}</div>
       <label className="field">
-        <span>Name</span>
+        <span>{t('home.name')}</span>
         <select value={tr.type} onChange={(e) => {
           const t = TRANSITIONS.find((x) => x.id === e.target.value);
           set({ type: t.id, duration: Math.min(max, t.fx ? t.duration : tr.duration), ...(t.fx && /zoom/i.test(t.id) ? { ease: 'smooth' } : {}) });
         }}>
-          {TRANSITIONS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {TRANSITIONS.map((t) => <option key={t.id} value={t.id}>{catalogName('transition', t)}</option>)}
         </select>
       </label>
-      <Slider dispatch={dispatch} label="Duration" value={Math.min(tr.duration, max)} min={0.1} max={Number(max.toFixed(2))} step={0.05}
+      <Slider dispatch={dispatch} label={t('animation-panel.duration')} value={Math.min(tr.duration, max)} min={0.1} max={Number(max.toFixed(2))} step={0.05}
         fmt={(v) => `${v.toFixed(2)}s`} onChange={(duration) => set({ ...tr, duration })} />
       </div>
       <div className="insp-card">
-        <div className="insp-card-title">Motion curve</div>
+        <div className="insp-card-title">{t('inspector.motion_curve')}</div>
         {def?.fx ? (
           <CurveEditor value={tr.ease} onChange={(ease) => set(ease === undefined ? { type: tr.type, duration: tr.duration } : { ...tr, ease })} />
         ) : (
-          <p className="dim small">This transition renders with the export engine's built-in curve, so easing does not apply. The FX transitions (Zoom, Whip, Spin, the reveal family…) take a motion curve.</p>
+          <p className="dim small">{t('inspector.this_transition_renders_with_the_export_en')}</p>
         )}
       </div>
       <div className="row-btns">
-        <button className="btn btn-sm" onClick={() => set({ ...tr, timelineOverlap: undefined, duration: Math.min(max, def?.duration || 0.5) })}><RotateCcw size={13} /> Reset</button>
-        <button className="btn btn-sm" onClick={applyAll} disabled={others.length < 2} title="Use this transition between every pair of clips">Apply to all</button>
+        <button className="btn btn-sm" onClick={() => set({ ...tr, timelineOverlap: undefined, duration: Math.min(max, def?.duration || 0.5) })}><RotateCcw size={13} /> {t('hsl-curves.reset')}</button>
+        <button className="btn btn-sm" onClick={applyAll} disabled={others.length < 2} title={t('inspector.use_this_transition_between_every_pair_of')}>{t('grade.apply_to_all')}</button>
       </div>
-      <button className="btn btn-danger" onClick={() => set(null)}>Remove transition</button>
+      <button className="btn btn-danger" onClick={() => set(null)}>{t('inspector.remove_transition')}</button>
     </div>
   );
 }
@@ -241,25 +243,25 @@ export function RegionControls({ region, onChange, dispatch }) {
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
   return (
     <div className="insp-card">
-      <div className="insp-card-head"><span className="insp-card-title">Region</span>
-        <input type="checkbox" checked={on} aria-label="Limit effect to a region"
+      <div className="insp-card-head"><span className="insp-card-title">{t('inspector.region')}</span>
+        <input type="checkbox" checked={on} aria-label={t('inspector.limit_effect_to_a_region')}
           onChange={(e) => onChange(e.target.checked ? { ...DEFAULT_FX_REGION } : null)} />
       </div>
-      {!on && <p className="dim small">The effect covers the whole frame. Tick to confine it to one area — only that part of the picture changes.</p>}
+      {!on && <p className="dim small">{t('inspector.the_effect_covers_the_whole_frame_tick_to')}</p>}
       {on && (
         <>
           <div className="chips">
-            {[['rect', 'Rectangle'], ['ellipse', 'Ellipse']].map(([id, name]) => (
+            {[['rect', t('inspector.rectangle')], ['ellipse', t('inspector.ellipse')]].map(([id, name]) => (
               <button key={id} className={`chip ${r.shape === id ? 'on' : ''}`} onClick={() => set({ shape: id })}>{name}</button>
             ))}
-            <button className={`chip ${r.invert ? 'on' : ''}`} aria-pressed={!!r.invert} onClick={() => set({ invert: !r.invert })}>Invert</button>
+            <button className={`chip ${r.invert ? 'on' : ''}`} aria-pressed={!!r.invert} onClick={() => set({ invert: !r.invert })}>{t('clip.invert')}</button>
           </div>
-          {S({ label: 'Position X', value: r.x, min: 0, max: 0.95, step: 0.01, fmt: pct, numScale: 100, onChange: (x) => set({ x }) })}
-          {S({ label: 'Position Y', value: r.y, min: 0, max: 0.95, step: 0.01, fmt: pct, numScale: 100, onChange: (y) => set({ y }) })}
-          {S({ label: 'Width', value: r.w, min: 0.05, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange: (w) => set({ w }) })}
-          {S({ label: 'Height', value: r.h, min: 0.05, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange: (h) => set({ h }) })}
-          {S({ label: 'Feather', value: r.feather, min: 0, max: 0.3, step: 0.01, fmt: pct, numScale: 100, onChange: (feather) => set({ feather }) })}
-          <p className="dim small">You can also drag the dashed box on the player.</p>
+          {S({ label: t('inspector.position_x'), value: r.x, min: 0, max: 0.95, step: 0.01, fmt: pct, numScale: 100, onChange: (x) => set({ x }) })}
+          {S({ label: t('inspector.position_y'), value: r.y, min: 0, max: 0.95, step: 0.01, fmt: pct, numScale: 100, onChange: (y) => set({ y }) })}
+          {S({ label: t('clip.width'), value: r.w, min: 0.05, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange: (w) => set({ w }) })}
+          {S({ label: t('clip.height'), value: r.h, min: 0.05, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange: (h) => set({ h }) })}
+          {S({ label: t('clip.feather'), value: r.feather, min: 0, max: 0.3, step: 0.01, fmt: pct, numScale: 100, onChange: (feather) => set({ feather }) })}
+          <p className="dim small">{t('inspector.you_can_also_drag_the_dashed_box_on_the_pl')}</p>
         </>
       )}
     </div>
@@ -277,9 +279,9 @@ export function StrengthControl({ value, onChange, dispatch }) {
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
   return (
     <div className="insp-card">
-      <div className="insp-card-title">Strength</div>
-      {S({ label: 'Intensity', value: value ?? 1, min: 0, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange })}
-      <p className="dim small">How strongly the effect lands — 0% is the untouched picture.</p>
+      <div className="insp-card-title">{t('inspector.strength')}</div>
+      {S({ label: t('grade.intensity'), value: value ?? 1, min: 0, max: 1, step: 0.01, fmt: pct, numScale: 100, onChange })}
+      <p className="dim small">{t('inspector.how_strongly_the_effect_lands_0_is_the_unt')}</p>
     </div>
   );
 }
@@ -291,33 +293,33 @@ function AddTextCard({ onAddTextOver, start, duration }) {
   if (!onAddTextOver) return null;
   return (
     <div className="insp-card">
-      <div className="insp-card-title">Text</div>
-      <p className="dim small">Put words over this part of the video — the text clip spans the same range.</p>
-      <button className="btn btn-primary" onClick={() => onAddTextOver(start, duration)}><Type size={14} /> Add text</button>
+      <div className="insp-card-title">{t('tts.text')}</div>
+      <p className="dim small">{t('inspector.put_words_over_this_part_of_the_video_the')}</p>
+      <button className="btn btn-primary" onClick={() => onAddTextOver(start, duration)}><Type size={14} /> {t('inspector.add_text')}</button>
     </div>
   );
 }
 
 function FreeEffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
   const c = (project.effectClips || []).find((x) => x.id === selection.id);
-  if (!c) return <div className="fields"><div className="info dim">This effect was removed.</div></div>;
+  if (!c) return <div className="fields"><div className="info dim">{t('inspector.this_effect_was_removed')}</div></div>;
   const e = effectInfo(c.fx);
   const set = (patch) => dispatch({ type: 'update', track: 'effect', id: c.id, patch });
   return (
     <div className="fields">
-      <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{e?.name || c.fx}</b><span className="dim">on the Effects track</span></div></div>
+      <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{effectLabel(e, c.fx)}</b><span className="dim">{t('inspector.on_the_effects_track')}</span></div></div>
       <div className="insp-card">
-        <div className="insp-card-title">Timing</div>
-      <p className="dim small">{e?.group === 'Filters' ? 'Gives every picture under it this look — pictures, overlays and graphics. ' : 'Acts on every picture under it. '}Drag it on the timeline, or its edges to change its length.</p>
-      <Num label="Start (s)" value={c.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
-      <Num label="Duration (s)" value={c.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
+        <div className="insp-card-title">{t('inspector.timing')}</div>
+      <p className="dim small">{t(e?.group === 'Filters' ? 'inspector.gives_every_picture_under_it_this_look' : 'inspector.acts_on_every_picture_under_it')}</p>
+      <Num label={t('inspector.start_s')} value={c.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
+      <Num label={t('graphic.duration_s')} value={c.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
       </div>
       {!NO_STRENGTH.includes(c.fx) && <StrengthControl value={c.strength} dispatch={dispatch}
         onChange={(k) => set({ strength: k >= 1 ? undefined : k })} />}
       <RegionControls region={c.region || null} dispatch={dispatch}
         onChange={(region) => set({ region: region ?? undefined })} />
       <AddTextCard onAddTextOver={onAddTextOver} start={c.start} duration={c.duration} />
-      <button className="btn btn-danger" onClick={() => dispatch({ type: 'delete', track: 'effect', id: c.id })}>Remove effect</button>
+      <button className="btn btn-danger" onClick={() => dispatch({ type: 'delete', track: 'effect', id: c.id })}>{t('inspector.remove_effect')}</button>
     </div>
   );
 }
@@ -329,7 +331,7 @@ function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
   const clip = list.find((c) => c.id === clipId);
   const e = EFFECTS.find((x) => x.id === fx);
   const media = clip && project.media.find((m) => m.id === clip.mediaId);
-  if (!clip || !(clip.effects || []).includes(fx)) return <div className="fields"><div className="info dim">This effect was removed.</div></div>;
+  if (!clip || !(clip.effects || []).includes(fx)) return <div className="fields"><div className="info dim">{t('inspector.this_effect_was_removed')}</div></div>;
   // Region storage for a clip-attached effect: the clip's fxRegions map, keyed by effect id.
   const setRegion = (region) => {
     const next = { ...(clip.fxRegions || {}) };
@@ -344,14 +346,14 @@ function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
   };
   return (
     <div className="fields">
-      <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{e?.name || fx}</b><span className="dim">on {media?.name || 'clip'}</span></div></div>
+      <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{e ? catalogName('effect', e) : fx}</b><span className="dim">{t('inspector.on_name', { name: media?.name || t('inspector.clip') })}</span></div></div>
       <div className="insp-card">
-      <p className="dim small">The effect runs for the whole clip and moves with it. Remove it here, with Delete, or from the right-click menu.</p>
+      <p className="dim small">{t('inspector.the_effect_runs_for_the_whole_clip_and_mov')}</p>
       </div>
       {!NO_STRENGTH.includes(fx) && <StrengthControl value={clip.fxStrength?.[fx]} dispatch={dispatch} onChange={setStrength} />}
       <RegionControls region={clip.fxRegions?.[fx] || null} dispatch={dispatch} onChange={setRegion} />
       <AddTextCard onAddTextOver={onAddTextOver} start={clipStartTl(project, track, clip)} duration={clipLenTl(track, clip)} />
-      <button className="btn btn-danger" onClick={() => dispatch({ type: 'removeEffect', id: selection.id })}>Remove effect</button>
+      <button className="btn btn-danger" onClick={() => dispatch({ type: 'removeEffect', id: selection.id })}>{t('inspector.remove_effect')}</button>
     </div>
   );
 }
@@ -359,7 +361,7 @@ function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
 function InspectorHeader({ Icon, title, onCollapse }) {
   return <div className="panel-head">
     <Icon size={15} aria-hidden="true" /><span className="panel-title">{title}</span>
-    <button type="button" className="icon-btn sm inspector-collapse" aria-label="Hide properties panel" title="Hide properties panel"
+    <button type="button" className="icon-btn sm inspector-collapse" aria-label={t('inspector.hide_properties_panel')} title={t('inspector.hide_properties_panel')}
       aria-controls="inspector-panel" aria-expanded="true" onClick={onCollapse}><PanelRightClose size={16} aria-hidden="true" /></button>
   </div>;
 }
@@ -370,22 +372,21 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
   const time = useClockTime(clockRef, pausedTime, playing && !collapsed);
   const multi = selection?.items && (
     <div className="multi-note" role="status">
-      <b>{selection.items.length} clips selected.</b> Delete removes them all; drag one (off the main track) to move them together.
-      Below: the first one.
+      <b>{tn('inspector.n_clips_selected', selection.items.length)}</b> {t('inspector.delete_removes_them_all_drag_one_off_the_m')}
     </div>
   );
   if (selection?.track === 'transition') {
     return (
-      <aside id="inspector-panel" className="inspector" aria-label="Properties" hidden={collapsed}>
-        <InspectorHeader Icon={Blend} title="Transition" onCollapse={onCollapse} />
+      <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
+        <InspectorHeader Icon={Blend} title={t('inspector.transition')} onCollapse={onCollapse} />
         <div className="inspector-body" ref={bodyRef}>{multi}<TransitionPanel project={project} selection={selection} dispatch={dispatch} /></div>
       </aside>
     );
   }
   if (selection?.track === 'effect') {
     return (
-      <aside id="inspector-panel" className="inspector" aria-label="Properties" hidden={collapsed}>
-        <InspectorHeader Icon={Sparkles} title="Effect" onCollapse={onCollapse} />
+      <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
+        <InspectorHeader Icon={Sparkles} title={t('inspector.effect')} onCollapse={onCollapse} />
         <div className="inspector-body" ref={bodyRef}>{multi}<EffectPanel project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
       </aside>
     );
@@ -402,11 +403,11 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
   const media = clip?.mediaId && project.media.find((m) => m.id === clip.mediaId);
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
 
-  const title = !clip ? 'Project settings' : clip.gap ? 'Gap' : { video: 'Video clip', overlay: 'Overlay', text: clip?.caption ? 'Caption' : 'Text', audio: 'Audio' }[track];
+  const title = !clip ? t('inspector.project_settings') : clip.gap ? t('inspector.gap') : { video: t('inspector.video_clip'), overlay: t('inspector.overlay'), text: clip?.caption ? t('inspector.caption') : t('tts.text'), audio: t('edit-plan-card.audio') }[track];
   const Icon = !clip ? Settings2 : { video: Film, overlay: Layers, text: Type, audio: Music }[track];
 
   return (
-    <aside id="inspector-panel" className="inspector" aria-label="Properties" hidden={collapsed}>
+    <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
       <InspectorHeader Icon={Icon} title={title} onCollapse={onCollapse} />
       <div className="inspector-body" ref={bodyRef}>
       {multi}
@@ -417,12 +418,12 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
       {clip && track === 'video' && clip.gap && (
         <div className="fields">
           <div className="insp-card">
-            <div className="insp-card-title">Gap</div>
-          <div className="info">Empty space on the main track. It plays the project background in silence.</div>
-          <NumBox layout="field" label="Length (s)" step={0.1} min={0.1} value={Number((clip.out - clip.in).toFixed(2))}
+            <div className="insp-card-title">{t('inspector.gap')}</div>
+          <div className="info">{t('inspector.empty_space_on_the_main_track_it_plays_the')}</div>
+          <NumBox layout="field" label={t('inspector.length_s')} step={0.1} min={0.1} value={Number((clip.out - clip.in).toFixed(2))}
             onChange={(v) => set({ out: Math.max(0.1, v) })} />
           </div>
-          <button className="btn" onClick={() => { dispatch({ type: 'delete', track: 'video', id: clip.id }); }}>Close gap</button>
+          <button className="btn" onClick={() => { dispatch({ type: 'delete', track: 'video', id: clip.id }); }}>{t('inspector.close_gap')}</button>
         </div>
       )}
 
@@ -435,20 +436,20 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
       {clip && track === 'audio' && (
         <div className="fields audio-insp">
           <div className="insp-card">
-            <div className="insp-card-title">Clip audio</div>
+            <div className="insp-card-title">{t('inspector.clip_audio')}</div>
             <div className="info">{media?.name}</div>
-            {S({ label: 'Volume', value: clip.volume ?? 1, max: 2, fmt: pct, numScale: 100, onChange: (volume) => set({ volume }) })}
-            {S({ label: 'Fade in', value: clip.fadeIn || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeIn) => set({ fadeIn }) })}
-            {S({ label: 'Fade out', value: clip.fadeOut || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeOut) => set({ fadeOut }) })}
-            <Num label="Timeline start (s)" value={clip.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
+            {S({ label: t('clip.volume'), value: clip.volume ?? 1, max: 2, fmt: pct, numScale: 100, onChange: (volume) => set({ volume }) })}
+            {S({ label: t('inspector.fade_in'), value: clip.fadeIn || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeIn) => set({ fadeIn }) })}
+            {S({ label: t('inspector.fade_out'), value: clip.fadeOut || 0, max: 5, step: 0.1, fmt: (v) => `${v.toFixed(1)}s`, onChange: (fadeOut) => set({ fadeOut }) })}
+            <Num label={t('inspector.timeline_start_s')} value={clip.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
           </div>
           <div className="insp-card">
-            <div className="insp-card-title">Enhance voice</div>
+            <div className="insp-card-title">{t('enhance.enhance_voice')}</div>
             <EnhanceVoice clip={clip} media={media} set={set} onEnhance={onEnhance} />
           </div>
           <div className="insp-card">
-            <div className="insp-card-title">Audio effects</div>
-            {clip.volumeKeys?.length > 0 && <div className="afx-note">Volume automation · {clip.volumeKeys.length} points <button className="btn btn-sm btn-ghost" onClick={() => set({ volumeKeys: undefined })}>Clear automation</button></div>}
+            <div className="insp-card-title">{t('inspector.audio_effects')}</div>
+            {clip.volumeKeys?.length > 0 && <div className="afx-note">{tn('inspector.volume_automation_points', clip.volumeKeys.length)} <button className="btn btn-sm btn-ghost" onClick={() => set({ volumeKeys: undefined })}>{t('clip.clear_automation')}</button></div>}
             <AudioFxControls fx={clip.audioFx} onChange={(audioFx) => set({ audioFx })} />
           </div>
         </div>

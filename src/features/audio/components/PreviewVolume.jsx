@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Volume1, Volume2, VolumeX } from 'lucide-react';
 import { getPreviewAudio, setPreviewAudio, subscribePreviewAudio } from '../audioTap.js';
+import { t } from '../../../i18n/index.js';
 
 export default function PreviewVolume({ onOpen }) {
   const [audio, setAudio] = useState(getPreviewAudio);
@@ -27,20 +28,20 @@ export default function PreviewVolume({ onOpen }) {
       }
     }}>
       <button ref={button} type="button" className={`icon-btn ${silent ? 'active' : ''}`}
-        aria-label="Preview volume" aria-haspopup="dialog" aria-expanded={open}
-        title={`Preview volume: ${silent ? 'muted' : `${percent}%`}`} onClick={() => { if (!open) onOpen?.(); setOpen((value) => !value); }}>
+        aria-label={t('preview-volume.preview_volume')} aria-haspopup="dialog" aria-expanded={open}
+        title={silent ? t('preview-volume.preview_volume_muted') : t('preview-volume.preview_volume_percent', { percent })} onClick={() => { if (!open) onOpen?.(); setOpen((value) => !value); }}>
         <Icon size={16} />
       </button>
       {open && (
-        <div className="transport-menu preview-volume-menu" role="dialog" aria-label="Preview audio">
-          <div className="preview-volume-heading"><b>Preview volume</b><output>{silent ? 'Muted' : `${percent}%`}</output></div>
+        <div className="transport-menu preview-volume-menu" role="dialog" aria-label={t('preview-volume.preview_audio')}>
+          <div className="preview-volume-heading"><b>{t('preview-volume.preview_volume')}</b><output>{silent ? t('preview-volume.muted') : `${percent}%`}</output></div>
           <div className="preview-volume-row">
-            <button type="button" className="icon-btn" aria-label={silent ? 'Unmute preview' : 'Mute preview'} aria-pressed={silent}
+            <button type="button" className="icon-btn" aria-label={t(silent ? 'preview-volume.unmute_preview' : 'preview-volume.mute_preview')} aria-pressed={silent}
               onClick={() => setPreviewAudio(silent ? { muted: false, volume: audio.volume || 1 } : { muted: true })}>
               <Icon size={16} />
             </button>
             <input ref={slider} type="range" min="0" max="100" step="1" value={percent}
-              aria-label="Preview volume level" aria-valuetext={`${percent}%${audio.muted ? ', muted' : ''}`}
+              aria-label={t('preview-volume.preview_volume_level')} aria-valuetext={`${percent}%${audio.muted ? ', muted' : ''}`}
               onChange={(event) => setPreviewAudio({ volume: Number(event.target.value) / 100, muted: false })} />
           </div>
         </div>

@@ -1065,24 +1065,6 @@ async function makeProxy(item, cacheDir) {
   return makeQualityProxy(item, cacheDir, 'high', { force: true });
 }
 
-// Light proxy for the Proxy setting (weak PCs): every video gets one, 540 px on its shorter side, quick to make
-// and to decode (fastdecode), keyframes every half second for fast seeking. Only the player uses it; the export
-// always reads the original. Cached per file, next to the other proxies ("-lproxy.mp4").
-async function makeLightProxy(item, cacheDir) {
-  const st = fs.statSync(item.path);
-  const key = require('crypto').createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|lproxy1${item.hdr ? '-sdr' : ''}`).digest('hex').slice(0, 16);
-  fs.mkdirSync(cacheDir, { recursive: true });
-  const out = path.join(cacheDir, `${key}-lproxy.mp4`);
-  if (fs.existsSync(out)) return out;
-  const part = path.join(cacheDir, `${key}-lproxy.part.mp4`);
-  await runBackground('proxy', ['-i', item.path, '-map', '0:v:0', '-map', '0:a:0?',
-    '-vf', `scale=w='if(gt(iw,ih),-2,min(540,iw))':h='if(gt(iw,ih),min(540,ih),-2)'${item.hdr ? `,${TONEMAP}` : ''},format=yuv420p`,
-    ...(item.hdr ? ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'] : []),
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'fastdecode', '-crf', '27', '-g', '15', '-keyint_min', '15', '-sc_threshold', '0',
-    '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', part]);
-  fs.renameSync(part, out);
-  return out;
-}
 
 // Playback-quality copy for one level ('high' | 'medium' | 'low'): the picture scaled so its longest
 // side is at most the level's cap (1280 / 960 / 640), never upscaled — a source that already fits
@@ -1149,4 +1131,4 @@ async function sampleFrames(item, from, to, count = 8) {
 
 module.exports = {
   sampleFrames, analysisAudioPlan, audioAnalysisKey, buildTimelineAudioArgs,
-  toSdr, stillInput, graphFile, pickEncoder, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeLightProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };
+  toSdr, stillInput, graphFile, pickEncoder, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };

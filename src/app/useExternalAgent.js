@@ -71,7 +71,9 @@ export function useExternalAgent(appRef, settingsVersion, craftBusy, onAgentFocu
     setApproval((a) => { if (a) window.api.externalApproval({ id: a.id, allow }).catch(() => {}); return null; });
   }, []);
   const disconnect = useCallback(() => window.api.externalDisconnect?.().then(setStatus).catch(() => {}), []);
+  // CraftAI about to run while the outside agent is idle: an edit it left open (no complete_edit) ends now.
+  const yieldEdit = useCallback(() => host.current?.yieldEdit(), []);
   // holder: an agent working now (CraftAI pauses); owner: the agent holding the editor, even idle.
   const owner = status?.owner?.client?.name ? { name: status.owner.client.name, active: !!status.owner.active } : null;
-  return { status, owner, holder: owner?.active ? owner.name : null, approval, answer, disconnect, subscribe, setStatus };
+  return { status, owner, holder: owner?.active ? owner.name : null, approval, answer, disconnect, subscribe, setStatus, yieldEdit };
 }

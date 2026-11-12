@@ -3,12 +3,13 @@
 // SOURCE frame (before filters/grading are applied by the GPU pass) — the panel labels this.
 // Sampling runs on a small 96x54 copy at ~4 fps while the panel is open.
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../../../i18n/index.js';
 
 const MODES = [
-  { id: 'hist', name: 'Histogram' },
-  { id: 'wave', name: 'Waveform' },
-  { id: 'parade', name: 'Parade' },
-  { id: 'vector', name: 'Vectorscope' },
+  { id: 'hist', name: t('grade.histogram') },
+  { id: 'wave', name: t('grade.waveform') },
+  { id: 'parade', name: t('grade.parade') },
+  { id: 'vector', name: t('grade.vectorscope') },
 ];
 const SW = 96; const SH = 54;
 
@@ -18,8 +19,8 @@ function drawScope(ctx, W, H, mode, data) {
     // Two centred lines: the canvas is 264px wide, so one line would run past its edge.
     ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '11px system-ui';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Play or seek the preview —', W / 2, H / 2 - 8);
-    ctx.fillText('scopes read its current frame.', W / 2, H / 2 + 8);
+    const lines = t('grade.play_or_seek_the_preview_scopes_read').split('\n');
+    lines.forEach((ln, i) => ctx.fillText(ln, W / 2, H / 2 + (i - (lines.length - 1) / 2) * 16));
     ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
     return;
   }
@@ -113,13 +114,13 @@ export default function Scopes() {
 
   return (
     <div className="scopes">
-      <div className="seg-tabs small" role="group" aria-label="Scope type">
+      <div className="seg-tabs small" role="group" aria-label={t('scopes.scope_type')}>
         {MODES.map((m) => (
           <button key={m.id} className={mode === m.id ? 'on' : ''} aria-pressed={mode === m.id} onClick={() => setMode(m.id)}>{m.name}</button>
         ))}
       </div>
-      <canvas ref={canvasRef} width={264} height={110} className="scopes-canvas" aria-label={`${MODES.find((m) => m.id === mode).name} of the current preview frame`} />
-      <p className="hint">Scopes read the preview's source frame, before filters and grading are applied.</p>
+      <canvas ref={canvasRef} width={264} height={110} className="scopes-canvas" aria-label={t('grade.name_of_the_current_preview_frame', { name: MODES.find((m) => m.id === mode).name })} />
+      <p className="hint">{t('scopes.scopes_read_the_previews_source_frame_befo')}</p>
     </div>
   );
 }

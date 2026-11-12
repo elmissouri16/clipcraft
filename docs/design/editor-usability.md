@@ -20,6 +20,29 @@ Edit and Agent share the project, preview, timeline, selection and history.
   Video/text navigation and stabilization choices wrap rather than extending
   outside the panel. Selecting a different clip starts its inspector at the top.
 
+## Stock and audio browsing
+
+Stock search appears above its results, with Videos/Photos directly below search.
+Provider, category, copyright attribution and orientation live in the collapsed
+Filters section. Active filters stay visible in a compact summary. Cards keep
+placement actions on the image and source/licence details beneath it.
+
+Audio separates Library, Online, This project and Favorites. Installed Music and
+Sound effects collections belong to Library; online genres and providers belong
+to Online. Text to speech and Credits remain header actions. An installed music
+collection is the initial destination when available; an absent pack opens online
+music instead. A user's explicit selection wins over a delayed pack response.
+
+Online browsers reuse SearchBox and Dropdown, submit searches explicitly, and
+retain per-source drafts and filters during the mounted editor session. Openverse
+starts with No credit required (CC0); Include credit-required media adds CC BY
+only on an explicit choice. Empty results explain the selected source and filters
+and offer that choice, rather than suggesting the local music library disappeared.
+These labels describe copyright attribution; source checks still apply.
+At the smallest library width, source and audio-kind controls become compact
+dropdowns and header actions retain named tooltips; filters and result actions
+wrap within the panel instead of creating horizontal overflow.
+
 ## Scrolling and keyboard navigation
 
 Scrollable panels contain wheel overscroll and reserve scrollbar space. Chat's
@@ -50,10 +73,24 @@ window opens at its last size and position, the interface does not zoom like a
 web page, controls use the arrow cursor (a hand only on real links), presses
 darken instead of moving, and images cannot be dragged out like web images.
 
+The shell is flush: panels fill the window and meet at one-pixel dividers, with no
+floating cards, shadows or gradients. Controls are flat 28 px fills; hovering adds a
+faint tint, pressing a stronger one, and keyboard focus is a one-pixel inset outline.
+See the v14 section of `docs/design/DESIGN-SYSTEM.md`.
+
+## Top bar (2026-11-11)
+
+Brand on the left; in the centre the project's name (editable), a chevron that opens the project menu,
+the format, and a quiet autosave status ("Saved" with a check, "Saving…", or a clickable "Not saved");
+on the right the Edit/Agent switch, Export and Settings. Projects, Open project, Save and Save as live
+in the project menu, as in the native menu and the shortcuts, so the bar no longer carries three
+file buttons that a self-saving project rarely needs. The one visible Save button appears only while
+the project has never been saved. Export uses an outward arrow rather than a download icon.
+
 ## Settings organisation
 
 Settings groups its pages in the rail: **General** (Performance, Shortcuts),
-**AI** (Assistant, Voice, Tool servers) and **Services** (Media libraries). Each
+**AI** (Assistant, Voice, External agents, Tool servers) and **Services** (API keys). Each
 page opens with a title and one line saying what it is for, followed by small
 labelled groups; the Assistant page splits into Provider, Connection (a one-line
 agent status with the path trimmed) and Model, with Test and Save in a footer
@@ -109,6 +146,11 @@ The existing `performance-contracts` smoke mode additionally exercises live
 playback, frame stepping, pause/seek, production project loading, virtualized
 tracks and bounded preview media pools against the dev server. It imports source
 modules and therefore needs the dev server rather than Vite preview.
+
+API keys for external providers are grouped on the searchable API keys page, with
+separate usage rows for assistant, voice, captions and media credentials. Feature
+panels link to the relevant usage rather than duplicating password forms. Saving
+a key does not activate its assistant provider or change its model or endpoint.
 
 ## Filters: selected clip or the whole video (2026-11-10)
 

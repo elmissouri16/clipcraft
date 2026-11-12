@@ -3,11 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // Panel sizes: drag the borders between the left panel, the player, the properties panel and the
 // timeline. Sizes are remembered on this PC (per-user convenience only) and kept valid when the window shrinks.
 const KEY = 'clipcraft.layout';
-const GAP = 10;
-const FRAME_WIDTH = 20;
-const FRAME_HEIGHT = 18;
+// Flush shell (v14): panels meet at hairline dividers, so there is no gap or frame padding.
+const GAP = 0;
+const FRAME_WIDTH = 0;
+const FRAME_HEIGHT = 0;
 export const MIN = { left: 240, right: 240, player: 320, top: 220, bottom: 150 };
-const TOPBAR = 48;
+const TOPBAR = 44;
 
 const defaults = () => ({ left: 460, right: 330, bottom: Math.round(window.innerHeight * 0.38) });
 

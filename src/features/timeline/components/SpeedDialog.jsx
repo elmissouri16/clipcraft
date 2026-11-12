@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { formatTime } from "../../../state/store.js";
+import { t } from '../../../i18n/index.js';
 
 // Speed / Duration for one clip (clip menu): the clip's constant speed, edited either as
 // a percentage or as the timeline duration it should end up with. This is NOT speed
@@ -28,34 +29,33 @@ export default function SpeedDialog({ clip, name, onApply, onClose }) {
   };
 
   return (
-    <div className="modal-backdrop close-backdrop" role="dialog" aria-modal="true" aria-label="Speed and duration"
+    <div className="modal-backdrop close-backdrop" role="dialog" aria-modal="true" aria-label={t('speed-dialog.speed_and_duration')}
       onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
         <div className="modal-icon"><Gauge size={26} /></div>
-        <h3>Speed / Duration</h3>
+        <h3>{t('speed-dialog.speed_duration')}</h3>
         <p className="muted">{name}</p>
-        <div className="speed-presets" role="group" aria-label="Speed presets">
+        <div className="speed-presets" role="group" aria-label={t('speed-dialog.speed_presets')}>
           {PRESETS.map((p) => (
             <button key={p} className={`chip ${Number(pct) === p ? 'on' : ''}`} onClick={() => setFromPct(p)}>{p}%</button>
           ))}
         </div>
         <label className="field">
-          <span>Speed (%)</span>
-          <input type="number" min="5" max="1600" step="5" value={pct} aria-label="Speed in percent"
+          <span>{t('speed-dialog.speed')}</span>
+          <input type="number" min="5" max="1600" step="5" value={pct} aria-label={t('speed-dialog.speed_in_percent')}
             onChange={(e) => setFromPct(e.target.value)} />
         </label>
         <label className="field">
-          <span>Duration on the timeline</span>
-          <input type="number" min="0.1" step="0.1" value={dur} aria-label="Duration in seconds"
+          <span>{t('speed-dialog.duration_on_the_timeline')}</span>
+          <input type="number" min="0.1" step="0.1" value={dur} aria-label={t('speed-dialog.duration_in_seconds')}
             onChange={(e) => setFromDur(e.target.value)} />
         </label>
         <p className="muted">
-          Source used: {formatTime(sourceLen)} · plays in {formatTime(sourceLen / speed)}
-          {clip.linkId ? ' · the linked audio follows' : ''}
+          {t(clip.linkId ? 'speed-dialog.source_used_plays_in_linked' : 'speed-dialog.source_used_plays_in', { source: formatTime(sourceLen), result: formatTime(sourceLen / speed) })}
         </p>
         <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => { onApply(speed); onClose(); }}>Apply</button>
+          <button className="btn" onClick={onClose}>{t('app.cancel')}</button>
+          <button className="btn btn-primary" onClick={() => { onApply(speed); onClose(); }}>{t('speed-dialog.apply')}</button>
         </div>
       </div>
     </div>

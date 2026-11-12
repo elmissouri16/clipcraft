@@ -144,5 +144,32 @@ try {
   settings.clearServiceKey('gemini-tts');
   assert.equal(settings.getServiceKey('gemini-tts'), '');
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).ai, beforeSpeech.ai);
-  console.log('settings ok (write/rename failures preserve keys, compatible JSON, private mode)');
+  // The central key editor must not switch the active assistant or replace its configuration.
+  const beforeCredential = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const publicCredential = settings.saveProviderKey('groq', 'synthetic-provider-key');
+  const withCredential = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(publicCredential.keys.groq, '…-key');
+  assert.equal(settings.getActive('groq').apiKey, 'synthetic-provider-key');
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('synthetic-provider-key'));
+  assert.ok(!JSON.stringify(publicCredential).includes('synthetic-provider-key'));
+  for (const name of ['provider', 'models', 'baseUrls', 'executablePaths', 'reasoningEfforts', 'webResearch']) {
+    assert.deepEqual(withCredential.ai[name], beforeCredential.ai[name], `key-only save preserves ${name}`);
+  }
+  assert.deepEqual(withCredential.services, beforeCredential.services);
+  const credentialBytes = fs.readFileSync(file, 'utf8');
+  for (fault of ['write', 'rename']) {
+    assert.throws(() => settings.saveProviderKey('openai', 'replacement-provider-key'), /disk full|rename blocked/);
+    assert.equal(fs.readFileSync(file, 'utf8'), credentialBytes);
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), ['settings.json']);
+  }
+  fault = null;
+  assert.throws(() => settings.saveProviderKey('codex-sdk', 'unwanted-key'), /does not use an API key/);
+  assert.throws(() => settings.saveProviderKey('openai', '  '), /Paste a key/);
+  encryptionAvailable = false;
+  assert.throws(() => settings.saveProviderKey('openai', 'replacement-provider-key'), /Secure storage/);
+  assert.equal(fs.readFileSync(file, 'utf8'), credentialBytes);
+  encryptionAvailable = true;
+  settings.clearKey('groq');
+  assert.equal(settings.getActive().provider, beforeCredential.ai.provider);
+  console.log('settings ok (atomic writes, private credentials, key-only edits preserve assistant configuration)');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

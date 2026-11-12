@@ -10,11 +10,16 @@ const pick = (event) => ({ id: `${event.editId}:${event.id}`, name: event.name, 
 // value for onAgentFocus (null ends the run).
 export function externalFocusStep(focus, event, runKey) {
   if (!event || typeof event !== 'object') return { focus, changed: false };
-  if (event.type === 'edit-start') return { focus: { runKey, requestId: event.editId, agent: event.client || 'External agent', live: null, trail: [] }, changed: true };
+  // An edit opens on the agent's first call, reads included: the focus begins with the first tool
+  // that has targets, so a get_project after a finished edit leaves that edit's held trail alone.
+  if (event.type === 'edit-start') return { focus, changed: false };
   if (event.type === 'edit-end' || event.type === 'agent-released') return focus ? { focus: null, changed: true } : { focus, changed: false };
-  if (event.type !== 'tool' || !focus || event.editId !== focus.requestId) return { focus, changed: false };
+  if (event.type !== 'tool') return { focus, changed: false };
+  if (focus && event.editId !== focus.requestId) return { focus, changed: false };
   const targets = event.activity?.targets;
-  if (event.status === 'running') return { focus: { ...focus, live: targets ? pick(event) : null }, changed: true };
-  const trail = event.status === 'done' && targets ? [...focus.trail, pick(event)].slice(-TRAIL) : focus.trail;
-  return { focus: { ...focus, live: null, trail }, changed: true };
+  if (!focus && !targets) return { focus, changed: false };
+  const base = focus || { runKey, requestId: event.editId, agent: event.client || 'External agent', live: null, trail: [] };
+  if (event.status === 'running') return { focus: { ...base, live: targets ? pick(event) : null }, changed: true };
+  const trail = event.status === 'done' && targets ? [...base.trail, pick(event)].slice(-TRAIL) : base.trail;
+  return { focus: { ...base, live: null, trail }, changed: true };
 }

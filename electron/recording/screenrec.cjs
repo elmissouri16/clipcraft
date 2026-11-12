@@ -8,6 +8,7 @@ const { BrowserWindow, desktopCapturer, ipcMain, screen, session } = require('el
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { t } = require('../system/i18n.cjs');
 
 // Windows can hide a window from screen capture (setContentProtection) but not a transparent one, so the Stop bar
 // and the camera bubble are opaque windows cut to their shape with setShape (a stack of 1-pixel rows).
@@ -101,7 +102,7 @@ function install({ app, getWin, ffmpegPath, probeAll }) {
   // Converts to MP4 (H.264 + AAC, constant 30 fps so it edits and seeks well) and returns the media item.
   ipcMain.handle('screen:finish', async (_e, id) => {
     const f = files.get(id);
-    if (!f) return { error: 'Unknown recording' };
+    if (!f) return { error: t('main.unknown_recording') };
     files.delete(id);
     fs.closeSync(f.fd);
     const out = path.join(outDir(), `${f.kind === 'camera' ? 'Camera' : 'Screen recording'} ${f.name}.mp4`);
@@ -113,7 +114,7 @@ function install({ app, getWin, ffmpegPath, probeAll }) {
         let err = '';
         p.stderr.on('data', (d) => (err += d));
         p.on('error', reject);
-        p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(-1500) || `FFmpeg exited with ${code}`))));
+        p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(-1500) || t('main.ffmpeg_exited_with', { code })))));
       });
     } catch (e) {
       // Never lose a recording: when the conversion fails (often because the PC ran out of memory, e.g. a full
@@ -137,8 +138,8 @@ function install({ app, getWin, ffmpegPath, probeAll }) {
       const memory = /malloc|cannot allocate memory|out of memory/i.test(e.message);
       return {
         error: memory
-          ? `Not enough memory to convert the recording to MP4 (is disk C: full? Windows needs free space there). ${fs.existsSync(keep) ? `The original was kept: ${keep}` : ''}`.trim()
-          : `Could not save the recording: ${e.message}`,
+          ? `${t('main.not_enough_memory_for_recording')} ${fs.existsSync(keep) ? t('main.original_was_kept', { path: keep }) : ''}`.trim()
+          : t('main.could_not_save_recording', { reason: e.message }),
       };
     }
     fs.rmSync(f.webm, { force: true });

@@ -3,8 +3,10 @@ import { Ban } from 'lucide-react';
 import { ANIMATIONS, DEFAULT_ANIM_DURATION, animOf, previewState } from "../../timeline/anim.js";
 import { samplePhotoUrl, samplePictureUrl } from "../../effects/previews.jsx";
 import Slider from "../../../components/ui/Slider.jsx";
+import { t } from '../../../i18n/index.js';
+import { catalogLabel, catalogName } from '../../../i18n/catalog.js';
 
-const KINDS = [['in', 'In'], ['out', 'Out'], ['combo', 'Combo']];
+const KINDS = [['in', t('clip.in')], ['out', t('clip.out')], ['combo', t('animation.combo')]];
 
 // Tile picture: the sample photo moving like the animation, playing while the pointer is over the tile.
 function AnimThumb({ kind, id }) {
@@ -69,38 +71,35 @@ export default function AnimationPanel({ clip, len, set, dispatch }) {
   const dur = current[kind]?.duration;
   return (
     <div className="anim-panel">
-      <div className="seg-tabs small" role="tablist" aria-label="Animation type">
+      <div className="seg-tabs small" role="tablist" aria-label={t('animation-panel.animation_type')}>
         {KINDS.map(([id, name]) => (
           <button key={id} role="tab" aria-selected={kind === id} className={kind === id ? 'on' : ''} onClick={() => setKind(id)}>
             {name}{clip.anim?.[id] ? ' •' : ''}
           </button>
         ))}
       </div>
-      <p className="dim small">
-        {kind === 'in' ? 'Plays when the clip starts.' : kind === 'out' ? 'Plays when the clip ends.' : 'Plays during the whole clip. It replaces In and Out.'}
-        {' '}Hover a tile to preview it.
-      </p>
+      <p className="dim small">{t(kind === 'in' ? 'animation.plays_when_the_clip_starts_hover' : kind === 'out' ? 'animation.plays_when_the_clip_ends_hover' : 'animation.plays_during_the_whole_clip_hover')}</p>
       <div className="anim-grid">
         <button className={`tile ${!chosen ? 'on' : ''}`} aria-pressed={!chosen} onClick={() => pick(null)}>
           <span className="tile-preview anim-none"><Ban size={22} /></span>
-          <span className="tile-label">None</span>
+          <span className="tile-label">{t('grade.none')}</span>
         </button>
       </div>
       {cats.map((cat) => (
         <div key={cat} className="anim-cat">
-          <div className="anim-cat-title">{cat}</div>
+          <div className="anim-cat-title">{catalogLabel('animation_cat', cat)}</div>
           <div className="anim-grid">
             {ANIMATIONS[kind].filter((a) => a.cat === cat).map((a) => (
-              <button key={a.id} className={`tile ${chosen === a.id ? 'on' : ''}`} aria-pressed={chosen === a.id} title={a.name} onClick={() => pick(a.id)}>
+              <button key={a.id} className={`tile ${chosen === a.id ? 'on' : ''}`} aria-pressed={chosen === a.id} title={catalogName('animation', a)} onClick={() => pick(a.id)}>
                 <span className="tile-preview"><AnimThumb kind={kind} id={a.id} /></span>
-                <span className="tile-label">{a.name}</span>
+                <span className="tile-label">{catalogName('animation', a)}</span>
               </button>
             ))}
           </div>
         </div>
       ))}
       {chosen && kind !== 'combo' && (
-        <Slider dispatch={dispatch} label="Duration" value={dur} min={0.1} max={Math.max(0.2, Math.min(5, len))} step={0.1}
+        <Slider dispatch={dispatch} label={t('animation-panel.duration')} value={dur} min={0.1} max={Math.max(0.2, Math.min(5, len))} step={0.1}
           fmt={(v) => `${v.toFixed(1)}s`} onChange={(d) => set({ anim: { ...clip.anim, [kind]: { ...clip.anim[kind], duration: d } } })} />
       )}
     </div>

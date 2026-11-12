@@ -9,12 +9,12 @@
 </p>
 
 <p align="center">
-  Timeline editing · transitions &amp; effects · animated text · auto captions · offline templates · an AI assistant that works with your own API keys.<br>
+  Timeline editing · transitions &amp; effects · animated text · auto captions · built-in stock · an AI assistant that works with your own API keys.<br>
   By <b>Hamza Abika</b>.
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-825cfb?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.3-825cfb?style=flat-square">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%20·%20Windows%20·%20macOS-825cfb?style=flat-square">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-825cfb?style=flat-square">
   <img alt="Electron" src="https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white">
@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="https://clipcrafts.pages.dev">Website</a> ·
-  <a href="https://github.com/hamzaabika/clipcraft/releases/tag/v1.1.0">Release 1.1.0</a>
+  <a href="https://github.com/elmissouri16/clipcraft/releases">Releases</a>
 </p>
 
 <br>
@@ -49,7 +49,6 @@
   <a href="#export">Export</a> ·
   <a href="#download">Download</a> ·
   <a href="#run-from-source">Get started</a> ·
-  <a href="#support-the-project">Support</a> ·
   <a href="#ownership--license">License</a>
 </p>
 
@@ -81,7 +80,7 @@ ClipCraft is a free, open-source desktop video editor and covers what people act
 - 🌈 **135+ transitions and a growing effects library**, every one previewed on real footage before you apply it.
 - 💬 **Auto-captions.** Free on-device Whisper — including a Darija model — or bring a cloud key for speed.
 - 🔤 **Animated text done properly.** 54 text templates, word-by-word styling, and real RTL/Arabic shaping.
-- 🧩 **Offline templates + built-in stock.** And a screen recorder that drops captures straight onto the timeline.
+- 🧩 **Built-in stock photos, sounds and music.** And a screen recorder that drops captures straight onto the timeline.
 - 🤖 **CraftAI.** An AI editing assistant that runs on *your* provider and *your* key.
 - ⚡ **Fast, honest export.** Trimmed sources are seeked, not re-decoded from zero — exports of clips cut from long footage start instantly and run up to ~40% faster, byte-identical to before. Adaptive performance modes (Low-End / Balanced / High-Performance) tune background work to your machine, and never touch export quality.
 
@@ -126,7 +125,7 @@ Glitch & digital, film looks, light leaks and more — stack effects on any clip
   <img src="https://clipcrafts.pages.dev/assets/templates.png" alt="Text templates in ClipCraft: browsable rows of original designs with live previews" width="60%">
 </p>
 
-<p align="center"><sub>The Craft and Motion template rows, the Arabic row, and the one-card Welcome that greets a first project — no tour, no steps — are all pictured on the <a href="https://clipcrafts.pages.dev">ClipCraft site</a>.</sub></p>
+<p align="center"><sub>The Craft and Motion template rows and the Arabic row are pictured on the <a href="https://clipcrafts.pages.dev">ClipCraft site</a>.</sub></p>
 
 ## CraftAI
 
@@ -325,16 +324,16 @@ they require no real key or paid generation.
 
 ## Download
 
-Get **ClipCraft 1.1.0** from the [GitHub Release](https://github.com/hamzaabika/clipcraft/releases/tag/v1.1.0):
+Get **ClipCraft 1.1.3** from the [GitHub Releases page](https://github.com/elmissouri16/clipcraft/releases):
 
-- **Linux (.deb)** — `clipcraft_1.1.0_amd64.deb`, then:
+- **Linux (.deb)** — `clipcraft_1.1.3_amd64.deb`, then:
 
 ```bash
-sudo apt install ./clipcraft_1.1.0_amd64.deb
+sudo apt install ./clipcraft_1.1.3_amd64.deb
 ```
 
-- **Windows (.exe)** — `ClipCraft-Setup-1.1.0.exe` (NSIS installer).
-- **macOS (.dmg)** — `ClipCraft-1.1.0.dmg` (Apple silicon & Intel).
+- **Windows (.exe)** — `ClipCraft-Setup-1.1.3.exe` (NSIS installer).
+- **macOS (.dmg)** — `ClipCraft-1.1.3.dmg` (Apple silicon & Intel).
 
 SHA-256 checksums for every installer are printed in the release notes.
 

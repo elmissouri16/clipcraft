@@ -1,5 +1,6 @@
 import { exportDuration } from '../../state/store.js';
 import { overlayRanges } from '../effects/apply.js';
+import { t, tn } from '../../i18n/index.js';
 // Phase-aware, smoothed export timing. Only measured successful work updates
 // the local speed profile; canceled exports and cache hits do not train it.
 const PROFILE_KEY = 'clipcraft.export-speed.v1';
@@ -12,11 +13,11 @@ export function exportStages(project, effectsFrames = 0) {
   const hasText = project.textClips.length || overlayRanges(project).length;
   const complexity = 1 + Math.log2(1+(project.overlayClips?.length||0))*.45;
   return [
-    { id:'prepare',label:'Preparing your video',units:1 },
-    ...(hasText?[{id:'text',label:'Rendering captions and graphics',units:frames*pixels}]:[]),
-    ...(effectsFrames?[{id:'effects',label:'Rendering effects and transitions',units:effectsFrames*pixels}]:[]),
-    {id:'encode',label:'Encoding video',units:frames*pixels*complexity},
-    {id:'finish',label:'Finishing your video',units:1},
+    { id:'prepare',label:t('export.preparing_your_video'),units:1 },
+    ...(hasText?[{id:'text',label:t('export.rendering_captions_and_graphics'),units:frames*pixels}]:[]),
+    ...(effectsFrames?[{id:'effects',label:t('export.rendering_effects_and_transitions'),units:effectsFrames*pixels}]:[]),
+    {id:'encode',label:t('export.encoding_video'),units:frames*pixels*complexity},
+    {id:'finish',label:t('export.finishing_your_video'),units:1},
   ];
 }
 export function readExportProfile(storage) {
@@ -65,10 +66,10 @@ export class ExportProgress {
     const settling=this.fraction>=.995;
     const stalled=now-this.lastAdvance>8000;
     const measured=this.fraction>.015&&elapsed>.5;
-    this.publish({progress:this.progress,stage:stage?.label||'Preparing your video',phase:stage?.id,phaseProgress:this.fraction,
+    this.publish({progress:this.progress,stage:stage?.label||t('export.preparing_your_video'),phase:stage?.id,phaseProgress:this.fraction,
       step:this.index+1,steps:this.stages.length,startedAt:this.started,elapsedSeconds:(now-this.started)/1000,
       remainingSeconds:now-this.started<1500||!measured||settling||stalled?null:Math.max(1,this.eta),
-      timingStatus:stalled?'Working on this step':settling?'Saving changes':'Estimating time remaining',...this.detail});
+      timingStatus:stalled?t('export.working_on_this_step'):settling?t('export.saving_changes'):t('export.estimating_time_remaining'),...this.detail});
   }
   finish() {
     const now=this.now();if(this.index>=0)this.completed.set(this.index,(now-this.phaseStarted)/1000);
@@ -82,8 +83,10 @@ export class ExportProgress {
 export function formatElapsed(seconds=0){const n=Math.max(0,Math.floor(seconds));return n>=3600?`${Math.floor(n/3600)}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`:`${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`;}
 export function formatRemaining(seconds){
   if(!Number.isFinite(seconds))return null;
-  if(seconds<10)return 'Less than 10 seconds remaining';
+  if(seconds<10)return t('export.less_than_10_seconds_remaining');
   const n=Math.ceil(seconds/(seconds<60?5:15))*(seconds<60?5:15);
-  if(n<60)return `About ${n} seconds remaining`;
-  const minutes=Math.ceil(n/60);return minutes<60?`About ${minutes} min remaining`:`About ${Math.floor(minutes/60)} hr${minutes%60?` ${minutes%60} min`:''} remaining`;
+  if(n<60)return tn('export.about_seconds_remaining',n);
+  const minutes=Math.ceil(n/60);if(minutes<60)return tn('export.about_minutes_remaining',minutes);
+  const hours=Math.floor(minutes/60),rest=minutes%60;
+  return rest?t('export.about_hours_minutes_remaining',{hours,minutes:rest}):tn('export.about_hours_remaining',hours);
 }

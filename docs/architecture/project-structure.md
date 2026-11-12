@@ -34,17 +34,18 @@ electron/
   audio/                   Speech, transcription and audio processing
   export/                  Layers, text streaming, render jobs and fonts
   graphics/                Motion graphics sandbox, runtime and renderer
-  library/                 Assets, stock, sounds, generation and templates
+  library/                 Assets, stock, sounds and Openverse
   media/                   FFmpeg, proxies, geometry and media analysis
   project/                 Saved projects, their chat sidecars, autosaves and favorites
   recording/               Recording service, windows and preloads
-  system/                  Settings, telemetry and cancellation
+  system/                  Settings, UI language and cancellation
 tests/
   unit/<feature>/          Standalone Node regression suites
   smoke/                   Real Electron UI checks and their dispatcher
   fixtures/                Test-only CLIs, servers and service stubs
 scripts/                   Development and maintenance commands
-shared/                    Cross-process contracts, the AI provider presets (providers.json) and bundled LUT data
+shared/                    Cross-process contracts, the AI provider presets (providers.json), the UI
+                           dictionaries (i18n/en|fr|es.json, docs/design/localization.md) and bundled LUT data
 docs/                      Documentation grouped by subject
 ```
 

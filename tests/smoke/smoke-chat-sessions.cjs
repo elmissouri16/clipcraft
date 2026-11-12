@@ -43,7 +43,9 @@ module.exports = async (win, app, dir) => {
     await click('button[aria-label=Send]');
     await until('!document.querySelector("button[aria-label=Stop]") && !!document.querySelector(".pilot-msg.assistant:last-child .bubble")');
   };
-  const home = async () => { await click('button[aria-label=Projects]'); await until('!!document.querySelector(".home-frame-card")'); };
+  // File actions live in the project menu behind the chevron next to the project name.
+  const projectMenuItem = async (label) => { await click('button[aria-label="Project menu"]'); await until('!!document.querySelector(".ctx-menu")'); await q(`[...document.querySelectorAll('.ctx-menu button')].find((b) => b.textContent.trim().startsWith(${JSON.stringify(label)})).click()`); };
+  const home = async () => { await projectMenuItem('Projects'); await until('!!document.querySelector(".home-frame-card")'); };
   const fresh = async () => {
     await click('.home-frame-card'); await until('!!document.querySelector(".topbar")');
     await q('document.querySelector(".welcome-go")?.click()'); await openChat();
@@ -120,7 +122,7 @@ module.exports = async (win, app, dir) => {
       result.homeRestoredDraft = true;
       // Reopen the same id while mounted: disk, rather than stale local chat, wins.
       await draft('Temporary in-memory draft');
-      await click('button[aria-label=Open]');
+      await projectMenuItem('Open project');
       await until('!document.querySelector(".pilot-panel")');
       await openChat();
       await until('document.querySelector(".pilot-input textarea")?.value === "Keep this first-session draft"');

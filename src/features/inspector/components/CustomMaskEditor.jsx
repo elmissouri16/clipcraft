@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Eraser, Paintbrush, RotateCcw, Trash2, X } from 'lucide-react';
 import { previewPath, toFileUrl } from "../../../state/store.js";
 import { rasterizeCustomMask } from "../../preview/customMask.js";
+import { t, tn } from '../../../i18n/index.js';
 
 // Custom removal editor: paint Erase / Restore strokes over the clip's frame. The strokes are
 // stored in source-normalized coordinates (src/features/preview/customMask.js) and rasterize to a static mask
@@ -86,12 +87,12 @@ export default function CustomMaskEditor({ clip, media, onClose, onSave }) {
   const up = () => { drawing.current = null; };
 
   return (
-    <div className="cmask-overlay" role="dialog" aria-modal="true" aria-label="Custom removal">
+    <div className="cmask-overlay" role="dialog" aria-modal="true" aria-label={t('clip.custom_removal')}>
       <div className="cmask-modal">
         <div className="cmask-head">
-          <b>Custom removal</b>
-          <span className="dim small">Paint what to remove — the mask applies to the whole clip.</span>
-          <button className="icon-btn sm" aria-label="Close" onClick={onClose}><X size={15} /></button>
+          <b>{t('clip.custom_removal')}</b>
+          <span className="dim small">{t('custom-mask-editor.paint_what_to_remove_the_mask_applies_to_t')}</span>
+          <button className="icon-btn sm" aria-label={t('app.close')} onClick={onClose}><X size={15} /></button>
         </div>
         <div className="cmask-stage" ref={stageRef} style={{ aspectRatio: String(aspect) }}>
           {isVideo ? (
@@ -109,26 +110,26 @@ export default function CustomMaskEditor({ clip, media, onClose, onSave }) {
             : <canvas ref={paintRef} className="cmask-top" onPointerDown={down} onPointerMove={move} onPointerUp={up} />}
         </div>
         <div className="cmask-tools">
-          <div className="seg-tabs small" role="radiogroup" aria-label="Brush">
-            <button role="radio" aria-checked={tool === 'erase'} className={tool === 'erase' ? 'on' : ''} onClick={() => setTool('erase')}><Eraser size={13} /> Erase</button>
-            <button role="radio" aria-checked={tool === 'restore'} className={tool === 'restore' ? 'on' : ''} onClick={() => setTool('restore')}><Paintbrush size={13} /> Restore</button>
+          <div className="seg-tabs small" role="radiogroup" aria-label={t('custom-mask-editor.brush')}>
+            <button role="radio" aria-checked={tool === 'erase'} className={tool === 'erase' ? 'on' : ''} onClick={() => setTool('erase')}><Eraser size={13} /> {t('custom-mask-editor.erase')}</button>
+            <button role="radio" aria-checked={tool === 'restore'} className={tool === 'restore' ? 'on' : ''} onClick={() => setTool('restore')}><Paintbrush size={13} /> {t('home.restore')}</button>
           </div>
-          <label className="cmask-size">Brush size
-            <input type="range" min="2" max="30" step="1" value={size} aria-label="Brush size" onChange={(e) => setSize(Number(e.target.value))} />
+          <label className="cmask-size">{t('custom-mask-editor.brush_size')}
+            <input type="range" min="2" max="30" step="1" value={size} aria-label={t('custom-mask-editor.brush_size')} onChange={(e) => setSize(Number(e.target.value))} />
             <span>{size}%</span>
           </label>
-          <button className="btn btn-sm" onClick={() => setStrokes((p) => p.slice(0, -1))} disabled={!strokes.length}><RotateCcw size={13} /> Undo stroke</button>
-          <button className="btn btn-sm" onClick={() => setStrokes([])} disabled={!strokes.length}><Trash2 size={13} /> Clear</button>
+          <button className="btn btn-sm" onClick={() => setStrokes((p) => p.slice(0, -1))} disabled={!strokes.length}><RotateCcw size={13} /> {t('custom-mask-editor.undo_stroke')}</button>
+          <button className="btn btn-sm" onClick={() => setStrokes([])} disabled={!strokes.length}><Trash2 size={13} /> {t('settings.clear')}</button>
           <label className="field row">
-            <span>Show result</span>
+            <span>{t('custom-mask-editor.show_result')}</span>
             <input type="checkbox" className="switch" checked={showResult} onChange={(e) => setShowResult(e.target.checked)} />
           </label>
         </div>
         <div className="cmask-foot">
-          <span className="dim small">{strokes.length} stroke{strokes.length === 1 ? '' : 's'} · combines with Chroma key</span>
+          <span className="dim small">{tn('mask.strokes_combines_with_chroma_key', strokes.length)}</span>
           <span className="cmask-actions">
-            <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" onClick={() => onSave(strokes)}>Save mask</button>
+            <button className="btn" onClick={onClose}>{t('app.cancel')}</button>
+            <button className="btn btn-primary" onClick={() => onSave(strokes)}>{t('custom-mask-editor.save_mask')}</button>
           </span>
         </div>
       </div>

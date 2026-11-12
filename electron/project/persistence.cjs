@@ -19,6 +19,7 @@ if (!isMainThread) {
     } catch (error) { parentPort.postMessage({ id, error: error.message }); }
   });
 } else {
+  const { t } = require('../system/i18n.cjs');
   class ProjectPersistence {
     constructor() { this.worker = null;this.pending = new Map();this.next = 0; }
     request(kind, args) {
@@ -31,7 +32,7 @@ if (!isMainThread) {
           this.pending.clear();
         };
         worker.on('error', failed);
-        worker.on('exit', code => { if (code !== 0) failed(new Error(`Project writer stopped (${code}).`)); });
+        worker.on('exit', code => { if (code !== 0) failed(new Error(t('main.project_writer_stopped', { code }))); });
         worker.on('message', data => {
           const request = this.pending.get(data.id);if (!request) return;
           this.pending.delete(data.id);
@@ -52,7 +53,7 @@ if (!isMainThread) {
     writeSlotChat(root, id, json) { return this.request('slotChat', [root, id, json]); }
     async close() {
       const worker = this.worker;this.worker = null;
-      for (const request of this.pending.values()) request.reject(new Error('Project writer closed.'));
+      for (const request of this.pending.values()) request.reject(new Error(t('main.project_writer_closed')));
       this.pending.clear();if (worker) await worker.terminate();
     }
   }

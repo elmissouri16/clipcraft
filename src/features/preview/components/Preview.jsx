@@ -25,6 +25,8 @@ import { fxGL } from "../../effects/gl.js";
 import { classicViaShader, drawOverlayPasses, pixelPasses, overlayRanges } from "../../effects/apply.js";
 import { anchorCorrection, interpolateTime } from '../playbackClock.js';
 import { drawTransitionFrame } from '../transitionFrame.js';
+import { t } from '../../../i18n/index.js';
+import { catalogName } from '../../../i18n/catalog.js';
 
 // Overlay effects (snow, sparkles, fire...) of every clip on screen at time t, drawn in project pixels.
 // The export draws the same function into its text layer frames (src/features/export/exportText.js).
@@ -632,17 +634,17 @@ export default function Preview({
   useEffect(() => { drawText(clockRef?.current.time ?? time); }, [time, project, scale, fontTick]);
 
   return (
-    <section ref={playerRef} className={`player ${dropOver ? 'drop-target' : ''} ${full ? 'is-full' : ''} ${peek ? 'peeking' : ''}`} aria-label="Player"
+    <section ref={playerRef} className={`player ${dropOver ? 'drop-target' : ''} ${full ? 'is-full' : ''} ${peek ? 'peeking' : ''}`} aria-label={t('preview.player')}
       onDragOver={(e) => { if (!isInternal(e)) return; e.preventDefault(); e.stopPropagation(); setDropOver(true); }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(false); }}
       onDrop={(e) => { if (!isInternal(e)) return; e.preventDefault(); e.stopPropagation(); setDropOver(false); onDropItem(readPayload(e)); }}>
       <div className="panel-head">
-        <span className="panel-title">Player</span>
-        {peek ? <span className="pill peek-pill" title={peek.name}>{peek.assetPath ? 'Asset' : 'Media'} · {peek.name}</span>
+        <span className="panel-title">{t('preview.player')}</span>
+        {peek ? <span className="pill peek-pill" title={peek.name}>{peek.assetPath ? t('preview.asset') : t('app.media')} · {peek.name}</span>
           : <span className="pill">{project.ratio} · {project.width}×{project.height} · {project.fps} fps</span>}
         {onToggleProperties && <button type="button" className="icon-btn sm properties-toggle"
-          aria-label={propertiesCollapsed ? 'Show properties panel' : 'Hide properties panel'}
-          title={propertiesCollapsed ? 'Show properties panel' : 'Hide properties panel'}
+          aria-label={propertiesCollapsed ? t('preview.show_properties_panel') : t('inspector.hide_properties_panel')}
+          title={propertiesCollapsed ? t('preview.show_properties_panel') : t('inspector.hide_properties_panel')}
           aria-controls="inspector-panel" aria-expanded={!propertiesCollapsed} onClick={onToggleProperties}>
           {propertiesCollapsed ? <PanelRightOpen size={16} aria-hidden="true" /> : <PanelRightClose size={16} aria-hidden="true" />}
         </button>}
@@ -684,7 +686,7 @@ export default function Preview({
             return <CropEditOverlay project={project} clip={srcClip} media={srcMedia} value={cropEdit.draftCrop} aspectId={cropEdit.draftAspect} onDraft={onCropDraft} time={time} />;
           })()}
           {colorPick && (
-            <div className="color-pick" role="button" aria-label="Click the color to key out"
+            <div className="color-pick" role="button" aria-label={t('preview.click_the_color_to_key_out')}
               onClick={async (e) => {
                 const srcClip = [...project.videoClips, ...(project.overlayClips || [])].find((c) => c.id === colorPick.id);
                 const srcMedia = srcClip && project.media.find((m) => m.id === srcClip.mediaId);
@@ -707,7 +709,7 @@ export default function Preview({
             const bw = trackPick.box ? trackPick.box.w * fit.fx * 100 : 9;
             const bh = trackPick.box ? trackPick.box.h * fit.fy * 100 : 9;
             return (
-              <div className="track-pick" role="button" aria-label="Click the object to track"
+              <div className="track-pick" role="button" aria-label={t('preview.click_the_object_to_track')}
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
                   const sx = (e.clientX - r.left) / r.width;
@@ -723,14 +725,14 @@ export default function Preview({
                     <span className="track-dot" style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }} />
                   </>
                 )}
-                <span className="track-pick-hint">{trackPick.point ? 'Click again to move the point, then Track in the inspector' : 'Click the object you want to follow'}</span>
+                <span className="track-pick-hint">{trackPick.point ? t('preview.click_again_to_move_the_point') : t('preview.click_the_object_you_want_to_follow')}</span>
               </div>
             );
           })()}
           {!project.videoClips.length && (
             <div className="stage-empty">
               <img src="./logo.png" alt="" draggable={false} />
-              <span>Drop a video or photo here, or on the timeline</span>
+              <span>{t('preview.drop_a_video_or_photo_here_or_on_the_timel')}</span>
             </div>
           )}
         </div>
@@ -738,13 +740,13 @@ export default function Preview({
       <div className="transport">
         <span className="tc"><b ref={timeLabel}>{formatTime(time)}</b><span> / {formatTime(duration)}</span></span>
         <div className="transport-btns">
-          <button className="icon-btn" aria-label="Go to start (Home)" title="Go to start (Home)" onClick={() => onSeek(0)}><SkipBack size={16} /></button>
-          <button className="icon-btn" aria-label="Previous frame (←)" title="Previous frame (←)" onClick={() => onSeek((clockRef?.current.time ?? time) - 1 / project.fps)}><ChevronLeft size={18} /></button>
-          <button className="play-btn" onClick={onTogglePlay} aria-label={withShortcut(playing ? 'Pause' : 'Play', 'togglePlay')} title={shortcutHint('togglePlay') || undefined}>
+          <button className="icon-btn" aria-label={t('preview.go_to_start_home')} title={t('preview.go_to_start_home')} onClick={() => onSeek(0)}><SkipBack size={16} /></button>
+          <button className="icon-btn" aria-label={t('preview.previous_frame')} title={t('preview.previous_frame')} onClick={() => onSeek((clockRef?.current.time ?? time) - 1 / project.fps)}><ChevronLeft size={18} /></button>
+          <button className="play-btn" onClick={onTogglePlay} aria-label={withShortcut(playing ? t('message-queue.pause') : t('preview.play'), 'togglePlay')} title={shortcutHint('togglePlay') || undefined}>
             {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
           </button>
-          <button className="icon-btn" aria-label="Next frame (→)" title="Next frame (→)" onClick={() => onSeek((clockRef?.current.time ?? time) + 1 / project.fps)}><ChevronRight size={18} /></button>
-          <button className="icon-btn" aria-label="Go to end" title="Go to end" onClick={() => onSeek(duration)}><SkipForward size={16} /></button>
+          <button className="icon-btn" aria-label={t('preview.next_frame')} title={t('preview.next_frame')} onClick={() => onSeek((clockRef?.current.time ?? time) + 1 / project.fps)}><ChevronRight size={18} /></button>
+          <button className="icon-btn" aria-label={t('preview.go_to_end')} title={t('preview.go_to_end')} onClick={() => onSeek(duration)}><SkipForward size={16} /></button>
         </div>
         <span className="tc-spacer">
           <PreviewVolume onOpen={() => setMenu(null)} />
@@ -752,23 +754,23 @@ export default function Preview({
             <span className="transport-menu-wrap">
               <button className={`proxy-btn quality-btn ${quality !== 'full' ? 'on' : ''}`} onClick={() => setMenu(menu === 'quality' ? null : 'quality')}
                 aria-haspopup="menu" aria-expanded={menu === 'quality'}
-                title="Playback quality: lower levels play a scaled copy so editing stays smooth. Export always uses the original videos.">
-                <Gauge size={12} /> {QUALITY_LABELS[quality]} <ChevronUp size={11} />
+                title={t('preview.playback_quality_lower_levels_play_a_scale')}>
+                <Gauge size={12} /> {catalogName('quality', { id: quality, name: QUALITY_LABELS[quality] })} <ChevronUp size={11} />
               </button>
               {menu === 'quality' && (
-                <div className="transport-menu" role="menu" aria-label="Playback quality">
+                <div className="transport-menu" role="menu" aria-label={t('settings.playback_quality')}>
                   {[
-                    ['full', 'Full quality', 'Original video resolution'],
-                    ['high', 'High quality', 'Smooth playback, no impact on exported video'],
-                    ['medium', 'Medium quality', 'Smoother playback, no impact on exported video'],
-                    ['low', 'Low quality', 'Smoothest playback, no impact on exported video'],
+                    ['full', t('preview.full_quality'), t('preview.original_video_resolution')],
+                    ['high', t('preview.high_quality'), t('preview.smooth_playback_no_export_impact')],
+                    ['medium', t('preview.medium_quality'), t('preview.smoother_playback_no_export_impact')],
+                    ['low', t('preview.low_quality'), t('preview.smoothest_playback_no_export_impact')],
                   ].map(([id, name, desc]) => (
                     <button key={id} className={`transport-menu-item ${quality === id ? 'active' : ''}`} role="menuitemradio" aria-checked={quality === id}
                       onClick={() => { setMenu(null); onQualityChange(id); }}>
                       <span className="tm-check">{quality === id ? <Check size={14} /> : null}</span>
                       <span className="tm-text"><b>{name}</b><small>{desc}</small></span>
                       {preparing && quality === id && (
-                        <span className="tm-busy" role="status" title="Building this level's copies in the background — playback continues with the current copy">
+                        <span className="tm-busy" role="status" title={t('preview.building_this_levels_copies_in_the_backgro')}>
                           <LoaderCircle size={12} />
                         </span>
                       )}
@@ -781,13 +783,13 @@ export default function Preview({
           <span className="transport-menu-wrap">
             <button className={`proxy-btn zoom-btn ${view.fit ? '' : 'on'}`} onClick={() => setMenu(menu === 'zoom' ? null : 'zoom')}
               aria-haspopup="menu" aria-expanded={menu === 'zoom'}
-              title="Zoom the preview (view only — clips and export are not affected). Mouse wheel over the video zooms too.">
-              <ZoomIn size={12} /> {view.fit ? 'Fit' : `${Math.round(view.z * 100)}%`} <ChevronUp size={11} />
+              title={t('preview.zoom_the_preview_view_only_clips_and_expor')}>
+              <ZoomIn size={12} /> {view.fit ? t('clip.fit') : `${Math.round(view.z * 100)}%`} <ChevronUp size={11} />
             </button>
             {menu === 'zoom' && (
-              <div className="transport-menu zoom-menu" role="menu" aria-label="Preview zoom">
+              <div className="transport-menu zoom-menu" role="menu" aria-label={t('preview.preview_zoom')}>
                 {[
-                  ['fit', 'Fit'],
+                  ['fit', t('clip.fit')],
                   [50, '50%'],
                   [100, '100%'],
                   [150, '150%'],
@@ -805,7 +807,7 @@ export default function Preview({
               </div>
             )}
           </span>
-          <button className="icon-btn" onClick={toggleFull} aria-label={full ? 'Exit full screen (Esc)' : 'Full screen (F)'} title={full ? 'Exit full screen (Esc)' : 'Full screen (F)'}>
+          <button className="icon-btn" onClick={toggleFull} aria-label={full ? t('preview.exit_full_screen_esc') : t('preview.full_screen_f')} title={full ? t('preview.exit_full_screen_esc') : t('preview.full_screen_f')}>
             {full ? <Minimize size={16} /> : <Maximize size={16} />}
           </button>
         </span>
@@ -915,7 +917,7 @@ function CropEditOverlay({ project, clip, media, value, aspectId, onDraft, time 
     window.addEventListener('pointerup', up);
   };
   return (
-    <div className="crop-edit" aria-label="Crop frame" ref={rootRef}>
+    <div className="crop-edit" aria-label={t('preview.crop_frame')} ref={rootRef}>
       <div className="crop-edit-xform" style={{ transform: layerStyle(clip, project.width, project.height, (hasMotion(clip) || clip.pin) ? { transform: tNow, opacity: 1 } : undefined).transform }}>
         <div className="crop-edit-src"
           style={{ left: `${((1 - geom.fx) / 2) * 100}%`, top: `${((1 - geom.fy) / 2) * 100}%`, width: `${geom.fx * 100}%`, height: `${geom.fy * 100}%`, transform: `scale(${geom.flipX ? -1 : 1}, ${geom.flipY ? -1 : 1})` }}>
@@ -934,7 +936,7 @@ function CropEditOverlay({ project, clip, media, value, aspectId, onDraft, time 
             <i className="crop-grid-h crop-center" style={{ top: '50%' }} />
           </div>
           {CROP_HANDLES.map((h) => (
-            <span key={h} className="crop-handle" role="slider" aria-label={`Crop edge ${h}`} title="Drag to crop"
+            <span key={h} className="crop-handle" role="slider" aria-label={t('preview.crop_edge', { edge: h })} title={t('preview.drag_to_crop')}
               style={{ left: `${pos[h][0] * 100}%`, top: `${pos[h][1] * 100}%`, cursor: CROP_CURSORS[h] }}
               onPointerDown={(e) => startDrag(e, h)} />
           ))}

@@ -62,7 +62,7 @@ module.exports = async (win, app, dir) => {
     check('repeated Enter consumes a draft once', await q('!document.querySelector(".pilot-queue")'));
     await until('document.querySelector(".tl-agent-status")?.dataset.phase==="working"');
     check('timeline shows work before a document edit', await q('document.querySelector(".tl-agent-status").textContent.includes("Agent working")'));
-    await q('window.__fve.select({track:"text",id:"title"})'); await click('.pilot-context-actions button');
+    await q('window.__fve.select({track:"text",id:"title"})'); await click('.pilot-attach-selection');
     await until('!!document.querySelector(".pilot-context-chip")');
     await submit('Second edit', true); await submit('Third edit'); await submit('Remove this queued edit');
     await type('Keep my unsent draft');
@@ -115,7 +115,7 @@ module.exports = async (win, app, dir) => {
     runs[6].edit.release(); await until('!document.querySelector("button[aria-label=Stop]")');
     check('manual editing pauses queue and prevents stale writes', runs.length === 7 && await q('window.__fve.rawProject().name==="Manual edit wins"&&window.__fve.rawProject().craftAI.sessions[0].queuePaused'));
     // Stale queued attachments remain editable instead of disappearing or submitting unscoped.
-    await q('window.__fve.select({track:"text",id:"title"})'); await click('.pilot-context-actions button'); await submit('Stale attachment');
+    await q('window.__fve.select({track:"text",id:"title"})'); await click('.pilot-attach-selection'); await submit('Stale attachment');
     await q('window.__fve.dispatch({type:"delete",track:"text",id:"title"})');
     await until('window.__fve.rawProject().textClips.length===0');
     await click('button[aria-label="Remove queued message 1"]'); await click('.pilot-queue-head button');

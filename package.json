@@ -114,7 +114,6 @@
       "electron/**/*",
       "shared/**/*",
       "assets/**/*",
-      "bundled-templates/**/*",
       "package.json",
       "node_modules/ffmpeg-static/**/*",
       "node_modules/ffprobe-static/**/*",
@@ -130,7 +129,6 @@
       "THIRD-PARTY-NOTICES.md"
     ],
     "asarUnpack": [
-      "bundled-templates/**",
       "node_modules/ffmpeg-static/**",
       "node_modules/ffprobe-static/**",
       "node_modules/@ffprobe-installer/**"
@@ -154,7 +152,7 @@
       "icon": "build/icon.png",
       "syncDesktopName": true,
       "files": [
-        "@(dist|electron|shared|assets|bundled-templates)/**/*",
+        "@(dist|electron|shared|assets)/**/*",
         "package.json",
         "LICENSE",
         "THIRD-PARTY-NOTICES.md",
@@ -168,7 +166,7 @@
       ],
       "icon": "build/icon.png",
       "files": [
-        "@(dist|electron|shared|assets|bundled-templates)/**/*",
+        "@(dist|electron|shared|assets)/**/*",
         "package.json",
         "LICENSE",
         "THIRD-PARTY-NOTICES.md",
@@ -183,7 +181,7 @@
       "icon": "build/icon.png",
       "category": "public.app-category.video",
       "files": [
-        "@(dist|electron|shared|assets|bundled-templates)/**/*",
+        "@(dist|electron|shared|assets)/**/*",
         "package.json",
         "LICENSE",
         "THIRD-PARTY-NOTICES.md",

@@ -1452,7 +1452,8 @@ function finishAgentEdit(state, interruption) {
   if (!agentEdit) return state;
   const cause = interruption ? { agentInterruption: { token: agentEdit.token, action: interruption.type, ...(interruption.track ? { track: interruption.track } : {}), fields: Object.keys(interruption.patch || {}) } } : {};
   if (!agentEdit.steps.length) return { ...rest, ...cause, future: agentEdit.future };
-  return { ...rest, ...cause, past: [...state.past, agentEdit.base].slice(-100), future: [] };
+  // A press held across the commit restarts its gesture here: the edit is one Undo step of its own.
+  return { ...rest, ...cause, past: [...state.past, agentEdit.base].slice(-100), future: [], ...(state.gestureStart ? { gestureStart: state.present } : {}) };
 }
 
 const preparedActions = new WeakMap();

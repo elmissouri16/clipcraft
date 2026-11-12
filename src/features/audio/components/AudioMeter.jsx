@@ -13,6 +13,7 @@
 import React, { useEffect, useRef } from 'react';
 import { meterAnalysers } from '../audioTap.js';
 import { METER_FLOOR as FLOOR, clearClip, createMeterState, dbOf, stepMeter } from '../meterMath.js';
+import { t } from '../../../i18n/index.js';
 
 const TICKS = [0, -6, -12, -24, -36, -48, -60];
 
@@ -119,9 +120,9 @@ export default function AudioMeter({ active }) {
   useEffect(() => { draw(); kick(); window.__meter = st.current; return () => { cancelAnimationFrame(st.current.raf); st.current.running = false; }; }, []);
 
   return (
-    <div className="meter-strip" title="Preview audio level — click to clear the clip indicators"
+    <div className="meter-strip" title={t('audio-meter.preview_audio_level_click_to_clear_the_cli')}
       onClick={() => { clearClip(st.current); draw(); }}>
-      <canvas ref={canvasRef} className="meter-canvas" aria-label="Stereo audio level meter" />
+      <canvas ref={canvasRef} className="meter-canvas" aria-label={t('audio-meter.stereo_audio_level_meter')} />
     </div>
   );
 }

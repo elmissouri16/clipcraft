@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Layers, Loader2, Plus, Star } from 'lucide-react';
 import { formatTime, toFileUrl } from "../../../state/store.js";
 import { FavStar, useFavorites } from "../../../app/favorites.jsx";
-import { Thumb } from './StockLibrary.jsx';
+import { Thumb, StockCard } from './StockLibrary.jsx';
+import { t } from '../../../i18n/index.js';
 
 // Favorite videos and photos: Pixabay results and imported files, ready to add to any project.
 export default function MediaFavorites({ onStockAdd, onAddFile }) {
@@ -18,21 +19,22 @@ export default function MediaFavorites({ onStockAdd, onAddFile }) {
   };
   return (
     <>
-      <div className="tab-title">Favorite videos and photos</div>
+      <div className="tab-title">{t('favorites.favorite_videos_and_photos')}</div>
       {error && <p className="error-text">{error}</p>}
       {!favs.length && (
         <div className="empty-state">
           <span className="empty-disc"><Star size={26} /></span>
-          <b>No favorites yet</b>
-          <p>Click the star on a stock video or photo, or on your own media, to keep it here for all your projects.</p>
+          <b>{t('favorites.no_favorites_yet')}</b>
+          <p>{t('favorites.click_the_star_on_a_stock_video_or_photo_o')}</p>
         </div>
       )}
       <div className="stock-grid">
         {favs.map((e) => {
           const it = e.item;
+          if (e.source === 'stock') return <StockCard key={e.key} item={it} favorite={e} busy={busy[e.key]} onAdd={where => add(e, where)} />;
           const name = e.source === 'stock' ? it.tags : it.name;
           return (
-            <div key={e.key} className={`stock-tile ${e.missing ? 'missing' : ''}`} title={e.missing ? `File moved or deleted: ${it.path}` : name}
+            <div key={e.key} className={`stock-tile ${e.missing ? 'missing' : ''}`} title={e.missing ? t('favorites.file_moved_or_deleted_path', { path: it.path }) : name}
               onDoubleClick={() => !e.missing && add(e, 'main')}>
               {e.source === 'stock' ? <Thumb url={it.thumb} alt={name} />
                 : e.type === 'photo' ? <img src={toFileUrl(it.path)} alt={name} draggable={false} />
@@ -43,11 +45,11 @@ export default function MediaFavorites({ onStockAdd, onAddFile }) {
               <FavStar entry={e} className="tile-star" />
               {e.source === 'file' && <span className="fav-name">{it.name}</span>}
               {busy[e.key] ? (
-                <span className="stock-busy"><Loader2 size={18} className="spin" /> Adding…</span>
+                <span className="stock-busy"><Loader2 size={18} className="spin" /> {t('favorites.adding')}</span>
               ) : !e.missing && (
                 <span className="stock-actions">
-                  <button onClick={() => add(e, 'overlay')} aria-label="Add as overlay" title="Add as overlay (picture in picture)"><Layers size={13} /></button>
-                  <button onClick={() => add(e, 'main')} aria-label="Add to the main track" title="Add to the main track"><Plus size={14} /></button>
+                  <button onClick={() => add(e, 'overlay')} aria-label={t('favorites.add_as_overlay')} title={t('library.add_as_overlay_picture_in_picture')}><Layers size={13} /></button>
+                  <button onClick={() => add(e, 'main')} aria-label={t('favorites.add_to_the_main_track')} title={t('favorites.add_to_the_main_track')}><Plus size={14} /></button>
                 </span>
               )}
             </div>

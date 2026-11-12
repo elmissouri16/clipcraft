@@ -4,11 +4,9 @@
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { chat, agentStep, listModels, testConnection } = require("../../../electron/agents/ai.cjs");
-const { DEFAULT_MODELS, PROVIDERS } = (() => {
-  // settings.cjs needs Electron; read the two constants from its source instead.
-  const src = require('fs').readFileSync(require('path').join(__dirname, "../../../electron/system/settings.cjs"), 'utf8');
-  return { PROVIDERS: eval(src.match(/const PROVIDERS = (\[[^\]]*\]);/)[1]), DEFAULT_MODELS: { groq: src.match(/groq: '([^']+)'/)[1] } };
-})();
+// The provider list and defaults come from the preset table (shared/providers.json), which needs no Electron.
+const providerPresets = require('../../../electron/agents/providers.cjs');
+const PROVIDERS = providerPresets.ids(), DEFAULT_MODELS = providerPresets.defaultModels();
 
 const FAKE = 'gsk_FAKE-KEY-1234567890';
 const seen = [];

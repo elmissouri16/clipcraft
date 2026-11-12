@@ -27,9 +27,7 @@ These existing failures remain failures. They include unavailable platform tools
 - [test-tplmotion-export.cjs](../../tests/unit/export/test-tplmotion-export.cjs)
 - [test-transition-packs-export.cjs](../../tests/unit/export/test-transition-packs-export.cjs)
 - [test-assets.cjs](../../tests/unit/library/test-assets.cjs)
-- [test-bundled-templates.cjs](../../tests/unit/library/test-bundled-templates.cjs)
 - [test-tracking.cjs](../../tests/unit/media/test-tracking.cjs)
-- [test-telemetry.cjs](../../tests/unit/system/test-telemetry.cjs)
 - [test-srt.mjs](../../tests/unit/text/test-srt.mjs)
 
 Per-suite logs and JSON evidence: `/tmp/clipcraft-structure-baseline/` and `/tmp/clipcraft-structure-final/`. The standard command is now `npm test`; suites can be listed or filtered as documented in [the structure guide](project-structure.md).

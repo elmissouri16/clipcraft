@@ -29,7 +29,7 @@ module.exports=async(win,app,dir)=>{
   ProjectPersistence.prototype.writeProject=async function(...args){if(!waiting){waiting=true;await new Promise(resolve=>release=resolve);}return originalWrite.apply(this,args);};
   try{
    await q('window.__fve.dispatch({type:"setProject",patch:{name:"Snapshot being saved"}})');await wait(60);
-   await q('[...document.querySelectorAll(".topbar button")].find(button=>button.textContent.trim()==="Save").click()');
+   await q('document.querySelector(\'button[aria-label="Project menu"]\').click()');await until(()=>q('!!document.querySelector(".ctx-menu")'));await q('[...document.querySelectorAll(".ctx-menu button")].find(b=>b.textContent.trim().startsWith("Save")&&!b.textContent.includes("as")).click()');
    await until(()=>waiting);
    await q('window.__fve.dispatch({type:"setProject",patch:{name:"Edited during Save"}})');await wait(60);release();
    await until(()=>JSON.parse(fs.readFileSync(file,'utf8')).name==='Edited during Save');

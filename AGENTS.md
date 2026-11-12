@@ -28,8 +28,8 @@ the MIT license grant and may not be used to brand another product.
   UI (the dev instance exposes a test harness), measure the result, and
   report failures as failures — with the reason, not a softened summary.
 - **Test battery baseline:** 79 PASS / 6 FAIL of 85 suite files; the 6 failures
-  are environment-only (Windows-only suites, a telemetry endpoint, network and
-  fixture availability in the sandbox). A change that moves this number needs
+  are environment-only (Windows-only suites, network and fixture availability
+  in the sandbox). A change that moves this number needs
   an explanation in the commit message.
 - **One editor on the tree at a time.** Perf, crop and UI workstreams do not
   edit the tree concurrently; coordinate through the maintainer.
@@ -53,6 +53,4 @@ the MIT license grant and may not be used to brand another product.
 - `docs/` — contributor index and grouped architecture, agent, design, export
   and update documentation. Read `docs/architecture/project-structure.md`
   before adding a new module. Run `npm run test:structure` after moving files.
-- `shared/` — LUTs and shared data. `bundled-templates/` — generated template
-  packages (regenerate with `scripts/make-bundled-templates.cjs`, never
-  hand-edit the media).
+- `shared/` — LUTs, provider presets, UI dictionaries and shared data.

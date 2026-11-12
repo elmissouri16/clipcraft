@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { t } from '../../i18n/index.js';
 
 // NumBox — the app's one numeric field, a scrub field in the editor tradition:
 // - Drag the label or the field horizontally to scrub (pointer capture, ew-resize cursor, live
@@ -122,7 +123,7 @@ export default function NumBox({ label, value, onChange, step = 1, suffix, min, 
       className={`numbox ${layout === 'field' ? 'numbox-field' : ''} ${scrubbing ? 'scrubbing' : ''} ${className}`}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
       {label != null && label !== '' && <span className="numbox-label">{label}</span>}
-      <input ref={inputRef} type="text" inputMode="decimal" aria-label={ariaLabel || (label ? `${label} value` : 'value')}
+      <input ref={inputRef} type="text" inputMode="decimal" aria-label={ariaLabel || (label ? t('num-box.label_value', { label }) : t('num-box.value'))}
         value={shown}
         onChange={(e) => setText(e.target.value)}
         onFocus={(e) => { setText(disp(value)); requestAnimationFrame(() => e.target.select()); }}
@@ -130,8 +131,8 @@ export default function NumBox({ label, value, onChange, step = 1, suffix, min, 
         onKeyDown={onKeyDown} />
       {suffix && <i>{suffix}</i>}
       <span className="numbox-steps" aria-hidden="true">
-        <button type="button" tabIndex={-1} aria-label="Step up" onPointerDown={(e) => stepperDown(e, 1)}><ChevronUp size={10} /></button>
-        <button type="button" tabIndex={-1} aria-label="Step down" onPointerDown={(e) => stepperDown(e, -1)}><ChevronDown size={10} /></button>
+        <button type="button" tabIndex={-1} aria-label={t('num-box.step_up')} onPointerDown={(e) => stepperDown(e, 1)}><ChevronUp size={10} /></button>
+        <button type="button" tabIndex={-1} aria-label={t('num-box.step_down')} onPointerDown={(e) => stepperDown(e, -1)}><ChevronDown size={10} /></button>
       </span>
     </label>
   );

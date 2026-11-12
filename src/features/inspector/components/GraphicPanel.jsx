@@ -8,6 +8,7 @@ import { clipLen, uid } from '../../../state/store.js';
 import { graphicEdits } from '../../graphics/graphicEdits.js';
 import { graphicInputDefaults, graphicInputField, graphicInputError } from '../../graphics/graphicInputs.js';
 import { libraryPictures } from '../../graphics/graphicImages.js';
+import { t } from '../../../i18n/index.js';
 
 function SeriesField({ rows, onChange }) {
   const cols = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r)))].slice(0, 4), [rows]);
@@ -19,10 +20,10 @@ function SeriesField({ rows, onChange }) {
       {rows.map((r, i) => (
         <div className="graphic-series-row" key={i}>
           {cols.map((c) => <input key={c} aria-label={`${c} ${i + 1}`} type={numeric(c) ? 'number' : 'text'} step="any" value={r[c] ?? ''} onChange={(e) => set(i, c, e.target.value)} />)}
-          <button type="button" className="icon-btn sm" aria-label={`Remove row ${i + 1}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}><Trash2 size={12} /></button>
+          <button type="button" className="icon-btn sm" aria-label={t('graphic.remove_row', { row: i + 1 })} onClick={() => onChange(rows.filter((_, j) => j !== i))}><Trash2 size={12} /></button>
         </div>
       ))}
-      <button type="button" className="btn btn-sm" onClick={() => onChange([...rows, Object.fromEntries(cols.map((c) => [c, numeric(c) ? 0 : '']))])}><Plus size={12} /> Add row</button>
+      <button type="button" className="btn btn-sm" onClick={() => onChange([...rows, Object.fromEntries(cols.map((c) => [c, numeric(c) ? 0 : '']))])}><Plus size={12} /> {t('graphic.add_row')}</button>
     </div>
   );
 }
@@ -64,7 +65,7 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
   }, []);
   const keys = [...new Set([...Object.keys(schema || {}), ...Object.keys(current)])];
   const fields = Object.fromEntries(keys.map((key) => [key, graphicInputField(key, schema?.[key], draft[key])]));
-  const errors = Object.fromEntries(keys.map((key) => [key, invalidJson[key] ? 'Enter valid JSON.' : graphicInputError(fields[key], draft[key])]));
+  const errors = Object.fromEntries(keys.map((key) => [key, invalidJson[key] ? t('graphic.enter_valid_json') : graphicInputError(fields[key], draft[key])]));
   const invalid = Object.values(errors).some(Boolean);
   const validDuration = duration >= .2 && duration * (clip.speed || 1) >= .2 && duration * (clip.speed || 1) <= 60;
   const groups = new Map();
@@ -86,22 +87,22 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
     const numeric = (e) => e.target.value === '' ? '' : Number(e.target.value);
     const number = (n, change, name = label) => <input type="number" min={min} max={max} step={step} aria-label={name} aria-invalid={!!errors[key]} value={n ?? ''} onChange={(e) => change(numeric(e))} />;
     if (kind === 'series') return <SeriesField rows={Array.isArray(value) ? value : []} onChange={set} />;
-    if (kind === 'color') return <div className="graphic-color"><input type="color" aria-label={label} value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => set(e.target.value)} /><input type="text" aria-label={`${label} value`} value={value ?? ''} onChange={(e) => set(e.target.value)} /></div>;
+    if (kind === 'color') return <div className="graphic-color"><input type="color" aria-label={label} value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => set(e.target.value)} /><input type="text" aria-label={t('inspector.name_value', { name: label })} value={value ?? ''} onChange={(e) => set(e.target.value)} /></div>;
     if (kind === 'number') return <div className="graphic-number">
-      {spec.slider && <input type="range" aria-label={`${label} slider`} min={min} max={max} step={step} value={typeof value === 'number' ? value : min} onChange={(e) => set(numeric(e))} />}
+      {spec.slider && <input type="range" aria-label={t('graphic.name_slider', { name: label })} min={min} max={max} step={step} value={typeof value === 'number' ? value : min} onChange={(e) => set(numeric(e))} />}
       <div className="graphic-number-value">{number(value, set)}{spec.unit && <span>{spec.unit}</span>}</div>
     </div>;
     if (kind === 'point') return <div className="graphic-point">{['x', 'y'].map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span>{number(value?.[axis], (n) => set({ ...value, [axis]: n }), `${label} ${axis.toUpperCase()}`)}</label>)}</div>;
     if (kind === 'choice' || kind === 'select') return <select aria-label={label} value={spec.options.findIndex((option) => Object.is(option.value, value))} onChange={(e) => set(spec.options[Number(e.target.value)].value)}>
-      {!spec.options.some((option) => Object.is(option.value, value)) && <option value={-1} disabled>Choose…</option>}
+      {!spec.options.some((option) => Object.is(option.value, value)) && <option value={-1} disabled>{t('graphic.choose')}</option>}
       {spec.options.map((option, index) => <option key={index} value={index}>{option.label}</option>)}
     </select>;
     if (kind === 'image') {
       // The library's pictures by name; the value is the media id, which the project keeps (never the picture).
       const pictures = libraryPictures(project), chosen = value ? String(value) : '', known = !chosen || pictures.some((p) => p.id === chosen);
       return <select aria-label={label} value={chosen} onChange={(e) => set(e.target.value)}>
-        <option value="">None</option>
-        {!known && <option value={chosen} disabled>Missing picture (removed from the library)</option>}
+        <option value="">{t('grade.none')}</option>
+        {!known && <option value={chosen} disabled>{t('graphic.missing_picture_removed_from_the_library')}</option>}
         {pictures.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>;
     }
@@ -113,8 +114,8 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
 
   return (
     <div className="graphic-panel" onPointerDownCapture={e => { if (e.target.type === 'range') { editing.current.dragging = true; begin(); } }}>
-      <p className="dim small">Changes preview live and save automatically. Position, scale, fades and keyframes work like any overlay.</p>
-      {!keys.length && <p className="dim small">This graphic declares no editable fields. Ask CraftAI to change it.</p>}
+      <p className="dim small">{t('graphic.changes_preview_live_and_save_automaticall')}</p>
+      {!keys.length && <p className="dim small">{t('graphic.this_graphic_declares_no_editable_fields_a')}</p>}
       {[...groups].map(([group, groupKeys]) => <fieldset className="graphic-group" key={group}>
         {group && <legend>{group}</legend>}
         {groupKeys.map((key) => <div className={`graphic-field ${fields[key].type === 'series' ? 'wide' : ''}`} key={key}>
@@ -123,15 +124,15 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
           {errors[key] && <small className="graphic-field-help graphic-error" role="alert">{errors[key]}</small>}
         </div>)}
       </fieldset>)}
-      <label className="graphic-field"><span>Duration (s)</span>
-        <input type="number" min={Math.max(.2, .2 / (clip.speed || 1))} max={60 / (clip.speed || 1)} step="0.1" aria-label="Graphic duration" value={duration} onChange={(e) => { changed(); setDuration(Number(e.target.value)); }} /></label>
-      {!validDuration && <p className="graphic-error" role="alert">Choose a duration within the supported range.</p>}
+      <label className="graphic-field"><span>{t('graphic.duration_s')}</span>
+        <input type="number" min={Math.max(.2, .2 / (clip.speed || 1))} max={60 / (clip.speed || 1)} step="0.1" aria-label={t('graphic.graphic_duration')} value={duration} onChange={(e) => { changed(); setDuration(Number(e.target.value)); }} /></label>
+      {!validDuration && <p className="graphic-error" role="alert">{t('graphic.choose_a_duration_within_the_supported_ran')}</p>}
       {(status.error || status.previewError) && <p className="graphic-error" role="alert">{status.error || status.previewError}</p>}
       <div className="graphic-actions">
-        {status.error && <button type="button" className="btn btn-sm" onClick={() => graphicEdits.retry(clip.id)}><RefreshCw size={13} /> Retry update</button>}
-        <button type="button" className="btn btn-sm" onClick={() => { changed(); setDraft({ ...current, ...graphicInputDefaults(schema) }); setInvalidJson({}); setResetKey((n) => n + 1); }}><RotateCcw size={13} /> Reset</button>
+        {status.error && <button type="button" className="btn btn-sm" onClick={() => graphicEdits.retry(clip.id)}><RefreshCw size={13} /> {t('graphic.retry_update')}</button>}
+        <button type="button" className="btn btn-sm" onClick={() => { changed(); setDraft({ ...current, ...graphicInputDefaults(schema) }); setInvalidJson({}); setResetKey((n) => n + 1); }}><RotateCcw size={13} /> {t('hsl-curves.reset')}</button>
       </div>
-      <small className="dim graphic-status" role="status">{invalid ? 'Fix the highlighted fields to apply changes.' : status.pending ? 'Live preview · preparing full quality…' : 'Up to date'}</small>
+      <small className="dim graphic-status" role="status">{invalid ? t('graphic.fix_the_highlighted_fields_to_apply') : status.pending ? t('graphic.live_preview_preparing_full_quality') : t('graphic.up_to_date')}</small>
     </div>
   );
 }

@@ -348,7 +348,8 @@ async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeou
 async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, timeoutMs = 90000, signal }) {
   if (thinking.usesResponses(cfg)) return responsesAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
   // Groq counts max_tokens in its per-minute budget: ask for what a step needs (a tool call or a short answer).
-  if (openAiLike(cfg.provider) || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: Math.min(maxTokens, 1024), timeoutMs, signal });
+  // Other vendors keep the full budget: reasoning models (xAI, DeepSeek) spend part of it on thinking.
+  if (openAiLike(cfg.provider) || cfg.provider === 'ollama') return openaiAgentStep(cfg, { system, contents, tools, maxTokens: cfg.provider === 'groq' ? Math.min(maxTokens, 1024) : maxTokens, timeoutMs, signal });
   if (cfg.provider === 'claude') return anthropicAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal });
   if (cfg.provider !== 'gemini') {
     throw new AiError('Unknown AI provider. Choose one in Settings.', 0);
@@ -397,12 +398,14 @@ function toJsonSchema(s) {
 function toOpenAiMessages(system, contents) {
   const msgs = system ? [{ role: 'system', content: system }] : [];
   let lastIds = [];
+  // Replayed ids: nine letters or digits, which every openai-protocol vendor accepts (Mistral takes no other shape).
+  const toolCallId = (turn, k) => `c${String(turn).padStart(5, '0')}${String(k).padStart(3, '0')}`.slice(0, 9);
   contents.forEach((c, i) => {
     const parts = c.parts || [];
     if (c.role === 'model') {
       const text = parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');
       const calls = parts.filter((p) => p.functionCall);
-      lastIds = calls.map((_, k) => `call_${i}_${k}`);
+      lastIds = calls.map((_, k) => toolCallId(i, k));
       const m = { role: 'assistant', content: text || (calls.length ? null : '') };
       if (calls.length) {
         m.tool_calls = calls.map((p, k) => ({ id: lastIds[k], type: 'function', function: { name: p.functionCall.name, arguments: JSON.stringify(p.functionCall.args || {}) } }));
@@ -411,7 +414,7 @@ function toOpenAiMessages(system, contents) {
       return;
     }
     const answers = parts.filter((p) => p.functionResponse);
-    answers.forEach((p, k) => msgs.push({ role: 'tool', tool_call_id: lastIds[k] || `call_${i}_${k}`, content: JSON.stringify(p.functionResponse.response ?? {}) }));
+    answers.forEach((p, k) => msgs.push({ role: 'tool', tool_call_id: lastIds[k] || toolCallId(i, k), content: JSON.stringify(p.functionResponse.response ?? {}) }));
     const text = parts.filter((p) => p.text).map((p) => p.text).join('');
     if (text || !answers.length || parts.some(p => p.inlineData)) msgs.push({ role: 'user', content: parts.some(p => p.inlineData) ? openAiParts(parts) : text });
   });
@@ -635,7 +638,7 @@ async function listModels(cfg, {refresh=false}={}) {
         .map((m) => String(m.name).replace(/^models\//, ''))
         .filter((id) => id.startsWith('gemini'));
     } else if (provider === 'ollama') {
-      const j = await http(`${base || 'http://localhost:11434'}/api/tags`, {});
+      const j = await http(`${(base || 'http://localhost:11434').replace(/\/v1\/?$/, '')}/api/tags`, {}); // the native API sits beside /v1
       ids = (j?.models || []).map((m) => m.name);
     } else if (openAiLike(provider)) {
       const j = await http(`${openAiBase({ provider, baseUrl: base })}/models`, { headers: { authorization: `Bearer ${apiKey}`, ...providers.headers(provider) } }, apiKey);

@@ -11,6 +11,7 @@ import { validateToolCall } from "../../../shared/toolArguments.mjs";
 import { latestEditorRevision, prepareContext, projectRevision, recallContext } from './context.js';
 import { describeToolActivity, imageActivityProgress } from './toolActivity.js';
 import { renderActivityProgress } from './activityEvidence.js';
+import { t, tn } from '../../i18n/index.js';
 
 export const SYSTEM_PROMPT = `You are CraftAI inside ClipCraft. Edit the current video project using editor tools; never claim an edit before its successful result.
 - Load needed tool groups with load_tools. Batch independent reads and group loads; perform edits in order. Only use available tools. Explain unsupported requests briefly.
@@ -68,84 +69,86 @@ export const editTarget = (name, args = {}) => {
 const MAX_STEPS = 40; // a full edit takes many tool calls
 const providerName = providerShortName;
 
-// Tool arguments shown as a short phrase in the chat.
+// Tool arguments shown as a short phrase in the chat (panel text, docs/design/localization.md).
+// Argument values (ids, topics, kinds) stay as the model wrote them.
 export function describeCall(name, args) {
   const a = args || {};
+  const topic = String(a.topic || '').replace(/_/g, ' ');
   switch (name) {
-    case 'analyze_reference': return 'Studying how the reference video is edited';
-    case 'graphics_guide': return `Reading the graphics guide: ${a.topic || 'toolkit'}`;
-    case 'add_graphic': return `Drawing a motion graphic${a.name ? `: ${a.name}` : ''}`;
-    case 'edit_graphic': return 'Redrawing the motion graphic';
-    case 'analyze_scenes': return 'Analysing source shots and timeline mapping';
-    case 'get_storyboard': return 'Inspecting scene samples';
-    case 'annotate_scene': return 'Saving an observed scene description';
-    case 'get_project': return a.if_revision ? 'Checking for project changes'
-      : Array.isArray(a.clip_ids) && a.clip_ids.length ? `Reading ${a.clip_ids.length} selected clip(s)`
-        : a.scope && a.scope !== 'all' ? `Reading project ${a.scope}` : 'Reading the project';
-    case 'load_tools': return `Loading ${(Array.isArray(a.groups) ? a.groups : []).join(', ')} tools`;
-    case 'layer_tools': return a.action === 'update' ? 'Updating layer controls' : `${a.action === 'add' ? 'Adding' : a.action === 'move' ? 'Reordering' : 'Deleting'} a layer`;
-    case 'list_local_media': return 'Finding local media';
-    case 'import_media': return 'Importing local media';
-    case 'edit_caption_words': return 'Correcting word timing';
-    case 'caption_tools': return a.action === 'import_srt' ? 'Importing subtitle cues' : a.action === 'merge' ? 'Merging caption cues' : 'Splitting a caption';
-    case 'export_subtitles': return 'Saving subtitle file';
-    case 'review_section': return 'Checking the rendered section locally';
-    case 'recall_context': return 'Recalling earlier tool output';
-    case 'remove_silences': return 'Removing silences';
-    case 'cut_range': return `Cutting ${a.start_sec}s to ${a.end_sec}s`;
-    case 'keep_ranges': return `Keeping ${(a.ranges || []).length} range(s)`;
-    case 'transcribe': return 'Transcribing the speech';
-    case 'add_captions': return 'Adding captions';
-    case 'add_text': return `Adding text "${String(a.text || '').slice(0, 30)}"`;
-    case 'delete_clip': return 'Deleting a clip';
-    case 'split_at': return `Splitting at ${a.time_sec}s`;
-    case 'set_speed': return `Setting speed to ${a.speed}x`;
-    case 'set_volume': return `Setting volume to ${a.volume}`;
-    case 'set_audio_effects': return 'Finishing the audio';
-    case 'set_volume_envelope': return 'Automating volume';
-    case 'duck_audio': return 'Balancing music beneath speech';
-    case 'track_subject': return a.reframe === false ? 'Tracking the selected subject' : 'Following and reframing the subject';
-    case 'pin_to_subject': return a.target_clip_id ? 'Attaching to the tracked subject' : 'Detaching from the subject';
-    case 'set_filter': return `Applying filter ${a.filter_id}`;
-    case 'set_effects': return 'Setting effects';
-    case 'add_transition': return `Adding transition ${a.type}`;
-    case 'set_aspect_ratio': return `Changing format to ${a.ratio}`;
-    case 'add_media': return `Adding ${a.media_name}`;
-    case 'generate_image': return 'Generating a scene image with Codex';
-    case 'inspect_frames': return `Inspecting ${args?.times_sec?.length||0} ${args?.source==='clip'?'source':'preview'} frame(s)`;
-    case 'zoom': return `Zooming ${a.scale || 1.3}x from ${a.start_sec}s to ${a.end_sec}s`;
-    case 'set_transform': return 'Changing size / position';
-    case 'add_keyframes': return `Adding ${a.property} keyframes`;
-    case 'move_along_path': return `Moving along ${a.points?.length || 0} waypoints`;
-    case 'set_animation': return 'Setting the animation';
-    case 'search_sounds': return `Searching ${a.kind || 'sounds'}: "${a.query || ''}"`;
-    case 'add_sound': return `Adding a sound at ${a.start_sec || 0}s`;
-    case 'list_voices': return 'Listing voices';
-    case 'add_voiceover': return `Recording a voice-over "${String(a.text || '').slice(0, 30)}"`;
-    case 'add_narration': return `Recording ${Array.isArray(a.lines) ? `${a.lines.length} ` : ''}narration lines`;
-    case 'search_stock': return `Searching stock ${a.kind || 'videos'}: "${a.query || ''}"`;
-    case 'add_stock': return `Adding stock ${a.as === 'main' ? 'clip' : 'b-roll'}`;
-    case 'edit_text': return a.clip_id === 'captions' ? 'Styling the captions' : 'Editing a text';
-    case 'list_options': return `Looking up ${String(a.what || 'options').replace(/_/g, ' ')}`;
-    case 'add_effect': return `Adding effect ${a.effect_id}`;
-    case 'move_clip': return 'Moving a clip';
-    case 'trim_clip': return 'Trimming a clip';
-    case 'clip_tools': return `${String(a.action || 'Clip action').replace(/_/g, ' ')}`;
-    case 'set_color': return 'Adjusting colors';
-    case 'set_compositing': return a.chroma_key === false ? 'Turning off the green screen' : 'Setting green screen / blend';
-    case 'set_project': return 'Changing project settings';
-    case 'undo': return 'Undoing the last step';
-    case 'motion_guide': return `Reading the ${String(a.topic || '').replace(/_/g, ' ')} recipe`;
-    case 'edit_guide': return `Reading the ${String(a.topic || '').replace(/_/g, ' ')} editing guide`;
-    case 'log_footage': return 'Logging the footage';
-    case 'remove_fillers': return a.dry_run ? 'Finding filler words' : 'Removing filler words';
-    case 'remove_retakes': return a.dry_run ? 'Finding retakes' : 'Removing retakes';
-    case 'find_highlights': return 'Finding the strongest moments';
-    case 'propose_edit_plan': return 'Proposing an edit plan';
-    case 'critique_edit': return 'Reviewing the edit';
-    case 'get_beats': return 'Finding the beat';
-    case 'add_scene': return `Adding a ${a.color2 ? 'gradient' : 'color'} scene`;
-    case 'export_video': return 'Exporting the video';
+    case 'analyze_reference': return t('activity.studying_how_the_reference_is_edited');
+    case 'graphics_guide': return t('activity.reading_the_graphics_guide_topic', { topic: a.topic || 'toolkit' });
+    case 'add_graphic': return a.name ? t('activity.drawing_a_motion_graphic_named', { name: a.name }) : t('activity.drawing_a_motion_graphic');
+    case 'edit_graphic': return t('activity.redrawing_the_motion_graphic');
+    case 'analyze_scenes': return t('activity.analysing_source_shots_and_mapping');
+    case 'get_storyboard': return t('activity.inspecting_scene_samples');
+    case 'annotate_scene': return t('activity.saving_an_observed_scene_description');
+    case 'get_project': return a.if_revision ? t('activity.checking_for_project_changes')
+      : Array.isArray(a.clip_ids) && a.clip_ids.length ? tn('activity.reading_selected_clips', a.clip_ids.length)
+        : a.scope && a.scope !== 'all' ? t('activity.reading_project_scope', { scope: a.scope }) : t('activity.reading_the_project');
+    case 'load_tools': return t('activity.loading_tools', { groups: (Array.isArray(a.groups) ? a.groups : []).join(', ') });
+    case 'layer_tools': return a.action === 'update' ? t('activity.updating_layer_controls') : a.action === 'add' ? t('activity.adding_a_layer') : a.action === 'move' ? t('activity.reordering_a_layer') : t('activity.deleting_a_layer');
+    case 'list_local_media': return t('activity.finding_local_media');
+    case 'import_media': return t('activity.importing_local_media');
+    case 'edit_caption_words': return t('activity.correcting_word_timing');
+    case 'caption_tools': return a.action === 'import_srt' ? t('activity.importing_subtitle_cues') : a.action === 'merge' ? t('activity.merging_caption_cues') : t('activity.splitting_a_caption');
+    case 'export_subtitles': return t('activity.saving_subtitle_file');
+    case 'review_section': return t('activity.checking_the_rendered_section_locally');
+    case 'recall_context': return t('activity.recalling_earlier_tool_output');
+    case 'remove_silences': return t('activity.removing_silences');
+    case 'cut_range': return t('activity.cutting_range', { start: a.start_sec, end: a.end_sec });
+    case 'keep_ranges': return tn('activity.keeping_ranges', (a.ranges || []).length);
+    case 'transcribe': return t('activity.transcribing_the_speech');
+    case 'add_captions': return t('activity.adding_captions');
+    case 'add_text': return t('activity.adding_text_quoted', { text: String(a.text || '').slice(0, 30) });
+    case 'delete_clip': return t('activity.deleting_a_clip');
+    case 'split_at': return t('activity.splitting_at', { time: a.time_sec });
+    case 'set_speed': return t('activity.setting_speed_to', { speed: a.speed });
+    case 'set_volume': return t('activity.setting_volume_to', { volume: a.volume });
+    case 'set_audio_effects': return t('activity.finishing_the_audio');
+    case 'set_volume_envelope': return t('activity.automating_volume');
+    case 'duck_audio': return t('activity.balancing_music_beneath_speech');
+    case 'track_subject': return a.reframe === false ? t('activity.tracking_the_selected_subject') : t('activity.following_and_reframing_the_subject');
+    case 'pin_to_subject': return a.target_clip_id ? t('activity.attaching_to_the_tracked_subject') : t('activity.detaching_from_the_subject');
+    case 'set_filter': return t('activity.applying_filter', { filter: a.filter_id });
+    case 'set_effects': return t('activity.setting_effects');
+    case 'add_transition': return t('activity.adding_transition', { type: a.type });
+    case 'set_aspect_ratio': return t('activity.changing_format_to', { ratio: a.ratio });
+    case 'add_media': return t('activity.adding_media_name', { name: a.media_name });
+    case 'generate_image': return t('activity.generating_a_scene_image_with_codex');
+    case 'inspect_frames': return tn(args?.source === 'clip' ? 'activity.inspecting_source_frames' : 'activity.inspecting_preview_frames', args?.times_sec?.length || 0);
+    case 'zoom': return t('activity.zooming_range', { scale: a.scale || 1.3, start: a.start_sec, end: a.end_sec });
+    case 'set_transform': return t('activity.changing_size_position');
+    case 'add_keyframes': return t('activity.adding_property_keyframes', { property: a.property });
+    case 'move_along_path': return tn('activity.moving_along_waypoints', a.points?.length || 0);
+    case 'set_animation': return t('activity.setting_the_animation');
+    case 'search_sounds': return t('activity.searching_kind_query', { kind: a.kind || t('activity.sounds'), query: a.query || '' });
+    case 'add_sound': return t('activity.adding_a_sound_at', { start: a.start_sec || 0 });
+    case 'list_voices': return t('activity.listing_voices');
+    case 'add_voiceover': return t('activity.recording_a_voice_over', { text: String(a.text || '').slice(0, 30) });
+    case 'add_narration': return Array.isArray(a.lines) ? tn('activity.recording_narration_lines', a.lines.length) : t('activity.recording_narration');
+    case 'search_stock': return t('activity.searching_stock_query', { kind: a.kind || t('activity.videos'), query: a.query || '' });
+    case 'add_stock': return a.as === 'main' ? t('activity.adding_stock_clip') : t('activity.adding_stock_b_roll');
+    case 'edit_text': return a.clip_id === 'captions' ? t('activity.styling_the_captions') : t('activity.editing_a_text');
+    case 'list_options': return t('activity.looking_up', { what: a.what ? String(a.what).replace(/_/g, ' ') : t('activity.options') });
+    case 'add_effect': return t('activity.adding_effect', { effect: a.effect_id });
+    case 'move_clip': return t('activity.moving_a_clip');
+    case 'trim_clip': return t('activity.trimming_a_clip');
+    case 'clip_tools': return a.action ? String(a.action).replace(/_/g, ' ') : t('activity.clip_action');
+    case 'set_color': return t('activity.adjusting_colors');
+    case 'set_compositing': return a.chroma_key === false ? t('activity.turning_off_the_green_screen') : t('activity.setting_green_screen_blend');
+    case 'set_project': return t('activity.changing_project_settings');
+    case 'undo': return t('activity.undoing_the_last_step');
+    case 'motion_guide': return t('activity.reading_the_topic_recipe', { topic });
+    case 'edit_guide': return t('activity.reading_the_topic_editing_guide', { topic });
+    case 'log_footage': return t('activity.logging_the_footage');
+    case 'remove_fillers': return a.dry_run ? t('activity.finding_filler_words') : t('activity.removing_filler_words');
+    case 'remove_retakes': return a.dry_run ? t('activity.finding_retakes') : t('activity.removing_retakes');
+    case 'find_highlights': return t('activity.finding_the_strongest_moments');
+    case 'propose_edit_plan': return t('activity.proposing_an_edit_plan');
+    case 'critique_edit': return t('activity.reviewing_the_edit');
+    case 'get_beats': return t('activity.finding_the_beat');
+    case 'add_scene': return a.color2 ? t('activity.adding_a_gradient_scene') : t('activity.adding_a_color_scene');
+    case 'export_video': return t('activity.exporting_the_video');
     default: return name;
   }
 }
@@ -171,7 +174,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
   const finish = result => {
     let remains = result.changed;
     try { remains = remains && projectRevision(ctx.getProject()) !== initialRevision; } catch {}
-    for (const event of running.values()) onEvent({ ...event, status: 'error', detail: result.canceled ? 'Stopped.' : 'Interrupted before completion.' });
+    for (const event of running.values()) onEvent({ ...event, status: 'error', detail: result.canceled ? t('pilot.stopped_message') : t('activity.interrupted_before_completion') });
     running.clear();
     return { ...result, changed: !!remains, operations, contextUsage };
   };
@@ -183,7 +186,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
       const mcpRes = await ctx.api.mcpTools?.({ requestId });
       if (mcpRes?.ok && mcpRes.tools?.length) external = mcpRes.tools;
       if (mcpRes?.problems?.length) {
-        onEvent({ type: 'tool', id: 'mcp-warn', name: 'mcp', label: `MCP server(s) unavailable: ${mcpRes.problems.map((p) => `${p.server} (${p.error})`).join('; ')}`, status: 'error' });
+        onEvent({ type: 'tool', id: 'mcp-warn', name: 'mcp', label: tn('activity.mcp_servers_unavailable', mcpRes.problems.length, { problems: mcpRes.problems.map((p) => `${p.server} (${p.error})`).join('; ') }), status: 'error' });
       }
     } catch { /* MCP is optional */ }
     const declarations = ctx.provider && ctx.provider !== 'codex-sdk'
@@ -215,20 +218,20 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
       const offSearch = ctx.api.onAgentSearch?.(search => {
         if (search.requestId !== requestId || (isCanceled() && search.status === 'running')) return;
         searches.set(search.id, search);
-        onEvent({ type: 'tool', id: `web-${step}-${search.id}`, name: 'web_search', label: search.query ? `Searching web: ${search.query}` : 'Searching the web', activity:describeToolActivity('web_search',{query:search.query}), status: search.status, detail: search.detail });
+        onEvent({ type: 'tool', id: `web-${step}-${search.id}`, name: 'web_search', label: search.query ? t('activity.searching_web_query', { query: search.query }) : t('activity.searching_the_web'), activity:describeToolActivity('web_search',{query:search.query}), status: search.status, detail: search.detail });
       });
       let res;
       try { res = await ctx.api.agentStep({ system, contents: prepared.contents, tools, provider, requestId, chatImageIds: ctx.chatImageIds || [], ...(frameIds.length?{frameIds}:{}) }); }
       finally {
         offSearch?.();
-        for (const search of searches.values()) if (search.status === 'running') onEvent({ type: 'tool', id: `web-${step}-${search.id}`, name: 'web_search', label: search.query ? `Searching web: ${search.query}` : 'Searching the web', status: 'error', detail: isCanceled() ? 'Stopped.' : 'Search did not complete.' });
+        for (const search of searches.values()) if (search.status === 'running') onEvent({ type: 'tool', id: `web-${step}-${search.id}`, name: 'web_search', label: search.query ? t('activity.searching_web_query', { query: search.query }) : t('activity.searching_the_web'), status: 'error', detail: isCanceled() ? t('pilot.stopped_message') : t('activity.search_did_not_complete') });
       }
       if (projectRevision(ctx.getProject()) !== revision || (ctx.editActive && !ctx.editActive())) return finish({ error: { error: 'The project changed while the agent was deciding. Stale editing instructions were not applied; read the updated timeline and retry.' }, changed });
       if (res.canceled || isCanceled()) return finish({ text: '', canceled: true, changed });
       if (!res.ok) return finish({ error: res, changed });
       if (res.fellBack?.length) {
         const why = res.fellBack.map((f) => `${f.name} ${f.reason}`).join(', ');
-        onEvent({ type: 'tool', id: `switch-${step}`, name: 'switch', label: `${why}: switched to ${providerName(res.provider)} (${res.model})`, status: 'switch' });
+        onEvent({ type: 'tool', id: `switch-${step}`, name: 'switch', label: t('activity.switched_to_provider', { why, provider: providerName(res.provider), model: res.model }), status: 'switch' });
       }
       provider = res.provider;
       contents.push(res.content);
@@ -245,7 +248,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
           const issues = introducedIssues(initialProject, ctx.getProject());
           if (issues.length) {
             const id = `editorial-${step}`, result = { editorial_review_required: true, editorial_issues: issues, note: 'This edit introduced these editorial issues. Fix them, or explain in the final reply why each one is intentional.' };
-            onEvent({ type:'tool', id, name:'critique_edit', label:'Reviewing the edit', activity:{ title:'Reviewing the edit', description:'Issues introduced by this request', outcome:`${issues.length} issue${issues.length === 1 ? '' : 's'} to address` }, status:'done' });
+            onEvent({ type:'tool', id, name:'critique_edit', label:t('activity.reviewing_the_edit'), activity:{ title:t('activity.reviewing_the_edit'), description:t('activity.issues_introduced_by_this_request'), outcome:tn('activity.issues_to_address', issues.length) }, status:'done' });
             contents.push({ role:'model', parts:[{ functionCall:{ name:'critique_edit', args:{} } }] }, { role:'user', parts:[{ functionResponse:{ name:'critique_edit', response:{ result } } }] });
             continue;
           }
@@ -254,9 +257,9 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
           const times_sec = nextVisualSamples(visualRegions);
           if (times_sec.length) {
             const id = `verify-${step}`;
-            onEvent({ type:'tool', id, name:'inspect_frames', label:'Checking the edited composition', activity:describeToolActivity('inspect_frames',{times_sec},ctx.getProject()), status:'running' });
+            onEvent({ type:'tool', id, name:'inspect_frames', label:t('activity.checking_the_edited_composition'), activity:describeToolActivity('inspect_frames',{times_sec},ctx.getProject()), status:'running' });
             const result = await runner.run('inspect_frames', { times_sec, sheet: true });
-            onEvent({ type:'tool', id, name:'inspect_frames', label:'Checking the edited composition', activity:describeToolActivity('inspect_frames',{times_sec},ctx.getProject(),result), status:result.error?'error':'done', detail:result.error });
+            onEvent({ type:'tool', id, name:'inspect_frames', label:t('activity.checking_the_edited_composition'), activity:describeToolActivity('inspect_frames',{times_sec},ctx.getProject(),result), status:result.error?'error':'done', detail:result.error });
             if (result.error) return finish({ error:{error:`Visual verification failed: ${result.error}`}, changed, verification });
             if (result.revision !== currentRevision) return finish({ error: { error: 'The project changed during visual verification.' }, changed });
             const pending = visualRegions.filter(region => !region.checked).length;

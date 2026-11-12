@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Bot, Unplug } from 'lucide-react';
+import { t } from '../../i18n/index.js';
 
 // The agent holding the editor over MCP (docs/design/external-agent-mcp.md), in the top bar and on
 // Home. Green while it works (CraftAI paused); grey once idle (CraftAI or another agent may take over).
@@ -7,11 +8,11 @@ export function ExternalAgentBadge({ owner, onDisconnect }) {
   if (!owner) return null;
   return (
     <div className={`external-badge ${owner.active ? 'is-active' : 'is-idle'}`} role="status"
-      title={owner.active ? `${owner.name} is working in ClipCraft. CraftAI is paused.` : `${owner.name} is connected and idle. CraftAI can be used.`}>
+      title={owner.active ? t('external.name_is_working_in_clipcraft', { name: owner.name }) : t('external.name_is_connected_and_idle', { name: owner.name })}>
       <span className="external-dot" aria-hidden="true" />
       <Bot size={14} aria-hidden="true" />
       <span className="external-name">{owner.name}</span>
-      <button type="button" className="icon-btn sm" onClick={onDisconnect} aria-label={`Disconnect ${owner.name}`} title="Disconnect"><Unplug size={13} /></button>
+      <button type="button" className="icon-btn sm" onClick={onDisconnect} aria-label={t('external.disconnect_name', { name: owner.name })} title={t('external.disconnect')}><Unplug size={13} /></button>
     </div>
   );
 }
@@ -27,20 +28,18 @@ export function ExternalAgentApproval({ approval, onAnswer }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [approval, onAnswer]);
   if (!approval) return null;
-  const name = String(approval.client?.name || 'An MCP client').slice(0, 60);
+  const name = String(approval.client?.name || t('external.an_mcp_client')).slice(0, 60);
   return (
     <div className="modal-backdrop close-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="external-approve-title" aria-describedby="external-approve-text">
       <div className="modal close-modal external-approve">
         <div className="modal-icon"><Bot size={24} /></div>
-        <h3 id="external-approve-title">Allow “{name}” to edit in ClipCraft?</h3>
+        <h3 id="external-approve-title">{t('external.allow_name_to_edit_in_clipcraft', { name })}</h3>
         <p id="external-approve-text" className="muted">
-          An agent on this computer connected to ClipCraft’s MCP server. If you allow it, it can open, create and save projects,
-          import files and export videos, with the same tools CraftAI uses. CraftAI pauses while it is connected. You can disconnect it
-          at any time, and remove it in Settings &gt; External agents.
+          {t('external.an_agent_on_this_computer_connected_to_cli')}
         </p>
         <div className="modal-actions">
-          <button ref={deny} className="btn" onClick={() => onAnswer(false)}>Don’t allow</button>
-          <button className="btn btn-primary" onClick={() => onAnswer(true)}>Allow</button>
+          <button ref={deny} className="btn" onClick={() => onAnswer(false)}>{t('external.dont_allow')}</button>
+          <button className="btn btn-primary" onClick={() => onAnswer(true)}>{t('external.allow')}</button>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../../i18n/index.js';
 
 // Range input whose whole drag becomes a single undo step.
 // The readout is typeable: click the number, type, and Enter (or blur) commits through the
@@ -58,11 +59,11 @@ export default function Slider({ label, value, onChange, dispatch, min = 0, max 
   return (
     <label className="field">
       <span>{label} {extra} {edit !== null ? (
-        <input ref={inputRef} className="slider-value" type="text" inputMode="decimal" aria-label={`${label} value`}
+        <input ref={inputRef} className="slider-value" type="text" inputMode="decimal" aria-label={t('num-box.label_value', { label })}
           value={edit} onChange={(e) => setEdit(e.target.value)} onKeyDown={onEditKey}
           onBlur={() => { if (settled.current) { settled.current = false; return; } commit(edit); setEdit(null); }} />
       ) : (
-        <b className="slider-value" title="Click to type a value"
+        <b className="slider-value" title={t('slider.click_to_type_a_value')}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEdit(editText(value)); }}>{show}</b>
       )}</span>
       <input type="range" min={min} max={max} step={step} value={value}

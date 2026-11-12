@@ -1,9 +1,11 @@
 # AI providers: one table, four protocols
 
 CraftAI's API providers are rows of `shared/providers.json`, read by `electron/agents/providers.cjs`
-(main process) and `src/features/agent/providers.js` (renderer). A row is data: id, names, the wire
-protocol, whether it stores a key, the default address, the default model, the key page, a hint, and two
-optional quirks (extra request headers, where the reasoning effort goes). Everything that used to list
+(main process) and `src/features/agent/providers.js` (renderer). A row is data: id, short name, the wire
+protocol, whether it stores a key, the default address, the default model, the key page, and two
+optional quirks (extra request headers, where the reasoning effort goes). The display name, the hint and
+the key-page label are user-interface text, so they live in the dictionaries as `providers.<id>.name`,
+`providers.<id>.hint` and `providers.<id>.key_label` (docs/design/localization.md). Everything that used to list
 providers by hand reads the table: the API client, the settings store and its key allowlist, the fallback
 order, the names the chat shows, the Settings dialog and the API keys page. Key pages open through the one help-link rule: any https URL, nothing else.
 
@@ -24,7 +26,8 @@ levels for models whose services do not report them.
 ## Adding a provider
 
 - **It speaks the OpenAI chat API** (most do): add one row with `"protocol": "openai"`, its `/v1`
-  address, key page, hint and a sensible default model. No code. The row shows up in the Settings
+  address, key page and a sensible default model, plus the three `providers.<id>.*` strings in each
+  dictionary. No code. The row shows up in the Settings
   provider list, on the API keys page and in the fallback chain, and
   `tests/unit/agents/test-provider-presets.mjs` checks the row's shape. Add a mocked-fetch case to
   `tests/unit/agents/test-ai-providers.mjs` when the service has a quirk (a header, a different

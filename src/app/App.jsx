@@ -53,6 +53,8 @@ import { TEXT_TEMPLATES } from "../features/text/catalog.js";
 import { allFonts } from "../features/text/fonts.js";
 import { graphicOutdated, isGraphicMedia, redrawGraphicAction, renderGraphicMedia } from '../features/graphics/graphicMedia.js';
 import { graphicEdits } from '../features/graphics/graphicEdits.js';
+import { t, tn } from '../i18n/index.js';
+import { catalogName } from '../i18n/catalog.js';
 
 // (The emoji-to-PNG rasterizer that lived here served only the Stickers feature, removed
 // in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
@@ -112,8 +114,8 @@ export default function App() {
   // Timeline spotlight and trail (docs/agents/agent-editing.md): what CraftAI works on now and what it
   // changed this request. Outside the history reducer: it never makes an Undo step or revokes the agent.
   // The run's end starts a 6 s hold, then a fade; a history move afterwards (undo, redo, load) clears it.
-  const [agentFocus, setAgentFocus] = useState(null);
   // An outside MCP agent (useExternalAgent) feeds the same state, so its edits show the same way.
+  const [agentFocus, setAgentFocus] = useState(null);
   const onAgentFocus = useCallback((next) => setAgentFocus((prev) => (next ? { ...next, ended: false, fading: false } : prev && !prev.ended ? { ...prev, live: null, ended: true } : prev)), []);
   useEffect(() => {
     if (!agentFocus?.ended) return undefined;
@@ -234,6 +236,7 @@ export default function App() {
       });
       ok = await a.writing;
     } catch { /* The save-state pill reports the failed attempt. */ }
+    if (!ok) a.fileDocDirty = true; // the next timer writes the document again, not only the chat
     setSaveState(ok ? 'saved' : 'error');
     return ok;
   };
@@ -334,7 +337,7 @@ export default function App() {
     if (!docChanged && !chatChanged) return;
     if (docChanged) { a.fileDocDirty = true; a.slotDocDirty = true; }
     // At most once a second, and always the latest project (thumbnails arriving keep changing it).
-    if (!a.timer) {
+    if (docChanged && !a.timer) {
       a.timer = setTimeout(() => {
         a.timer = null;
         // An unsaved project offered back at start stays stored until the user answers or starts working.
@@ -523,7 +526,7 @@ export default function App() {
   const addItems = (items, agentToken) => {
     const ok = items.filter((i) => !i.error).map((i) => ({ ...i, id: uid() }));
     const bad = items.filter((i) => i.error);
-    if (bad.length) showAlert('Could not import:\n' + bad.map((b) => `${b.name}: ${b.error}`).join('\n'));
+    if (bad.length) showAlert(t('app.could_not_import_list', { list: bad.map((b) => t('app.name_and_error', { name: b.name, error: b.error })).join('\n') }));
     if (ok.length) dispatch({ type: 'addMedia', items: ok, ...(agentToken ? { agentToken } : {}) });
     return ok;
   };
@@ -618,7 +621,7 @@ export default function App() {
     if (res.error) return res;
     let m = projectRef.current.media.find((x) => x.path === res.path);
     if (!m) [m] = addItems([res]);
-    if (!m) return { error: 'Could not add the sound.' };
+    if (!m) return { error: t('app.could_not_add_the_sound') };
     const clipId = uid();
     dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, at: readTime() });
     setSelection({ track: 'audio', id: clipId });
@@ -647,7 +650,7 @@ export default function App() {
     if (res.error) return res;
     let m = projectRef.current.media.find((x) => x.path === res.path);
     if (!m) [m] = addItems([res]);
-    if (!m) return { error: 'Could not add the file.' };
+    if (!m) return { error: t('app.could_not_add_the_file') };
     const clipId = uid();
     if (where === 'overlay') {
       dispatch({ type: 'addOverlayClip', mediaId: m.id, clipId, at: readTime() });
@@ -667,7 +670,7 @@ export default function App() {
     let m = projectRef.current.media.find((x) => x.path === filePath);
     if (!m) {
       const [res] = await window.api.probePaths([filePath]);
-      if (!res || res.error) return { error: res ? `${res.name}: ${res.error}` : 'The file was not found.' };
+      if (!res || res.error) return { error: res ? t('app.name_and_error', { name: res.name, error: res.error }) : t('app.the_file_was_not_found') };
       [m] = addItems([res]);
     }
     const clipId = uid();
@@ -745,9 +748,9 @@ export default function App() {
     const m = p.media.find((x) => x.id === id);
     if (!m) return;
     const lockedUse = lockedMediaUse(p, id);
-    if (lockedUse) { showAlert(`"${m.name}" is used by a clip on the locked layer "${layerName(p, lockedUse.track, lockedUse.layer)}".\nUnlock that layer to remove it.`); return; }
+    if (lockedUse) { showAlert(t('app.media_on_locked_layer', { name: m.name, layer: layerName(p, lockedUse.track, lockedUse.layer) })); return; }
     const used = [p.videoClips, p.overlayClips || [], p.audioClips].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
-    if (used && !askConfirm(`"${m.name}" is used by ${used} clip${used > 1 ? 's' : ''} on the timeline.\nRemove it and ${used > 1 ? 'those clips' : 'that clip'}? (Ctrl+Z undoes it)`, 'Remove')) return;
+    if (used && !askConfirm(tn('app.media_used_by_clips', used, { name: m.name }), t('home.remove'))) return;
     dispatch({ type: 'removeMedia', id });
   };
 
@@ -956,7 +959,7 @@ export default function App() {
     const c = sel && findClip(p, sel);
     const m = c && p.media.find((x) => x.id === c.mediaId);
     if (!c || !m || m.type !== 'video' || !m.hasAudio || c.muted || c.linkId) return;
-    setRenderJob({ kind: 'detach', label: 'Detaching audio…', fraction: 0 });
+    setRenderJob({ kind: 'detach', label: t('app.detaching_audio'), fraction: 0 });
     const off = window.api.onDetachProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -994,7 +997,7 @@ export default function App() {
     const c = sel && findClip(p, sel);
     const m = c && p.media.find((x) => x.id === c.mediaId);
     if (!c || !m || !m.hasAudio || m.type === 'image') return;
-    setRenderJob({ kind: 'enhance', label: 'Enhancing voice…', fraction: 0 });
+    setRenderJob({ kind: 'enhance', label: t('app.enhancing_voice'), fraction: 0 });
     const off = window.api.onEnhanceProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -1083,7 +1086,7 @@ export default function App() {
       p = clipSel.track === 'audio' ? { ...only, audioClips: [{ ...c, start: 0 }] } : { ...only, overlayClips: [{ ...c, start: 0, muted: false }] };
     }
     setPlaying(false);
-    setExporting({ progress: 0.5, stage: 'Exporting audio' });
+    setExporting({ progress: 0.5, stage: t('app.exporting_audio') });
     const res = await window.api.exportAudio(p, format, name);
     if (res.canceled) return setExporting(null);
     setExporting(res.ok ? { done: true, file: res.file, progress: 1 } : { error: res.error });
@@ -1105,11 +1108,11 @@ export default function App() {
       if (!l) return;
       start = l.start; len = l.end - l.start;
     } else { start = c.start || 0; len = freeLen('overlay', c); }
-    const t = readTime() > start && readTime() < start + len ? readTime() : start;
-    const srcT = (c.in || 0) + (t - start) * (c.speed || 1);
+    const at = readTime() > start && readTime() < start + len ? readTime() : start;
+    const srcT = (c.in || 0) + (at - start) * (c.speed || 1);
     let fm;
     try { fm = await window.api.frameImage(m.path, srcT); } catch (e) { fm = { error: e.message }; }
-    if (!fm || fm.error) { setRenderJob({ error: (fm && fm.error) || 'Could not grab the frame.' }); return; }
+    if (!fm || fm.error) { setRenderJob({ error: (fm && fm.error) || t('app.could_not_grab_the_frame') }); return; }
     let media = projectRef.current.media.find((x) => x.path === fm.path);
     const stillId = uid();
     dispatch({ type: 'beginGesture' });
@@ -1151,7 +1154,7 @@ export default function App() {
       dispatch({ type: 'update', ...sel, patch: { mediaId: c.reversed.mediaId, in: c.reversed.in, out: c.reversed.out, reversed: null } });
       return;
     }
-    setRenderJob({ kind: 'reverse', label: 'Reversing clip…', fraction: 0 });
+    setRenderJob({ kind: 'reverse', label: t('app.reversing_clip'), fraction: 0 });
     const off = window.api.onReverseProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -1286,7 +1289,7 @@ export default function App() {
     const m = c && p.media.find((x) => x.id === c.mediaId);
     setTrackPick(null);
     if (!c || !m) return;
-    setRenderJob({ kind: 'track', label: `Tracking motion in "${m.name || 'clip'}"`, fraction: 0 });
+    setRenderJob({ kind: 'track', label: t('app.tracking_motion_in_name', { name: m.name || t('app.clip').toLowerCase() }), fraction: 0 });
     const off = window.api.onTrackProgress(({ fraction }) => setRenderJob((j) => (j && j.kind === 'track' ? { ...j, fraction } : j)));
     let res = null;
     try { res = await window.api.trackRun(m, c.in || 0, c.out ?? m.duration, pick.point, pick.box); } catch { /* reported below */ }
@@ -1297,7 +1300,7 @@ export default function App() {
       dispatch({ type: 'endGesture' });
       setRenderJob(null);
     } else if (res && res.canceled) setRenderJob(null);
-    else setRenderJob({ error: (res && res.error) || 'Tracking failed.' });
+    else setRenderJob({ error: (res && res.error) || t('app.tracking_failed') });
   };
   const attachTimelineContext = (input) => {
     const request = { id: uid(), projectId: projectRef.current.id, loadVersion: projectLoadVersion };
@@ -1306,9 +1309,9 @@ export default function App() {
     setTimelineContextRequest(request);
   };
   const menuItems = (sel) => [
-    { label: (sel.clip_refs?.length || 1) > 1 ? 'Add selected clips to CraftAI' : 'Add clip to CraftAI', icon: MessageSquarePlus,
+    { label: t((sel.clip_refs?.length || 1) > 1 ? 'app.add_selected_clips_to_craftai' : 'app.add_clip_to_craftai'), icon: MessageSquarePlus,
       onClick: () => attachTimelineContext({ kind: 'clips', clip_refs: sel.clip_refs || [{ track: sel.track, id: sel.id }] }) },
-    { label: 'Add clip time range to CraftAI', icon: ScanLine, onClick: () => {
+    { label: t('app.add_clip_time_range_to_craftai'), icon: ScanLine, onClick: () => {
       try {
         const clip = createTimelineAttachment(projectRef.current, { kind: 'clips', clip_refs: [{ track: sel.track, id: sel.id }] });
         attachTimelineContext({ kind: 'range', start_sec: clip.start_sec, end_sec: clip.end_sec });
@@ -1319,43 +1322,43 @@ export default function App() {
   const clipEditingMenuItems = (sel) => {
     if (sel.track === 'effect' && !sel.id.includes('|')) {
       return [
-        { label: 'Split at playhead', icon: Split, shortcut: 'S', onClick: split },
-        { label: 'Duplicate', icon: CopyPlus, shortcut: 'Ctrl D', onClick: duplicate },
-        { label: 'Delete', icon: Trash2, shortcut: 'Del', onClick: remove },
+        { label: t('keymap.split_at_playhead'), icon: Split, shortcut: 'S', onClick: split },
+        { label: t('keymap.duplicate'), icon: CopyPlus, shortcut: 'Ctrl D', onClick: duplicate },
+        { label: t('keymap.delete'), icon: Trash2, shortcut: 'Del', onClick: remove },
       ];
     }
     if (sel.track === 'effect') {
       const { track, clipId } = parseEffectKey(sel.id);
       return [
-        { label: 'Delete effect', icon: Trash2, shortcut: 'Del', onClick: () => { dispatch({ type: 'removeEffect', id: sel.id }); setSelection(null); } },
-        { label: 'Select its clip', icon: Layers, onClick: () => setSelection({ track, id: clipId }) },
+        { label: t('app.delete_effect'), icon: Trash2, shortcut: 'Del', onClick: () => { dispatch({ type: 'removeEffect', id: sel.id }); setSelection(null); } },
+        { label: t('app.select_its_clip'), icon: Layers, onClick: () => setSelection({ track, id: clipId }) },
       ];
     }
     const c = findClip(project, sel);
     if (!c) return [];
-    if (c.gap) return [{ label: 'Close gap', icon: Trash2, shortcut: 'Del', onClick: () => dispatch({ type: 'delete', ...sel }) }];
+    if (c.gap) return [{ label: t('app.close_gap'), icon: Trash2, shortcut: 'Del', onClick: () => dispatch({ type: 'delete', ...sel }) }];
     const m = c.mediaId && project.media.find((x) => x.id === c.mediaId);
     const pic = sel.track === 'video' || sel.track === 'overlay';
     const withSound = (pic && m?.type === 'video' && m.hasAudio) || sel.track === 'audio';
     const canDetach = pic && m?.type === 'video' && m.hasAudio && !c.muted && !c.linkId;
-    const detachHint = !(pic && m?.type === 'video') ? 'Only for video clips'
-      : !m.hasAudio ? 'This video has no sound' : c.linkId ? 'The sound is already detached' : 'The clip is muted — its sound is off';
+    const detachHint = !(pic && m?.type === 'video') ? t('app.only_for_video_clips')
+      : !m.hasAudio ? t('app.this_video_has_no_sound') : c.linkId ? t('app.the_sound_is_already_detached') : t('app.the_clip_is_muted_its_sound_is_off');
     // Extract audio: an independent, unlinked copy of the sound (the extractAudio action) —
     // same availability as Detach, minus the link condition.
     const canExtract = pic && m?.type === 'video' && m.hasAudio && !c.muted;
-    const extractHint = !(pic && m?.type === 'video') ? 'Only for video clips'
-      : !m.hasAudio ? 'This video has no sound' : 'The clip is muted — its sound is off';
+    const extractHint = !(pic && m?.type === 'video') ? t('app.only_for_video_clips')
+      : !m.hasAudio ? t('app.this_video_has_no_sound') : t('app.the_clip_is_muted_its_sound_is_off');
     const items = [
-      { label: 'Copy', icon: Copy, shortcut: 'Ctrl C', onClick: copy },
-      { label: 'Cut', icon: Scissors, shortcut: 'Ctrl X', onClick: cut },
-      { label: 'Paste', icon: ClipboardPaste, shortcut: 'Ctrl V', onClick: paste, disabled: !clipboard, hint: 'Copy a clip first' },
-      { label: 'Delete', icon: Trash2, shortcut: 'Del', onClick: remove },
-      { label: 'Select all on this layer', icon: ListChecks, onClick: () => selectAllOnLayer(sel) },
+      { label: t('keymap.copy'), icon: Copy, shortcut: 'Ctrl C', onClick: copy },
+      { label: t('keymap.cut'), icon: Scissors, shortcut: 'Ctrl X', onClick: cut },
+      { label: t('keymap.paste'), icon: ClipboardPaste, shortcut: 'Ctrl V', onClick: paste, disabled: !clipboard, hint: t('app.copy_a_clip_first') },
+      { label: t('keymap.delete'), icon: Trash2, shortcut: 'Del', onClick: remove },
+      { label: t('app.select_all_on_this_layer'), icon: ListChecks, onClick: () => selectAllOnLayer(sel) },
       'sep',
-      { label: 'Split at playhead', icon: Split, shortcut: 'S', onClick: split },
-      { label: 'Delete left of playhead', icon: ScissorsLineDashed, shortcut: 'Q', onClick: () => trimSide('left') },
-      { label: 'Delete right of playhead', icon: ScissorsLineDashed, shortcut: 'W', onClick: () => trimSide('right') },
-      { label: 'Duplicate', icon: CopyPlus, shortcut: 'Ctrl D', onClick: duplicate },
+      { label: t('keymap.split_at_playhead'), icon: Split, shortcut: 'S', onClick: split },
+      { label: t('keymap.delete_left_of_playhead'), icon: ScissorsLineDashed, shortcut: 'Q', onClick: () => trimSide('left') },
+      { label: t('keymap.delete_right_of_playhead'), icon: ScissorsLineDashed, shortcut: 'W', onClick: () => trimSide('right') },
+      { label: t('keymap.duplicate'), icon: CopyPlus, shortcut: 'Ctrl D', onClick: duplicate },
     ];
     // Move to Track: the other layers of this clip's lane (multi-selection moves together).
     if (LAYERED[sel.track]) {
@@ -1366,11 +1369,11 @@ export default function App() {
         : { start: c.start, len: c.duration };
       if (count > 1) {
         items.push({
-          label: 'Move to layer', icon: Layers,
+          label: t('app.move_to_layer'), icon: Layers,
           submenu: Array.from({ length: count }, (_, layer) => layer).filter((layer) => layer !== cur).map((layer) => ({
             label: layerName(project, sel.track, layer),
             disabled: !layerFree(project, sel.track, layer, span.start, span.len, c.id) || isLayerLocked(project, sel.track, layer),
-            hint: isLayerLocked(project, sel.track, layer) ? 'That layer is locked' : 'The clip would overlap a clip there',
+            hint: isLayerLocked(project, sel.track, layer) ? t('app.that_layer_is_locked') : t('app.the_clip_would_overlap_a_clip_there'),
             onClick: () => moveSelectionToLayer(sel, layer),
           })),
         });
@@ -1378,9 +1381,9 @@ export default function App() {
     }
     // Speed / Duration (constant speed — also on the inspector's Speed tab) and Properties.
     if (pic || sel.track === 'audio') {
-      items.push({ label: 'Speed / Duration…', icon: Gauge, onClick: () => setSpeedAsk({ track: sel.track, id: sel.id }) });
+      items.push({ label: t('app.speed_duration'), icon: Gauge, onClick: () => setSpeedAsk({ track: sel.track, id: sel.id }) });
     }
-    items.push({ label: 'Properties', icon: Info, onClick: () => {
+    items.push({ label: t('app.properties'), icon: Info, onClick: () => {
       select(sel);
       setRightCollapsed(false);
       requestAnimationFrame(() => {
@@ -1391,21 +1394,21 @@ export default function App() {
     if (pic) {
       items.push('sep',
         c.slot
-          ? { label: 'Not replaceable', icon: Repeat, onClick: () => dispatch({ type: 'update', ...sel, patch: { slot: false } }) }
-          : { label: 'Make replaceable (template)', icon: Repeat, onClick: () => dispatch({ type: 'update', ...sel, patch: { slot: true } }) },
-        { label: 'Copy attributes', icon: Paintbrush, onClick: () => setAttrClipboard(pickAttributes(c)) },
-        { label: 'Paste attributes', icon: Paintbrush, disabled: !attrClipboard, hint: 'Copy the attributes of a clip first',
+          ? { label: t('app.not_replaceable'), icon: Repeat, onClick: () => dispatch({ type: 'update', ...sel, patch: { slot: false } }) }
+          : { label: t('app.make_replaceable_template'), icon: Repeat, onClick: () => dispatch({ type: 'update', ...sel, patch: { slot: true } }) },
+        { label: t('app.copy_attributes'), icon: Paintbrush, onClick: () => setAttrClipboard(pickAttributes(c)) },
+        { label: t('app.paste_attributes'), icon: Paintbrush, disabled: !attrClipboard, hint: t('app.copy_the_attributes_of_a_clip_first'),
           onClick: () => dispatch({ type: 'update', ...sel, patch: attrClipboard }) },
-        { label: 'Reset position and size', icon: RotateCcw, onClick: () => dispatch({ type: 'update', ...sel, patch: { transform: undefined } }) },
-        { label: 'Remove filter', icon: Eraser, disabled: !c.filter || c.filter === 'none', hint: 'This clip has no filter',
+        { label: t('app.reset_position_and_size'), icon: RotateCcw, onClick: () => dispatch({ type: 'update', ...sel, patch: { transform: undefined } }) },
+        { label: t('app.remove_filter'), icon: Eraser, disabled: !c.filter || c.filter === 'none', hint: t('app.this_clip_has_no_filter'),
           onClick: () => dispatch({ type: 'update', ...sel, patch: { filter: 'none' } }) },
         sel.track === 'video'
-          ? { label: 'Move to overlay track', icon: Layers, onClick: () => {
+          ? { label: t('app.move_to_overlay_track'), icon: Layers, onClick: () => {
             const l = videoLayout(project.videoClips).find((x) => x.clip.id === c.id);
             dispatch({ type: 'moveToOverlay', id: c.id, at: l ? l.start : readTime() });
             setSelection({ track: 'overlay', id: c.id });
           } }
-          : { label: 'Move to main track', icon: PanelBottom, onClick: () => {
+          : { label: t('app.move_to_main_track'), icon: PanelBottom, onClick: () => {
             const index = videoLayout(project.videoClips).filter((l) => (l.start + l.end) / 2 < c.start).length;
             dispatch({ type: 'moveToMain', id: c.id, index });
             setSelection({ track: 'video', id: c.id });
@@ -1414,25 +1417,25 @@ export default function App() {
     if (pic) {
       const fx = c.effects || [];
       items.push('sep',
-        { label: 'Freeze frame', icon: Snowflake, onClick: () => freezeClip(sel) },
-        { label: c.reversed ? 'Reverse (restore original)' : 'Reverse', icon: Rewind, onClick: () => reverseClip(sel) },
-        { label: fx.includes('mirror') ? 'Mirror (on)' : 'Mirror', icon: FlipHorizontal2,
+        { label: t('app.freeze_frame'), icon: Snowflake, onClick: () => freezeClip(sel) },
+        { label: t(c.reversed ? 'app.reverse_restore_original' : 'app.reverse'), icon: Rewind, onClick: () => reverseClip(sel) },
+        { label: t(fx.includes('mirror') ? 'app.mirror_on' : 'app.mirror'), icon: FlipHorizontal2,
           onClick: () => dispatch({ type: 'update', ...sel, patch: { effects: fx.includes('mirror') ? fx.filter((x) => x !== 'mirror') : [...fx, 'mirror'] } }) },
-        { label: 'Rotate 90°', icon: RotateCw,
+        { label: t('app.rotate_90'), icon: RotateCw,
           onClick: () => { const t = c.transform || {}; dispatch({ type: 'update', ...sel, patch: { transform: { ...t, rot: ((t.rot || 0) + 90) % 360 } } }); } });
     }
     items.push('sep');
-    if (pic) items.push({ label: 'Detach audio', icon: AudioLines, shortcut: 'Ctrl Shift S', onClick: () => detachAudio(sel), disabled: !canDetach, hint: detachHint });
-    if (pic) items.push({ label: 'Extract audio', icon: FileAudio, onClick: () => dispatch({ type: 'extractAudio', track: sel.track, id: sel.id, newId: uid() }), disabled: !canExtract, hint: extractHint });
+    if (pic) items.push({ label: t('app.detach_audio'), icon: AudioLines, shortcut: 'Ctrl Shift S', onClick: () => detachAudio(sel), disabled: !canDetach, hint: detachHint });
+    if (pic) items.push({ label: t('keymap.extract_audio'), icon: FileAudio, onClick: () => dispatch({ type: 'extractAudio', track: sel.track, id: sel.id, newId: uid() }), disabled: !canExtract, hint: extractHint });
     if (c.linkId) {
-      items.push({ label: 'Unlink audio and video', icon: Unlink, onClick: () => unlinkClip(sel) });
+      items.push({ label: t('timeline.unlink_audio_and_video'), icon: Unlink, onClick: () => unlinkClip(sel) });
     } else if (selection?.items?.length === 2
       && selection.items.some((it) => it.track === 'audio')
       && selection.items.some((it) => it.track === 'video' || it.track === 'overlay')) {
-      items.push({ label: 'Link clips', icon: Link2, onClick: linkPair });
+      items.push({ label: t('app.link_clips'), icon: Link2, onClick: linkPair });
     }
-    if (sel.track === 'audio') items.push({ label: c.reversed ? 'Reverse (restore original)' : 'Reverse', icon: Rewind, onClick: () => reverseClip(sel) });
-    items.push({ label: 'Export clip audio (MP3)', icon: AudioLines, onClick: () => exportAudio('mp3', sel), disabled: !withSound, hint: 'This clip has no sound' });
+    if (sel.track === 'audio') items.push({ label: t(c.reversed ? 'app.reverse_restore_original' : 'app.reverse'), icon: Rewind, onClick: () => reverseClip(sel) });
+    items.push({ label: t('app.export_clip_audio_mp3'), icon: AudioLines, onClick: () => exportAudio('mp3', sel), disabled: !withSound, hint: t('app.this_clip_has_no_sound') });
     // Enhance voice on the clip's own menu too — the same render the inspector's
     // Enhance voice section drives (clip.enhance via enhanceClip), for audio clips and
     // picture clips with sound alike. Hamza, 2026-11-01: it must appear in the audio
@@ -1441,37 +1444,39 @@ export default function App() {
       const e = c.enhance;
       const stale = !!(e?.path && (Math.abs((e.from ?? -1) - (c.in || 0)) > 0.02 || Math.abs((e.to ?? -1) - (c.out ?? -1)) > 0.02));
       const enhOn = !!(e?.on && e?.path && !stale);
+      const strengths = [['light', t('app.light')], ['standard', t('clip.standard')], ['strong', t('app.strong')]];
+      const strengthName = strengths.find(([s]) => s === e?.strength)?.[1].toLowerCase() || e?.strength;
       items.push({
-        label: enhOn ? `Enhance voice (on · ${e.strength})` : 'Enhance voice', icon: Sparkles,
+        label: enhOn ? t('app.enhance_voice_on_strength', { strength: strengthName }) : t('app.enhance_voice'), icon: Sparkles,
         submenu: [
-          { label: 'Off', disabled: !e?.on, hint: 'Enhance voice is already off', onClick: () => dispatch({ type: 'update', ...sel, patch: { enhance: { ...e, on: false } } }) },
-          ...[['light', 'Light'], ['standard', 'Standard'], ['strong', 'Strong']].map(([s, name]) => ({
-            label: enhOn && e.strength === s ? `${name} ✓` : name,
+          { label: t('app.off'), disabled: !e?.on, hint: t('app.enhance_voice_is_already_off'), onClick: () => dispatch({ type: 'update', ...sel, patch: { enhance: { ...e, on: false } } }) },
+          ...strengths.map(([s, name]) => ({
+            label: enhOn && e.strength === s ? t('app.name_checked', { name }) : name,
             onClick: () => enhanceClip(sel, s),
           })),
         ],
       });
     }
     items.push(c.disabled
-      ? { label: 'Activate clip', icon: Eye, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: false } }) }
-      : { label: 'Deactivate clip', icon: EyeOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: true } }) });
+      ? { label: t('app.activate_clip'), icon: Eye, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: false } }) }
+      : { label: t('app.deactivate_clip'), icon: EyeOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { disabled: true } }) });
     // Motion tracking: track a video clip's moving point; pin overlay / text clips to a track.
     if (pic && m?.type === 'video') {
-      items.push('sep', { label: c.track ? 'Track motion again…' : 'Track motion…', icon: Crosshair, onClick: () => startTrackPick(sel) });
+      items.push('sep', { label: t(c.track ? 'app.track_motion_again' : 'clip.track_motion'), icon: Crosshair, onClick: () => startTrackPick(sel) });
     }
     if (sel.track === 'overlay' || sel.track === 'text') {
       const sources = trackedClips(project).filter((s) => s.clip.id !== c.id);
       const submenu = [];
-      if (c.pin) submenu.push({ label: 'Unpin', icon: PinOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { pin: null } }) });
+      if (c.pin) submenu.push({ label: t('clip.unpin'), icon: PinOff, onClick: () => dispatch({ type: 'update', ...sel, patch: { pin: null } }) });
       for (const s of sources) {
         const sm = project.media.find((x) => x.id === s.clip.mediaId);
         submenu.push({
-          label: `Track in "${sm?.name || 'clip'}"`, icon: Pin,
+          label: t('app.track_in_name', { name: sm?.name || t('app.clip').toLowerCase() }), icon: Pin,
           onClick: () => dispatch({ type: 'update', ...sel, patch: { pin: { to: s.clip.id } } }),
         });
       }
-      if (!submenu.length) submenu.push({ label: 'No tracked clips yet', disabled: true, hint: 'Track motion in a video clip first' });
-      items.push({ label: 'Pin to track', icon: Pin, submenu });
+      if (!submenu.length) submenu.push({ label: t('app.no_tracked_clips_yet'), disabled: true, hint: t('app.track_motion_in_a_video_clip_first') });
+      items.push({ label: t('clip.pin_to_track'), icon: Pin, submenu });
     }
     return items;
   };
@@ -1497,7 +1502,7 @@ export default function App() {
     clearTimeout(a.fileTimer);a.fileTimer = null;
     const { doc, chat } = await serializeProjectParts(p);
     await a.writing?.catch(() => {});
-    const res = await window.api.saveProject(pretty, previousFile, { saveAs, name: p.name });
+    const res = await window.api.saveProject(doc.pretty, previousFile, { saveAs, name: p.name, chat: chat ? chat.compact : null });
     if (!res) return false;
     if (res.error) {
       setSaveState('error');
@@ -1533,7 +1538,7 @@ export default function App() {
       writeSlotNow(p, res.file); // the slot syncs to the file's content under the shared id
       setScreen('editor');
     } catch (e) {
-      showAlert('Invalid project file: ' + e.message);
+      showAlert(t('app.invalid_project_file', { error: e.message }));
     }
   };
 
@@ -1570,11 +1575,12 @@ export default function App() {
     const slot = await window.api.slotRead(slotId);
     if (!slot) {
       refreshSlots();
-      return { error: 'That auto-saved project could not be found any more, so it was removed from the list.' };
+      return { error: t('app.auto_saved_project_not_found') };
     }
+    if (slot.error) return { error: slot.error }; // its chat file is held by another program
     let p;
     try { p = { ...normalizeProject(slot.project), id: slot.id }; }
-    catch (e) { return { error: 'Invalid auto-saved project: ' + e.message }; }
+    catch (e) { return { error: t('app.invalid_auto_saved_project', { error: e.message }) }; }
     autosave.current.file = slot.file || null;
     autosave.current.pendingRestore = false;
     dispatch({ type: 'load', project: p });
@@ -1592,7 +1598,7 @@ export default function App() {
     const res = await window.api.openProjectPath?.(filePath);
     if (!res) {
       storeRecents(recentsRef.current.filter((x) => x.path !== filePath));
-      return { error: 'That project file could not be found any more, so it was removed from recents.' };
+      return { error: t('app.project_file_not_found') };
     }
     try {
       const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
@@ -1608,7 +1614,7 @@ export default function App() {
       setScreen('editor');
       return { opened: p.id };
     } catch (e) {
-      return { error: 'Invalid project file: ' + e.message };
+      return { error: t('app.invalid_project_file', { error: e.message }) };
     }
   };
   const openRecent = async (r) => {
@@ -1637,7 +1643,7 @@ export default function App() {
     if (!note) return;
     let p;
     try { p = normalizeProject(note.project); }
-    catch (e) { showAlert('Invalid recovery project: ' + e.message); return; }
+    catch (e) { showAlert(t('app.invalid_recovery_project', { error: e.message })); return; }
     await flushAutosave();
     autosave.current.file = note.file || null;
     autosave.current.pendingRestore = false;
@@ -1735,7 +1741,7 @@ export default function App() {
     if (exportRunning.current) return;
     try { await graphicEdits.flush(); } catch (error) { return showAlert(error.message); }
     const project = renderable(projectRef.current);
-    if (!project.videoClips.length) return showAlert('Add a video or photo to the timeline before exporting.');
+    if (!project.videoClips.length) return showAlert(t('app.add_a_video_or_photo_before_exporting'));
     setPlaying(false);
     let caps = { libx265: true };
     try { caps = await window.api.exportCaps(); } catch { /* the bundled build has libx265 */ }
@@ -1790,6 +1796,11 @@ export default function App() {
     dispatch({ type: 'setProject', patch: { posterAt: t } });
     setExporting((e) => e && { ...e, project: { ...e.project, posterAt: t } });
   };
+  // The rendered cover (export:coverFrame's per-project poster file) is the home card's picture;
+  // the timestamp lets the card reload the file when the same path holds a new render.
+  const changePosterImage = (file) => {
+    dispatch({ type: 'setProject', patch: { posterImage: file, posterImageAt: Date.now() } });
+  };
   const exportRunning = useRef(false);
   const exportCanceled = useRef(false);
   const exportReporter = useRef(null);
@@ -1817,14 +1828,9 @@ export default function App() {
       const progress = new ExportProgress(stages, { storage, profile: readExportProfile(storage), publish: update => {
         if (exportCanceled.current) return;
         publish(e => e && !e.done && !e.error ? { ...e, ...update } : e);
-  // The rendered cover (export:coverFrame's per-project poster file) is the home card's picture;
-  // the timestamp lets the card reload the file when the same path holds a new render.
-  const changePosterImage = (file) => {
-    dispatch({ type: 'setProject', patch: { posterImage: file, posterImageAt: Date.now() } });
-  };
         window.api.exportActivity?.({active:true,progress:update.progress}).catch(() => {});
       } });
-      publish({ ready:false, project, eff, target, name, review, progress:0, stage:review ? 'Preparing section preview' : 'Preparing your video', startedAt:performance.now() });
+      publish({ ready:false, project, eff, target, name, review, progress:0, stage:t(review ? 'app.preparing_section_preview' : 'app.preparing_your_video'), startedAt:performance.now() });
       progress.start('prepare');timer = setInterval(() => progress.emit(), 1000);
       await new Promise(resolve => setTimeout(resolve, 0));stopIfCanceled();
       await loadProjectLuts(project);stopIfCanceled();
@@ -1844,7 +1850,7 @@ export default function App() {
       off = window.api.onExportProgress((fraction,detail) => progress.update(fraction,{...detail,restart:!!detail?.retry}));
       const res = await window.api.exportRun(toExport,target,textFrames);off();off = null;
       if (res.canceled) exportCanceled.current = true;stopIfCanceled();
-      if (!res.ok) throw new Error(res.error || 'The video could not be exported.');
+      if (!res.ok) throw new Error(res.error || t('app.the_video_could_not_be_exported'));
       progress.start('finish');let size = res.size, coverNote = null;
       if (typeof project.posterAt === 'number') {
         try {
@@ -1853,13 +1859,13 @@ export default function App() {
           const at = Math.min(Math.max(0, project.posterAt), Math.max(0, exportDuration(project) - 1 / (project.fps || 30)));
           const cov = await window.api.exportCover(res.file,res.file,at);
           if (cov.ok) { if (cov.size) size = cov.size; }
-          else coverNote = 'The cover picture could not be embedded — the video itself is complete.';
-        } catch { coverNote = 'The cover picture could not be embedded — the video itself is complete.'; }
+          else coverNote = t('app.cover_picture_not_embedded');
+        } catch { coverNote = t('app.cover_picture_not_embedded'); }
       }
       // Once encoding has published the finished file, completing the optional
       // cover is best-effort. Cancel never discards a successfully saved video.
       const elapsedSeconds = progress.finish();
-      publish({done:true,file:res.file,size,metadata:res.metadata,coverNote,review,progress:1,elapsedSeconds,stage:review?'Preview rendered':'Video saved'});
+      publish({done:true,file:res.file,size,metadata:res.metadata,coverNote,review,progress:1,elapsedSeconds,stage:t(review?'app.preview_rendered':'app.video_saved')});
       return { ok: true, file: res.file, size, metadata: res.metadata, elapsed_seconds: elapsedSeconds, ...(coverNote ? { warning: coverNote } : {}) };
     } catch (error) {
       if (exportCanceled.current) publish(null);
@@ -2025,7 +2031,7 @@ export default function App() {
       clearTimeout(a.fileTimer); a.fileTimer = null;
       const { doc, chat } = await serializeProjectParts(p);
       await a.writing?.catch(() => {});
-      const res = await window.api.saveProjectAgent(pretty, target, a.file);
+      const res = await window.api.saveProjectAgent(doc.pretty, target, a.file, chat ? chat.compact : null);
       if (res?.error) return { error: res.error };
       a.file = res.file;
       a.fileChat = p.craftAI;
@@ -2106,7 +2112,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app mode-${workspaceMode} ${dragOver ? 'drag-over' : ''} drawer-${agentDrawer || 'none'}`} style={{ gridTemplateRows: agentMode ? `48px 34px minmax(0, 1fr) ${panes.bottom}px` : `48px minmax(0, 1fr) ${panes.bottom}px`, ...(agentMode ? { gridTemplateColumns: `${panes.left}px minmax(0, 1fr)${agentDrawer ? ` ${panes.right}px` : ''}` } : {}), '--agent-bottom': `${panes.bottom}px`, '--agent-left': `${panes.left}px` }}
+    <div className={`app mode-${workspaceMode} ${dragOver ? 'drag-over' : ''} drawer-${agentDrawer || 'none'}`} style={{ gridTemplateRows: agentMode ? `44px 34px minmax(0, 1fr) ${panes.bottom}px` : `44px minmax(0, 1fr) ${panes.bottom}px`, ...(agentMode ? { gridTemplateColumns: `${panes.left}px minmax(0, 1fr)${agentDrawer ? ` ${panes.right}px` : ''}` } : {}), '--agent-bottom': `${panes.bottom}px`, '--agent-left': `${panes.left}px` }}
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
@@ -2114,11 +2120,11 @@ export default function App() {
         onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }} />
 
       <div className="agent-workspace-tools" hidden={!agentMode}>
-        <button className="btn btn-sm" aria-expanded={agentDrawer === 'media'} onClick={() => { setTab('media'); setAgentDrawer(d => d === 'media' ? null : 'media'); }}>Media</button>
-        <button className="btn btn-sm" aria-expanded={agentDrawer === 'properties'} onClick={() => setAgentDrawer(d => d === 'properties' ? null : 'properties')}>Properties</button>
-        <button className="btn btn-sm" aria-expanded={panes.bottom > 220} onClick={() => setTimelineHeight(panes.bottom > 220 ? 180 : window.innerHeight * 0.5)}>{panes.bottom > 220 ? 'Compact timeline' : 'Expand timeline'}</button>
-        <span className="muted">Drag the timeline border to expand</span>
-        {agentDrawer && <button className="btn btn-sm" onClick={() => setAgentDrawer(null)}>Close tools</button>}
+        <button className="btn btn-sm" aria-expanded={agentDrawer === 'media'} onClick={() => { setTab('media'); setAgentDrawer(d => d === 'media' ? null : 'media'); }}>{t('app.media')}</button>
+        <button className="btn btn-sm" aria-expanded={agentDrawer === 'properties'} onClick={() => setAgentDrawer(d => d === 'properties' ? null : 'properties')}>{t('app.properties')}</button>
+        <button className="btn btn-sm" aria-expanded={panes.bottom > 220} onClick={() => setTimelineHeight(panes.bottom > 220 ? 180 : window.innerHeight * 0.5)}>{t(panes.bottom > 220 ? 'app.compact_timeline' : 'app.expand_timeline')}</button>
+        <span className="muted">{t('app.drag_the_timeline_border_to_expand')}</span>
+        {agentDrawer && <button className="btn btn-sm" onClick={() => setAgentDrawer(null)}>{t('app.close_tools')}</button>}
       </div>
       <div className="workspace" style={{ gridTemplateColumns: panes.rightCollapsed ? `${panes.left}px minmax(0, 1fr)` : `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch} settingsVersion={settingsVersion}
@@ -2152,16 +2158,17 @@ export default function App() {
           onAddTextOver={addTextOver}
           onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
           onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} onColorPick={(sel) => startColorPick(sel)} />
-        <Splitter which="left" style={{ left: panes.left + (agentMode ? 10 : 0) }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the left panel" />
-        {!agentMode && !panes.rightCollapsed && <Splitter which="right" style={{ right: panes.right }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the properties panel" />}
+        {/* Splitters straddle the one-pixel divider between panels (6px wide, centred on it). */}
+        <Splitter which="left" style={{ left: panes.left - 3 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_left_panel')} />
+        {!agentMode && !panes.rightCollapsed && <Splitter which="right" style={{ right: panes.right - 3 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_properties_panel')} />}
       </div>
-      <Splitter which="bottom" style={{ bottom: panes.bottom + 10, ...(agentMode ? { left: panes.left + 20 } : {}) }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label="Resize the timeline" />
+      <Splitter which="bottom" style={{ bottom: panes.bottom - 3, ...(agentMode ? { left: panes.left } : {}) }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_timeline')} />
 
       <Timeline project={project} time={time} duration={duration} selection={selection} clockRef={clockRef} playing={playing}
         agentRun={agentRun?.runKey === `${project.id}:${projectLoadVersion}` ? agentRun : null}
         agentOwnsEdit={state.agentEdit?.token === agentRun?.requestId} agentHasChanges={!!state.agentEdit?.steps.length}
-        onShowAgent={() => setWorkspaceMode('agent')}
         agentFocus={agentFocus?.runKey === `${project.id}:${projectLoadVersion}` ? (agentFocus.live && state.agentEdit?.token !== agentFocus.requestId ? { ...agentFocus, live: null } : agentFocus) : null}
+        onShowAgent={() => setWorkspaceMode('agent')}
         onSelect={select} onSeek={seek} dispatch={dispatch} onAttachContext={attachTimelineContext} contextVersion={projectLoadVersion}
         onDetach={() => detachAudio()} detachOk={detachOk} linkMode={linkMode}
         onLinkToggle={() => (linkMode === 'unlink' ? unlinkClip() : linkPair())}
@@ -2175,7 +2182,7 @@ export default function App() {
         if (!c) return null;
         const m = c.mediaId && project.media.find((x) => x.id === c.mediaId);
         return (
-          <SpeedDialog clip={c} name={m?.name || 'Clip'} onClose={() => setSpeedAsk(null)}
+          <SpeedDialog clip={c} name={m?.name || t('app.clip')} onClose={() => setSpeedAsk(null)}
             onApply={(speed) => dispatch({ type: 'update', track: speedAsk.track, id: speedAsk.id, patch: { speed } })} />
         );
       })()}
@@ -2183,9 +2190,9 @@ export default function App() {
       {(screenOpen || screenRec.active) && <ScreenRecordDialog rec={screenRec} at={readTime()} onClose={() => setScreenOpen(false)} />}
       {recoveredNote && (
         <div className="recovered-note" role="status">
-          <b>ClipCraft had a problem and restarted its window.</b> Your project was restored as it was a second before.
-          <button className="btn btn-sm" onClick={() => window.api.openCrashLog()}>Show crash log</button>
-          <button className="icon-btn" aria-label="Close" onClick={() => setRecoveredNote(false)}>×</button>
+          <b>{t('app.clipcraft_had_a_problem_and_restarted_its')}</b> {t('app.your_project_was_restored_as_it_was_a_seco')}
+          <button className="btn btn-sm" onClick={() => window.api.openCrashLog()}>{t('app.show_crash_log')}</button>
+          <button className="icon-btn" aria-label={t('app.close')} onClick={() => setRecoveredNote(false)}>×</button>
         </div>
       )}
       {aboutOpen && <AboutDialog onClose={() => { setAboutOpen(false); if (aboutOpen === 'settings') setSettingsOpen(true); }} />}
@@ -2208,27 +2215,27 @@ export default function App() {
         timelineContextRequest={timelineContextRequest?.projectId === project.id && timelineContextRequest.loadVersion === projectLoadVersion ? timelineContextRequest : null}
         presentation={agentMode ? 'docked' : 'floating'} onExpand={() => setWorkspaceMode('agent')}
         onImport={importMedia} onAttachSelection={() => selection && attachTimelineContext({ kind: 'clips', clip_refs: selection.items || [{ track: selection.track, id: selection.id }] })} hasSelection={!!selection}
-        app={pilotApp} external={{ holder: external.holder, onDisconnect: external.disconnect, subscribe: external.subscribe }} />
+        app={pilotApp} external={{ holder: external.holder, onDisconnect: external.disconnect, subscribe: external.subscribe, yieldEdit: external.yieldEdit }} />
       {externalApproval}
-      {dragOver && <div className="drop-overlay"><div>Drop files to import them</div></div>}
+      {dragOver && <div className="drop-overlay"><div>{t('app.drop_files_to_import_them')}</div></div>}
       {renderJob && (
         <div className="render-job" role="status">
           {renderJob.error ? (
             <><CircleAlert size={15} /><span>{renderJob.error}</span>
-              <button className="btn btn-sm" onClick={() => setRenderJob(null)}>Dismiss</button></>
+              <button className="btn btn-sm" onClick={() => setRenderJob(null)}>{t('app.dismiss')}</button></>
           ) : (
             <><Loader2 size={15} className="spin" /><span>{renderJob.label}</span>
               <div className="progress render-job-bar"><div style={{ width: `${Math.round((renderJob.fraction || 0) * 100)}%` }} /></div>
-              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : renderJob.kind === 'enhance' ? window.api.enhanceCancel() : renderJob.kind === 'track' ? window.api.trackCancel() : window.api.reverseCancel())}>Cancel</button></>
+              <button className="btn btn-sm btn-ghost" onClick={() => (renderJob.kind === 'detach' ? window.api.detachCancel() : renderJob.kind === 'enhance' ? window.api.enhanceCancel() : renderJob.kind === 'track' ? window.api.trackCancel() : window.api.reverseCancel())}>{t('app.cancel')}</button></>
           )}
         </div>
       )}
       {trackPick && (
         <div className="render-job" role="status">
           <Crosshair size={15} />
-          <span>{trackPick.point ? 'Point set — track it through the whole clip?' : 'Click the object on the player that you want to follow'}</span>
-          <button className="btn btn-sm" disabled={!trackPick.point} onClick={runTrack}>Track motion</button>
-          <button className="btn btn-sm btn-ghost" onClick={() => setTrackPick(null)}>Cancel</button>
+          <span>{t(trackPick.point ? 'app.point_set_track_it_through_the_clip' : 'app.click_the_object_you_want_to_follow')}</span>
+          <button className="btn btn-sm" disabled={!trackPick.point} onClick={runTrack}>{t('app.track_motion')}</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setTrackPick(null)}>{t('app.cancel')}</button>
         </div>
       )}
       {cropEdit && (() => {
@@ -2238,31 +2245,31 @@ export default function App() {
         return (
           <div className="render-job crop-bar" role="status">
             <Crop size={15} />
-            <span>Cropping{c ? ` “${project.media.find((m) => m.id === c.mediaId)?.name || 'clip'}”` : ''} — drag the frame's edges, or drag inside it to move it; what is dimmed gets cut. Nothing is applied until you confirm.</span>
-            <span className="chips" role="group" aria-label="Crop aspect">
+            <span>{c ? t('app.cropping_name_hint', { name: project.media.find((m) => m.id === c.mediaId)?.name || t('app.clip').toLowerCase() }) : t('app.cropping_hint')}</span>
+            <span className="chips" role="group" aria-label={t('app.crop_aspect')}>
               {CROP_ASPECTS.map((a) => (
                 <button key={a.id} type="button" className={`chip ${cur === a.id ? 'on' : ''}`} aria-pressed={cur === a.id}
-                  onClick={() => applyCropAspect(a.id)}>{a.label}</button>
+                  onClick={() => applyCropAspect(a.id)}>{catalogName('crop_aspect', a)}</button>
               ))}
             </span>
-            <span className="crop-rot" role="group" aria-label="Rotate or straighten">
+            <span className="crop-rot" role="group" aria-label={t('app.rotate_or_straighten')}>
               <RotateCw size={13} />
-              <input type="range" min="-45" max="45" step="0.5" value={Math.min(45, Math.max(-45, rot))} aria-label="Rotate (degrees)"
+              <input type="range" min="-45" max="45" step="0.5" value={Math.min(45, Math.max(-45, rot))} aria-label={t('app.rotate_degrees')}
                 onChange={(e) => setCropRot(Number(e.target.value))} />
-              <input type="number" className="crop-rot-num" min="-180" max="180" step="0.5" value={rot} aria-label="Rotation in degrees"
+              <input type="number" className="crop-rot-num" min="-180" max="180" step="0.5" value={rot} aria-label={t('app.rotation_in_degrees')}
                 onChange={(e) => setCropRot(Number(e.target.value))} />
               <span className="crop-rot-val">{rot > 0 ? `+${rot}` : rot}°</span>
             </span>
-            <button className="btn btn-sm" onClick={doneCropEdit}>Done</button>
-            <button className="btn btn-sm btn-ghost" onClick={cancelCropEdit}>Cancel</button>
+            <button className="btn btn-sm" onClick={doneCropEdit}>{t('app.done')}</button>
+            <button className="btn btn-sm btn-ghost" onClick={cancelCropEdit}>{t('app.cancel')}</button>
           </div>
         );
       })()}
       {colorPick && (
         <div className="render-job" role="status">
           <Pipette size={15} />
-          <span>Click the color in the player — that exact pixel becomes the key color.</span>
-          <button className="btn btn-sm btn-ghost" onClick={() => setColorPick(null)}>Cancel</button>
+          <span>{t('app.click_the_color_in_the_player_that_exact_p')}</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => setColorPick(null)}>{t('app.cancel')}</button>
         </div>
       )}
       {exporting && <ExportDialog state={exporting} onCancel={cancelExport} onStart={confirmExport}
@@ -2279,7 +2286,7 @@ function Splitter({ which, style, onStart, onReset, onNudge, label }) {
   const vertical = which !== 'bottom';
   return (
     <div className={`splitter ${vertical ? 'col' : 'row'}`} style={style} role="separator" tabIndex={0}
-      aria-orientation={vertical ? 'vertical' : 'horizontal'} aria-label={label} title={`${label}\nDrag to resize, double-click to reset`}
+      aria-orientation={vertical ? 'vertical' : 'horizontal'} aria-label={label} title={t('app.splitter_title', { label })}
       onPointerDown={(e) => onStart(which, e)} onDoubleClick={() => onReset(which)} onKeyDown={(e) => onNudge(which, e)} />
   );
 }
