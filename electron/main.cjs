@@ -2053,6 +2053,8 @@ app.whenReady().then(() => {
   externalAgents.start().then((r) => { if (!r.ok) logCrash('external agents', { message: r.error }); });
   // Find the graphics card's video encoder now (a short test encode), so the first export does not wait for it.
   setTimeout(() => { const ff = require("./media/ffmpeg.cjs"); ff.warmEncoders().then(() => ff.pickEncoder()); }, 4000);
+  // Stored API keys are decrypted in the background (nothing touches the keychain when there are none).
+  settings.warmKeys();
   // Screen recording (Media > Record screen).
   require("./recording/screenrec.cjs").install({ app, getWin: () => win, ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath, probeAll });
 });

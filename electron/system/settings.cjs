@@ -56,6 +56,64 @@ function write(data) {
   }
 }
 
+// ---- Keychain policy ----
+// safeStorage reaches the operating system's keychain: macOS asks the user to allow each new app
+// binary, and a slow keychain stalls whoever calls it. So nothing here touches it at launch unless
+// the settings hold an encrypted key. Those keys are decrypted once, off the main thread
+// (warmKeys, called by main after start-up), into a small in-memory cache that the synchronous
+// getters read; the blocking calls remain only as the fallback for a key needed before that
+// finished, and for the moment the user saves a key.
+let encryptionRefused = false; // the last probe said no (a refused prompt, no secret service): shown in Settings
+const decrypted = new Map(); // ciphertext (base64) -> the key
+const asyncKeychain = () => typeof safeStorage.isAsyncEncryptionAvailable === 'function' && typeof safeStorage.decryptStringAsync === 'function';
+// Asked only when a key is saved or must be read outside the cache; never cached, so a refused
+// prompt is asked again the next time the user needs a key.
+function encryptionAvailable() {
+  const ok = safeStorage.isEncryptionAvailable();
+  encryptionRefused = !ok;
+  return ok;
+}
+// The key behind a stored entry, from the cache or (blocking) from the keychain; '' when it cannot be
+// read (saved under another account, or the keychain refused).
+function decryptEntry(entry) {
+  if (!entry?.enc) return '';
+  if (decrypted.has(entry.enc)) return decrypted.get(entry.enc);
+  if (!encryptionAvailable()) return '';
+  try {
+    const key = safeStorage.decryptString(Buffer.from(entry.enc, 'base64'));
+    decrypted.set(entry.enc, key);
+    return key;
+  } catch { return ''; }
+}
+const encryptEntry = (key) => {
+  const enc = safeStorage.encryptString(key).toString('base64');
+  decrypted.set(enc, key);
+  return { enc, hint: `…${key.slice(-4)}` };
+};
+const storedEntries = (data) => [...Object.values(data.ai?.keys || {}), ...Object.values(data.services || {})].filter((e) => e?.enc);
+let warming = null;
+// Decrypts every stored key in the background so the first agent request finds them ready.
+// Without stored keys it returns at once and the keychain is left alone.
+function warmKeys() {
+  if (warming) return warming;
+  const entries = storedEntries(read());
+  if (!entries.length || !asyncKeychain()) return (warming = Promise.resolve());
+  warming = (async () => {
+    try {
+      if (!(await safeStorage.isAsyncEncryptionAvailable())) return;
+      for (const { enc } of entries) {
+        if (decrypted.has(enc)) continue;
+        try {
+          const value = await safeStorage.decryptStringAsync(Buffer.from(enc, 'base64'));
+          const key = typeof value === 'string' ? value : value?.result; // Electron 45 returns { result, shouldReEncrypt }
+          if (typeof key === 'string') decrypted.set(enc, key);
+        } catch { /* unreadable: the getter reports it as unset */ }
+      }
+    } catch { /* the keychain is unavailable right now: the getters ask again when a key is needed */ }
+  })();
+  return warming;
+}
+
 // Native agents' own web search ("web research"): Codex had it from the start, Claude starts without.
 const WEB_RESEARCH_DEFAULTS = require('../agents/research.cjs').DEFAULTS;
 const webResearchOf = (ai, provider) => provider in WEB_RESEARCH_DEFAULTS
@@ -75,7 +133,9 @@ function getPublic() {
     webResearch: Object.fromEntries(Object.keys(WEB_RESEARCH_DEFAULTS).map((p) => [p, webResearchOf(ai, p)])),
     keys, // provider -> "…abcd" for providers that have a saved key
     defaultModels: DEFAULT_MODELS,
-    encryption: safeStorage.isEncryptionAvailable(),
+    // Not probed here (this runs at launch): assumed available until a save or a read proves otherwise,
+    // in which case that save fails with the secure-storage message and the next read reports false.
+    encryption: !encryptionRefused,
     serviceKeys: Object.fromEntries(SERVICES.filter((n) => read().services?.[n]).map((n) => [n, read().services[n].hint])),
     mcpServers: getMcpServers(),
     externalAgents: getExternalAgents(),
@@ -192,22 +252,17 @@ function externalToken() {
 const SERVICES = ['pixabay', 'soundza', 'elevenlabs', 'gemini-tts', 'cap-groq', 'cap-openai', 'cap-deepgram', 'cap-elevenlabs'];
 
 function getServiceKey(name) {
-  const entry = read().services?.[name];
-  if (!SERVICES.includes(name) || !entry || !safeStorage.isEncryptionAvailable()) return '';
-  try {
-    return safeStorage.decryptString(Buffer.from(entry.enc, 'base64'));
-  } catch {
-    return '';
-  }
+  if (!SERVICES.includes(name)) return '';
+  return decryptEntry(read().services?.[name]);
 }
 
 function saveServiceKey(name, key) {
   if (!SERVICES.includes(name)) throw new Error(t('main.unknown_service'));
   const k = String(key || '').trim();
   if (!k) throw new Error(t('main.paste_a_key_first'));
-  if (!safeStorage.isEncryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
+  if (!encryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
   const data = read();
-  data.services = { ...(data.services || {}), [name]: { enc: safeStorage.encryptString(k).toString('base64'), hint: `…${k.slice(-4)}` } };
+  data.services = { ...(data.services || {}), [name]: encryptEntry(k) };
   write(data);
   return getPublic();
 }
@@ -224,9 +279,9 @@ function saveProviderKey(provider, value) {
   if (!providerPresets.keyed().includes(provider)) throw new Error(t('main.provider_does_not_use_api_key'));
   const key = String(value || '').trim();
   if (!key) throw new Error(t('main.paste_a_key_first'));
-  if (!safeStorage.isEncryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
+  if (!encryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
   const data = read();
-  data.ai = { ...(data.ai || {}), keys: { ...(data.ai?.keys || {}), [provider]: { enc: safeStorage.encryptString(key).toString('base64'), hint: `…${key.slice(-4)}` } } };
+  data.ai = { ...(data.ai || {}), keys: { ...(data.ai?.keys || {}), [provider]: encryptEntry(key) } };
   write(data);
   return getPublic();
 }
@@ -237,15 +292,7 @@ function getActive(providerOverride) {
   const provider = providerOverride || (PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini');
   const model = (ai.models && ai.models[provider]) || DEFAULT_MODELS[provider];
   const effort = ai.reasoningEfforts?.[provider]?.[model];
-  let apiKey = '';
-  const entry = ai.keys && ai.keys[provider];
-  if (entry && safeStorage.isEncryptionAvailable()) {
-    try {
-      apiKey = safeStorage.decryptString(Buffer.from(entry.enc, 'base64'));
-    } catch {
-      apiKey = ''; // saved under another Windows account or corrupted: treat as not set
-    }
-  }
+  const apiKey = decryptEntry(ai.keys && ai.keys[provider]); // '' when saved under another account or corrupted
   return {
     provider,
     model,
@@ -271,14 +318,10 @@ function save(patch) {
   }
   if (provider in WEB_RESEARCH_DEFAULTS && typeof patch.webResearch === 'boolean') ai.webResearch = { ...(ai.webResearch || {}), [provider]: patch.webResearch };
   if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!encryptionAvailable()) {
       throw new Error(t('main.secure_storage_not_available'));
     }
-    const key = patch.apiKey.trim();
-    ai.keys = {
-      ...(ai.keys || {}),
-      [provider]: { enc: safeStorage.encryptString(key).toString('base64'), hint: `…${key.slice(-4)}` },
-    };
+    ai.keys = { ...(ai.keys || {}), [provider]: encryptEntry(patch.apiKey.trim()) };
   }
   data.ai = ai;
   write(data);
@@ -374,4 +417,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getVoiceStudio, setVoiceStudio, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getVoiceStudio, setVoiceStudio, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
