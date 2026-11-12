@@ -10,7 +10,7 @@ import { motionQuality } from '../timeline/motionQuality.js';
 import { stateAtPinned } from '../timeline/track.js';
 import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from "../preview/visual.js";
 import { MOTION_GUIDE, MOTION_TOPICS } from './motionGuide.js';
-import { ENGINE_NAMES, defaultSpeech, piperVoicesOf } from '../audio/voiceDefault.js';
+import { ENGINE_NAMES, defaultSpeech, studioProblem, studioVoicesOf } from '../audio/voiceDefault.js';
 import { projectRevision, audioRevision } from './context.js';
 import { regroupSegments } from "../text/subtitles.js";
 import { validateAgentProject, verifyActionResults } from './validation.js';
@@ -66,9 +66,10 @@ const TEXT_LOOK = {
   bubble: S, bubble_color: S,
 };
 
-// Piper voices are optional downloads (Settings > Voice): only the downloaded ones are usable.
-const PIPER_MISSING = (st) => !st?.supported ? 'Piper voices are not available on this computer.'
-  : 'No Piper voice is downloaded. Ask the user to download the voice engine and a voice in Settings > Voice; do not retry piper until then.';
+// VoiceStudio is a separate app on the user's computer, reached through a connector in Settings > Voice.
+const STUDIO_MISSING = (st) => !st?.studio?.enabled ? 'VoiceStudio is off. Ask the user to turn on the VoiceStudio connector in Settings > Voice (VoiceStudio is a free app they install); do not retry voicestudio until then.'
+  : !st.studio.running ? `VoiceStudio is not running${st.studio.error ? ` (${st.studio.error})` : ''}. Ask the user to open VoiceStudio, then retry voicestudio.`
+  : 'VoiceStudio lists no voice. Ask the user to create a voice profile in VoiceStudio.';
 
 export const TOOL_DECLARATIONS = [
   ...EDITING_DECLARATIONS,
@@ -220,8 +221,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'search_sounds',
-    description: 'Search sounds. kind: music, sfx (whoosh, pop, impact...) or meme (bruh, vine boom...). English words. Returns sound_id for add_sound.',
-    parameters: { type: 'OBJECT', properties: { kind: S, query: S }, required: ['kind', 'query'] },
+    description: 'Find music/sfx/meme. licenses cc0 (default) or attribution (+CC BY; publish credits). Returns sound_id.',
+    parameters: { type: 'OBJECT', properties: { kind: S, query: S, licenses: S }, required: ['kind', 'query'] },
   },
   {
     name: 'add_sound',
@@ -236,7 +237,7 @@ export const TOOL_DECLARATIONS = [
   {
     name: 'add_voiceover',
     description: 'Generate one speech clip on the audio track. First list_voices (Gemini default voice Kore). text verbatim, max 5000 chars.',
-    parameters: { type: 'OBJECT', properties: { text: S, voice_id: S, engine: { ...S, description: 'gemini (default when set up), piper, elevenlabs' }, model: S,
+    parameters: { type: 'OBJECT', properties: { text: S, voice_id: S, engine: { ...S, description: 'gemini (default if set up), voicestudio, elevenlabs' }, model: S,
       style: { ...S, description: 'Gemini tone, accent, pacing; not spoken.' },
       start_sec: N, speed: { ...N, description: 'Not Gemini (use style).' }, volume: N }, required: ['text'] },
   },
@@ -249,8 +250,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'search_stock',
-    description: 'Search free stock (Pixabay) for b-roll. kind video or photo, English words. Returns stock_id for add_stock.',
-    parameters: { type: 'OBJECT', properties: { kind: S, query: S }, required: ['kind', 'query'] },
+    description: 'Find photo (Openverse, no key) or video (Pixabay). provider: openverse/pixabay. licenses: cc0 (default), attribution adds CC BY; publish credits. Returns stock_id for add_stock.',
+    parameters: { type: 'OBJECT', properties: { kind: S, query: S, provider: S, licenses: S }, required: ['kind', 'query'] },
   },
   {
     name: 'add_stock',
@@ -399,7 +400,8 @@ export function summarizeProject(p) {
     text_track: p.textClips.filter((c) => !c.caption).map((c) => ({ id: c.id, layer: c.layer || 0, disabled: !!c.disabled, text: c.text, start: r2(c.start), end: r2(c.start + c.duration), ...textInfo(c) })),
     captions: captionInfo(p.textClips.filter((c) => c.caption)),
     effects_track: (p.effectClips || []).map((c) => ({ id: c.id, layer: c.layer || 0, disabled: !!c.disabled, effect: c.fx, start: r2(c.start), end: r2(c.start + c.duration) })),
-    media_library: p.media.map((m) => ({ id: m.id, name: m.name, type: m.type, width: m.width, height: m.height, has_audio: !!m.hasAudio, duration_sec: r2(m.duration || 0) })),
+    media_library: p.media.map((m) => ({ id: m.id, name: m.name, type: m.type, width: m.width, height: m.height, has_audio: !!m.hasAudio, duration_sec: r2(m.duration || 0),
+      ...(m.credit ? { license: m.credit.licenseName || m.credit.license, source: m.credit.landing, ...(m.credit.license === 'by' ? { publication_credit: m.credit.line } : {}) } : {}) })),
   };
 }
 
@@ -662,7 +664,7 @@ export function createToolRunner(ctx) {
     const l = res.limit;
     if (!l) return { error: res.error };
     const next = l.kind === 'daily'
-      ? `Do not call Gemini TTS with ${l.model || model || 'this model'} again in this request: it is out of requests until ${l.resets}. ${l.other_model ? `Retry the missing lines with model "${l.other_model}" (its own limit), passing retry_of. ` : ''}If that fails too, finish the rest of the edit and tell the user which lines are missing and when the limit resets. Use piper or elevenlabs only if a different voice is acceptable, and say so.`
+      ? `Do not call Gemini TTS with ${l.model || model || 'this model'} again in this request: it is out of requests until ${l.resets}. ${l.other_model ? `Retry the missing lines with model "${l.other_model}" (its own limit), passing retry_of. ` : ''}If that fails too, finish the rest of the edit and tell the user which lines are missing and when the limit resets. Use voicestudio or elevenlabs only if a different voice is acceptable, and say so.`
       : 'Gemini is over its per-minute request limit even after waiting. Do other edits first, then send the remaining lines together in one add_narration call.';
     return { error: res.error, provider_limit: l, next };
   };
@@ -1249,14 +1251,14 @@ export function createToolRunner(ctx) {
       return place(m, { as, start_sec, main_index, name: m.name });
     },
 
-    async search_sounds({ kind, query }) {
+    async search_sounds({ kind, query, licenses = 'cc0' }) {
       const lib = { music: 'music', sfx: 'sfxall', meme: 'trolls', memes: 'trolls', troll: 'trolls', trolls: 'trolls' }[String(kind || '').toLowerCase()];
       if (!lib) return { error: 'kind must be "music", "sfx" or "meme".' };
-      const res = await api.librarySearch({ requestId: ctx.requestId, kind: lib, q: String(query || ''), category: '', page: 1 });
+      const res = await api.librarySearch({ requestId: ctx.requestId, kind: lib, licenses, q: String(query || ''), category: '', page: 1 });
       if (res.error) return { error: res.error };
       const sounds = (res.results || []).slice(0, 12).map((it) => ({
         sound_id: keep('s', it), title: it.title, duration_sec: it.duration ? r2(it.duration) : undefined, by: it.creator,
-        ...(it.license === 'by' ? { needs_credit: true } : {}),
+        license: it.licenseName || it.license, source: it.landing, ...(it.license === 'by' ? { needs_credit: true } : {}),
       }));
       return sounds.length ? { sounds } : { sounds, note: 'Nothing found; try other or simpler English words.' };
     },
@@ -1268,20 +1270,23 @@ export function createToolRunner(ctx) {
       if (res.error) return { error: res.error };
       const added = await place(addProbed(res), { start_sec, name: item.title });
       if (added.error) return added;
-      return shapeAudio(added.clip_id, { duration_sec, volume, fade_in_sec, fade_out_sec }, added);
+      return shapeAudio(added.clip_id, { duration_sec, volume, fade_in_sec, fade_out_sec }, { ...added, ...(res.credit?.license === 'by' ? { publication_credit: res.credit.line } : {}) });
     },
 
     async list_voices() {
       const st = await api.ttsStatus();
-      const piper = piperVoicesOf(st), fallback = defaultSpeech(st);
+      const studio = studioVoicesOf(st), fallback = defaultSpeech(st);
       // The user's default (Settings > Voice), or the automatic order when none is chosen or it is not set up.
       const out = { default_engine: fallback.engine === 'eleven' ? 'elevenlabs' : fallback.engine, default_voice: fallback.voice || null, default_from: fallback.from,
         ...(fallback.note ? { default_note: fallback.note } : {}),
-        piper: piper.length ? piper.map((v) => ({ voice_id: v.id, name: v.name, language: v.lang, gender: v.gender })) : PIPER_MISSING(st),
+        voicestudio: studio.length ? { active_engine: st.studio.engine || 'VoiceStudio',
+          voices: studio.map((v) => ({ voice_id: v.id, name: v.name, ...(v.language ? { language: v.language } : {}), kind: v.kind,
+            ...(v.kind === 'design' ? { style_required: 'builds the voice from the style text: who speaks, how they feel, how fast (for example: a sad woman, almost crying, speaking slowly)' } : {}),
+            ...(v.kind === 'default' && st.studio.activeEngine === 'omnivoice' ? { style: 'voice-design tags only: gender, age, pitch, accent, whisper; no emotions' } : {}) })) } : STUDIO_MISSING(st),
         gemini: st.geminiKey ? { models: st.gemini?.models || [], default_voice: st.gemini?.defaultVoice || 'Kore',
           voices: (st.gemini?.voices || []).map((v) => ({ voice_id: v.id, name: v.name, delivery: v.style })),
           language: 'Detected from the spoken text. Put accent and pacing instructions in style.' }
-          : 'Add a Gemini TTS key in Settings > Speech generation.' };
+          : 'Add a Gemini TTS key in Settings > API keys > Google Gemini (Voice generation).' };
       if (st.elevenKey) {
         const ev = await api.ttsElevenVoices({ requestId: ctx.requestId });
         out.elevenlabs = ev.error ? { error: ev.error } : (ev.voices || []).slice(0, 30).map((v) => ({ voice_id: v.id, name: v.name, ...(v.labels ? { labels: v.labels } : {}) }));
@@ -1292,14 +1297,15 @@ export function createToolRunner(ctx) {
     async add_voiceover({ text, voice_id, engine, model, style, start_sec = 0, speed = 1, volume = 1 }) {
       if (!String(text || '').trim()) return { error: 'text is empty.' };
       const st = await api.ttsStatus();
-      const piper = piperVoicesOf(st), fallback = defaultSpeech(st);
+      const studio = studioVoicesOf(st), fallback = defaultSpeech(st);
       const chosen = engine || fallback.engine;
-      if (!chosen) return { error: `No speech engine is set up. ${PIPER_MISSING(st)} Or add a Gemini or ElevenLabs key in Settings.` };
+      if (!chosen) return { error: `No speech engine is set up. ${STUDIO_MISSING(st)} Or add a Gemini or ElevenLabs key in Settings.` };
       const normalized = chosen === 'elevenlabs' ? 'eleven' : chosen;
-      if (!['gemini', 'eleven', 'piper'].includes(normalized)) return { error: 'engine must be gemini, piper or elevenlabs.' };
-      if (normalized === 'piper' && !piper.length) return { error: PIPER_MISSING(st) };
-      if (normalized === 'piper' && voice_id && !piper.some((v) => v.id === voice_id)) return { error: `The Piper voice ${voice_id} is not downloaded. Downloaded: ${piper.map((v) => v.id).join(', ')}. Ask the user to download others in Settings > Voice.` };
-      const voiceId = voice_id || (normalized === fallback.engine && fallback.voice) || (normalized === 'gemini' ? st.gemini?.defaultVoice || 'Kore' : normalized === 'piper' ? piper[0].id : undefined);
+      if (!['gemini', 'eleven', 'voicestudio'].includes(normalized)) return { error: 'engine must be gemini, voicestudio or elevenlabs.' };
+      if (normalized === 'voicestudio' && !studio.length) return { error: STUDIO_MISSING(st) };
+      if (normalized === 'voicestudio' && voice_id && !studio.some((v) => v.id === voice_id)) return { error: `VoiceStudio has no voice ${voice_id}. Its voices: ${studio.map((v) => `${v.id} (${v.name})`).join(', ')}. Voices are created in VoiceStudio itself.` };
+      if (normalized === 'voicestudio' && voice_id && studio.find((v) => v.id === voice_id)?.kind === 'design' && !String(style || '').trim()) return { error: `${voice_id} builds the voice from style: describe who speaks, how they feel and how fast, then retry.` };
+      const voiceId = voice_id || (normalized === fallback.engine && fallback.voice) || (normalized === 'gemini' ? st.gemini?.defaultVoice || 'Kore' : normalized === 'voicestudio' ? studio[0].id : undefined);
       if (normalized === 'eleven' && !voiceId) return { error: 'Pick an ElevenLabs voice_id from list_voices.' };
       const res = await api.ttsSpeak({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
       if (res.error) return speechFailure(res, model);
@@ -1314,7 +1320,7 @@ export function createToolRunner(ctx) {
       if (list.length < 2) return { error: 'Give at least two lines; use add_voiceover for one.' };
       if (list.some((l) => !String(l.text || '').trim())) return { error: 'Every line needs text.' };
       const st = await api.ttsStatus();
-      if (!st.geminiKey) return { error: 'add_narration uses Gemini TTS, which has no key in Settings > Speech generation. Use add_voiceover per line with piper or elevenlabs.' };
+      if (!st.geminiKey) return { error: 'add_narration uses Gemini TTS, which has no key in Settings > API keys > Google Gemini (Voice generation). Use add_voiceover per line with voicestudio or elevenlabs.' };
       // add_narration is Gemini only: a different default chosen in Settings wins.
       const fallback = defaultSpeech(st);
       if (fallback.from === 'settings' && fallback.engine !== 'gemini') return { error: `The user's default voice (Settings > Voice) is ${ENGINE_NAMES[fallback.engine]}. Speak each line with add_voiceover (it uses that default); use Gemini only if the user asks for it.` };
@@ -1350,11 +1356,12 @@ export function createToolRunner(ctx) {
       } finally { off?.(); }
     },
 
-    async search_stock({ kind = 'video', query }) {
+    async search_stock({ kind = 'video', query, provider, licenses = 'cc0' }) {
       const k = String(kind).toLowerCase().startsWith('p') ? 'photo' : 'video';
-      const res = await api.stockSearch({ requestId: ctx.requestId, kind: k, q: String(query || '') });
+      const res = await api.stockSearch({ requestId: ctx.requestId, kind: k, provider, licenses, q: String(query || '') });
       if (res.error) return { error: res.error };
       const items = (res.results || []).slice(0, 10).map((it) => ({
+        license: it.licenseName || 'Pixabay', source: it.landing || it.pageURL, ...(it.license === 'by' ? { needs_credit: true } : {}),
         stock_id: keep(k === 'video' ? 'v' : 'p', it), tags: it.tags, ...(it.duration ? { duration_sec: it.duration } : {}), size: `${it.width}x${it.height}`,
       }));
       return items.length ? { items } : { items, note: 'Nothing found; try other English words.' };
@@ -1371,7 +1378,7 @@ export function createToolRunner(ctx) {
         const c = findClip(added.clip_id).clip;
         dispatch({ type: 'update', track: 'overlay', id: c.id, patch: { out: c.in + Number(duration_sec) * (c.speed || 1) } });
       }
-      return after({ clip_id: added.clip_id, track: added.track });
+      return after({ clip_id: added.clip_id, track: added.track, ...(res.credit?.license === 'by' ? { publication_credit: res.credit.line } : {}) });
     },
 
     async list_options({ what }) {
@@ -1624,22 +1631,22 @@ export function createToolRunner(ctx) {
 
   const readCache = new Map();
   const cachedTools = new Set(['list_options', 'motion_guide', 'edit_guide']);
-  return {
-    runImages,
   // The reducer actions the most recent run() dispatched: the exact clips a call touched, for the
   // timeline's agent trail (toolTargets.js). Kept out of the tool result, which the model reads.
   let lastActions = [];
+  return {
+    runImages,
+    lastActions: () => lastActions,
     async run(name, args) {
       const fn = Object.hasOwn(tools, name) ? tools[name] : null;
-    lastActions: () => lastActions,
       if (!fn) return { error: `Unknown tool "${name}".` };
       const before = project(), revision = projectRevision(before);
       const edits = !NON_MUTATING.has(name);
       const active = { revision, actions: [], wrote: false, validation: new WeakMap() };
       operation = edits ? active : null;
+      lastActions = active.actions;
       let result;
       try {
-      lastActions = active.actions;
         const key = cachedTools.has(name) ? JSON.stringify([name, args || {}, revision]) : null;
         if (key && readCache.has(key)) return structuredClone(readCache.get(key));
         result = await fn(args || {});

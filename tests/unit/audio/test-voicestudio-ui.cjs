@@ -1,9 +1,11 @@
-// Piper voices in the real app (FVE_SMOKE_MODE=tts, tests/smoke/smoke-piper-settings.cjs): optional downloads in
-// Settings > Voice (real, about 90 MB), cancel, speaking onto the timeline, removal. Needs the network.
+// The VoiceStudio connector in the real app (FVE_SMOKE_MODE=tts, tests/smoke/smoke-voicestudio-settings.cjs): the
+// panel while the connector is off, turning it on and testing the address in Settings > Voice, VoiceStudio as the
+// default voice, speaking onto the timeline, and the app stopping. VoiceStudio itself is a stand-in served by the
+// test, so no install or network is needed.
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
 const {spawn}=require('node:child_process'),net=require('node:net');
 (async()=>{
- const root=path.resolve(__dirname,'../../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-piper-ui-'));
+ const root=path.resolve(__dirname,'../../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-voicestudio-ui-'));
  const free=()=>new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
  const port=await free();
  fs.mkdirSync(path.join(dir,'settings-test'));fs.writeFileSync(path.join(dir,'settings-test/settings.json'),JSON.stringify({firstRun:{tourSeen:true,packPromptSeen:true}}));
@@ -15,6 +17,6 @@ const {spawn}=require('node:child_process'),net=require('node:net');
   electron=spawn(bin,['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'tts',VITE_DEV_SERVER_URL:url}});
   const code=await new Promise(resolve=>{const timer=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},300000);electron.once('exit',code=>{clearTimeout(timer);resolve(code);});});
   const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json')));assert.equal(code,0,result.error);assert.ok(!result.error,result.error);
-  console.log('Real-app Piper voices passed; evidence: '+dir);
+  console.log('Real-app VoiceStudio connector passed; evidence: '+dir);
  }finally{electron?.kill();vite.kill();fs.closeSync(fd);}
 })().catch(error=>{console.error(error);process.exitCode=1;});

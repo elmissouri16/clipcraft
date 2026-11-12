@@ -72,8 +72,19 @@ function getPublic() {
     mcpServers: getMcpServers(),
     externalAgents: getExternalAgents(),
     voiceDefault: getVoiceDefault(),
+    voiceStudio: getVoiceStudio(),
     shortcuts: getShortcuts(),
+    language: getLanguagePreference(),
   };
+}
+
+// UI language: 'system' (follow the OS), 'en', 'fr' or 'es' (electron/system/i18n.cjs). Applies after a restart.
+const { LANGUAGE_IDS, t } = require('./i18n.cjs');
+function getLanguagePreference() { const v = read().language; return LANGUAGE_IDS.includes(v) ? v : 'system'; }
+function setLanguagePreference(value) {
+  if (!LANGUAGE_IDS.includes(value)) throw new Error(t('main.unknown_language'));
+  const data = read(); data.language = value; write(data);
+  return getPublic();
 }
 
 // ---- Keyboard shortcuts: only the user's changes from the defaults ----
@@ -116,8 +127,8 @@ function setMcpServers(list) {
 }
 
 // ---- Default voice (Settings > Voice): the speech engine and voice used when none is named, by CraftAI and
-// as Text to speech's starting choice. 'auto' keeps the built-in order (Gemini, then Piper, then ElevenLabs).
-const VOICE_ENGINES = ['auto', 'gemini', 'piper', 'eleven'];
+// as Text to speech's starting choice. 'auto' keeps the built-in order (Gemini, then VoiceStudio, then ElevenLabs).
+const VOICE_ENGINES = ['auto', 'gemini', 'voicestudio', 'eleven'];
 function getVoiceDefault() {
   const v = read().voiceDefault || {};
   return { engine: VOICE_ENGINES.includes(v.engine) ? v.engine : 'auto', voice: typeof v.voice === 'string' ? v.voice.trim().slice(0, 100) : '' };
@@ -125,6 +136,20 @@ function getVoiceDefault() {
 function setVoiceDefault(value) {
   const data = read();
   data.voiceDefault = { engine: VOICE_ENGINES.includes(value?.engine) ? value.engine : 'auto', voice: typeof value?.voice === 'string' ? value.voice.trim().slice(0, 100) : '' };
+  write(data);
+  return getPublic();
+}
+
+// ---- VoiceStudio connector (Settings > Voice): off by default. When on, ClipCraft speaks through the VoiceStudio
+// app running on this computer at `url` (empty: its default address, electron/audio/tts.cjs).
+function getVoiceStudio() {
+  const v = read().voiceStudio || {};
+  return { enabled: v.enabled === true, url: typeof v.url === 'string' ? v.url.trim().slice(0, 200) : '' };
+}
+function setVoiceStudio(patch) {
+  const data = read(), current = getVoiceStudio();
+  data.voiceStudio = { enabled: typeof patch?.enabled === 'boolean' ? patch.enabled : current.enabled,
+    url: typeof patch?.url === 'string' ? patch.url.trim().slice(0, 200) : current.url };
   write(data);
   return getPublic();
 }
@@ -169,10 +194,10 @@ function getServiceKey(name) {
 }
 
 function saveServiceKey(name, key) {
-  if (!SERVICES.includes(name)) throw new Error('Unknown service');
+  if (!SERVICES.includes(name)) throw new Error(t('main.unknown_service'));
   const k = String(key || '').trim();
-  if (!k) throw new Error('Paste a key first.');
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this PC, so the key was not saved.');
+  if (!k) throw new Error(t('main.paste_a_key_first'));
+  if (!safeStorage.isEncryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
   const data = read();
   data.services = { ...(data.services || {}), [name]: { enc: safeStorage.encryptString(k).toString('base64'), hint: `…${k.slice(-4)}` } };
   write(data);
@@ -188,10 +213,10 @@ function clearServiceKey(name) {
 
 // Manage credentials without changing the selected assistant, its model or endpoint.
 function saveProviderKey(provider, value) {
-  if (!providerPresets.keyed().includes(provider)) throw new Error('This provider does not use an API key.');
+  if (!providerPresets.keyed().includes(provider)) throw new Error(t('main.provider_does_not_use_api_key'));
   const key = String(value || '').trim();
-  if (!key) throw new Error('Paste a key first.');
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is not available on this computer, so the key was not saved.');
+  if (!key) throw new Error(t('main.paste_a_key_first'));
+  if (!safeStorage.isEncryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
   const data = read();
   data.ai = { ...(data.ai || {}), keys: { ...(data.ai?.keys || {}), [provider]: { enc: safeStorage.encryptString(key).toString('base64'), hint: `…${key.slice(-4)}` } } };
   write(data);
@@ -239,7 +264,7 @@ function save(patch) {
   if (provider in WEB_RESEARCH_DEFAULTS && typeof patch.webResearch === 'boolean') ai.webResearch = { ...(ai.webResearch || {}), [provider]: patch.webResearch };
   if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) {
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('Secure storage is not available on this PC, so the key was not saved.');
+      throw new Error(t('main.secure_storage_not_available'));
     }
     const key = patch.apiKey.trim();
     ai.keys = {
@@ -262,11 +287,11 @@ function clearKey(provider) {
 // Quick model changes from CraftAI must not rewrite provider credentials,
 // endpoints, executable paths, or other preferences from a stale UI snapshot.
 function setModel(provider, model) {
-  if (!PROVIDERS.includes(provider) || typeof model !== 'string') throw new Error('Invalid AI model selection.');
+  if (!PROVIDERS.includes(provider) || typeof model !== 'string') throw new Error(t('main.invalid_ai_model_selection'));
   const data = read();
   const ai = data.ai || {};
   const active = PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini';
-  if (active !== provider) throw new Error('The AI provider changed. Reopen the model picker and try again.');
+  if (active !== provider) throw new Error(t('main.ai_provider_changed'));
   ai.models = { ...(ai.models || {}), [provider]: model.trim() || DEFAULT_MODELS[provider] };
   data.ai = ai;
   write(data);
@@ -275,10 +300,10 @@ function setModel(provider, model) {
 
 function setReasoningEffort(provider, model, effort, allowedLevels) {
   const levels = allowedLevels || require("../agents/thinking.cjs").SDK_LEVELS[provider] || [];
-  if (!PROVIDERS.includes(provider) || typeof model !== 'string' || typeof effort !== 'string' || (effort && (!model || !levels.includes(effort)))) throw new Error('Invalid thinking effort.');
+  if (!PROVIDERS.includes(provider) || typeof model !== 'string' || typeof effort !== 'string' || (effort && (!model || !levels.includes(effort)))) throw new Error(t('main.invalid_thinking_effort'));
   const data = read();
   const ai = data.ai || {};
-  if (ai.provider !== provider || (ai.models?.[provider] || DEFAULT_MODELS[provider]) !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
+  if (ai.provider !== provider || (ai.models?.[provider] || DEFAULT_MODELS[provider]) !== model) throw new Error(t('main.ai_provider_or_model_changed'));
   ai.reasoningEfforts = { ...(ai.reasoningEfforts || {}),
     [provider]: { ...(ai.reasoningEfforts?.[provider] || {}), [model]: effort },
   };
@@ -299,11 +324,6 @@ function setQuality(q) {
   write(data);
   return data.quality;
 }
-const getProxy = () => getQuality() !== 'full';
-function setProxy(on) {
-  return setQuality(on === true ? 'medium' : 'full') !== 'full';
-}
-
 // Performance mode (perf program, 2026-11-01): a bundle of resource knobs — the
 // playback-quality default, how many background media jobs run at once, and whether
 // exports yield CPU to the rest of the PC. It never touches export quality settings.
@@ -346,4 +366,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { getWindowState, setWindowState, getShortcuts, setShortcuts, getProxy, setProxy, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getVoiceStudio, setVoiceStudio, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };

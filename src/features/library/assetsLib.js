@@ -18,7 +18,7 @@ export const assetAddWhere = (item) => (item && (item.kind === 'video' || item.k
 // ---- Media tree classification ----
 // Kinds come from the media registry itself (m.type). Speech and Processed are subsets
 // identified by HOW the item entered the registry:
-// - Speech: text-to-speech output. TTS results carry a credit whose license is 'piper' or
+// - Speech: text-to-speech output. TTS results carry a credit whose license is 'voicestudio' ('piper' in older projects) or
 //   'elevenlabs' or 'gemini' (electron tts:speak), and new ones have origin: 'tts' as well. Plain
 //   voice-over RECORDINGS are the user's own microphone files, not generated speech, so
 //   they stay plain Audio.
@@ -32,7 +32,7 @@ export const PROCESSED_ORIGINS = ['detach', 'reverse', 'stabilize'];
 const RENDER_NAME = /-(detach|rev|stab)\.[a-z0-9]+$/i;
 
 export const isSpeechMedia = (m) => !!m && m.type === 'audio'
-  && (m.origin === 'tts' || ['piper', 'elevenlabs', 'gemini'].includes(m.credit?.license));
+  && (m.origin === 'tts' || ['voicestudio', 'piper', 'elevenlabs', 'gemini'].includes(m.credit?.license));
 
 // A motion graphic (drawn by CraftAI or from an example): transparent video with its code and inputs.
 export const isGraphicMedia = (m) => !!m?.graphic;

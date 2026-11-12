@@ -3,6 +3,7 @@
 - [Project structure and development commands](architecture/project-structure.md)
 - [The project file and its chat sidecar](architecture/project-file.md)
 - [AI providers: one table, four protocols](agents/ai-providers.md)
+- [Localization: en, fr, es through one dictionary](design/localization.md)
 - [Reorganization validation](architecture/reorganization-validation.md)
 - [Agent editing](agents/agent-editing.md)
 - [Editorial agent: plans, transcript cuts, critique and beats](agents/editorial-agent.md)
@@ -22,7 +23,7 @@
 - [External agents over MCP plan](design/external-agent-mcp.md)
 - [Export quality](export/EXPORT-QUALITY.md)
 - [Effect export storage and failure handling](export/EFFECT-STORAGE.md)
-- [Piper voices on Windows, Linux and macOS](media/piper-voices.md)
+- [VoiceStudio as a local voice engine](media/voicestudio.md)
 
 Screenshots and demo media retain their existing paths so external README and
 documentation links remain usable.

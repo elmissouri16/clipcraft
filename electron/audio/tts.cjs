@@ -1,216 +1,167 @@
-// Text to speech. Two engines:
-//   - Piper voices (https://github.com/rhasspy/piper, MIT): free, run on this computer, no account. The engine and
-//     each voice are optional downloads, managed in Settings > Voice, into <userData>/tts. Voices are chosen for
-//     licences that allow use in videos. One runtime per platform:
-//       Windows and Linux: Piper's own build (2023.11.14-2) with the voices from rhasspy/piper-voices.
-//       macOS: Piper's macOS builds do not run (an x86_64 binary in the arm64 archive, and the libraries it needs are
-//       missing), so the same voices run with sherpa-onnx 1.13.8 (Apache-2.0; the last line with Piper's espeak-ng
-//       phonemizer built in), as packaged by sherpa-onnx (tts-models release).
-//     Engine archives are checked against their SHA-256 before anything is unpacked or run.
+// Text to speech. Two engines here (Gemini lives in geminiTts.cjs):
+//   - VoiceStudio (https://github.com/debpalash/VoiceStudio, AGPL-3.0): a free, open-source voice app the user
+//     installs separately. It runs on this computer and serves an OpenAI-style speech API on a local address
+//     (127.0.0.1:3900 by default). ClipCraft only talks to that API, and only when the connector in
+//     Settings > Voice is on: nothing of VoiceStudio is bundled, downloaded or started by ClipCraft, and its
+//     voices, models and their licences stay VoiceStudio's. The loopback address needs no key.
 //   - ElevenLabs (https://elevenlabs.io): online, with the user's own API key (saved encrypted in Settings).
 // Pure module: the caller passes `fetch` and the folders.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { checkAbort, abortError } = require("../system/cancel.cjs");
-const { spawn, execFile } = require('child_process');
-const { Readable, Transform } = require('stream');
-const { pipeline } = require('stream/promises');
-
-const PIPER_RELEASE = 'https://github.com/rhasspy/piper/releases/download/2023.11.14-2/';
-const SHERPA_VERSION = 'v1.13.8';
-const SHERPA_RELEASE = `https://github.com/k2-fsa/sherpa-onnx/releases/download/${SHERPA_VERSION}/`;
-const SHERPA_VOICES = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/';
-const HF = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/';
-
-// The engine for each platform-arch. Windows on Arm runs the x64 build through Windows' emulation.
-const PIPER_WIN = { kind: 'piper', file: 'piper_windows_amd64.zip', bytes: 22477236, sha256: 'f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea' };
-const RUNTIMES = {
-  'win32-x64': PIPER_WIN,
-  'win32-arm64': PIPER_WIN,
-  'linux-x64': { kind: 'piper', file: 'piper_linux_x86_64.tar.gz', bytes: 26460462, sha256: 'a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992' },
-  'linux-arm64': { kind: 'piper', file: 'piper_linux_aarch64.tar.gz', bytes: 26004717, sha256: 'fea0fd2d87c54dbc7078d0f878289f404bd4d6eea6e7444a77835d1537ab88eb' },
-  'darwin-arm64': { kind: 'sherpa', file: `sherpa-onnx-${SHERPA_VERSION}-osx-arm64-shared.tar.bz2`, bytes: 20314448, sha256: 'b10e5c7e2c30ea03de9c442655d14860d9edc475c6251d58a8f5f06e913a1d56' },
-  'darwin-x64': { kind: 'sherpa', file: `sherpa-onnx-${SHERPA_VERSION}-osx-x64-shared.tar.bz2`, bytes: 22846038, sha256: '54aad64acee9d2d596535a6080d6f22602a720af5460e1d50461b1e1b06bee40' },
-};
-// Download size of one voice: Piper's .onnx, or sherpa-onnx's archive (model, tokens and espeak-ng data).
-const VOICE_BYTES = { piper: 63300000, sherpa: 67200000 };
-
-// Voices whose recordings may be used freely (CC0, public domain, CC BY). Arabic has a single Piper voice whose
-// dataset states no licence; it is offered with that note.
-const PIPER_VOICES = [
-  { id: 'en_US-joe-medium', name: 'Joe', lang: 'English (US)', gender: 'male', license: 'CC0' },
-  { id: 'en_US-norman-medium', name: 'Norman', lang: 'English (US)', gender: 'male', license: 'Public domain' },
-  { id: 'en_GB-cori-medium', name: 'Cori', lang: 'English (UK)', gender: 'female', license: 'Public domain' },
-  { id: 'fr_FR-siwis-medium', name: 'Siwis', lang: 'French', gender: 'female', license: 'CC BY 4.0' },
-  { id: 'fr_FR-gilles-low', name: 'Gilles', lang: 'French', gender: 'male', license: 'CC0' },
-  { id: 'es_ES-davefx-medium', name: 'Davefx', lang: 'Spanish', gender: 'male', license: 'CC0' },
-  { id: 'de_DE-thorsten-medium', name: 'Thorsten', lang: 'German', gender: 'male', license: 'CC0' },
-  { id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male', license: 'Not stated (personal use)' },
-];
-const voiceUrl = (id) => {
-  const [loc, name, quality] = id.split('-');
-  return `${HF}${loc.split('_')[0]}/${loc}/${name}/${quality}/${id}.onnx`;
-};
-
-const piperRuntime = (platform = process.platform, arch = process.arch) => RUNTIMES[`${platform}-${arch}`] || null;
-const NOT_SUPPORTED = 'Piper voices are not available on this computer.';
-
-// sha256: the archive must match before it is kept (engine archives run code).
-async function download(fetchImpl, url, dest, onProgress, { signal, sha256 } = {}) {
-  checkAbort(signal);
-  const res = await fetchImpl(url, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`Download failed (HTTP ${res.status}). Check your internet connection.`);
-  const total = Number(res.headers.get('content-length')) || 0;
-  let done = 0;
-  const hash = crypto.createHash('sha256');
-  const counter = new Transform({
-    transform(chunk, _enc, cb) {
-      done += chunk.length; hash.update(chunk);
-      if (total) onProgress?.(done / total);
-      cb(null, chunk);
-    },
-  });
-  const tmp = `${dest}.${crypto.randomUUID()}.part`;
-  try {
-    await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(tmp), { signal });
-    checkAbort(signal);
-    if (sha256 && hash.digest('hex') !== sha256) throw new Error('The download did not match the expected file (checksum). It was not installed; try again later.');
-    fs.renameSync(tmp, dest);
-  } finally { fs.rmSync(tmp, { force: true }); }
-}
-
-// Unpacks into a fresh folder: Windows' own tar.exe (zip), the system tar elsewhere (gzip on Linux, bzip2 on macOS).
-async function extract(archive, into, { signal, platform = process.platform } = {}) {
-  fs.rmSync(into, { recursive: true, force: true });
-  fs.mkdirSync(into, { recursive: true });
-  const tar = platform === 'win32' ? path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe') : fs.existsSync('/usr/bin/tar') ? '/usr/bin/tar' : 'tar';
-  await new Promise((resolve, reject) => execFile(tar, ['-xf', archive, '-C', into], { windowsHide: true, signal },
-    (e, _out, err) => (e ? reject(signal?.aborted ? abortError() : new Error(`Could not unpack ${path.basename(archive)}: ${String(err || e.message).trim().slice(0, 300)}`)) : resolve())));
-}
-
-// Where things live in <userData>/tts for a runtime.
-function layout(dir, rt, platform = process.platform) {
-  if (rt?.kind === 'sherpa') {
-    return { engineDir: path.join(dir, 'sherpa-onnx'), exe: path.join(dir, 'sherpa-onnx', 'bin', 'sherpa-onnx-offline-tts'),
-      voice: (id) => ({ dir: path.join(dir, 'voices-sherpa', id), model: path.join(dir, 'voices-sherpa', id, `${id}.onnx`), files: [path.join(dir, 'voices-sherpa', id)] }) };
-  }
-  return { engineDir: path.join(dir, 'piper'), exe: path.join(dir, 'piper', platform === 'win32' ? 'piper.exe' : 'piper'),
-    voice: (id) => { const model = path.join(dir, 'voices', `${id}.onnx`); return { model, files: [model, `${model}.json`] }; } };
-}
-const voiceReady = (lay, rt, id) => rt?.kind === 'sherpa'
-  ? ['tokens.txt', 'espeak-ng-data'].every((f) => fs.existsSync(path.join(lay.voice(id).dir, f))) && fs.existsSync(lay.voice(id).model)
-  : fs.existsSync(lay.voice(id).model) && fs.existsSync(`${lay.voice(id).model}.json`);
-
-function piperStatus(dir, { rt = piperRuntime(), platform = process.platform } = {}) {
-  const lay = rt && layout(dir, rt, platform);
-  return {
-    supported: !!rt, runtime: rt?.kind || null, engineBytes: rt?.bytes || 0,
-    installed: !!rt && fs.existsSync(lay.exe),
-    voices: PIPER_VOICES.map((v) => ({ ...v, bytes: rt ? VOICE_BYTES[rt.kind] : 0, downloaded: !!rt && voiceReady(lay, rt, v.id) })),
-  };
-}
-
-// Downloads the engine ('engine') or one voice. onProgress(fraction).
-async function piperDownload(fetchImpl, dir, target, onProgress, { signal, rt = piperRuntime(), platform = process.platform } = {}) {
-  checkAbort(signal);
-  if (!rt) throw new Error(NOT_SUPPORTED);
-  const lay = layout(dir, rt, platform);
-  fs.mkdirSync(dir, { recursive: true });
-  const work = path.join(dir, `.unpack-${crypto.randomUUID()}`);
-  try {
-    if (target === 'engine') {
-      const archive = path.join(dir, rt.file);
-      await download(fetchImpl, (rt.kind === 'sherpa' ? SHERPA_RELEASE : PIPER_RELEASE) + rt.file, archive, onProgress, { signal, sha256: rt.sha256 });
-      try { await extract(archive, work, { signal, platform }); } finally { fs.rmSync(archive, { force: true }); }
-      // Piper unpacks to piper/; sherpa-onnx to sherpa-onnx-<version>-<platform>-shared/ with ~30 programs, of
-      // which only the TTS one (and its libraries) is kept.
-      const top = path.join(work, rt.kind === 'sherpa' ? path.basename(rt.file, '.tar.bz2') : 'piper');
-      if (rt.kind === 'sherpa') {
-        for (const f of fs.readdirSync(path.join(top, 'bin'))) if (f !== 'sherpa-onnx-offline-tts') fs.rmSync(path.join(top, 'bin', f), { force: true });
-        fs.rmSync(path.join(top, 'include'), { recursive: true, force: true });
-      }
-      if (!fs.existsSync(path.join(top, path.relative(lay.engineDir, lay.exe)))) throw new Error('The voice engine was not found after unpacking.');
-      checkAbort(signal);
-      fs.rmSync(lay.engineDir, { recursive: true, force: true });
-      fs.renameSync(top, lay.engineDir);
-      return;
-    }
-    if (!PIPER_VOICES.some((v) => v.id === target)) throw new Error('Unknown voice.');
-    const voice = lay.voice(target);
-    if (rt.kind === 'sherpa') {
-      const archive = path.join(dir, `vits-piper-${target}.tar.bz2`);
-      await download(fetchImpl, `${SHERPA_VOICES}vits-piper-${target}.tar.bz2`, archive, onProgress, { signal });
-      try { await extract(archive, work, { signal, platform }); } finally { fs.rmSync(archive, { force: true }); }
-      const top = path.join(work, `vits-piper-${target}`);
-      if (!fs.existsSync(path.join(top, `${target}.onnx`)) || !fs.existsSync(path.join(top, 'tokens.txt'))) throw new Error('The voice was not found after unpacking.');
-      checkAbort(signal);
-      fs.mkdirSync(path.dirname(voice.dir), { recursive: true });
-      fs.rmSync(voice.dir, { recursive: true, force: true });
-      fs.renameSync(top, voice.dir);
-    } else {
-      fs.mkdirSync(path.dirname(voice.model), { recursive: true });
-      await download(fetchImpl, `${voiceUrl(target)}.json`, `${voice.model}.json`, undefined, { signal });
-      await download(fetchImpl, voiceUrl(target), voice.model, onProgress, { signal });
-    }
-  } finally { fs.rmSync(work, { recursive: true, force: true }); }
-}
-
-// Removes the engine ('engine') or one voice.
-function piperRemove(dir, target, { rt = piperRuntime(), platform = process.platform } = {}) {
-  if (!rt) throw new Error(NOT_SUPPORTED);
-  const lay = layout(dir, rt, platform);
-  if (target === 'engine') fs.rmSync(lay.engineDir, { recursive: true, force: true });
-  else if (PIPER_VOICES.some((v) => v.id === target)) for (const f of lay.voice(target).files) fs.rmSync(f, { recursive: true, force: true });
-  else throw new Error('Unknown voice.');
-}
 
 const keyOf = (...parts) => crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 16);
-const run = (exe, args, { input, cwd, signal }) => new Promise((resolve, reject) => {
-  const p = spawn(exe, args, { windowsHide: true, cwd, signal });
-  let err = '';
-  p.stdout.on('data', () => {});
-  p.stderr.on('data', (d) => { err = (err + d).slice(-2000); });
-  p.on('error', (e) => reject(signal?.aborted ? abortError() : e));
-  p.stdin.on('error', reject);
-  p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`The voice engine failed: ${err.trim().split('\n').filter((l) => !/^\s*$/.test(l)).pop() || code}`))));
-  p.stdin.end(input || '', 'utf8');
-});
 
-// Speaks `text` with a Piper voice into a WAV file in outDir; returns its path (cached per text and settings).
-async function piperSpeak(dir, outDir, { voiceId, text, speed = 1, signal }, { rt = piperRuntime(), platform = process.platform } = {}) {
+// ---- VoiceStudio
+const STUDIO_URL = 'http://127.0.0.1:3900';
+const STUDIO_MAX_TEXT = 4096; // its speech API's limit per request
+const STUDIO_NOT_RUNNING = 'VoiceStudio is not running. Open VoiceStudio, then try again.';
+const STUDIO_NO_API = 'This VoiceStudio version has no speech API. Update VoiceStudio.';
+
+// The service root for a saved address: host:port, with or without http://, a trailing slash or /v1.
+function studioUrl(value) {
+  const s = String(value || '').trim() || STUDIO_URL;
+  let u;
+  try { u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `http://${s}`); } catch { u = null; }
+  if (!u || !/^https?:$/.test(u.protocol) || !u.hostname) throw new Error('Enter the VoiceStudio address as host:port, for example 127.0.0.1:3900.');
+  return `${u.origin}${u.pathname.replace(/\/+$/, '').replace(/\/v1$/, '')}`;
+}
+
+// fetch against VoiceStudio: the caller's signal plus an optional time limit; a refused connection reads as
+// "not running" rather than a bare network error.
+async function studioFetch(fetchImpl, url, init = {}, { signal, timeout } = {}) {
   checkAbort(signal);
-  if (!rt) throw new Error(NOT_SUPPORTED);
-  const clean = String(text || '').trim().slice(0, 5000);
-  if (!clean) throw new Error('Type some text first.');
-  if (!PIPER_VOICES.some((v) => v.id === voiceId)) throw new Error('Unknown voice.');
-  const lay = layout(dir, rt, platform);
-  if (!fs.existsSync(lay.exe)) throw new Error('Download the Piper voice engine first, in Settings > Voice.');
-  if (!voiceReady(lay, rt, voiceId)) throw new Error('This voice is not downloaded. Download it in Settings > Voice.');
-  fs.mkdirSync(outDir, { recursive: true });
-  const out = path.join(outDir, `piper-${keyOf(voiceId, speed, clean)}.wav`);
-  if (fs.existsSync(out)) return out;
-  const lengthScale = (1 / Math.min(2, Math.max(0.5, speed))).toFixed(3);
-  const part = `${out}.part.wav`;
+  const limit = timeout ? AbortSignal.timeout(timeout) : null;
+  const s = signal && limit ? AbortSignal.any([signal, limit]) : signal || limit || undefined;
   try {
-    if (rt.kind === 'sherpa') {
-      const voice = lay.voice(voiceId);
-      // The text is the last argument; a leading dash would read as an option.
-      const spoken = clean.replace(/\r?\n+/g, '\n');
-      await run(lay.exe, [`--vits-model=${voice.model}`, `--vits-tokens=${path.join(voice.dir, 'tokens.txt')}`, `--vits-data-dir=${path.join(voice.dir, 'espeak-ng-data')}`,
-        `--vits-length-scale=${lengthScale}`, `--num-threads=${Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2)))}`, `--output-filename=${part}`,
-        spoken.startsWith('-') ? ` ${spoken}` : spoken], { cwd: path.dirname(lay.exe), signal });
-    } else {
-      // One line per paragraph; Piper reads line by line.
-      await run(lay.exe, ['--model', lay.voice(voiceId).model, '--length_scale', lengthScale, '--output_file', part],
-        { input: `${clean.replace(/\r?\n+/g, '\n')}\n`, cwd: path.dirname(lay.exe), signal });
-    }
-    checkAbort(signal);
-    if (!fs.existsSync(part)) throw new Error('The voice engine did not write any audio.');
-    fs.renameSync(part, out);
+    return await fetchImpl(url, { ...init, ...(s ? { signal: s } : {}) });
+  } catch (e) {
+    if (signal?.aborted) throw abortError();
+    if (limit?.aborted || e?.name === 'TimeoutError') throw new Error('VoiceStudio did not answer in time.');
+    throw new Error(STUDIO_NOT_RUNNING);
+  }
+}
+
+const studioDetail = async (res) => {
+  try { const d = await res.json(); const m = d?.detail?.message || d?.detail || d?.error?.message || d?.error || d?.message; return typeof m === 'string' ? m.slice(0, 300) : ''; }
+  catch { return ''; }
+};
+async function studioError(res) {
+  const msg = await studioDetail(res);
+  if (res.status === 404) return new Error(STUDIO_NO_API);
+  if (res.status === 401 || res.status === 403) return new Error('VoiceStudio refused the request: it asks for an API key on this address. Connect over 127.0.0.1, which needs none.');
+  if (res.status === 409) return new Error(`VoiceStudio has several voices with that name${msg ? ` (${msg})` : ''}. Choose the voice by its id.`);
+  if (res.status === 422) return new Error(`VoiceStudio rejected the request${msg ? `: ${msg}` : ''}.`);
+  return new Error(`VoiceStudio could not speak (HTTP ${res.status})${msg ? `: ${msg}` : ''}. Check its engine in VoiceStudio.`);
+}
+
+// The voices VoiceStudio lists, as ClipCraft offers them: one "Default voice" for the active engine (VoiceStudio
+// maps the OpenAI voice names to it) first, so a VoiceStudio with no profile yet still speaks; then its own
+// profiles and presets by id; then one "Describe a voice" entry per voice-design engine (Qwen3-TTS), which speaks
+// through that engine with the style text as the voice description. Each entry carries what the speech request
+// needs: `wire` (the voice id VoiceStudio takes) and `engine` ('' for the active one).
+function studioVoices(d, engines = []) {
+  const list = Array.isArray(d) ? d : Array.isArray(d?.voices) ? d.voices : Array.isArray(d?.data) ? d.data : [];
+  const idOf = (v) => String(v?.voice_id || v?.id || '').trim();
+  const own = list.filter((v) => idOf(v) && v.type !== 'openai_alias').map((v) => ({
+    id: idOf(v), wire: idOf(v), engine: '', name: String(v.name || idOf(v)).trim().slice(0, 80), language: String(v.language || '').slice(0, 40), kind: String(v.type || 'profile') }));
+  const alias = list.find((v) => v?.type === 'openai_alias' && idOf(v));
+  const dflt = alias ? [{ id: idOf(alias), wire: idOf(alias), engine: '', name: 'Default voice', language: '', kind: 'default' }] : [];
+  // "Qwen3-TTS 1.7B 4bit (voice design, mlx-audio)" -> "Qwen3-TTS"
+  const short = (label) => String(label || '').replace(/\s*\(.*$/, '').split(/\s+(?=\d)/)[0].trim().slice(0, 40);
+  const design = alias ? engines.filter((e) => e?.design && e.id).map((e) => {
+    const model = short(e.models?.[0]) || e.name;
+    return { id: `design:${e.id}`, wire: idOf(alias), engine: e.id, name: `Describe a voice (${model})`, language: '', kind: 'design', model };
+  }) : [];
+  return [...dflt, ...own, ...design].slice(0, 200);
+}
+
+// The engines VoiceStudio can speak with right now, from its backend list and installed models: id (what the
+// speech request's `model` takes), name, whether it is the active one, cloning and emotion flags, the installed
+// model labels, and `design` when the model builds the voice from a written description (Qwen3-TTS VoiceDesign),
+// which then needs the style text.
+function studioEngines(backends, models, active) {
+  const list = Array.isArray(backends) ? backends : [];
+  const labels = (id) => (Array.isArray(models) ? models : []).filter((m) => m?.installed && Array.isArray(m.engines) && m.engines.includes(id)).map((m) => String(m.label || m.repo_id || '').slice(0, 80)).filter(Boolean);
+  return list.filter((b) => b?.id && b.available).map((b) => {
+    const ms = labels(b.id);
+    return { id: String(b.id).slice(0, 60), name: String(b.display_name || b.id).slice(0, 80), active: b.id === active, cloning: b.supports_cloning === true, emotion: b.supports_emotion === true,
+      models: ms.slice(0, 5), design: ms.some((l) => /voice ?design/i.test(l)) };
+  }).slice(0, 30);
+}
+
+// Whether VoiceStudio answers at the address, with its version, the active engine, the engines and the voices.
+// Never throws: { url, running, version, engine, engines, voices, error? }.
+async function studioStatus(fetchImpl, base, { signal } = {}) {
+  let url;
+  try { url = studioUrl(base); } catch (e) { return { url: String(base || ''), running: false, version: '', engine: '', engines: [], voices: [], error: e.message }; }
+  const out = { url, running: false, version: '', engine: '', activeEngine: '', engines: [], voices: [] };
+  try {
+    const res = await studioFetch(fetchImpl, `${url}/.well-known/voicestudio-speech`, { headers: { Accept: 'application/json' } }, { signal, timeout: 4000 });
+    if (!res.ok) return { ...out, error: `Nothing that looks like VoiceStudio answers at ${url} (HTTP ${res.status}).` };
+    let d = null;
+    try { d = await res.json(); } catch { d = null; }
+    if (d?.service !== 'VoiceStudio') return { ...out, error: `The service at ${url} is not VoiceStudio.` };
+    out.version = String(d.service_version || '').slice(0, 20);
+    const vres = await studioFetch(fetchImpl, `${url}/v1/audio/voices`, { headers: { Accept: 'application/json' } }, { signal, timeout: 20000 });
+    if (vres.status === 404) return { ...out, error: STUDIO_NO_API };
+    if (!vres.ok) return { ...out, error: `VoiceStudio could not list its voices (HTTP ${vres.status}).` };
+    const listed = await vres.json();
+    out.running = true;
+    // The engines: VoiceStudio's active one (used when a voice names none) and the voice-design ones, which become
+    // "Describe a voice" entries. Best effort: without them speech still works through the active engine.
+    try {
+      const [eres, mres] = await Promise.all([
+        studioFetch(fetchImpl, `${url}/engines/tts`, { headers: { Accept: 'application/json' } }, { signal, timeout: 4000 }),
+        studioFetch(fetchImpl, `${url}/models`, { headers: { Accept: 'application/json' } }, { signal, timeout: 4000 }).catch(() => null)]);
+      if (eres.ok) {
+        const e = await eres.json();
+        const models = mres?.ok ? await mres.json().catch(() => null) : null;
+        out.engines = studioEngines(e?.backends, Array.isArray(models) ? models : models?.models, e?.active);
+        const b = (e?.backends || []).find((x) => x?.id === e?.active);
+        out.engine = String(b?.display_name || e?.active || '').slice(0, 80);
+        out.activeEngine = String(e?.active || '').slice(0, 60);
+      }
+    } catch (e) { if (e?.name === 'AbortError') throw e; }
+    out.voices = studioVoices(listed, out.engines);
     return out;
-  } finally { fs.rmSync(part, { force: true }); }
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    return { ...out, error: e.message };
+  }
+}
+
+// Speaks `text` into a WAV file in outDir; returns its path (cached per text and settings). voiceId is the entry's
+// `wire` from studioStatus (VoiceStudio speaks with its default voice for an id it does not know, so the caller
+// resolves the entry first); model is the entry's `engine`, '' for VoiceStudio's active engine ('tts-1').
+async function studioSpeak(fetchImpl, base, outDir, { voiceId, text, speed = 1, style = '', model = '', signal }) {
+  checkAbort(signal);
+  const url = studioUrl(base);
+  const clean = String(text || '').trim();
+  if (!clean) throw new Error('Type some text first.');
+  if (clean.length > STUDIO_MAX_TEXT) throw new Error(`VoiceStudio speaks up to ${STUDIO_MAX_TEXT} characters at a time. Shorten the text or split it.`);
+  const voice = String(voiceId || '').trim();
+  if (!/^[\w.:@ -]{1,120}$/.test(voice)) throw new Error('Pick a VoiceStudio voice first.');
+  const rate = Math.min(2, Math.max(0.5, Number(speed) || 1));
+  const instruct = String(style || '').trim().slice(0, 1000);
+  const engine = String(model || '').trim();
+  if (engine && !/^[\w.-]{1,60}$/.test(engine)) throw new Error('Pick a VoiceStudio engine from its list.');
+  fs.mkdirSync(outDir, { recursive: true });
+  const out = path.join(outDir, `voicestudio-${keyOf(url, engine, voice, rate, instruct, clean)}.wav`);
+  if (fs.existsSync(out)) return out;
+  const res = await studioFetch(fetchImpl, `${url}/v1/audio/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
+    body: JSON.stringify({ model: engine || 'tts-1', input: clean, voice, response_format: 'wav', speed: rate, ...(instruct ? { instruct } : {}) }),
+  }, { signal });
+  if (!res.ok) throw await studioError(res);
+  const buf = Buffer.from(await res.arrayBuffer());
+  checkAbort(signal);
+  if (buf.length < 100 || buf.toString('ascii', 0, 4) !== 'RIFF') throw new Error('VoiceStudio sent no audio. Check its engine in VoiceStudio.');
+  fs.writeFileSync(`${out}.part`, buf);
+  fs.renameSync(`${out}.part`, out);
+  return out;
 }
 
 // ---- ElevenLabs
@@ -304,4 +255,4 @@ async function elevenSpeak(fetchImpl, key, outDir, { voiceId, text, model = 'ele
   return out;
 }
 
-module.exports = { PIPER_VOICES, RUNTIMES, piperRuntime, piperStatus, piperDownload, piperRemove, piperSpeak, elevenVoices, elevenUsage, elevenSpeak, voiceUrl };
+module.exports = { STUDIO_URL, STUDIO_MAX_TEXT, STUDIO_NOT_RUNNING, studioUrl, studioVoices, studioEngines, studioStatus, studioSpeak, elevenVoices, elevenUsage, elevenSpeak };

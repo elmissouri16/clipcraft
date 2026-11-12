@@ -1,18 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Download, ExternalLink, KeyRound, Loader2, Pause, Play, Plus, Type } from 'lucide-react';
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, Pause, Play, Plus, RefreshCw, Type, Unplug } from 'lucide-react';
 import { toFileUrl } from "../../../state/store.js";
-import { defaultSpeech } from "../voiceDefault.js";
+import { defaultSpeech, studioVoicesOf } from "../voiceDefault.js";
+import { formatDate, formatNumber, rich, t } from '../../../i18n/index.js';
 
 // Sign-up page for new ElevenLabs accounts.
 export const ELEVENLABS_SIGNUP_URL = 'https://elevenlabs.io';
+// Where to get VoiceStudio, the free voice app ClipCraft can connect to (Settings > Voice).
+export const VOICESTUDIO_URL = 'https://github.com/debpalash/VoiceStudio';
+
+// A voice's descriptive word from the catalogs (gender, language, licence, Gemini style): translated when
+// the dictionary knows it (tts.voice_<slug>), otherwise shown as the catalog gives it.
+export function voiceWord(word) {
+  const key = `tts.voice_${String(word || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+  const out = t(key);
+  return out === key ? word : out;
+}
 
 // Audio > Text to speech. Online engines use keys stored in Settings.
 export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, settingsVersion }) {
-  const [engine, setEngine] = useState('piper');
-  const [status, setStatus] = useState(null); // Local voices, online-key presence and Gemini catalog.
+  const [engine, setEngine] = useState('gemini');
+  const [status, setStatus] = useState(null); // The VoiceStudio connector, online-key presence and Gemini catalog.
   const [eleven, setEleven] = useState({ voices: [], loading: false, error: '' });
   const [usage, setUsage] = useState(null); // ElevenLabs credits: { used, limit, left, resetsAt }
-  const [voice, setVoice] = useState({ piper: 'en_US-joe-medium', eleven: '', gemini: 'Kore' });
+  const [voice, setVoice] = useState({ voicestudio: '', eleven: '', gemini: 'Kore' });
   const [geminiModel, setGeminiModel] = useState('');
   const [delivery, setDelivery] = useState('');
   const [text, setText] = useState('');
@@ -54,7 +65,7 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
 
   const voiceId = voice[engine];
   const voiceName = engine === 'eleven' ? eleven.voices.find((v) => v.id === voiceId)?.name
-    : engine === 'gemini' ? voiceId : status?.voices.find((v) => v.id === voiceId)?.name;
+    : engine === 'gemini' ? voiceId : studioVoicesOf(status).find((v) => v.id === voiceId)?.name;
   const speak = async (mode) => {
     setError('');
     setBusy(mode);
@@ -62,7 +73,7 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
     let res;
     try {
       res = await window.api.ttsSpeak({ engine, voiceId, voiceName, text, speed: engine === 'gemini' ? 1 : speed,
-        ...(engine === 'gemini' ? { model: geminiModel || status.gemini.defaultModel, style: delivery } : {}) });
+        ...(engine === 'gemini' ? { model: geminiModel || status.gemini.defaultModel, style: delivery } : engine === 'voicestudio' ? { style: delivery } : {}) });
     } catch (e) { res = { error: e.message }; }
     setBusy(null);
     setProgress(null);
@@ -76,134 +87,153 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
     } else onAdd(res, !!selectedText && text.trim() === selectedText.text.trim());
   };
 
-  // Piper's engine and voices are optional downloads in Settings > Voice; only downloaded voices are offered.
-  const piperVoices = status?.installed ? (status.voices || []).filter((v) => v.downloaded) : [];
-  const piperMissing = engine === 'piper' && status && !piperVoices.length;
+  // VoiceStudio is a separate app: its voices are offered while the connector (Settings > Voice) is on and it answers.
+  const studioVoices = studioVoicesOf(status);
+  const studioMissing = engine === 'voicestudio' && status && !studioVoices.length;
   useEffect(() => {
-    if (piperVoices.length && !piperVoices.some((v) => v.id === voice.piper)) setVoice((v) => ({ ...v, piper: piperVoices[0].id }));
-  }, [piperVoices.map((v) => v.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (studioVoices.length && !studioVoices.some((v) => v.id === voice.voicestudio)) setVoice((v) => ({ ...v, voicestudio: studioVoices[0].id }));
+  }, [studioVoices.map((v) => v.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   const needKey = status && ((engine === 'eleven' && !status.elevenKey) || (engine === 'gemini' && !status.geminiKey));
-  const ready = status && text.trim() && voiceId && !needKey && !piperMissing && !busy;
-  const selected = piperVoices.find((v) => v.id === voice.piper);
+  const studioWhy = !status?.studio?.enabled ? 'off' : !status.studio.running ? 'down' : 'empty';
+  // A "Describe a voice" entry (a voice-design engine such as Qwen3-TTS) builds the voice from the Style text.
+  const studioVoice = studioVoices.find((v) => v.id === voice.voicestudio);
+  const styleRequired = engine === 'voicestudio' && studioVoice?.kind === 'design';
+  const ready = status && text.trim() && voiceId && !needKey && !studioMissing && !busy && !(styleRequired && !delivery.trim());
   return (
     <div className="tts">
-      <div className="tab-title">Text to speech</div>
-      <div className="seg-tabs small" role="tablist" aria-label="Voice engine">
-        {[['piper', 'Piper · local'], ['gemini', 'Gemini'], ['eleven', 'ElevenLabs']].map(([id, name]) => (
+      <div className="tab-title">{t('tts.text_to_speech')}</div>
+      <div className="seg-tabs small" role="tablist" aria-label={t('tts.voice_engine')}>
+        {[['gemini', 'Gemini'], ['voicestudio', t('tts.voicestudio_local')], ['eleven', 'ElevenLabs']].map(([id, name]) => (
           <button key={id} role="tab" aria-selected={engine === id} className={engine === id ? 'on' : ''} disabled={!!busy} onClick={() => { setEngine(id); setError(''); }}>{name}</button>
         ))}
       </div>
 
       <label className="field">
-        <span>Text
+        <span>{t('tts.text')}
           {selectedText && (
-            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setText(selectedText.text)}><Type size={13} /> Use selected text</button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setText(selectedText.text)}><Type size={13} /> {t('tts.use_selected_text')}</button>
           )}
         </span>
-        <textarea rows={5} dir="auto" value={text} maxLength={5000} placeholder="Type what the voice should say…" onChange={(e) => setText(e.target.value)} />
+        <textarea rows={5} dir="auto" value={text} maxLength={5000} placeholder={t('tts.type_what_the_voice_should_say')} onChange={(e) => setText(e.target.value)} />
         <small className="muted">{text.length} / 5000</small>
       </label>
 
-      {engine === 'piper' ? (piperMissing ? (
-        <div className="card stock-key" data-piper-missing>
+      {engine === 'voicestudio' ? (studioMissing ? (
+        <div className="card stock-key" data-studio-missing={studioWhy}>
           <div className="card-row">
-            <span className="card-icon"><Download size={18} /></span>
-            <div><b>{status.supported ? 'Download Piper voices first' : 'Piper is not available here'}</b>
-              <p>{!status.supported ? 'Piper voices are not available on this computer. Use Gemini or ElevenLabs.'
-                : !status.installed ? 'Free voices that run on this computer. Download the voice engine and the voices you want in Settings > Voice.'
-                : 'The engine is ready. Download at least one voice in Settings > Voice.'}</p></div>
+            <span className="card-icon"><Unplug size={18} /></span>
+            <div><b>{studioWhy === 'off' ? t('tts.voicestudio_is_off') : studioWhy === 'down' ? t('tts.voicestudio_is_not_running') : t('tts.voicestudio_lists_no_voice')}</b>
+              <p>{studioWhy === 'off' ? t('tts.voicestudio_is_a_free_app_install_it_then')
+                : studioWhy === 'down' ? (status.studio.error || t('tts.open_voicestudio_then_try_again'))
+                : t('tts.create_a_voice_profile_in_voicestudio')}</p></div>
           </div>
-          {status.supported && <div className="row-btns"><button className="btn btn-primary btn-sm" onClick={() => onOpenSettings?.('speech')}>Open Settings</button></div>}
+          <div className="stock-key-actions">
+            {studioWhy === 'off'
+              ? <button className="btn btn-primary btn-sm" onClick={() => onOpenSettings?.('speech')}>{t('pilot.open_settings')}</button>
+              : <button className="btn btn-primary btn-sm" onClick={() => { setError(''); refresh(); }}><RefreshCw size={13} /> {t('tts.check_again')}</button>}
+            <button className="btn btn-ghost btn-sm" onClick={() => window.api.openHelp(VOICESTUDIO_URL)}><ExternalLink size={13} /> {t('tts.get_voicestudio')}</button>
+          </div>
         </div>
       ) : (
-        <label className="field">
-          <span>Voice</span>
-          <select value={voice.piper} aria-label="Voice" onChange={(e) => setVoice((v) => ({ ...v, piper: e.target.value }))}>
-            {piperVoices.map((v) => (
-              <option key={v.id} value={v.id}>{v.lang} · {v.name} ({v.gender})</option>
-            ))}
-          </select>
-          {selected && <small className="muted">Licence: {selected.license}. More voices in Settings &gt; Voice.</small>}
-        </label>
-      )      ) : needKey ? (
+        <>
+          <label className="field">
+            <span>{t('settings.voice')}</span>
+            <select value={voice.voicestudio} aria-label={t('settings.voice')} disabled={!!busy} onChange={(e) => setVoice((v) => ({ ...v, voicestudio: e.target.value }))}>
+              {studioVoices.map((v) => (
+                <option key={v.id} value={v.id}>{v.name}{v.language ? ` · ${v.language}` : ''}{v.kind === 'default' && status.studio.engine ? ` · ${status.studio.engine}` : ''}</option>
+              ))}
+            </select>
+            <small className="muted">{t('tts.voices_come_from_voicestudio')}</small>
+          </label>
+          <label className="field">
+            <span>{styleRequired ? t('tts.style') : t('tts.style_optional')}</span>
+            <input type="text" aria-label={t('tts.speech_style')} value={delivery} maxLength={200} disabled={!!busy} required={styleRequired}
+              placeholder={styleRequired ? t('tts.e_g_a_sad_woman_almost_crying_speaking_slowly') : status.studio.activeEngine === 'omnivoice' ? t('tts.e_g_female_young_adult_low_pitch_whisper') : t('tts.e_g_calm_warm_narrator')} onChange={(e) => setDelivery(e.target.value)} />
+            {styleRequired && !delivery.trim() ? <small className="error-text">{t('tts.describe_the_voice_first_this_engine_needs')}</small>
+              : <small className="muted">{styleRequired ? t('tts.this_voice_is_built_from_the_style_text')
+                : status.studio.activeEngine === 'omnivoice' && studioVoice?.kind !== 'profile' ? t('tts.style_takes_voice_design_tags_only')
+                : t('tts.passed_to_voicestudios_engine_some_ignore')}</small>}
+          </label>
+        </>
+      )) : needKey ? (
         <div className="card stock-key">
           <div className="card-row">
             <span className="card-icon"><KeyRound size={18} /></span>
-            <div><b>{engine === 'gemini' ? 'Gemini TTS key needed' : 'ElevenLabs key needed'}</b>
-              <p>{engine === 'gemini' ? 'Add your Gemini API key in Settings > Speech generation. Your CraftAI chat provider can stay as it is.' : 'An ElevenLabs API key is needed to use its voices (Arabic included).'}</p></div>
+            <div><b>{engine === 'gemini' ? t('tts.gemini_tts_key_needed') : t('tts.elevenlabs_key_needed')}</b>
+              <p>{engine === 'gemini' ? t('tts.add_a_gemini_voice_key_in_settings') : t('tts.add_an_elevenlabs_voice_key_in_settings')}</p></div>
           </div>
           <div className="stock-key-actions">
-            <button className="btn btn-sm" onClick={onOpenSettings}>Open Settings</button>
+            <button className="btn btn-sm" onClick={() => onOpenSettings?.(`services:${engine === 'gemini' ? 'gemini-tts' : 'elevenlabs'}`)}>{t('settings.add_api_key')}</button>
             <button className="btn btn-ghost btn-sm" onClick={() => window.api.openHelp(engine === 'gemini' ? 'https://aistudio.google.com/app/apikey' : ELEVENLABS_SIGNUP_URL)}>
-              <ExternalLink size={13} /> {engine === 'gemini' ? 'Get a Gemini key' : 'Create a free account'}</button>
+              <ExternalLink size={13} /> {engine === 'gemini' ? t('tts.get_a_gemini_key') : t('tts.create_a_free_account')}</button>
           </div>
         </div>
       ) : engine === 'gemini' ? (
         <>
           <label className="field">
-            <span>Speech model</span>
-            <select aria-label="Gemini speech model" value={geminiModel || status?.gemini?.defaultModel || ''} disabled={!!busy}
+            <span>{t('tts.speech_model')}</span>
+            <select aria-label={t('tts.gemini_speech_model')} value={geminiModel || status?.gemini?.defaultModel || ''} disabled={!!busy}
               onChange={(e) => setGeminiModel(e.target.value)}>
               {(status?.gemini?.models || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
           <label className="field">
-            <span>Voice</span>
-            <select aria-label="Gemini voice" value={voice.gemini} disabled={!!busy} onChange={(e) => setVoice((v) => ({ ...v, gemini: e.target.value }))}>
-              {(status?.gemini?.voices || []).map((v) => <option key={v.id} value={v.id}>{v.name} · {v.style}</option>)}
+            <span>{t('settings.voice')}</span>
+            <select aria-label={t('tts.gemini_voice')} value={voice.gemini} disabled={!!busy} onChange={(e) => setVoice((v) => ({ ...v, gemini: e.target.value }))}>
+              {(status?.gemini?.voices || []).map((v) => <option key={v.id} value={v.id}>{v.name} · {voiceWord(v.style)}</option>)}
             </select>
           </label>
           <label className="field">
-            <span>Delivery (optional)</span>
-            <textarea aria-label="Speech delivery" rows={2} value={delivery} maxLength={1000} disabled={!!busy}
-              placeholder="Calm documentary narrator, warm tone, speaking slowly…" onChange={(e) => setDelivery(e.target.value)} />
-            <small className="muted">Describe tone, accent and pacing here. Only the main text is spoken; its language is detected automatically.</small>
+            <span>{t('tts.delivery_optional')}</span>
+            <textarea aria-label={t('tts.speech_delivery')} rows={2} value={delivery} maxLength={1000} disabled={!!busy}
+              placeholder={t('tts.calm_documentary_narrator_warm_tone_speaki')} onChange={(e) => setDelivery(e.target.value)} />
+            <small className="muted">{t('tts.describe_tone_accent_and_pacing_here_only')}</small>
           </label>
         </>
       ) : (
         <label className="field">
-          <span>Voice {eleven.loading && <Loader2 size={13} className="spin" />}</span>
-          <select value={voice.eleven} aria-label="ElevenLabs voice" onChange={(e) => setVoice((v) => ({ ...v, eleven: e.target.value }))}>
+          <span>{t('settings.voice')} {eleven.loading && <Loader2 size={13} className="spin" />}</span>
+          <select value={voice.eleven} aria-label={t('tts.elevenlabs_voice')} onChange={(e) => setVoice((v) => ({ ...v, eleven: e.target.value }))}>
             {eleven.voices.map((v) => <option key={v.id} value={v.id}>{v.name}{v.gender ? ` (${v.gender}${v.accent ? `, ${v.accent}` : ''})` : ''}</option>)}
           </select>
           {eleven.error && <span className="error-text">{eleven.error}</span>}
           {usage && usage.limit > 0 && (
             <small className={usage.left < text.length || usage.left / usage.limit < 0.1 ? 'error-text' : 'muted'}>
-              Credits: <b>{usage.left.toLocaleString('en-US')}</b> of {usage.limit.toLocaleString('en-US')} left
-              {usage.resetsAt ? ` · renews ${new Date(usage.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
-              {usage.left < text.length ? ' · not enough for this text' : ''}
+              {rich('tts.credits_left', { left: formatNumber(usage.left), limit: formatNumber(usage.limit) })}
+              {usage.resetsAt ? ` · ${t('tts.renews_on', { date: formatDate(usage.resetsAt, { month: 'short', day: 'numeric' }) })}` : ''}
+              {usage.left < text.length ? ` · ${t('tts.not_enough_for_this_text')}` : ''}
             </small>
           )}
-          <small className="muted">Model: Eleven Multilingual v2 (29 languages, Arabic included). The free plan requires a credit and is for non-commercial use.</small>
+          <small className="muted">{t('tts.model_eleven_multilingual_v2_29_languages')}</small>
         </label>
       )}
 
       {engine !== 'gemini' && <label className="field">
-        <span>Speed <b>{speed.toFixed(2)}×</b></span>
-        <input type="range" min={engine === 'eleven' ? 0.7 : 0.5} max={engine === 'eleven' ? 1.2 : 2} step="0.05" value={speed} aria-label="Speed"
+        <span>{t('tts.speed')} <b>{speed.toFixed(2)}×</b></span>
+        <input type="range" min={engine === 'eleven' ? 0.7 : 0.5} max={engine === 'eleven' ? 1.2 : 2} step="0.05" value={speed} aria-label={t('tts.speed')}
           onChange={(e) => setSpeed(Number(e.target.value))} />
       </label>}
 
       {progress && busy && (
         <div className="lib-loading"><Loader2 size={15} className="spin" />
-          {progress.stage === 'wait' ? `Gemini's per-minute request limit: waiting ${Math.ceil(progress.seconds || 0)} s, then trying again…`
-            : progress.stage === 'speech' ? 'Generating speech with Gemini…'
-            : 'Speaking…'}
+          {progress.stage === 'wait' ? t('tts.gemini_rate_limit_waiting', { seconds: Math.ceil(progress.seconds || 0) })
+            : progress.stage === 'speech' ? t('tts.generating_speech_with_gemini')
+            : progress.stage === 'studio' ? t('tts.speaking_with_voicestudio_first_request')
+            : t('tts.speaking')}
         </div>
       )}
       {error && <p className="error-text">{error}</p>}
 
       <div className="row-btns">
         <button className="btn" disabled={!ready && !playing} onClick={() => (playing ? (audio.current.pause(), setPlaying(false)) : speak('preview'))}>
-          {busy === 'preview' ? <Loader2 size={14} className="spin" /> : playing ? <Pause size={14} /> : <Play size={14} />} {playing ? 'Stop' : 'Preview'}
+          {busy === 'preview' ? <Loader2 size={14} className="spin" /> : playing ? <Pause size={14} /> : <Play size={14} />} {playing ? t('pilot.stop') : t('tts.preview')}
         </button>
         <button className="btn btn-primary" disabled={!ready} onClick={() => speak('add')}>
-          {busy === 'add' ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} Add to timeline
+          {busy === 'add' ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} {t('tts.add_to_timeline')}
         </button>
       </div>
       <p className="lib-note">
-        <CheckCircle2 size={12} /> The voice goes on the Audio track at the playhead{selectedText ? ', or where the selected text starts when you read it' : ''}.
-        Same text and settings are reused from the cache, so trying again costs nothing.
+        <CheckCircle2 size={12} /> {selectedText ? t('tts.voice_goes_at_playhead_or_selected_text') : t('tts.voice_goes_at_playhead')} {t('tts.same_text_reused_from_cache')}
       </p>
     </div>
   );

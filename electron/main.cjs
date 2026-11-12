@@ -320,10 +320,6 @@ const proxyStatus = () => {
   return { on: quality !== 'full', quality, files: files.length, bytes: files.reduce((n, f) => n + fs.statSync(f).size, 0) };
 };
 ipcMain.handle('proxy:status', () => proxyStatus());
-ipcMain.handle('proxy:set', (_e, on) => {
-  settings.setProxy(on === true);
-  return proxyStatus();
-});
 ipcMain.handle('proxy:setQuality', (_e, q) => {
   settings.setQuality(q);
   return proxyStatus();
@@ -355,9 +351,9 @@ ipcMain.handle('proxy:clear', () => {
 // Adjust > Auto: a few small frames of the clip (the analysis itself runs in the renderer, src/features/effects/autocolor.js).
 ipcMain.handle('color:sample', async (_e, item, from, to) => {
   try {
-    if (!item || !fs.existsSync(item.path)) return { error: 'The video file was not found.' };
+    if (!item || !fs.existsSync(item.path)) return { error: i18n.t('main.video_file_not_found') };
     const frames = await require("./media/ffmpeg.cjs").sampleFrames(item, from, to);
-    return frames.length ? { frames } : { error: 'Could not read pictures from this clip.' };
+    return frames.length ? { frames } : { error: i18n.t('main.could_not_read_pictures_from_clip') };
   } catch (e) {
     return { error: e.message };
   }
@@ -367,13 +363,13 @@ ipcMain.handle('media:ensureVisuals', (_e, items) => queueVisuals(items.filter((
 
 ipcMain.handle('media:import', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Import media',
+    title: i18n.t('home.import_media'),
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Media', extensions: [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT] },
-      { name: 'Video', extensions: VIDEO_EXT },
-      { name: 'Audio', extensions: AUDIO_EXT },
-      { name: 'Images', extensions: IMAGE_EXT },
+      { name: i18n.t('app.media'), extensions: [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT] },
+      { name: i18n.t('pack.video'), extensions: VIDEO_EXT },
+      { name: i18n.t('edit-plan-card.audio'), extensions: AUDIO_EXT },
+      { name: i18n.t('main.filter_images'), extensions: IMAGE_EXT },
     ],
   });
   return res.canceled ? [] : probeAll(res.filePaths);
@@ -407,8 +403,8 @@ ipcMain.handle('fonts:import', async (_e, files) => {
     let paths = Array.isArray(files) ? files.filter((f) => typeof f === 'string') : null;
     if (!paths) {
       const res = await dialog.showOpenDialog(win, {
-        title: 'Add fonts', properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Fonts', extensions: userFonts.EXT.map((x) => x.slice(1)) }],
+        title: i18n.t('main.add_fonts'), properties: ['openFile', 'multiSelections'],
+        filters: [{ name: i18n.t('font-picker.fonts'), extensions: userFonts.EXT.map((x) => x.slice(1)) }],
       });
       if (res.canceled) return { added: [], skipped: [], list: fontList() };
       paths = res.filePaths;
@@ -445,6 +441,7 @@ ipcMain.handle('favorites:toggle', (_e, entry) => {
 
 // ---- Audio library (Openverse / SFXMint / MyInstants + Soundza). Files live in <userData>/library. ----
 const library = require("./library/library.cjs");
+const openverse = require("./library/openverse.cjs");
 const soundza = require("./library/soundza.cjs");
 const libraryDir = () => path.join(app.getPath('userData'), 'library');
 // The Soundza key only ever comes from the encrypted settings. Local-fixture override for
@@ -453,9 +450,17 @@ const libraryDir = () => path.join(app.getPath('userData'), 'library');
 // OS keyring to save one into. In normal runs the environment is never consulted.
 const soundzaKey = () => settings.getServiceKey('soundza')
   || (process.env.CLIPCRAFT_SOUNDZA_URL ? process.env.CLIPCRAFT_SOUNDZA_KEY || '' : '');
-const libraryPath = (item, fetchImpl = net.fetch) => (String(item?.id || '').startsWith('soundza-')
-  ? soundza.download(fetchImpl, libraryDir(), item, soundzaKey())
-  : library.download(fetchImpl, libraryDir(), item));
+// Migrate saved Openverse audio favorites from before provider IDs were namespaced.
+const libraryItem = item => item?.origin === 'openverse' || !/^[a-f0-9-]{36}$/i.test(item?.id || '')
+  || !['freesound', 'jamendo'].includes(item?.provider) ? item
+  : { ...item, origin: 'openverse', openverseId: item.id, kind: item.provider === 'jamendo' ? 'music' : 'sfx', licenses: item.license === 'by' ? 'attribution' : 'cc0' };
+const libraryPath = async (raw, fetchImpl = net.fetch) => {
+  const item = libraryItem(raw);
+  if (item?.origin === 'openverse') return (await openverse.download(fetchImpl, libraryDir(), item)).path;
+  return String(item?.id || '').startsWith('soundza-')
+    ? soundza.download(fetchImpl, libraryDir(), item, soundzaKey())
+    : library.download(fetchImpl, libraryDir(), item);
+};
 
 ipcMain.handle('library:search', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
@@ -464,6 +469,14 @@ ipcMain.handle('library:search', (event, opts = {}) => withAgentJob(event, opts.
     return { error: /fetch|ENOTFOUND|ERR_INTERNET|network/i.test(e.message) ? 'No internet connection.' : e.message };
   }
 }));
+// Source links come from the API record, never an arbitrary renderer URL.
+ipcMain.handle('openverse:source', async (_event, item) => {
+  try {
+    const r = await openverse.resolve(net.fetch, item);
+    if (r.landing) return shell.openExternal(r.landing);
+    return false;
+  } catch (e) { return { error: e.message }; }
+});
 ipcMain.handle('library:file', async (_e, item) => {
   try {
     return { path: await libraryPath(item) };
@@ -474,10 +487,13 @@ ipcMain.handle('library:file', async (_e, item) => {
 // Adds a library sound as a media item; online sounds keep their license and credit line.
 ipcMain.handle('library:add', (event, item, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    const file = await libraryPath(item, scopedFetch(net.fetch, signal));
+    item = libraryItem(item);
+    const ov = item?.origin === 'openverse' ? await openverse.download(scopedFetch(net.fetch, signal), libraryDir(), item) : null;
+    const file = ov?.path || await libraryPath(item, scopedFetch(net.fetch, signal));
+    if (ov) item = ov.item;
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
-    const credit = {
+    const credit = ov?.credit || {
       title: item.title, creator: item.creator, license: item.license, licenseName: item.licenseName,
       licenseUrl: item.licenseUrl, landing: item.landing, providerName: item.providerName,
       line: item.provider === 'soundza' ? soundza.creditLine(item) : library.creditLine(item),
@@ -519,6 +535,14 @@ ipcMain.handle('soundza:preview', async (_e, item) => {
 // Project files the user picked in a Save or Open dialog: only these are written without asking (auto save).
 const projectFiles = new Set();
 const persistence = new (require('./project/persistence.cjs').ProjectPersistence)();
+const sidecar = require('./project/sidecar.cjs');
+// The chat sidecar, then the document (docs/architecture/project-file.md): chat undefined keeps the
+// sidecar as it is, null removes it. The sidecar lands first: the first save of an older file strips
+// the chat it embeds from the document, so the document must never be the only write that succeeded.
+const writeProjectFiles = async (file, json, chat) => {
+  if (chat !== undefined) await persistence.writeChat(file, chat);
+  if (json != null) await persistence.writeProject(file, json);
+};
 // Saves to the project's file, or asks where the first time (and for "Save as").
 ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
   try {
@@ -528,25 +552,17 @@ ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
     }
     const name = String(opts.name || 'project').replace(/[\\/:*?"<>|]+/g, '').trim() || 'project';
     const res = await dialog.showSaveDialog(win, {
-      title: opts.saveAs ? 'Save project as' : 'Save project',
+      title: opts.saveAs ? i18n.t('main.save_project_as') : i18n.t('main.save_project'),
       defaultPath: file || `${name}.clipcraft.json`,
-      filters: [{ name: 'Project', extensions: ['json'] }],
+      filters: [{ name: i18n.t('main.filter_project'), extensions: ['json'] }],
     });
     if (res.canceled) return null;
     await writeProjectFiles(res.filePath, json, opts.chat);
     projectFiles.add(res.filePath);
     return res.filePath;
   } catch (e) {
-    return { error: `Could not save the project: ${e.message}` };
+    return { error: i18n.t('main.could_not_save_project', { reason: e.message }) };
   }
-const sidecar = require('./project/sidecar.cjs');
-// The document, then its chat sidecar (docs/architecture/project-file.md): chat undefined keeps the
-// sidecar as it is, null removes it. The sidecar lands after the document, as the chat log is the
-// expendable part of the pair.
-const writeProjectFiles = async (file, json, chat) => {
-  if (json != null) await persistence.writeProject(file, json);
-  if (chat !== undefined) await persistence.writeChat(file, chat);
-};
 });
 // An external agent's save_project with a path (docs/design/external-agent-mcp.md): no dialog, so only a
 // new *.clipcraft.json in an existing folder, or the project's own file; never another existing file.
@@ -578,9 +594,9 @@ ipcMain.handle('project:autosave', async (_e, file, json, chat) => {
 
 ipcMain.handle('project:open', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Open project',
+    title: i18n.t('home.open_project'),
     properties: ['openFile'],
-    filters: [{ name: 'Project', extensions: ['json'] }],
+    filters: [{ name: i18n.t('main.filter_project'), extensions: ['json'] }],
   });
   if (res.canceled) return null;
   const pf = require("./project/projectfile.cjs");
@@ -593,15 +609,15 @@ ipcMain.handle('project:open', async () => {
 // Reopen a known project file by path (Home screen recents): same refresh as project:open,
 // no dialog. Returns null when the file is gone or unreadable.
 ipcMain.handle('project:openPath', async (_e, filePath) => {
-  try {
-    if (!filePath || !fs.existsSync(filePath)) return null;
-    const pf = require("./project/projectfile.cjs");
-    projectFiles.add(filePath);
-    const text = fs.readFileSync(filePath, 'utf8');
-    return { file: filePath, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(filePath, text) };
-  } catch {
-    return null;
-  }
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  const file = sidecar.documentFor(filePath); // a path to the chat sidecar opens its document
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  const pf = require("./project/projectfile.cjs");
+  // A held chat file throws past here on purpose: the renderer shows it instead of opening with an empty chat.
+  const result = { file, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
+  projectFiles.add(file);
+  return result;
 });
 
 // ---- Per-project autosave slots (electron/project/autosave.cjs): one slot per project id under
@@ -610,10 +626,13 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
 const autosaveStore = require("./project/autosave.cjs");
 const autosaveDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'autosave-test') : path.join(app.getPath('userData'), 'autosave'));
 ipcMain.handle('slots:write', (_e, record) => persistence.writeSlot(autosaveDir(), record));
+ipcMain.handle('slots:writeChat', (_e, id, json) => persistence.writeSlotChat(autosaveDir(), id, json));
 ipcMain.handle('slots:list', () => autosaveStore.listSlots(autosaveDir()));
 ipcMain.handle('slots:forFile', (_e, filePath) => autosaveStore.slotForFile(autosaveDir(), filePath));
 ipcMain.handle('slots:read', (_e, id) => {
-  const slot = autosaveStore.readSlot(autosaveDir(), id);
+  let slot;
+  try { slot = autosaveStore.readSlot(autosaveDir(), id); } catch (error) { return { error: error.message }; } // a held chat file
+  if (slot?.error) return slot;
   // A slot bound to a project file adopts that file as known (same trust as project:openPath),
   // so the auto-save-to-file writes keep working for a project reopened from its slot.
   if (slot?.file && fs.existsSync(slot.file)) projectFiles.add(slot.file);
@@ -626,14 +645,15 @@ ipcMain.handle('slots:delete', (_e, id) => autosaveStore.deleteSlot(autosaveDir(
 // autosaved copy.
 let allowClose = !!process.env.FVE_SMOKE && !['autosave','persistence-performance'].includes(process.env.FVE_SMOKE_MODE);
 let closeTimer = null;
+let relaunchOnClose = false; // Restart from Settings: relaunch only once the close went through
 const closeNow = () => {
   clearTimeout(closeTimer);
   allowClose = true;
   if (win && !win.isDestroyed()) win.close();
-ipcMain.handle('slots:writeChat', (_e, id, json) => persistence.writeSlotChat(autosaveDir(), id, json));
+  if (relaunchOnClose) { relaunchOnClose = false; app.relaunch(); app.quit(); }
 };
 ipcMain.handle('app:closeNow', () => closeNow());
-ipcMain.handle('app:closeCancel', () => clearTimeout(closeTimer));
+ipcMain.handle('app:closeCancel', () => { clearTimeout(closeTimer); relaunchOnClose = false; });
 
 // Export happens in two steps: the UI renders the text layer to PNG frames (export:frame / export:blanks),
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
@@ -663,9 +683,9 @@ ipcMain.handle('export:begin', async (_e, suggested) => {
   if (!file) {
     const base = String(suggested || 'export').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'export';
     const res = await dialog.showSaveDialog(win, {
-      title: 'Export video',
+      title: i18n.t('export.export_video'),
       defaultPath: `${base}.mp4`,
-      filters: [{ name: 'MP4 video', extensions: ['mp4'] }],
+      filters: [{ name: i18n.t('main.filter_mp4_video'), extensions: ['mp4'] }],
     });
     if (res.canceled) return { canceled: true };
     file = res.filePath;
@@ -797,7 +817,7 @@ ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
   const { execFile } = require('child_process');
   const { ffmpegPath } = require("./media/ffmpeg.cjs");
   try {
-    if (!mediaPath || !fs.existsSync(mediaPath)) return { ok: false, error: 'missing file' };
+    if (!mediaPath || !fs.existsSync(mediaPath)) return { ok: false, error: i18n.t('main.media_file_not_found') };
     const st = fs.statSync(mediaPath);
     const key = require('crypto').createHash('sha1')
       .update(`${mediaPath}|${st.size}|${st.mtimeMs}|${(Number(at) || 0).toFixed(2)}`).digest('hex').slice(0, 16);
@@ -886,16 +906,16 @@ ipcMain.handle('export:cover', async (event, file, mediaPath, at) => {
 });
 
 // Audio only: asks where to save, then mixes the timeline's sound into MP3, WAV or M4A.
-const AUDIO_FORMATS = { mp3: 'MP3 audio', wav: 'WAV audio', m4a: 'M4A audio' };
+const AUDIO_FORMATS = { mp3: 'main.filter_mp3_audio', wav: 'main.filter_wav_audio', m4a: 'main.filter_m4a_audio' };
 ipcMain.handle('export:audio', async (_e, project, format, name) => {
-  if (!AUDIO_FORMATS[format]) return { ok: false, error: 'Unknown audio format' };
+  if (!AUDIO_FORMATS[format]) return { ok: false, error: i18n.t('main.unknown_audio_format') };
   const base = String(name || 'audio').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'audio';
   let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, `ui-audio.${format}`) : null;
   if (!file) {
     const res = await dialog.showSaveDialog(win, {
-      title: 'Export audio',
+      title: i18n.t('main.export_audio'),
       defaultPath: `${base}.${format}`,
-      filters: [{ name: AUDIO_FORMATS[format], extensions: [format] }],
+      filters: [{ name: i18n.t(AUDIO_FORMATS[format]), extensions: [format] }],
     });
     if (res.canceled) return { canceled: true };
     file = res.filePath;
@@ -937,6 +957,15 @@ ipcMain.handle('app:openHelp', (_e, url) => {
 });
 
 ipcMain.handle('settings:get', () => settings.getPublic());
+// UI language (docs/design/localization.md): settled at startup for both processes; the renderer asks
+// synchronously before React renders; a change is saved and applies after Restart.
+const i18n = require('./system/i18n.cjs');
+i18n.setLanguage(settings.getLanguagePreference(), app.getLocale()); // settled again once ready: getLocale is final only then
+ipcMain.on('i18n:language', (e) => { e.returnValue = i18n.getLanguage(); });
+ipcMain.handle('settings:setLanguage', (_e, value) => settings.setLanguagePreference(value));
+// Restart goes through the window's close flow, so an unsaved project still gets its Save / Discard /
+// Cancel question, and Cancel leaves no relaunch armed and nothing torn down.
+ipcMain.handle('app:relaunch', () => { relaunchOnClose = true; if (win && !win.isDestroyed()) win.close(); else { app.relaunch(); app.quit(); } });
 // ---- MCP servers: external tool servers (stdio) whose tools CraftAI may call. ----
 const mcp = require("./agents/mcp.cjs");
 const mcpRegistry = mcp.createRegistry(() => settings.getMcpServers());
@@ -976,6 +1005,10 @@ ipcMain.handle('settings:save', (_e, patch) => {
   }
 });
 ipcMain.handle('settings:clearKey', (_e, provider) => settings.clearKey(provider));
+ipcMain.handle('settings:saveProviderKey', (_e, provider, key) => {
+  try { return { ok: true, settings: settings.saveProviderKey(provider, key) }; }
+  catch (error) { return { ok: false, error: error.message }; }
+});
 ipcMain.handle('settings:setModel', (_e, provider, model) => {
   try { return { ok: true, settings: settings.setModel(provider, model) }; }
   catch (error) { return { ok: false, error: error.message }; }
@@ -983,13 +1016,13 @@ ipcMain.handle('settings:setModel', (_e, provider, model) => {
 ipcMain.handle('settings:setReasoningEffort', async (_e, provider, model, effort) => {
   try {
     const active = settings.getActive();
-    if (active.provider !== provider || active.model !== model) throw new Error('The AI provider or model changed. Reopen the picker and try again.');
+    if (active.provider !== provider || active.model !== model) throw new Error(i18n.t('main.ai_provider_or_model_changed'));
     let levels = [];
     if (effort) {
       const capability = await ai.modelCapabilities(active, { refresh: true });
-      if (!capability.ok) throw new Error(capability.error || 'Could not check supported thinking efforts.');
+      if (!capability.ok) throw new Error(capability.error || i18n.t('main.could_not_check_thinking_efforts'));
       levels = capability.reasoningEfforts;
-      if (!levels.includes(effort)) throw new Error('This model does not report support for that thinking effort.');
+      if (!levels.includes(effort)) throw new Error(i18n.t('main.model_no_thinking_effort_support'));
     }
     return { ok: true, settings: settings.setReasoningEffort(provider, model, effort, levels) };
   } catch (error) { return { ok: false, error: error.message }; }
@@ -1006,20 +1039,33 @@ ipcMain.handle('settings:clearServiceKey', (_e, name) => settings.clearServiceKe
 // ---- About: the app version. There is no updater; releases live on the repository's Releases page. ----
 ipcMain.handle('app:version', () => app.getVersion());
 
-// ---- Anonymous usage statistics: opt-in, see telemetry.cjs. ----
-const telemetry = require("./system/telemetry.cjs");
-ipcMain.handle('telemetry:status', () => telemetry.getStatus());
-ipcMain.handle('telemetry:setConsent', (_e, on) => telemetry.setConsent(on === true));
 
-// ---- Text to speech: Piper, ElevenLabs and Gemini. Keys stay in the main process. ----
+// ---- Text to speech: Gemini, VoiceStudio (an app on this computer, over its local API) and ElevenLabs. Keys
+// stay in the main process. ----
 const tts = require("./audio/tts.cjs");
 const geminiTts = require("./audio/geminiTts.cjs");
-const ttsDir = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'tts');
 const ttsOut = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'voiceovers');
 const ttsWords = (text) => String(text || '').trim().split(/\s+/).slice(0, 5).join(' ').replace(/[\\/:*?"<>|]+/g, '');
-ipcMain.handle('tts:status', () => ({ ...tts.piperStatus(ttsDir()), elevenKey: !!settings.getServiceKey('elevenlabs'),
+// The VoiceStudio connector as the renderer sees it: the saved switch and address, and (when on) whether the
+// app answers there, its version, engine and voices.
+const studioState = async (signal) => {
+  const c = settings.getVoiceStudio();
+  if (!c.enabled) { let url = ''; try { url = tts.studioUrl(c.url); } catch { url = c.url; } return { ...c, url, running: false, version: '', engine: '', engines: [], voices: [] }; }
+  return { ...c, ...(await tts.studioStatus(net.fetch, c.url, { signal })) };
+};
+ipcMain.handle('tts:status', async () => ({ studio: await studioState(), elevenKey: !!settings.getServiceKey('elevenlabs'),
   geminiKey: !!settings.getServiceKey('gemini-tts'), gemini: geminiTts.catalog(), voiceDefault: settings.getVoiceDefault() }));
 ipcMain.handle('settings:setVoiceDefault', (_e, value) => settings.setVoiceDefault(value));
+ipcMain.handle('settings:setVoiceStudio', (_e, value) => {
+  try { if (typeof value?.url === 'string') tts.studioUrl(value.url); } catch (e) { return { error: e.message }; }
+  return settings.setVoiceStudio(value);
+});
+// Tries an address (the draft in Settings, or the saved one) and says what answers there.
+ipcMain.handle('tts:studioTest', async (_e, url) => {
+  const st = await tts.studioStatus(net.fetch, typeof url === 'string' && url.trim() ? url : settings.getVoiceStudio().url);
+  if (!st.running) return { ok: false, text: st.error || tts.STUDIO_NOT_RUNNING };
+  return { ok: true, text: i18n.t('main.voicestudio_is_running', { version: st.version || '?', engine: st.engine || 'VoiceStudio', count: st.voices.length }) };
+});
 ipcMain.handle('tts:geminiTestKey', async (_e, key) => {
   try { return await geminiTts.testKey(net.fetch, String(key || '').trim() || settings.getServiceKey('gemini-tts')); }
   catch (e) { return { ok: false, text: e.message }; }
@@ -1044,8 +1090,8 @@ ipcMain.handle('tts:testKey', async (_e, key) => {
     const v = await tts.elevenVoices(net.fetch, k);
     // A key without the "User" read permission cannot see its credits; the voices still work.
     const u = await tts.elevenUsage(net.fetch, k).catch(() => null);
-    const credits = u ? ` ${u.left.toLocaleString('en-US')} of ${u.limit.toLocaleString('en-US')} credits left this month.` : '';
-    return { ok: true, text: `ElevenLabs works (${v.length} voices).${credits}` };
+    const credits = u ? ` ${i18n.t('main.credits_left_this_month', { left: u.left.toLocaleString(i18n.getLanguage()), limit: u.limit.toLocaleString(i18n.getLanguage()) })}` : '';
+    return { ok: true, text: `${i18n.t('main.elevenlabs_works', { count: v.length })}${credits}` };
   } catch (e) {
     return { ok: false, text: e.message };
   }
@@ -1053,9 +1099,9 @@ ipcMain.handle('tts:testKey', async (_e, key) => {
 // Speaks the text and returns a media item (the file stays in <userData>/voiceovers).
 ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, async signal => {
   try {
-    if (!req || !['piper', 'eleven', 'gemini'].includes(req.engine)) return { error: 'Choose a supported speech engine.' };
+    if (!req || !['voicestudio', 'eleven', 'gemini'].includes(req.engine)) return { error: 'Choose a supported speech engine.' };
     const send = (stage, fraction, extra) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction, ...extra }); };
-    let file, waited = 0;
+    let file, waited = 0, studioVoice = null;
     if (req.engine === 'gemini') {
       send('speech', 0);
       const onWait = (seconds) => { waited += seconds; send('wait', 0, { seconds }); };
@@ -1064,9 +1110,19 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
       send('voice', 0);
       file = await tts.elevenSpeak(scopedFetch(net.fetch, signal), settings.getServiceKey('elevenlabs'), ttsOut(), { ...req, signal });
     } else {
-      // Piper's engine and voices are downloaded in Settings > Voice, never on the way.
-      send('voice', 1);
-      file = await tts.piperSpeak(ttsDir(), ttsOut(), { ...req, signal });
+      // VoiceStudio: the connector must be on and the app answering; the voice must be one it lists, because it
+      // speaks with its default voice for an unknown id instead of refusing.
+      const c = settings.getVoiceStudio();
+      if (!c.enabled) return { error: 'VoiceStudio is off. Turn it on in Settings > Voice.' };
+      send('voice', 0);
+      const st = await tts.studioStatus(scopedFetch(net.fetch, signal), c.url, { signal });
+      if (!st.running) return { error: st.error || tts.STUDIO_NOT_RUNNING };
+      studioVoice = st.voices.find((v) => v.id === req.voiceId);
+      if (!studioVoice) return { error: `VoiceStudio has no voice "${req.voiceId}". Its voices: ${st.voices.map((v) => `${v.id} (${v.name})`).join(', ') || 'none'}.` };
+      // A "Describe a voice" entry builds the voice from the style text, so it needs one.
+      if (studioVoice.kind === 'design' && !String(req.style || '').trim()) return { error: `Describe the voice in style first: ${studioVoice.name} builds it from that description (who speaks, how they feel, how fast).` };
+      send('studio', 0);
+      file = await tts.studioSpeak(scopedFetch(net.fetch, signal), c.url, ttsOut(), { ...req, voiceId: studioVoice.wire || studioVoice.id, model: studioVoice.engine || '', signal });
     }
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
@@ -1075,34 +1131,12 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
       ? { license: 'gemini', providerName: 'Google Gemini', creator: req.voiceId || geminiTts.DEFAULT_VOICE, line: 'Speech generated with Google Gemini TTS' }
       : req.engine === 'eleven'
       ? { license: 'elevenlabs', providerName: 'ElevenLabs', creator: req.voiceName || 'ElevenLabs voice', line: 'Voice generated with ElevenLabs (elevenlabs.io)' }
-      : { license: 'piper', providerName: 'Piper', creator: req.voiceName || req.voiceId, line: `Voice: Piper ${req.voiceId}` };
+      : { license: 'voicestudio', providerName: 'VoiceStudio', creator: studioVoice.kind === 'design' ? `${studioVoice.model} voice design` : studioVoice.name, line: `Voice generated with VoiceStudio (${studioVoice.kind === 'design' ? `${studioVoice.model} voice design` : studioVoice.name})` };
     return { ...m, origin: 'tts', name: `Voice - ${words || 'text'}${path.extname(file)}`, credit, ...(waited ? { waited_sec: Math.round(waited) } : {}) };
   } catch (e) {
     return { error: e.message, ...(e.limit ? { limit: e.limit } : {}) };
   }
 }));
-// Piper voices on this computer (Settings > Voice): download the engine or a voice (one at a time, with progress
-// and Cancel), or remove it. target: 'engine' or a voice id.
-const piperJobs = new Map(); // target -> AbortController
-ipcMain.handle('tts:piperDownload', async (_event, target) => {
-  if (typeof target !== 'string' || !target) return { error: 'Nothing to download.' };
-  if (piperJobs.size) return { error: 'Another download is running. Wait for it, or cancel it.' };
-  const controller = new AbortController();
-  piperJobs.set(target, controller);
-  const send = (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('tts:piperProgress', { target, fraction }); };
-  try {
-    await tts.piperDownload(scopedFetch(net.fetch, controller.signal), ttsDir(), target, send, { signal: controller.signal });
-    return { ok: true, status: tts.piperStatus(ttsDir()) };
-  } catch (e) {
-    return controller.signal.aborted ? { canceled: true, status: tts.piperStatus(ttsDir()) } : { error: e.message, status: tts.piperStatus(ttsDir()) };
-  } finally { piperJobs.delete(target); }
-});
-ipcMain.handle('tts:piperCancel', (_event, target) => { piperJobs.get(target)?.abort(); return true; });
-ipcMain.handle('tts:piperRemove', (_event, target) => {
-  if (piperJobs.has(target)) return { error: 'Cancel the download first.' };
-  try { tts.piperRemove(ttsDir(), String(target)); return { ok: true, status: tts.piperStatus(ttsDir()) }; }
-  catch (e) { return { error: e.message, status: tts.piperStatus(ttsDir()) }; }
-});
 // Several narration lines from one Gemini request, cut into one audio item per line (audio/narration.cjs).
 ipcMain.handle('tts:speakLines', (event, req) => withAgentJob(event, req?.requestId, async signal => {
   try {
@@ -1127,54 +1161,6 @@ ipcMain.handle('tts:speakLines', (event, req) => withAgentJob(event, req?.reques
   }
 }));
 
-// ---- AI video and photo generation (ElevenLabs, the user's key; the API needs a Pro plan). Files stay in
-// <userData>/generated with a small .json describing each one. ----
-const gen = require("./library/gen.cjs");
-const genDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'generated-test') : path.join(app.getPath('userData'), 'generated'));
-const genJobs = new Map(); // job id -> AbortController
-ipcMain.handle('gen:status', async () => {
-  const key = settings.getServiceKey('elevenlabs');
-  if (!key) return { hasKey: false };
-  // A key without the "User" read permission cannot see its plan: generation is then simply tried.
-  const u = await tts.elevenUsage(net.fetch, key).catch(() => null);
-  return { hasKey: true, tier: u?.tier || '', pro: gen.isPro(u?.tier), left: u?.left ?? null, limit: u?.limit ?? null, proUrl: gen.PRO_URL };
-});
-ipcMain.handle('gen:models', () => gen.catalog());
-ipcMain.handle('gen:list', () => gen.list(genDir()));
-// Speech for a talking avatar must be MP3 or WAV: other audio (a recorded voice-over is M4A) is converted once.
-const speechFile = async (file) => {
-  if (gen.AUDIO_TYPES[path.extname(file).toLowerCase()]) return file;
-  const out = path.join(genDir(), 'speech', `${path.basename(file, path.extname(file))}.mp3`);
-  if (fs.existsSync(out)) return out;
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  await new Promise((resolve, reject) => require('child_process').execFile(require("./media/ffmpeg.cjs").ffmpegPath,
-    ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '128k', out],
-    { windowsHide: true }, (e) => (e ? reject(new Error('Could not read this audio.')) : resolve())));
-  return out;
-};
-ipcMain.handle('gen:run', async (_e, jobId, kind, opts = {}) => {
-  const ctl = new AbortController();
-  genJobs.set(jobId, ctl);
-  try {
-    const onStatus = (stage) => { if (win && !win.isDestroyed()) win.webContents.send('gen:progress', { jobId, stage }); };
-    const key = settings.getServiceKey('elevenlabs');
-    let o = opts;
-    if (kind === 'avatar') {
-      // Typed text is spoken first with the chosen ElevenLabs voice.
-      if (o.text) {
-        onStatus('voicing');
-        o = { ...o, audio: await tts.elevenSpeak(net.fetch, key, ttsOut(), { voiceId: o.voiceId, text: o.text }) };
-      } else if (o.audio) o = { ...o, audio: await speechFile(o.audio) };
-    }
-    return await gen.run(net.fetch, key, genDir(), kind, o, { onStatus, signal: ctl.signal });
-  } catch (e) {
-    return { error: e.message, code: e.code || '' };
-  } finally {
-    genJobs.delete(jobId);
-  }
-});
-ipcMain.handle('gen:stop', (_e, jobId) => genJobs.get(jobId)?.abort());
-
 // ---- Asset pack library: folder-backed (electron/library/assets.cjs). The folder is created on
 // first read so the panels can name a real path in their empty state. ----
 const assets = require("./library/assets.cjs");
@@ -1184,80 +1170,7 @@ ipcMain.handle('assets:list', () => {
   return assets.readLibraryFor(app.getPath('userData'), process.env, process.resourcesPath);
 });
 
-// ---- First run: the Welcome card, shown once (flags in settings.json —
-// electron/system/settings.cjs). ----
-ipcMain.handle('firstrun:get', () => settings.getFirstRun());
-ipcMain.handle('firstrun:set', (_e, patch) => settings.setFirstRun(patch));
-
-// My avatars: photos of people reused in every project (<userData>/avatars).
-const avatarDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'avatars-test') : path.join(app.getPath('userData'), 'avatars'));
-ipcMain.handle('avatars:list', () => gen.avatarList(avatarDir()));
-ipcMain.handle('avatars:add', async (_e, file) => {
-  try {
-    let files = file ? [file] : [];
-    if (!file) {
-      const res = await dialog.showOpenDialog(win, { title: 'Add avatar photos', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Photos', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] });
-      if (res.canceled) return { list: gen.avatarList(avatarDir()) };
-      files = res.filePaths;
-    }
-    const added = files.map((f) => gen.avatarAdd(avatarDir(), f));
-    return { list: gen.avatarList(avatarDir()), added };
-  } catch (e) {
-    return { error: e.message, list: gen.avatarList(avatarDir()) };
-  }
-});
-ipcMain.handle('avatars:remove', (_e, file) => {
-  try {
-    gen.avatarRemove(avatarDir(), file);
-  } catch {
-    // not an avatar: nothing to remove
-  }
-  return gen.avatarList(avatarDir());
-});
-
-// ---- Templates: the remote store, and the package flow. ----
-const templates = require("./library/templates.cjs");
-const bundledTemplates = require("./library/bundledTemplates.cjs");
-const tplCache = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'templates-test') : path.join(app.getPath('userData'), 'templates'));
-const tplCall = (fn) => async (...args) => {
-  try {
-    return await fn(...args);
-  } catch (e) {
-    return { error: e.message };
-  }
-};
-ipcMain.handle('templates:list', tplCall((_e, params) => templates.list(net.fetch, params)));
-// Bundled templates (ship with the app, fully offline): list from disk, open from disk.
-ipcMain.handle('templates:bundledList', () => bundledTemplates.list(path.join(__dirname, '..')));
-ipcMain.handle('templates:bundledUse', tplCall(async (_e, slug) => {
-  const { json } = bundledTemplates.use(path.join(__dirname, '..'), slug);
-  const pf = require("./project/projectfile.cjs");
-  return { json: await pf.refreshSizes(pf.checkGenerated(json, mediaCacheDir()), probe) };
-}));
-ipcMain.handle('templates:thumb', (_e, t) => templates.thumb(net.fetch, tplCache(), t));
-ipcMain.handle('templates:preview', tplCall(async (_e, t) => ({ path: await templates.preview(net.fetch, tplCache(), t) })));
-// Downloads a template and returns it as a project, like project:open (it has no file until saved).
-ipcMain.handle('templates:use', tplCall(async (_e, id) => {
-  const send = (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('templates:progress', { id, fraction }); };
-  const { json } = await templates.download(net.fetch, tplCache(), id, send);
-  templates.use(net.fetch, id);
-  const pf = require("./project/projectfile.cjs");
-  return { json: await pf.refreshSizes(pf.checkGenerated(json, mediaCacheDir()), probe) };
-}));
-// Export > Template package: asks for a folder and writes the package into a new subfolder.
-ipcMain.handle('templates:pack', tplCall(async (_e, projectJson, meta) => {
-  let parent = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'packages') : null;
-  if (!parent) {
-    const res = await dialog.showOpenDialog(win, { title: 'Choose where to write the template package', properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled) return null;
-    parent = res.filePaths[0];
-  }
-  fs.mkdirSync(parent, { recursive: true });
-  return templates.pack(JSON.parse(projectJson), meta, parent, { ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath });
-}));
-ipcMain.handle('shell:openFolder', (_e, dir) => (fs.existsSync(dir) && fs.statSync(dir).isDirectory() ? shell.openPath(dir) : false));
-
-// ---- Stock photos and videos (Pixabay). The key stays in this process. ----
+// ---- Stock photos (Openverse/Pixabay) and videos (Pixabay). Keys stay here. ----
 const stock = require("./library/stock.cjs");
 // UI tests keep their (fake) downloads apart from the real library.
 const stockDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'library-test') : path.join(app.getPath('userData'), 'library'));
@@ -1266,21 +1179,24 @@ ipcMain.handle('stock:test', async (_e, key) => {
   try {
     const k = String(key || '').trim() || settings.getServiceKey('pixabay');
     const r = await stock.search(net.fetch, k, { kind: 'photo', q: `nature ${Date.now() % 7}` });
-    return { ok: true, text: `Pixabay works (${r.total} photos for a test search).` };
+    return { ok: true, text: i18n.t('main.pixabay_works', { count: r.total }) };
   } catch (e) {
     return { ok: false, text: e.message };
   }
 });
 ipcMain.handle('stock:search', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    return await stock.search(scopedFetch(net.fetch, signal), settings.getServiceKey('pixabay'), opts || {});
+    if (opts.provider === 'openverse' && opts.kind === 'video') return { error: 'Openverse provides images and audio. Use photo, or Pixabay for videos.' };
+    return opts.provider === 'openverse' || (!opts.provider && opts.kind === 'photo')
+      ? await openverse.search(scopedFetch(net.fetch, signal), { ...opts, kind: 'photo' })
+      : await stock.search(scopedFetch(net.fetch, signal), settings.getServiceKey('pixabay'), opts || {});
   } catch (e) {
     return { error: e.message };
   }
 }));
 ipcMain.handle('stock:thumb', async (_e, url) => {
   try {
-    return { path: await stock.thumbnail(net.fetch, stockDir(), url) };
+    return { path: await (stock.hostOk(url) ? stock : openverse).thumbnail(net.fetch, stockDir(), url) };
   } catch (e) {
     return { error: e.message };
   }
@@ -1302,8 +1218,8 @@ ipcMain.handle('scene:make', async (_e, opts) => {
 const { stabilize } = require("./media/stabilize.cjs");
 let stabJob = null;
 ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
-  if (stabJob) return { error: 'Another clip is being stabilized.' };
-  if (!item || !fs.existsSync(item.path)) return { error: 'The video file was not found.' };
+  if (stabJob) return { error: i18n.t('main.another_clip_being_stabilized') };
+  if (!item || !fs.existsSync(item.path)) return { error: i18n.t('main.video_file_not_found') };
   const job = { canceled: false };
   stabJob = job;
   try {
@@ -1313,7 +1229,7 @@ ipcMain.handle('stabilize:run', async (_e, item, from, to, level) => {
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('stabilize:progress', { path: item.path, fraction }); },
     });
     const [m] = await probeAll([out]);
-    if (!m || m.error) return { error: 'Could not read the stabilized video.' };
+    if (!m || m.error) return { error: i18n.t('main.could_not_read_stabilized_video') };
     return { ...m, name: `${path.basename(item.path).replace(/\.[^.]+$/, '')} (stabilized).mp4` };
   } catch (e) {
     return e.canceled ? { canceled: true } : { error: e.message };
@@ -1328,9 +1244,9 @@ ipcMain.handle('stabilize:cancel', () => { if (stabJob) stabJob.canceled = true;
 const { trackMotion } = require("./media/track.cjs");
 let trackJob = null;
 ipcMain.handle('track:run', async (_e, item, from, to, pick, box) => {
-  if (trackJob) return { error: 'Another clip is being tracked.' };
-  if (!item || !fs.existsSync(item.path)) return { error: 'The video file was not found.' };
-  if (!pick || !Number.isFinite(pick.x) || !Number.isFinite(pick.y)) return { error: 'No point to track.' };
+  if (trackJob) return { error: i18n.t('main.another_clip_being_tracked') };
+  if (!item || !fs.existsSync(item.path)) return { error: i18n.t('main.video_file_not_found') };
+  if (!pick || !Number.isFinite(pick.x) || !Number.isFinite(pick.y)) return { error: i18n.t('main.no_point_to_track') };
   const job = { canceled: false };
   trackJob = job;
   try {
@@ -1352,8 +1268,8 @@ ipcMain.handle('track:cancel', () => { if (trackJob) trackJob.canceled = true; }
 const { reverse } = require("./media/reverse.cjs");
 let revJob = null;
 ipcMain.handle('reverse:run', async (_e, item, from, to) => {
-  if (revJob) return { error: 'Another clip is being reversed.' };
-  if (!item || !fs.existsSync(item.path)) return { error: 'The media file was not found.' };
+  if (revJob) return { error: i18n.t('main.another_clip_being_reversed') };
+  if (!item || !fs.existsSync(item.path)) return { error: i18n.t('main.media_file_not_found') };
   const job = { canceled: false };
   revJob = job;
   try {
@@ -1363,7 +1279,7 @@ ipcMain.handle('reverse:run', async (_e, item, from, to) => {
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('reverse:progress', { path: item.path, fraction }); },
     });
     const [m] = await probeAll([out]);
-    if (!m || m.error) return { error: 'Could not read the reversed video.' };
+    if (!m || m.error) return { error: i18n.t('main.could_not_read_reversed_video') };
     return { ...m, name: `${path.basename(item.path).replace(/\.[^.]+$/, '')} (reversed).mp4` };
   } catch (e) {
     return e.canceled ? { canceled: true } : { error: e.message };
@@ -1378,8 +1294,8 @@ ipcMain.handle('reverse:cancel', () => { if (revJob) revJob.canceled = true; });
 const { detach } = require("./media/detach.cjs");
 let detachJob = null;
 ipcMain.handle('detach:run', async (_e, item, from, to) => {
-  if (detachJob) return { error: 'Another clip is being detached.' };
-  if (!item || !fs.existsSync(item.path)) return { error: 'The media file was not found.' };
+  if (detachJob) return { error: i18n.t('main.another_clip_being_detached') };
+  if (!item || !fs.existsSync(item.path)) return { error: i18n.t('main.media_file_not_found') };
   const job = { canceled: false };
   detachJob = job;
   try {
@@ -1389,7 +1305,7 @@ ipcMain.handle('detach:run', async (_e, item, from, to) => {
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('detach:progress', { path: item.path, fraction }); },
     });
     const [m] = await probeAll([out]);
-    if (!m || m.error) return { error: 'Could not read the detached audio.' };
+    if (!m || m.error) return { error: i18n.t('main.could_not_read_detached_audio') };
     return { ...m, name: `${path.basename(item.path).replace(/\.[^.]+$/, '')} (detached).wav` };
   } catch (e) {
     return e.canceled ? { canceled: true } : { error: e.message };
@@ -1404,8 +1320,8 @@ ipcMain.handle('detach:cancel', () => { if (detachJob) detachJob.canceled = true
 const { enhance } = require("./media/enhance.cjs");
 let enhanceJob = null;
 ipcMain.handle('enhance:run', async (_e, item, from, to, strength) => {
-  if (enhanceJob) return { error: 'Another clip is being enhanced.' };
-  if (!item || !fs.existsSync(item.path)) return { error: 'The media file was not found.' };
+  if (enhanceJob) return { error: i18n.t('main.another_clip_being_enhanced') };
+  if (!item || !fs.existsSync(item.path)) return { error: i18n.t('main.media_file_not_found') };
   const job = { canceled: false };
   enhanceJob = job;
   try {
@@ -1429,7 +1345,7 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
   const { execFile } = require('child_process');
   const { ffmpegPath } = require("./media/ffmpeg.cjs");
   try {
-    if (!fs.existsSync(mediaPath)) return { error: 'The media file was not found.' };
+    if (!fs.existsSync(mediaPath)) return { error: i18n.t('main.media_file_not_found') };
     const st = fs.statSync(mediaPath);
     const key = require('crypto').createHash('sha1').update(`${mediaPath}|${st.size}|${st.mtimeMs}|frame|${Number(at).toFixed(2)}`).digest('hex').slice(0, 16);
     const dir = mediaCacheDir();
@@ -1439,7 +1355,7 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
       await new Promise((resolve, reject) => execFile(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, Number(at) || 0)), '-i', mediaPath, '-frames:v', '1', out], (e) => (e ? reject(e) : resolve())));
     }
     const [m] = await probeAll([out]);
-    if (!m || m.error) return { error: 'Could not read the frozen frame.' };
+    if (!m || m.error) return { error: i18n.t('main.could_not_read_frozen_frame') };
     return m;
   } catch (e) {
     return { error: e.message };
@@ -1448,9 +1364,11 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
 
 ipcMain.handle('stock:add', (event, item, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
   try {
-    const file = await stock.download(scopedFetch(net.fetch, signal), stockDir(), item);
+    const ov = item?.origin === 'openverse' ? await openverse.download(scopedFetch(net.fetch, signal), stockDir(), item) : null;
+    const file = ov?.path || await stock.download(scopedFetch(net.fetch, signal), stockDir(), item);
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
+    if (ov) return { ...m, name: `${ov.item.title}${path.extname(file)}`, credit: ov.credit };
     const name = `${(item.tags || 'pixabay').split(',')[0].trim() || 'pixabay'} ${item.id}.${path.extname(file).slice(1)}`;
     return { ...m, name, credit: { license: 'pixabay', providerName: 'Pixabay', creator: item.user, landing: item.pageURL, line: stock.creditLine(item) } };
   } catch (e) {
@@ -1479,7 +1397,7 @@ ipcMain.handle('ai:runtimeInstall', async (event, provider) => {
 ipcMain.handle('ai:runtimeCancel', (event, provider) => { if (localAgents.isProvider(provider)) agentRuntimes.cancel(provider, event.sender.id); });
 ipcMain.handle('ai:pickExecutable', async (_e, provider) => {
   if (!localAgents.isProvider(provider)) return null;
-  const res = await dialog.showOpenDialog(win, { title: `Choose the installed ${localAgents.PROVIDERS[provider].cli} executable`, properties: ['openFile'] });
+  const res = await dialog.showOpenDialog(win, { title: i18n.t('main.choose_installed_executable', { cli: localAgents.PROVIDERS[provider].cli }), properties: ['openFile'] });
   return res.canceled ? null : res.filePaths[0] || null;
 });
 
@@ -1503,7 +1421,7 @@ ipcMain.handle('lut:read', (_e, ref) => {
   }
 });
 ipcMain.handle('lut:import', async () => {
-  const res = await dialog.showOpenDialog(win, { title: 'Import a LUT', properties: ['openFile'], filters: [{ name: '3D LUT', extensions: ['cube'] }] });
+  const res = await dialog.showOpenDialog(win, { title: i18n.t('main.import_a_lut'), properties: ['openFile'], filters: [{ name: i18n.t('main.filter_3d_lut'), extensions: ['cube'] }] });
   if (res.canceled || !res.filePaths[0]) return null;
   const file = res.filePaths[0];
   return { path: file, name: path.basename(file).replace(/\.cube$/i, '') };
@@ -1564,8 +1482,8 @@ ipcMain.handle('agent:attachImages', async (event, items) => {
   try {
     if (items == null) {
       const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-        title: 'Attach images to CraftAI', properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Images', extensions: CHAT_IMAGE_EXTENSIONS }, { name: 'All files', extensions: ['*'] }],
+        title: i18n.t('main.attach_images_to_craftai'), properties: ['openFile', 'multiSelections'],
+        filters: [{ name: i18n.t('main.filter_images'), extensions: CHAT_IMAGE_EXTENSIONS }, { name: i18n.t('main.filter_all_files'), extensions: ['*'] }],
       });
       if (result.canceled) return { images: [], errors: [] };
       items = result.filePaths.map(file => ({ path: file }));
@@ -1627,8 +1545,8 @@ ipcMain.handle('agent:attachVideos', async (event, items) => {
   try {
     if (items == null) {
       const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-        title: 'Attach reference videos to CraftAI', properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'Videos', extensions: VIDEO_EXTENSIONS }],
+        title: i18n.t('main.attach_reference_videos_to_craftai'), properties: ['openFile', 'multiSelections'],
+        filters: [{ name: i18n.t('main.filter_videos'), extensions: VIDEO_EXTENSIONS }],
       });
       if (result.canceled) return { videos: [], errors: [] };
       items = result.filePaths.map(file => ({ path: file }));
@@ -1639,8 +1557,8 @@ ipcMain.handle('agent:attachVideos', async (event, items) => {
 ipcMain.handle('agent:pickAttachments', async (event) => {
   try {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-      title: 'Attach images or reference videos to CraftAI', properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Images and videos', extensions: [...CHAT_IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }, { name: 'Images', extensions: CHAT_IMAGE_EXTENSIONS }, { name: 'Videos', extensions: VIDEO_EXTENSIONS }],
+      title: i18n.t('main.attach_images_or_videos_to_craftai'), properties: ['openFile', 'multiSelections'],
+      filters: [{ name: i18n.t('main.filter_images_and_videos'), extensions: [...CHAT_IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] }, { name: i18n.t('main.filter_images'), extensions: CHAT_IMAGE_EXTENSIONS }, { name: i18n.t('main.filter_videos'), extensions: VIDEO_EXTENSIONS }],
     });
     if (result.canceled) return { images: [], videos: [], errors: [] };
     const isVideo = file => VIDEO_EXTENSIONS.includes(path.extname(file).slice(1).toLowerCase());
@@ -1825,7 +1743,7 @@ const externalAgents = require('./agents/external/host.cjs').createExternalAgent
   installer: { home: externalHome, searchDirectories: localAgents.searchDirectories,
     env: process.env.FVE_SMOKE ? { ...process.env, CLAUDE_CONFIG_DIR: path.join(externalHome, '.claude'), CODEX_HOME: path.join(externalHome, '.codex') } : process.env } });
 // CraftAI may start unless an outside agent is working; an idle one gives the editor back.
-const externalHolder = () => { const name = externalAgents.yieldToCraft(); return name ? `${name} is working in ClipCraft. Wait until it finishes, or disconnect it (top bar), to use CraftAI.` : null; };
+const externalHolder = () => { const name = externalAgents.yieldToCraft(); return name ? i18n.t('main.agent_working_wait_or_disconnect', { name }) : null; };
 ipcMain.handle('agent:openSource', async (_event, value) => {
   const { webSourceUrl } = await import('../shared/webSource.mjs');
   const url = webSourceUrl(value);
@@ -1931,9 +1849,9 @@ ipcMain.handle('agent:mediaJob', (event, req = {}) => withAgentJob(event, req.re
 ipcMain.handle('agent:fileJob', (event, req = {}) => withAgentJob(event, req.requestId, signal =>
   require('./agents/editorFiles.cjs').runEditorFileJob(req, { signal, probeAll, outputDir: app.getPath('downloads'),
     choosePaths: async pick => {
-      const result = await dialog.showOpenDialog(win, { title: pick === 'folder' ? 'Choose media folder for CraftAI' : 'Choose media for CraftAI',
+      const result = await dialog.showOpenDialog(win, { title: pick === 'folder' ? i18n.t('main.choose_media_folder_for_craftai') : i18n.t('main.choose_media_for_craftai'),
         properties: pick === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
-        ...(pick === 'folder' ? {} : { filters: [{ name: 'Media', extensions: [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT] }] }),
+        ...(pick === 'folder' ? {} : { filters: [{ name: i18n.t('app.media'), extensions: [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT] }] }),
       });
       return result.canceled ? [] : result.filePaths;
     },
@@ -2064,9 +1982,9 @@ ipcMain.handle('captions:runCloud', (event, project, opts = {}) => runCaptionAna
 ipcMain.handle('captions:testCloud', async (_e, provider, keyOverride) => {
   try {
     const meta = cloudCaptions.PROVIDERS[provider];
-    if (!meta) return { error: `Unknown caption provider: ${provider}` };
+    if (!meta) return { error: i18n.t('main.unknown_caption_provider', { provider }) };
     const key = String(keyOverride || '').trim() || settings.getServiceKey(meta.service);
-    if (!key) return { error: `No ${meta.name} key to test — paste one or save one first.` };
+    if (!key) return { error: i18n.t('main.no_key_to_test', { name: meta.name }) };
     await cloudCaptions.testConnection({ provider, key, fetchImpl: net.fetch });
     return { ok: true };
   } catch (e) {
@@ -2119,15 +2037,15 @@ ipcMain.on('dialog:messageSync', (event, req = {}) => {
   const text = String(req.message || '').slice(0, 4000), [first, ...rest] = text.split('\n');
   const confirm = req.kind === 'confirm';
   const choice = dialog.showMessageBoxSync(win, { type: confirm ? 'question' : 'warning', message: first, detail: rest.join('\n').trim() || undefined,
-    buttons: confirm ? [String(req.confirmLabel || 'OK').slice(0, 40), 'Cancel'] : ['OK'], defaultId: 0, cancelId: confirm ? 1 : 0, noLink: true });
+    buttons: confirm ? [String(req.confirmLabel || i18n.t('main.ok')).slice(0, 40), i18n.t('app.cancel')] : [i18n.t('main.ok')], defaultId: 0, cancelId: confirm ? 1 : 0, noLink: true });
   event.returnValue = { confirmed: confirm ? choice === 0 : true };
 });
 
 app.whenReady().then(() => {
+  i18n.setLanguage(settings.getLanguagePreference(), app.getLocale());
   installMenu();
   createWindow();
   externalAgents.start().then((r) => { if (!r.ok) logCrash('external agents', { message: r.error }); });
-  telemetry.start();
   // Find the graphics card's video encoder now (a short test encode), so the first export does not wait for it.
   setTimeout(() => require("./media/ffmpeg.cjs").pickEncoder(), 4000);
   // Screen recording (Media > Record screen).

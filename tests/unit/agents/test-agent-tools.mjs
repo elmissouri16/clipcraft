@@ -25,11 +25,16 @@ const p = () => state.present;
 // The main process, faked: library / stock / voice files come back "probed" like media:probe does.
 const probed = (name, type, duration) => ({ name, type, duration, path: `C:/fake/${name}`, ...(type === 'audio' ? {} : { width: 1280, height: 720 }) });
 const calls = [];
-let geminiConfigured = false; let piperInstalled = true; let voiceDefault = { engine: 'auto', voice: '' };
+let geminiConfigured = false; let studioOn = true, studioRunning = true; let voiceDefault = { engine: 'auto', voice: '' };
 const api = {
   librarySearch: async (o) => { calls.push(['librarySearch', o]); return { results: [{ id: 'freesound-1', title: 'Whoosh fast', duration: 1.2, creator: 'X', license: 'cc0', url: 'https://x' }, { id: 'jam-2', title: 'Happy', duration: 95, creator: 'Y', license: 'by' }] }; },
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
-  ttsStatus: async () => ({ supported: true, installed: piperInstalled, voices: [{ id: 'ar_JO-kareem-medium', name: 'Kareem', lang: 'Arabic', gender: 'male', downloaded: true }, { id: 'en_US-joe-medium', name: 'Joe', lang: 'English (US)', gender: 'male', downloaded: false }], elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog(), voiceDefault }),
+  // The VoiceStudio connector as tts:status reports it: off, on but the app closed, or answering with its voices.
+  ttsStatus: async () => ({ studio: { enabled: studioOn, url: 'http://127.0.0.1:3900', running: studioOn && studioRunning, version: '0.5.5', engine: 'OmniVoice', activeEngine: 'omnivoice',
+    voices: studioOn && studioRunning ? [{ id: 'alloy', wire: 'alloy', engine: '', name: 'Default voice', language: '', kind: 'default' }, { id: 'demo0001', wire: 'demo0001', engine: '', name: 'Demo', language: 'English', kind: 'profile' },
+      { id: 'design:mlx-audio', wire: 'alloy', engine: 'mlx-audio', name: 'Describe a voice (Qwen3-TTS)', language: '', kind: 'design', model: 'Qwen3-TTS' }] : [],
+    ...(studioOn && !studioRunning ? { error: 'VoiceStudio is not running. Open VoiceStudio, then try again.' } : {}) },
+    elevenKey: false, geminiKey: geminiConfigured, gemini: geminiTts.catalog(), voiceDefault }),
   ttsSpeak: async (req) => { calls.push(['ttsSpeak', req]); return req.voiceId === 'bad' ? { error: 'Unknown voice.' }
     : req.text === 'Out of quota' ? { error: 'Gemini TTS daily request limit reached.', limit: { provider: 'gemini', kind: 'daily', model: 'gemini-3.8-flash-tts', resets: 'midnight Pacific time', other_model: 'gemini-3.8-flash-lite-tts' } }
     : req.text === 'Waited' ? { ...probed('Voice - waited.wav', 'audio', 1), waited_sec: 31 } : probed('Voice - hello.wav', 'audio', 2.5); },
@@ -89,21 +94,29 @@ assert.equal(p().audioClips.find((c) => c.id === music.id).fadeOut, 3);
 ok(await run('set_volume', { clip_id: 'a', fade_in_sec: 1 }), 'fade on a main-track video');
 
 // Voice-over.
-// Piper voices are optional downloads (Settings > Voice): without the engine none is offered or used.
-piperInstalled = false;
+// VoiceStudio is a separate app behind a connector (Settings > Voice): off, or not running, nothing is offered or used.
+studioOn = false;
 r = await run('list_voices');
-assert.equal(r.default_engine, null); assert.match(r.piper, /Settings > Voice/);
-err(await run('add_voiceover', { text: 'Hello' }), /No speech engine is set up.*Settings > Voice/, 'no engine, no silent download');
-err(await run('add_voiceover', { engine: 'piper', text: 'Hello' }), /No Piper voice is downloaded/, 'piper asked for while missing');
-piperInstalled = true;
+assert.equal(r.default_engine, null); assert.match(r.voicestudio, /VoiceStudio is off.*Settings > Voice/);
+err(await run('add_voiceover', { text: 'Hello' }), /No speech engine is set up.*Settings > Voice/, 'no engine, nothing started on its own');
+err(await run('add_voiceover', { engine: 'voicestudio', text: 'Hello' }), /VoiceStudio is off/, 'voicestudio asked for while off');
+studioOn = true; studioRunning = false;
 r = await run('list_voices');
-assert.equal(r.default_engine, 'piper');
-assert.deepEqual(r.piper.map((v) => v.voice_id), ['ar_JO-kareem-medium'], 'only downloaded voices are listed');
-err(await run('add_voiceover', { text: 'x', voice_id: 'en_US-joe-medium' }), /not downloaded.*Settings > Voice/, 'a voice that is not downloaded');
-r = await run('add_voiceover', { text: 'مرحبا', voice_id: 'ar_JO-kareem-medium', start_sec: 4 });
+assert.match(r.voicestudio, /VoiceStudio is not running/, 'on, but the app is closed');
+err(await run('add_voiceover', { engine: 'voicestudio', text: 'Hello' }), /VoiceStudio is not running.*open VoiceStudio/, 'voicestudio asked for while the app is closed');
+studioRunning = true;
+r = await run('list_voices');
+assert.equal(r.default_engine, 'voicestudio');
+assert.deepEqual(r.voicestudio.voices.map((v) => [v.voice_id, v.kind, !!v.style_required]), [['alloy', 'default', false], ['demo0001', 'profile', false], ['design:mlx-audio', 'design', true]], 'the default voice, the profiles and the voice-design entry, which says it needs style');
+assert.equal(r.voicestudio.active_engine, 'OmniVoice'); assert.match(r.voicestudio.voices[0].style, /voice-design tags only/);
+err(await run('add_voiceover', { text: 'Sad line', voice_id: 'design:mlx-audio' }), /builds the voice from style/, 'a design voice without a description');
+r = await run('add_voiceover', { text: 'Sad line', voice_id: 'design:mlx-audio', style: 'a sad woman, speaking slowly' });
+ok(r, 'a design voice with its description'); assert.deepEqual([calls.at(-1)[1].engine, calls.at(-1)[1].voiceId, calls.at(-1)[1].style], ['voicestudio', 'design:mlx-audio', 'a sad woman, speaking slowly']);
+err(await run('add_voiceover', { text: 'x', voice_id: 'en_US-joe-medium' }), /has no voice en_US-joe-medium. Its voices: alloy/, 'a voice VoiceStudio does not list');
+r = await run('add_voiceover', { text: 'مرحبا', voice_id: 'demo0001', start_sec: 4 });
 ok(r, 'add_voiceover');
 assert.equal(p().audioClips.find((c) => c.id === r.clip_id).start, 4);
-err(await run('add_voiceover', { text: 'x', voice_id: 'bad' }), /not downloaded/, 'unknown Piper voices are refused before speaking');
+err(await run('add_voiceover', { text: 'x', voice_id: 'bad' }), /has no voice/, 'unknown VoiceStudio voices are refused before speaking');
 geminiConfigured = true;
 r = await run('list_voices');
 assert.equal(r.default_engine, 'gemini');
@@ -116,7 +129,7 @@ assert.deepEqual(calls.at(-1)[1], { engine: 'gemini', voiceId: 'Kore', voiceName
 assert.equal(p().audioClips.find(c => c.id === r.clip_id).start, 6);
 assert.equal(p().audioClips.find(c => c.id === r.clip_id).volume, 0.8);
 const audioCount = p().audioClips.length;
-err(await run('add_voiceover', { engine: 'unknown', text: 'Hello' }), /engine/, 'unknown engines never fall back to Piper');
+err(await run('add_voiceover', { engine: 'unknown', text: 'Hello' }), /engine/, 'unknown engines never fall back to VoiceStudio');
 err(await run('add_voiceover', { engine: 'gemini', voice_id: 'bad', text: 'Hello' }), /Unknown voice/, 'generation failure does not insert audio');
 assert.equal(p().audioClips.length, audioCount);
 // A provider limit comes back as a quota CraftAI acts on, not a generic failure.
@@ -145,21 +158,21 @@ ok(await run('add_voiceover', { text: 'Default Gemini voice' }), 'the saved Gemi
 assert.equal(calls.at(-1)[1].voiceId, 'Puck');
 ok(await run('add_narration', { lines: [{ text: 'One' }, { text: 'Two' }] }), 'narration with the saved Gemini voice');
 assert.equal(calls.at(-1)[1].voiceId, 'Puck');
-voiceDefault = { engine: 'piper', voice: 'ar_JO-kareem-medium' };
+voiceDefault = { engine: 'voicestudio', voice: 'demo0001' };
 r = await run('list_voices');
-assert.deepEqual([r.default_engine, r.default_voice, r.default_from], ['piper', 'ar_JO-kareem-medium', 'settings'], 'Piper chosen over a configured Gemini');
-ok(await run('add_voiceover', { text: 'Default Piper' }), 'the default engine when none is named');
-assert.deepEqual([calls.at(-1)[1].engine, calls.at(-1)[1].voiceId], ['piper', 'ar_JO-kareem-medium']);
+assert.deepEqual([r.default_engine, r.default_voice, r.default_from], ['voicestudio', 'demo0001', 'settings'], 'VoiceStudio chosen over a configured Gemini');
+ok(await run('add_voiceover', { text: 'Default VoiceStudio' }), 'the default engine when none is named');
+assert.deepEqual([calls.at(-1)[1].engine, calls.at(-1)[1].voiceId], ['voicestudio', 'demo0001']);
 ok(await run('add_voiceover', { engine: 'gemini', text: 'Asked for Gemini' }), 'a named engine still wins');
 assert.deepEqual([calls.at(-1)[1].engine, calls.at(-1)[1].voiceId], ['gemini', 'Kore'], 'with that engine\'s own default voice');
-err(await run('add_narration', { lines: [{ text: 'A' }, { text: 'B' }] }), /default voice \(Settings > Voice\) is Piper.*add_voiceover/, 'Gemini-only narration yields to the default');
+err(await run('add_narration', { lines: [{ text: 'A' }, { text: 'B' }] }), /default voice \(Settings > Voice\) is VoiceStudio.*add_voiceover/, 'Gemini-only narration yields to the default');
 // A default that is not set up falls back to the automatic order, and says so.
-piperInstalled = false;
+studioRunning = false;
 r = await run('list_voices');
-assert.deepEqual([r.default_engine, r.default_from], ['gemini', 'automatic']); assert.match(r.default_note, /Piper\) is not set up \(no voice downloaded\)/);
+assert.deepEqual([r.default_engine, r.default_from], ['gemini', 'automatic']); assert.match(r.default_note, /VoiceStudio\) is not set up \(VoiceStudio is not running\)/);
 ok(await run('add_voiceover', { text: 'Fallback' }), 'falls back to Gemini');
 assert.equal(calls.at(-1)[1].engine, 'gemini');
-piperInstalled = true; voiceDefault = { engine: 'auto', voice: '' };
+studioRunning = true; voiceDefault = { engine: 'auto', voice: '' };
 err(await run('add_narration', { lines: [{ text: 'A' }, { text: ' ' }] }), /needs text/, 'empty line');
 r = await run('add_narration', { lines: ['Over the limit', 'Second'] });
 assert.equal(r.provider_limit.kind, 'per_minute'); assert.match(r.next, /one add_narration call/);

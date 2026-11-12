@@ -15,6 +15,8 @@ module.exports = async function smoke(win, app, dir) {
   const errors = [];
   wc.on('console-message', (_e, level, msg) => level >= 2 && errors.push(msg));
   const result = { errors };
+  if (process.env.FVE_SMOKE_MODE === 'service-connections') return require('./smoke-service-connections.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'openverse') return require('./smoke-openverse.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'reference-video') return require('./smoke-reference-video.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'smooth-motion') return require('./smoke-smooth-motion.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'graphics') return require('./smoke-graphics.cjs')(win, app, dir);
@@ -27,6 +29,7 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'agent-chat') return require('./smoke-agent-chat.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'chat-images') return require('./smoke-chat-images.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'ux-controls') return require('./smoke-ux-controls.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'ui-review') return require('./smoke-ui-review.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'ux-layout') return require('./smoke-ux-layout.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'recovery-notice') return require('./smoke-recovery-notice.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'workspaces') return require('./smoke-workspaces.cjs')(win, app, dir);
@@ -43,12 +46,11 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'font-packaging') return require('./smoke-font-packaging.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'home-projects') return require('./smoke-home-projects.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'export-ux') return require('./smoke-export-ux.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'agent-spotlight') return require('./smoke-agent-spotlight.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'effects-ui') return require('./smoke-effects-ui.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'effect-parity') return require('./smoke-effect-parity.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'performance') return require('./smoke-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'performance-contracts') return require('./smoke-performance-contracts.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'agent-spotlight') return require('./smoke-agent-spotlight.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'effects-ui') return require('./smoke-effects-ui.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'effects-ui') return require('./smoke-effects-ui.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'export-performance') return require('./smoke-export-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'persistence-performance') return require('./smoke-persistence-performance.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'structure') return require('./smoke-structure.cjs')(win, app, dir);
@@ -95,93 +97,6 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'model-picker') {
     return require('./smoke-model-picker.cjs')(win, app, dir);
   }
-  if (process.env.FVE_SMOKE_MODE === 'templates-pack' || process.env.FVE_SMOKE_MODE === 'templates-use') {
-    // Templates. "pack": build a small project from generated clips, mark two clips replaceable and write the
-    // package (plus preview.mp4) into <dir>/packages. "use": with FVE_TEMPLATES_URL pointing at a local copy of the
-    // site that publishes it, open it from the Templates tab and replace a clip (the file dialog is answered here).
-    const q = run;
-    const until = async (js, ms = 20000) => { for (let t = 0; t < ms; t += 250) { if (await q(js)) return true; await wait(250); } return false; };
-    const { execFileSync } = require('child_process');
-    const ff = require("../../electron/media/ffmpeg.cjs").ffmpegPath;
-    const media = path.join(dir, 'media');
-    fs.mkdirSync(media, { recursive: true });
-    const clipA = path.join(media, 'clip-a.mp4');
-    const clipB = path.join(media, 'clip-b.mp4');
-    const photo = path.join(media, 'mine.png');
-    if (!fs.existsSync(clipA)) {
-      execFileSync(ff, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=360x640:rate=30:duration=3', '-pix_fmt', 'yuv420p', clipA]);
-      execFileSync(ff, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'smptebars=size=360x640:rate=30:duration=3', '-pix_fmt', 'yuv420p', clipB]);
-      execFileSync(ff, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=0xff3d8b:size=360x640', '-frames:v', '1', photo]);
-    }
-    try {
-      await wait(800);
-      if (process.env.FVE_SMOKE_MODE === 'templates-pack') {
-        const items = await q(`window.api.probePaths(${JSON.stringify([clipA, clipB])})`);
-        const p = {
-          name: 'Smoke trip', ratio: '9:16', resolution: 720, width: 720, height: 1280, fps: 30, background: '#000000',
-          media: items.map((m, i) => ({ ...m, id: `m${i}` })),
-          videoClips: [
-            { id: 'v1', mediaId: 'm0', in: 0, out: 1.5, speed: 1, volume: 1, filter: 'none', adjust: {}, effects: [], transition: null },
-            { id: 'v2', mediaId: 'm1', in: 0, out: 1, speed: 1, volume: 1, filter: 'none', adjust: {}, effects: [], transition: null },
-            { id: 'v3', mediaId: 'm0', in: 1, out: 2, speed: 1, volume: 1, filter: 'none', adjust: {}, effects: [], transition: null },
-          ],
-          overlayClips: [], textClips: [{ id: 't1', text: 'Summer', start: 0, duration: 3.5, y: 0.5 }], audioClips: [], stickerClips: [], effectClips: [],
-        };
-        await q(`window.__fve.load(${JSON.stringify(p)})`);
-        await wait(300);
-        await q(`window.__fve.dispatch({ type: 'updateMany', updates: [{ track: 'video', id: 'v1', patch: { slot: true } }, { track: 'video', id: 'v3', patch: { slot: true } }] })`);
-        await wait(300);
-        result.badges = await q(`document.querySelectorAll('.clip.replaceable .rep-badge').length`);
-        result.strip = await q(`document.querySelectorAll('.ts-strip .ts-slot').length`);
-        await shot('tpl-1-marked.png');
-        await q(`document.querySelector('.export-split .caret').click()`);
-        await wait(200);
-        // W1 (2026-11-01): the Export menu no longer offers "Template package…" (Hamza's
-        // order) — assert its absence, then exercise the retained package writer through
-        // its IPC directly, exactly as the removed menu entry did.
-        result.menuHasTemplate = await q(`[...document.querySelectorAll('.ctx-menu button, [role=menu] button, .context-menu button')].some((b) => /Template package/.test(b.textContent))`);
-        await q(`document.body.click()`);
-        const packRes = await q(`(async () => { const p = window.__fve.exportData().project; const meta = { ratio: p.ratio, width: p.width, height: p.height, duration: 3.5, slots: 2 }; return window.api.templatesPack(JSON.stringify(p), meta); })()`);
-        result.ready = !!(packRes && !packRes.error && packRes.dir);
-        const parent = path.join(dir, 'packages');
-        const pkg = path.join(parent, fs.readdirSync(parent)[0]);
-        fs.copyFileSync(clipA, path.join(pkg, 'preview.mp4'));
-        result.package = fs.readdirSync(pkg).sort();
-        result.meta = JSON.parse(fs.readFileSync(path.join(pkg, 'template.json'), 'utf8')).meta;
-        await shot('tpl-2-package.png');
-      } else {
-        const { dialog } = require('electron');
-        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [photo] });
-        await q(`window.__fve.tab('templates')`);
-        result.cards = await until(`document.querySelectorAll('.tst-grid .tst-card').length > 0`);
-        result.thumb = await until(`!!document.querySelector('.tst-grid .tst-card img')`);
-        result.categories = await q(`[...document.querySelectorAll('.side-nav .side-btn')].map((b) => b.textContent.trim())`);
-        if (!result.cards) result.panel = await q(`document.querySelector('.library').innerText.slice(0, 400)`);
-        await shot('tpl-3-store.png');
-        await q(`document.querySelector('.tst-grid .tst-card').click()`);
-        result.preview = await until(`(document.querySelector('.tst-player video')?.readyState || 0) >= 2`);
-        result.detail = await q(`document.querySelector('.tst-info')?.innerText`);
-        await shot('tpl-4-detail.png');
-        await q(`[...document.querySelectorAll('.tst-info .btn')].find((b) => /Use template/.test(b.textContent)).click()`);
-        result.loaded = await until(`window.__fve.exportData().project.videoClips.length === 3 && document.querySelectorAll('.ts-strip .ts-slot').length === 2`, 30000);
-        const before = await q(`window.__fve.exportData().project.videoClips.map((c) => (c.out - c.in) / (c.speed || 1))`);
-        await q(`document.querySelector('.ts-strip .ts-replace').click()`);
-        result.replaced = await until(`window.__fve.exportData().project.videoClips[0].filled === true`);
-        const after = await q(`window.__fve.exportData().project`);
-        result.newMedia = after.media.find((m) => m.id === after.videoClips[0].mediaId)?.name;
-        result.lengthKept = Math.abs((after.videoClips[0].out - after.videoClips[0].in) / (after.videoClips[0].speed || 1) - before[0]) < 1e-6;
-        result.mediaFromCache = after.media.filter((m) => m.path.includes('templates-test')).length;
-        result.textKept = after.textClips[0]?.text;
-        result.saveState = await q(`document.querySelector('.save-state')?.textContent || ''`);
-        await wait(2500);
-        await shot('tpl-5-replaced.png');
-      }
-    } catch (e) {
-      result.error = e.message;
-    }
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
-  }
   if (process.env.FVE_SMOKE_MODE === 'restore') {
     // A session that ended without saving: the next start offers the project back.
     try {
@@ -212,7 +127,10 @@ module.exports = async function smoke(win, app, dir) {
     const until = async (js, ms = 10000) => { for (let t = 0; t < ms; t += 200) { if (await q(js)) return true; await wait(200); } return false; };
     const readName = () => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).name : null);
     try {
-      await wait(800);
+      // The app starts on Home: a frame card opens the editor, then the test project replaces the new one.
+      await until(`!!window.__fve && !!document.querySelector('.home-frame-card')`, 15000);
+      await q(`document.querySelector('.home-frame-card').click()`);
+      await until(`!!document.querySelector('.topbar')`, 5000);
       await q(`window.__fve.load(${fs.readFileSync(path.join(dir, 'project.json'), 'utf8')})`);
       await wait(400);
       result.stateBefore = await q(`document.querySelector('.save-state')?.textContent || ''`);
@@ -225,7 +143,7 @@ module.exports = async function smoke(win, app, dir) {
       await wait(6000);
       result.openAfterCancel = !win.isDestroyed() && await q(`!document.querySelector('.close-modal')`);
       // Save once (the Save dialog picks the file), then changes are written by themselves.
-      await q(`[...document.querySelectorAll('.top-actions .btn')].find((b) => b.textContent.trim() === 'Save').click()`);
+      await q(`document.querySelector('.project-meta .save-now').click()`);
       result.savedFile = await until(`/Saved/.test(document.querySelector('.save-state')?.textContent || '')`);
       result.nameAfterSave = readName();
       await q(`window.__fve.dispatch({ type: 'setProject', patch: { name: 'Auto saved' } })`);
@@ -251,65 +169,6 @@ module.exports = async function smoke(win, app, dir) {
     }
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.exit(0);
-  }
-  if (process.env.FVE_SMOKE_MODE === 'generate') {
-    // Generate tab: without a key it asks for one; with FVE_SMOKE_ELEVEN_KEY (saved only in the test settings) a
-    // lower plan shows the Pro card and disables Generate.
-    try {
-      const q = run;
-      const until = async (js, ms = 20000) => { for (let t = 0; t < ms; t += 250) { if (await q(js)) return true; await wait(250); } return false; };
-      const text = () => q(`document.querySelector('.library').innerText`);
-      await wait(800);
-      await q(`window.__fve.tab('generate')`);
-      result.noKeyCard = await until(`/ElevenLabs key needed/.test(document.querySelector('.library').innerText)`);
-      result.nav = await q(`[...document.querySelectorAll('.side-nav .side-btn')].map((b) => b.textContent.trim())`);
-      await shot('gen-1-nokey.png');
-      if (process.env.FVE_SMOKE_ELEVEN_KEY) {
-        require("../../electron/system/settings.cjs").saveServiceKey('elevenlabs', process.env.FVE_SMOKE_ELEVEN_KEY);
-        await q(`window.__fve.tab('audio')`);
-        await wait(200);
-        await q(`window.__fve.tab('generate')`);
-        result.proCard = await until(`/Upgrade to ElevenLabs Pro/.test(document.querySelector('.library').innerText)`);
-        result.proText = (await text()).match(/Generating videos[^\n]*/)?.[0] || null;
-        result.generateDisabled = await q(`[...document.querySelectorAll('.library button')].find((b) => /Needs ElevenLabs Pro/.test(b.textContent))?.disabled === true`);
-        await shot('gen-2-pro.png');
-        // Video: the References mode lists reference photos (with a role for Veo).
-        await q(`[...document.querySelectorAll('.library .seg-tabs button')].find((b) => b.textContent === 'References').click()`);
-        await wait(200);
-        await q(`[...document.querySelectorAll('.library button')].find((b) => /Add a reference photo/.test(b.textContent)).click()`);
-        await wait(200);
-        result.veoRole = /Person \/ object/.test(await text());
-        result.videoModels = await q(`[...document.querySelectorAll('.library select[aria-label="Model"] option')].map((o) => o.textContent)`);
-        await shot('gen-3-video-refs.png');
-        await q(`document.querySelector('.library .tab-content').scrollTop = 400`);
-        await wait(150);
-        await shot('gen-3-video-refs-form.png');
-        await q(`[...document.querySelectorAll('.side-btn')].find((b) => b.textContent.trim() === 'Photo').click()`);
-        await wait(300);
-        result.photoView = /Generate a photo/.test(await text());
-        result.imageModels = await q(`document.querySelectorAll('.library select[aria-label="Model"] option').length`);
-        await shot('gen-4-photo.png');
-        await q(`document.querySelector('.library .tab-content').scrollTop = 400`);
-        await wait(150);
-        await shot('gen-4-photo-form.png');
-        // My avatars (the app logo stands in for a person) and the talking avatar form.
-        require("../../electron/library/gen.cjs").avatarAdd(path.join(dir, 'avatars-test'), path.join(__dirname, "../../public/logo.png"), 'Sample');
-        await q(`[...document.querySelectorAll('.side-btn')].find((b) => b.textContent.trim() === 'My avatars').click()`);
-        result.avatarCard = await until(`document.querySelectorAll('.gen-avatar').length === 1`);
-        await shot('gen-5-avatars.png');
-        await q(`document.querySelector('.gen-avatar .btn').click()`);
-        await wait(400);
-        result.talkView = /Talking avatar/.test(await text()) && await q(`!!document.querySelector('.gen-pick img')`);
-        await shot('gen-6-talk.png');
-        await q(`document.querySelector('.library .tab-content').scrollTop = 400`);
-        await wait(150);
-        await shot('gen-6-talk-form.png');
-      }
-    } catch (e) {
-      result.error = e.message;
-    }
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
   }
   if (process.env.FVE_SMOKE_MODE === 'mediadel') {
     // Media cards: the remove button does not sit under the star; Delete removes the focused card only.
@@ -702,24 +561,6 @@ module.exports = async function smoke(win, app, dir) {
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }
-  if (process.env.FVE_SMOKE_MODE === 'stats') {
-    // Anonymous statistics: asked once; "No thanks" is saved and the question never comes back.
-    await wait(4000);
-    result.promptShown = await run(`!!document.querySelector('.stats-note')`);
-    await shot('stats-prompt.png');
-    await run(`[...document.querySelectorAll('.stats-note button')].find((b) => b.textContent === 'No thanks').click()`);
-    await wait(500);
-    result.promptGone = await run(`!document.querySelector('.stats-note')`);
-    const file = path.join(dir, 'settings-test', 'telemetry.json');
-    const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-    result.savedConsent = saved.consent;
-    result.noId = !saved.installId;
-    wc.reload();
-    await wait(4000);
-    result.notAskedAgain = await run(`!document.querySelector('.stats-note')`);
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
-  }
   if (process.env.FVE_SMOKE_MODE === 'filterchip') {
     // A clip's filter shows as a chip on the timeline; its × removes the filter (one undo step), the clip stays
     // selected as it was; the right-click menu can remove it too.
@@ -1032,47 +873,8 @@ module.exports = async function smoke(win, app, dir) {
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }
-  // Piper voices as optional downloads (Settings > Voice), then Text to speech onto the timeline.
-  if (process.env.FVE_SMOKE_MODE === 'tts') return require('./smoke-piper-settings.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'trpanel') {
-    // Click a transition on the timeline, change it in its panel, apply to all, delete it.
-    try {
-      await wait(800);
-      await run(`window.__fve.load(${fs.readFileSync(path.join(dir, 'project.json'), 'utf8')})`);
-      await wait(500);
-      const q = (js) => run(js);
-      const trs = () => q(`window.__fve.exportData().project.videoClips.map((c) => c.transition ? c.transition.type + '/' + c.transition.duration : '-')`);
-      const setVal = (sel, v) => q(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(v)}); el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); })()`);
-      result.before = await trs();
-      await q(`document.querySelectorAll('.tr-marker')[0].dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
-      await wait(300);
-      result.panel = await q(`document.querySelector('.inspector .panel-title').textContent + ' / ' + document.querySelector('.fx-head b').textContent`);
-      result.span = await q(`!!document.querySelector('.tr-span')`);
-      await setVal('.inspector select', 'fx_comic');
-      await wait(200);
-      await setVal('.inspector input[type=range]', '0.35');
-      await wait(200);
-      result.changed = await trs();
-      await shot('trpanel-1.png');
-      await q(`[...document.querySelectorAll('.inspector button')].find((b) => b.textContent === 'Apply to all').click()`);
-      await wait(200);
-      result.applied = await trs();
-      await q(`[...document.querySelectorAll('.inspector button')].find((b) => b.textContent.includes('Reset')).click()`);
-      await wait(200);
-      result.reset = await trs();
-      await q(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }))`);
-      await wait(200);
-      result.deleted = await trs();
-      await q(`window.__fve.dispatch({ type: 'undo' })`);
-      await wait(200);
-      result.undone = await trs();
-    } catch (e) {
-      result.error = e.message;
-    }
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
-  }
+  // The VoiceStudio connector (Settings > Voice) against a stand-in VoiceStudio, then Text to speech onto the timeline.
+  if (process.env.FVE_SMOKE_MODE === 'tts') return require('./smoke-voicestudio-settings.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'freefx') {
     // Free effects on the Effects track: add from the panel, stretch, move, see it in the player, export.
     try {
@@ -1201,7 +1003,7 @@ module.exports = async function smoke(win, app, dir) {
       const p = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
       await q(`window.__fve.load(${JSON.stringify(p)})`);
       await wait(1000);
-      await q(`document.querySelector('.stats-note .icon-btn')?.click(); window.__fve.select({ track: 'video', id: ${JSON.stringify(p.videoClips[0].id)} })`);
+      await q(`window.__fve.select({ track: 'video', id: ${JSON.stringify(p.videoClips[0].id)} })`);
       await wait(800);
       result.panel = await q(`!!document.querySelector('.stab-levels')`);
       await pick('Recommended');
@@ -1233,36 +1035,6 @@ module.exports = async function smoke(win, app, dir) {
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }
-  if (process.env.FVE_SMOKE_MODE === 'deco') {
-    // Mask outline / glow: <dir>/project.json with a round camera-like overlay that has a stroke and a glow. The
-    // overlay is selected so the Mask tab shows its controls; the player and an exported frame are saved.
-    const q = run;
-    try {
-      await wait(800);
-      const p = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
-      await q(`window.__fve.load(${JSON.stringify(p)})`);
-      await wait(1200);
-      const ov = p.overlayClips[0];
-      await q(`document.querySelector('.stats-note .icon-btn')?.click(); window.__fve.seek(1.5); window.__fve.select({ track: 'overlay', id: ${JSON.stringify(ov.id)} })`);
-      await wait(800);
-      await q(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Mask')?.click()`);
-      await wait(600);
-      await q(`[...document.querySelectorAll('.section, section')].find((x) => x.textContent.includes('Outline and glow'))?.scrollIntoView()`);
-      await wait(1000);
-      result.decoShown = await q(`[...document.querySelectorAll('.slot.ov .layer.deco')].map((d) => d.style.display + ' ' + (d.style.backgroundImage || '').slice(0, 30))`);
-      result.controls = await q(`!!document.querySelector('[aria-label="Stroke color"]') && !!document.querySelector('[aria-label="Glow color"]')`);
-      await shot('deco-editor.png');
-      const out = path.join(dir, 'deco-export.mp4');
-      await runExport((await q('window.__fve.exportData()')).project, out, () => {}).promise;
-      const { execFileSync } = require('child_process');
-      const { ffmpegPath } = require("../../electron/media/ffmpeg.cjs");
-      execFileSync(ffmpegPath, ['-y', '-v', 'error', '-ss', '1.5', '-i', out, '-frames:v', '1', path.join(dir, 'deco-export.png')]);
-    } catch (e) {
-      result.error = e.message;
-    }
-    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
-    return app.quit();
-  }
   if (process.env.FVE_SMOKE_MODE === 'autocolor') {
     // Adjust > Auto color on <dir>/project.json's first clip (a video with a color cast): the sliders it sets, and
     // the player before / after.
@@ -1273,7 +1045,7 @@ module.exports = async function smoke(win, app, dir) {
       const p = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
       await q(`window.__fve.load(${JSON.stringify(p)})`);
       await wait(1200);
-      await q(`document.querySelector('.stats-note .icon-btn')?.click(); window.__fve.seek(2); window.__fve.tab('adjust')`);
+      await q(`window.__fve.seek(2); window.__fve.tab('adjust')`);
       await wait(1200);
       await shot('autocolor-before.png');
       const m0 = p.media[0];
@@ -1300,7 +1072,7 @@ module.exports = async function smoke(win, app, dir) {
       const p = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'));
       await q(`window.__fve.load(${JSON.stringify(p)})`);
       await wait(1000);
-      await q(`document.querySelector('.stats-note .icon-btn')?.click(); document.querySelector('[aria-label="Settings"]').click()`);
+      await q(`document.querySelector('[aria-label="Settings"]').click()`);
       await wait(600);
       await q(`[...document.querySelectorAll('.settings-section')].find((s) => s.textContent.includes('Proxy')).scrollIntoView()`);
       await q(`[...document.querySelectorAll('.settings-section')].find((s) => s.textContent.includes('Proxy')).querySelector('input[type=checkbox]').click()`);
@@ -1362,12 +1134,48 @@ module.exports = async function smoke(win, app, dir) {
       await wait(400);
       result.rows = await run(`[...document.querySelectorAll('.tl-lane')].map((l) => l.dataset.lane + ':' + l.querySelectorAll('.layer-band').length)`);
       result.audioTops = await run(`[...document.querySelectorAll('.clip.audio')].map((c) => c.style.top)`);
-      await run(`document.querySelector('.stats-note .icon-btn')?.click(); window.__fve.seek(2)`);
+      await run(`window.__fve.seek(2)`);
       await wait(800);
       await shot('tracks.png');
       await run(`(() => { const s = document.querySelector('.tl-scroll'); s.scrollTop = s.scrollHeight; })()`);
       await wait(300);
       await shot('tracks-audio.png');
+    } catch (e) {
+      result.error = e.message;
+    }
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
+    return app.quit();
+  }
+  if (process.env.FVE_SMOKE_MODE === 'language') {
+    // UI language (docs/design/localization.md): launched with settings.json { language: 'fr' }, Home, Settings
+    // and About render in French, the document carries lang="fr", and the Language page shows the choice.
+    win.webContents.setBackgroundThrottling(false); win.show();
+    const q = run;
+    const until = async (js, ms) => { for (let t = 0; t < ms; t += 250) { if (await q(js)) return true; await wait(250); } return false; };
+    const uiLang = process.env.FVE_UI_LANGUAGE || 'fr'; // the launcher wrote the same value into settings.json
+    const fr = JSON.parse(fs.readFileSync(path.join(__dirname, `../../shared/i18n/${uiLang}.json`), 'utf8'));
+    try {
+      await until(`!!window.__fve && !!document.querySelector('.home-frame-card')`, 15000);
+      result.lang = await q('document.documentElement.lang');
+      result.homeActions = await q(`[...document.querySelectorAll('.home-top .home-action')].map((b) => b.textContent.trim())`);
+      result.expectedActions = [fr['home.open_project'], fr['home.import_media'], fr['home.record_screen']];
+      result.newProject = await q(`document.querySelector('#home-new-title')?.textContent || ''`);
+      await q(`document.querySelector('.home-settings').click()`);
+      await until(`!!document.querySelector('.set2-rail button[data-section=language]')`, 5000);
+      result.railLanguage = await q(`document.querySelector('.set2-rail button[data-section=language]')?.textContent.trim() || ''`);
+      result.railGeneral = await q(`document.querySelector('.set2-rail-label')?.textContent.trim() || ''`);
+      await q(`document.querySelector('.set2-rail button[data-section=language]').click()`);
+      await until(`!!document.querySelector('select[aria-label]') && document.querySelector('.set2-page-head h4')`, 5000);
+      result.languagePageTitle = await q(`document.querySelector('.set2-page-head h4')?.textContent || ''`);
+      result.selected = await q(`document.querySelector('.set2-page select')?.value || ''`);
+      await q(`document.querySelector('.settings .about-btn').click()`);
+      await until(`/\\d/.test(document.querySelector('.about-vpill')?.textContent || '')`, 5000);
+      result.aboutVersion = await q(`document.querySelector('.about-vpill')?.textContent || ''`);
+      result.expectedVersion = fr['home.version'];
+      result.englishLeft = await q(`[...document.querySelectorAll('.modal.about button, .home-top button')].map((b) => b.textContent.trim()).filter((s) => /^(Open project|Import media|Record screen|Releases on GitHub|Source code)$/.test(s))`);
+      await q('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))'); await wait(150);
+      await shot(`language-${uiLang}.png`);
+      result.ok = result.lang === uiLang && JSON.stringify(result.homeActions) === JSON.stringify(result.expectedActions) && result.newProject === fr['home.new_project'] && result.railLanguage === fr['settings.language'] && result.railGeneral === fr['settings.general'] && result.selected === uiLang && result.englishLeft.length === 0;
     } catch (e) {
       result.error = e.message;
     }

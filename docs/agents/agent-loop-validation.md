@@ -11,7 +11,7 @@ of the affected interval; longer lists of edits are verified in batches. These
 are sampled checks, not a guarantee of continuous playback or visual quality.
 
 Model requests, retry waits, speech, library/stock fetches and MCP calls receive
-request-owned cancellation. Piper receives process/stream cancellation; cloud
+request-owned cancellation. Local speech (VoiceStudio, over HTTP) receives request cancellation; cloud
 requests are aborted locally. Remote services determine whether work already
 accepted on their servers can be stopped. MCP cancellation uses the original
 request ID; initialization remains shared and is not canceled on the wire.
@@ -58,7 +58,7 @@ GUI process cannot find Node, set `FVE_SMOKE_NODE` to the Node executable path.
 Validated alongside runner, tool, context, edit-contract, audio, frame, scene,
 range-edit, speed-sync, chat-session, vision-transport, installed-agent, MCP,
 AI-adapter, thinking, Gemini TTS and offline TTS tests, plus a
-renderer production build. The native Windows Piper executable was not exercised
+renderer production build. The Piper engine of that time (since replaced by the VoiceStudio connector) was not exercised on Windows
 on macOS. Full battery results from the earlier editing work
 are documented separately in `agent-editing-validation.md`; they were not
 reclassified as passing by this change.
