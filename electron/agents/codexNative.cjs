@@ -2,6 +2,7 @@
 // callbacks; no MCP server and no JSON-tool-plan prompting are involved.
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
+const { version } = require('../../package.json');
 const { abortError, checkAbort, abortable } = require("../system/cancel.cjs");
 // Codex features that can put a tool or an action in front of the model; disabled by default.
 // Native editor sessions enable code_mode_host below: models using code mode need that bridge
@@ -33,7 +34,7 @@ class CodexNative {
     this.lines = readline.createInterface({ input:this.proc.stdout });
     this.lines.on('line', line => { try { this.receive(JSON.parse(line)); } catch (error) { this.fail(new Error('Codex returned an invalid protocol message.')); } });
     this.ready = (async () => {
-      await this.request('initialize', { clientInfo:{name:'clipcraft',title:'ClipCraft',version:'1.1.3'}, capabilities:{experimentalApi:true} },catalogOnly?10000:30000);
+      await this.request('initialize', { clientInfo:{name:'clipcraft',title:'ClipCraft',version}, capabilities:{experimentalApi:true} },catalogOnly?10000:30000);
       this.send({method:'initialized'});
       if (catalogOnly) return;
       const thread = await this.request('thread/start', { cwd, ...(cfg.model ? {model:cfg.model} : {}), baseInstructions:system, approvalPolicy:'never', sandbox:'read-only', ephemeral:true,

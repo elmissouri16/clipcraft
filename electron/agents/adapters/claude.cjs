@@ -3,6 +3,7 @@
 // instructions. Claude's own built-ins stay off except its web tools under Web research.
 const research = require('../research.cjs');
 const { LIMITS } = require('../contract.cjs');
+const { version } = require('../../../package.json');
 
 // opts: { sdk, executablePath, cwd, env, cfg, system, tools, webResearch }
 function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools, webResearch }) {
@@ -14,7 +15,7 @@ function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools
   const ensureServer = () => {
     if (server) return server;
     // Its timeout sits above the shared tool timeout, which the session manager enforces.
-    server = sdk.createSdkMcpServer({ name: 'clipcraft', version: '1.0.0', tools: [], alwaysLoad: true, timeout: LIMITS.toolCallTimeoutMs + 60000 });
+    server = sdk.createSdkMcpServer({ name: 'clipcraft', version, tools: [], alwaysLoad: true, timeout: LIMITS.toolCallTimeoutMs + 60000 });
     for (const declaration of tools) {
       // Public SDK instance registration accepts a whole Zod object, so open-ended external tool
       // schemas retain additional properties.

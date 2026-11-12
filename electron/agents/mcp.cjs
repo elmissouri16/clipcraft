@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const { abortable, checkAbort, abortError } = require("../system/cancel.cjs");
 
 const PROTOCOL_VERSION = '2024-11-05';
-const CLIENT_INFO = { name: 'ClipCraft', version: '2.0.0' };
+const CLIENT_INFO = { name: 'ClipCraft', version: require('../../package.json').version };
 
 class McpError extends Error {}
 

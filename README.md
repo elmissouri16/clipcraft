@@ -1,400 +1,177 @@
-<p align="center">
-  <img src="https://clipcrafts.pages.dev/assets/logo.png" width="110" alt="ClipCraft logo" />
-</p>
-
-<h1 align="center">ClipCraft</h1>
-
-<p align="center">
-  <b>A free desktop video editor for creators who want pro results without a subscription.</b>
-</p>
-
-<p align="center">
-  Timeline editing · transitions &amp; effects · animated text · auto captions · built-in stock · an AI assistant that works with your own API keys.<br>
-  By <b>Hamza Abika</b>.
-</p>
-
-<p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.1.3-825cfb?style=flat-square">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%20·%20Windows%20·%20macOS-825cfb?style=flat-square">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-825cfb?style=flat-square">
-  <img alt="Electron" src="https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white">
-  <img alt="React" src="https://img.shields.io/badge/React-20232a?style=flat-square&logo=react&logoColor=61dafb">
-  <img alt="FFmpeg" src="https://img.shields.io/badge/FFmpeg-007808?style=flat-square&logo=ffmpeg&logoColor=white">
-</p>
-
-<p align="center">
-</p>
-
-<p align="center">
-  <a href="https://clipcrafts.pages.dev">Website</a> ·
-  <a href="https://github.com/elmissouri16/clipcraft/releases">Releases</a>
-</p>
-
-<br>
-
-<p align="center">
-  <img src="https://clipcrafts.pages.dev/assets/editor.png" alt="The ClipCraft editor: media bin with project clips on the left, the live player in the centre, project settings on the right, and a multi-track timeline below" width="100%">
-</p>
-
-<p align="center"><sub><i>The editor.</i> Media bin, live player and a multi-track timeline — effects, captions and overlays stacked over the picture, with project settings one click away. What the player shows is what the export renders.</sub></p>
-
-<p align="center">
-  <a href="#about">About</a> ·
-  <a href="#demo">Demo</a> ·
-  <a href="#highlights">Highlights</a> ·
-  <a href="#transitions">Transitions</a> ·
-  <a href="#effects">Effects</a> ·
-  <a href="#text-templates">Text templates</a> ·
-  <a href="#craftai">CraftAI</a> ·
-  <a href="#export">Export</a> ·
-  <a href="#download">Download</a> ·
-  <a href="#run-from-source">Get started</a> ·
-  <a href="#ownership--license">License</a>
-</p>
-
-<br>
-
-## About
-
-ClipCraft is a free, open-source desktop video editor and covers what people actually open an editor for: multi-track cutting, transitions and effects, animated titles, auto-captions, templates, stock media and clean 4K export. With none of the catches: **no watermark, no account, no subscription, no upload.** Your projects and footage stay on your computer, and everything — including the template library — works offline.
-
-**Good for:** TikTok, Reels and Shorts, YouTube videos, tutorials and screen recordings, podcast clips.
-
-## Demo
-
-<p align="center"><b>▶ <a href="https://clipcrafts.pages.dev/assets/demo.mp4">Watch the screen recording</a></b> — home, timeline, transitions, effects and live playback, in under a minute.<br>
-<sub>Sample output: <a href="https://clipcrafts.pages.dev/assets/caption-sample.mp4">word-by-word caption animation</a>, exported from ClipCraft.</sub></p>
-
-<p align="center">
-  <img src="https://clipcrafts.pages.dev/assets/home.png" alt="The ClipCraft home screen: start a project in 16:9, 9:16, 1:1, 4:5 or 21:9 at 24, 30 or 60 fps, or jump back into a recent project" width="100%">
-</p>
-
-<p align="center"><sub><i>Start in the frame your video lives in</i> — landscape, vertical, square, portrait or cinematic, at 24, 30 or 60 fps. Reshape later, any time, in the editor. Recent projects return with real poster frames, and the Home screen carries the Support spot.</sub></p>
-
-## Highlights
-
-- 🚫 **No watermark. No account. No paywall.**
-- 🔒 **100% local.** Nothing uploads. Works offline.
-- 🎞️ **Multi-track timeline.** Video, audio, text, overlays and effects tracks, with keyframes, masks and chroma key.
-- ✂️ **Precision crop.** The crop frame is the rendered picture, pixel-true at any rotation — drag the edges or the centre, rotate with the slider, and confirm or cancel as one step.
-- 🌈 **135+ transitions and a growing effects library**, every one previewed on real footage before you apply it.
-- 💬 **Auto-captions.** Free on-device Whisper — including a Darija model — or bring a cloud key for speed.
-- 🔤 **Animated text done properly.** 54 text templates, word-by-word styling, and real RTL/Arabic shaping.
-- 🧩 **Built-in stock photos, sounds and music.** And a screen recorder that drops captures straight onto the timeline.
-- 🤖 **CraftAI.** An AI editing assistant that runs on *your* provider and *your* key.
-- ⚡ **Fast, honest export.** Trimmed sources are seeked, not re-decoded from zero — exports of clips cut from long footage start instantly and run up to ~40% faster, byte-identical to before. Adaptive performance modes (Low-End / Balanced / High-Performance) tune background work to your machine, and never touch export quality.
-
-## Edit
-
-**A timeline you already know.** Drag media in, trim on the track, stack text and overlays above the picture. Per-clip keyframes, masks, chroma key, a custom removal brush, stabilization, motion tracking and speed control are all there, and the player previews the real render pipeline — transitions, effects and text included.
-
-The speaker button in the player opens preview volume and mute controls, shared
-with media previews. Clip volumes, export audio and the mix meter stay unchanged;
-your listening level is remembered on this computer.
-
-- **Color grading** — curves, HSL, wheels and .cube LUTs.
-- **Subtitles as clips** — import an SRT, restyle one caption or all of them, timing untouched.
-- **Sequence guard** — if your footage doesn't match the project, ClipCraft asks before changing anything.
-
-Local captions on macOS use an installed [whisper.cpp CLI](https://github.com/ggml-org/whisper.cpp).
-Install it once with `brew install whisper-cpp` if needed. ClipCraft detects both
-Homebrew locations, including when opened from Finder, and downloads the selected
-speech model on first use. Custom installations can set `CLIPCRAFT_WHISPER_CLI`
-to the full `whisper-cli` path. The engine stays in its installation directory so
-its native libraries remain available.
-
-<p align="center">
-  <img src="https://clipcrafts.pages.dev/assets/crop.png" alt="Crop mode: the frame hugs the rendered picture with edge and centre handles, a thirds grid, alignment guides and a rotation slider" width="100%">
-</p>
-
-<p align="center"><sub><i>Crop mode.</i> The frame is the picture itself — handles, centre move, centre guides and a −45°…+45° rotation control, with aspect presets that are true in source pixels. Done is one undo step; Cancel changes nothing.</sub></p>
-
-## Transitions
-
-**135+ transitions in themed packs** — Basic, Zoom, Slide, 3D, Glitch, Blur, Light, Wipe, Creative and Vintage, plus Seamless, Mask & Reveal, Light & Glow, Distortion and Cinematic packs. Every tile previews the real engine on real photos, so the tile you pick is the cut you get. Set the duration, drop one between two clips, done.
-
-## Effects
-
-Glitch & digital, film looks, light leaks and more — stack effects on any clip, or stretch one across the effects track over any part of the video. Per-clip color, chroma key with an in-app color sampler, masks (including a freehand custom mask), and a voice enhancer round out the toolkit.
-
-## Text templates
-
-**54 original templates** in browsable rows — Basics, Captions, the **Craft** set, the **Motion** row of slide templates (Slide Up, Smooth Slide, Slide Blur, Rise & Fade…), and an Arabic row whose previews read «صُنع بواسطة ClipCraft». One click applies; favorites and search are built in.
-
-<p align="center">
-  <img src="https://clipcrafts.pages.dev/assets/templates.png" alt="Text templates in ClipCraft: browsable rows of original designs with live previews" width="60%">
-</p>
-
-<p align="center"><sub>The Craft and Motion template rows and the Arabic row are pictured on the <a href="https://clipcrafts.pages.dev">ClipCraft site</a>.</sub></p>
-
-## CraftAI
-
-CraftAI is an AI editing assistant inside the editor: one-click looks, or just say what to do — cut the filler, style the captions, apply a look — and watch it work on your timeline. It works with **your provider and your key** — Gemini, OpenAI, Anthropic, xAI Grok, Mistral, DeepSeek, Groq, OpenRouter, Ollama and more — and it shows its work: you stay in control of every change.
-
-## Native AI agents
-
-CraftAI can also use **Codex** or **Claude** with their native executables and
-existing authentication. In **Settings → AI assistant**, select **Codex (native)**
-or **Claude (native)**. ClipCraft reuses an installed agent or offers a one-time
-native download. Node and npm are not required. Downloads show progress, support
-cancellation and retry, and verify pinned checksums before installation. The
-native runtimes are excluded from ClipCraft's installer. Use **Browse** for an
-executable in a custom location, then press
-**Test connection** and **Save**. No API key needs to be copied into ClipCraft
-for these choices.
-
-Install and sign in using the provider's own instructions:
-[Codex CLI](https://developers.openai.com/codex/cli) or
-[Claude](https://code.claude.com/docs/en/quickstart). Leave **Model** blank to
-use the installed CLI's configured default, or choose a specific model from the
-**Model** dropdown. Choices load automatically from Claude's SDK catalog or
-Codex's live CLI catalog, with a cached fallback. **Refresh models** reloads the list; **Custom model
-ID…** lets you enter an ID that is not listed. Click **Save** to use the selected
-model in CraftAI.
-
-You can also click the model badge directly in the **CraftAI chat header**.
-Pick a model or enter a custom ID; the choice saves immediately for your next
-message without leaving the conversation. The same picker includes **Thinking
-effort** with the allowed levels for the selected model. Choices come from the
-installed agent or provider metadata, with documented fallbacks for known API
-models. Unsupported or unknown models keep **Default** available. Choose an
-explicit model when using a CLI default to see model-specific levels. Preferences
-are saved separately for each provider/model; clearing a choice restores the
-existing default behavior. See [thinking controls](docs/agents/ai-thinking.md).
-
-Chat sessions, completed conversation context, and drafts are saved with each
-project and its autosave. Use **New chat** to start another conversation, then
-the **Chat sessions** selector to return to an earlier one. Interrupted requests
-reopen as interrupted and are never run automatically. Older project files open
-with an empty chat history.
-
-CraftAI loads editing tool groups as needed and can read a specific track, clip,
-or page of project data. Matching project revisions let it reuse known ids and
-timings. Large or repeated tool results are abbreviated in model requests; the
-full saved results remain available through context recall. Repeated project,
-transcription, option and guide reads are cached within a request and invalidated
-when the project changes.
-Each tool has its own action icon beside its running, completed or failed status.
-Replies show a rough input-token estimate across their model requests, based on
-prompt and schema characters; this is not the provider's billed token count.
-
-These backends support the same CraftAI editing tools and Undo as the existing
-API providers. **Stop** cancels an in-flight SDK request. Selecting an installed
-agent never silently falls back to a different API provider. Authentication,
-account limits, and model access are managed by the installed CLI and provider;
-these options do not turn cloud models into offline models. Media services such
-as cloud transcription, image generation, stock search, and paid voice services
-keep their existing engines and credentials; CraftAI can orchestrate them through
-its normal editor tools.
-
-For contributors, `node tests/unit/agents/test-local-agents.cjs`,
-`node tests/unit/agents/test-agent-runner.mjs`, and `node tests/unit/agents/test-ai-cancel.cjs` run
-without real accounts. The opt-in live editor check is
-`FVE_SMOKE=<temporary directory> FVE_SMOKE_MODE=local-agents npm run dev`;
-it uses the installed CLI logins for small connection/edit prompts and keeps
-project/settings test data separate from the normal profile.
-
-
-### Codex images for scenes and characters
-
-When **Codex SDK** is selected, CraftAI can use the installed Codex `imagegen`
-skill and native image-generation tool. It uses the CLI's existing login; it
-does not ask for a separate image API key or switch to another provider.
-Your installed Codex version, account and selected model must support native
-image generation, and its bundled `imagegen` skill must be present.
-
-Ask for the scene and timing, for example: “Generate an original paper robot
-character for a four-second scene starting at two seconds, then add a slow
-zoom.” CraftAI's `generate_image` tool imports the image into project media,
-places it on the timeline, and returns its clip ID for motion and placement
-tools. It can reuse existing project images as character references for later
-scenes. Each call generates one image; use separate calls for separate scenes.
-On an empty or shorter timeline, background is extended to cover the new scene.
-Codex receives the current template's pixel width, height and aspect ratio.
-If its native output size differs, the imported PNG is proportionally cropped
-and resized to the exact canvas dimensions; transparency is preserved.
-
-AI-added library and stock footage always fills the current canvas on insertion,
-including landscape sources in a portrait video. This uses a centered source
-crop, so subsequent zooms still fill the frame. Legacy `fit` arguments on
-insertion cannot turn a scene into a letterboxed strip. For an existing clip,
-`set_transform` with `fit: "fill"` reframes it to the current canvas; optional
-`focus_x` / `focus_y` keep an off-center subject in view. An explicit whole-source
-request can use `fit: "fit"` on that framing edit. The inspector's Fit / Fill
-buttons use the same base framing, with scale reset to one and old framing
-keyframes cleared; opacity fades stay intact. The first source preserves the
-template size. Project reads report base coverage and source crop percentages.
-
-For multiple independent scenes, CraftAI requests image calls together. Up to
-three native image jobs run at once; additional scenes queue automatically.
-Images are imported in prompt order, with their requested timing, after the
-batch finishes. A failed scene leaves the other results usable. Generate a new
-character reference first, then generate its later scenes together using that
-reference. Other editor tools run in order between image batches.
-
-Completed images are copied into ClipCraft's media storage before the temporary
-Codex workspace is removed. They support the usual Undo, Redo and export.
-**Stop** cancels an in-flight image request. Failed or unavailable generation
-does not insert placeholder art. Editor changes use structured tools;
-native image generation runs in a separate session.
-
-Contributor checks: `node tests/unit/agents/test-codex-images.cjs` and the default
-`FVE_SMOKE_MODE=codex-images` Electron smoke are offline. Opt into a real native
-generation with `FVE_CODEX_IMAGES_LIVE=1`; optionally supply an existing character
-image through `FVE_CODEX_IMAGE_REFERENCE`. Use an isolated `FVE_SMOKE` directory.
-Parallel checks: `node tests/unit/agents/test-image-jobs.cjs`,
-`node tests/unit/agents/test-parallel-images.mjs`, and
-`FVE_SMOKE_MODE=codex-images-parallel` (same live opt-in).
-Frame checks: `node tests/unit/preview/test-scene-frame.mjs` and
-`FVE_SMOKE_MODE=codex-images-portrait` (same live opt-in).
-
-### Codex visual inspection
-
-With **Codex SDK** selected, CraftAI can use `inspect_frames` in the media tool
-group to look at video moments. It can inspect uncropped source pictures or
-the composed preview, including crops, overlays, titles, keyframes and effects.
-The selected model must support image input.
-
-Ask, for example: “Look at the first scene, check whether the face and title
-fit the vertical frame, adjust them if needed, then check again.” Frames use
-timeline seconds; source inspection also reports the corresponding source
-time after trims and speed changes. Up to six recent captures are attached
-as actual images to Codex's subsequent editing turns, with timestamp and
-project-revision labels. This samples still images; it does not watch continuous
-playback or listen to audio.
-
-Composed captures use an isolated instance of ClipCraft's preview renderer.
-Inspection does not move the playhead, change project media, or create Undo
-entries. Temporary frame files stay outside project media and are removed when
-the app exits; saved chat history stores frame handles and metadata. A later
-chat request must inspect again to obtain fresh visual evidence. **Stop** cancels
-capture and closes its renderer.
-
-Checks: `node tests/unit/agents/test-agent-frames.mjs` and
-`FVE_SMOKE_MODE=agent-vision` in an isolated Electron smoke profile. The default
-smoke verifies real frame captures with a simulated model response. Set
-`FVE_CODEX_VISION_LIVE=1` to also test actual Codex image understanding using
-the installed CLI login.
-
-### Codex live web search
-
-Live web search is enabled when **Codex SDK** is selected. CraftAI can research
-requested topics and check current facts while preparing video scripts, using
-the installed CLI login. Search queries and their status appear in the chat.
-Researched replies use clickable source links that open in your browser.
-
-Try: “Use live web search to check the facts for this history video, cite the
-sources, then update the script.” Research alone does not create an Undo entry;
-requested editor changes still use the usual tools and history. **Stop** cancels
-an active search. Shell and direct file editing remain disabled for the agent.
-
-Checks: `node tests/unit/agents/test-codex-web-search.mjs` and
-`FVE_SMOKE_MODE=agent-web-search` in an isolated Electron smoke profile. Set
-`FVE_CODEX_WEB_LIVE=1` to test an actual native search and source reply.
-
-### Gemini speech generation
-
-Open **Settings → Speech generation**, paste a Google AI Studio API key, and
-choose **Save key**. The speech key is stored encrypted, independently of the
-CraftAI chat provider. **Test key** checks model access without generating speech.
-
-In **Audio → Text to speech → Gemini**, choose Gemini 3.8 Flash TTS or Flash-Lite
-TTS and a voice. Put the exact words in **Text**, and tone, accent or pacing in
-**Delivery**. Preview the audio, then add it at the playhead (or the selected
-text's start). Matching requests reuse the local WAV cache.
-
-CraftAI can also generate speech: for example, “Add a calm English narration at
-eight seconds using Gemini.” Its `list_voices` and `add_voiceover` tools prefer
-Gemini when the speech key is configured, add real audio clips to the timeline,
-and support the usual Undo and export. Each speech passage is limited to 5000
-characters; use separate clips for longer scripts. API access and usage are
-managed through your Google account. See [Google's TTS documentation](https://ai.google.dev/gemini-api/docs/speech-generation).
-
-Contributor checks: `node tests/unit/audio/test-gemini-tts.cjs` and the isolated
-`FVE_SMOKE_MODE=gemini-tts` Electron smoke use simulated provider responses, so
-they require no real key or paid generation.
-
-## Export
-
-<p align="center">
-  <img src="https://clipcrafts.pages.dev/assets/export.png" alt="The export menu: Video (MP4), Audio only (MP3), Audio only (WAV), Audio only (M4A)" width="60%">
-</p>
-
-<p align="center"><sub><i>Presets when you're in a hurry, full control when you're not</i> — MP4 video or audio-only (MP3 / WAV / M4A); codec, CRF or bitrate, resolution up to 4K, frame rate and audio quality.</sub></p>
-
-## Download
-
-Get **ClipCraft 1.1.3** from the [GitHub Releases page](https://github.com/elmissouri16/clipcraft/releases):
-
-- **Linux (.deb)** — `clipcraft_1.1.3_amd64.deb`, then:
-
-```bash
-sudo apt install ./clipcraft_1.1.3_amd64.deb
-```
-
-- **Windows (.exe)** — `ClipCraft-Setup-1.1.3.exe` (NSIS installer).
-- **macOS (.dmg)** — `ClipCraft-1.1.3.dmg` (Apple silicon & Intel).
-
-SHA-256 checksums for every installer are printed in the release notes.
-
-> **Unsigned builds:** this release is not code-signed yet. On Windows, SmartScreen will say "Windows protected your PC" — click **More info → Run anyway**. On macOS, Gatekeeper blocks the first launch — **right-click the app → Open**, or allow it under System Settings → Privacy & Security. Linux needs no such step.
-
-## Run from source
-
-```bash
-npm install
-npm run dev             # Vite + Electron, with automatic main-process restart
-npm run dev:renderer    # Vite only (for an existing Electron dev session)
-npm start               # build + launch the app
-npm run package:linux   # build the Linux .deb (with the bundled content pack, for local use)
-```
-
-Dev, start and build commands restore the credited preview photos into
-`public/preview/` when missing. They are cached locally and bundled into renderer
-builds; the running app loads them from disk. Use `npm run assets:preview` to retry
-the download. Offline startup uses drawn previews when photos are unavailable.
-
-Public release builds are produced by GitHub Actions (`.github/workflows/release.yml`) without the bundled pack.
-
-| Layer | Tech |
+> **Built on the work of Hamza Abika.** This fork is based on his original
+> [ClipCraft repository](https://github.com/hamzaabika/clipcraft), with thanks for
+> the editor and foundation he created. It is developed independently and is
+> taking a different direction, focused on agent-assisted video creation,
+> editable motion graphics, and closer integration with local tools.
+>
+> **Support the original author:** [Donate to Hamza Abika](https://paypal.me/hamzaAbika).
+> Donations through this link go to the original author.
+
+# ClipCraft · Independent fork
+
+**A desktop video editor where you can edit by hand, work with an AI agent, or move between both.**
+
+Build a video on the timeline, ask CraftAI to help shape it, generate scenes and
+motion graphics, and review the changes in the same editor. This fork builds on
+ClipCraft's editing foundation with a focus on agents that understand the
+project, make visible changes, and leave the result editable.
+
+[What this fork adds](#what-this-fork-adds) ·
+[Editing tools](#editing-tools) ·
+[Getting started](#getting-started) ·
+[Documentation](#documentation) ·
+[License and attribution](#license-and-attribution)
+
+## What this fork adds
+
+### Work with agents inside or outside the editor
+
+- **Native Codex, Claude, and OpenCode integration.** Use an installed agent and
+  its existing sign-in. Settings can download a supported native runtime when
+  needed, with progress, cancellation, and integrity checks.
+- **Your choice of provider.** CraftAI also supports API providers, local Ollama,
+  and custom compatible endpoints. Choose models and supported thinking levels
+  from the chat header.
+- **External agents over MCP.** Connect an agent running outside ClipCraft to the
+  open app. Enable it in Settings, approve the connection, then let it open
+  projects and use the editor's tools. One agent holds the editor at a time.
+- **Edit and Agent workspaces.** Switch between hands-on editing and a layout
+  centered on the conversation, preview, and timeline.
+
+Native agents use their own accounts and model access. Cloud models and online
+media services still require a connection; local editing does not require an AI
+provider.
+
+### Give the agent context and review its work
+
+Attach selected clips, timeline ranges, images, or reference videos to a request.
+CraftAI can inspect source and composed frames, analyse speech, and use the
+current timeline instead of guessing what is in the project.
+
+For larger edits, it can propose a plan for approval, identify highlights,
+remove confirmed fillers and retakes, arrange scenes, add captions, and critique
+the result. Motion tools include continuous keyframes and paths, with checks for
+abrupt stops, jerks, and rotation changes.
+
+Tool activity shows what is running and what changed. A spotlight identifies the
+clips or ranges being edited, and a short trail marks completed changes. Agent
+edits are grouped for Undo, and completion checks report unresolved operations
+and visual issues. Frame inspection samples still images; it does not watch
+continuous playback or listen to audio.
+
+### Create motion graphics you can keep editing
+
+Ask for an original animated chart, counter, callout, lower third, diagram, or
+photo card. Graphics become transparent overlays on the timeline, with editable
+fields in the Graphic inspector.
+
+Change text, colours, numbers, data, duration, or library pictures and see valid
+changes preview live. Full-quality renders prepare in the background, and export
+waits for the current render. The component source stays with the project so a
+graphic can be redrawn later.
+
+### Generate scenes and narration
+
+- **Codex image generation.** Create scene images using the native agent's image
+  capability, reuse character references, and generate independent scenes in
+  parallel. Imported images remain ordinary editable project media.
+- **Canvas-aware placement.** Generated images and AI-added footage fill the
+  current video format, with framing controls for an off-centre subject or an
+  explicit whole-source view.
+- **Speech generation.** Add narration with Gemini or another configured speech
+  service. An optional VoiceStudio connector uses voices from a separately
+  installed local app; it is off by default.
+- **Web research.** Supported native agents can research requested topics and
+  show sources in chat when Web research is enabled for that agent.
+
+Image generation requires a compatible Codex runtime, account, and model.
+Speech services use their own configuration, credentials, and usage limits.
+
+### Keep projects and everyday editing manageable
+
+| Area | Changes in this fork |
 | --- | --- |
-| Shell | Electron |
-| UI | React + Vite |
-| Rendering | FFmpeg — one pipeline for preview and export |
-| Captions | Whisper, on-device |
-| AI | CraftAI — your provider, your key |
+| Conversations | Saved chat sessions, drafts, context attachments, and tool activity per project. Chat history lives in a separate file beside the timeline document. |
+| Timeline | Work on gestures, snapping, transitions, and locked layers; applied effect names appear on clips. |
+| Looks | Apply a filter to the whole video through the Effects track. |
+| Preview and export | Work on playback scheduling, GPU effects, render reuse, and export progress and cancellation. Covers use the composed frame; untagged SDR sources use BT.709. |
+| Interface | Settings from Home, desktop navigation labels, preview volume controls, and English, French, and Spanish interfaces. |
+| App maintenance | Updated Electron runtime, settings and keychain handling, and removal of the in-app updater and promotional surfaces. |
 
-## Contributor layout
+## Editing tools
 
-Renderer code lives in `src/features/`, with the application shell in `src/app/`
-and project history in `src/state/`. Electron services are grouped by feature
-under `electron/`; tests live in `tests/unit/`, `tests/smoke/` and `tests/fixtures/`.
-Development and maintenance commands stay in `scripts/`.
+The underlying editor remains central to this fork:
 
-See the [project structure guide](docs/architecture/project-structure.md) and
-[documentation index](docs/README.md). Run `npm run test:structure` to check moved
-imports, `npm test -- --list` to list suites, or `npm test -- agents` for agent
-regressions.
+- Multi-track video, audio, text, overlays, and effects.
+- Trimming, splitting, cropping, transforms, keyframes, masks, and chroma key.
+- Transitions, filters, colour grading, curves, HSL controls, and LUTs.
+- Animated text, word styling, RTL/Arabic text, captions, and SRT import.
+- On-device Whisper captions, optional cloud transcription, stock media, and
+  screen recording.
+- Video and audio export with control over resolution, frame rate, codecs, and
+  quality.
 
-## Updates
+Project files and imported media stay on your computer. Online AI, stock search,
+cloud transcription, and speech generation contact the services you choose to
+use. The app has no in-app updater.
 
-ClipCraft does not check for updates and nothing phones home. New versions are published on the GitHub Releases page, which **About** links to.
+## Getting started
 
-## Originality
+From a checkout of this fork, install dependencies and start the desktop app:
 
-ClipCraft is an original application, designed and built from scratch. It is not a fork, port, or copy of any other editor's code. Contributions are welcome — and everything contributed must be original work: no code, assets, icons, text, or designs taken from any other application.
+```sh
+npm install
+npm run dev
+```
 
+Use `npm run dev:renderer` when you only need the renderer for an existing
+Electron development session.
 
-## Ownership & License
+Development startup attempts to restore missing preview photos into
+`public/preview/`. They are cached locally; drawn previews are used when the
+photos are unavailable offline.
 
-ClipCraft is an original application created by Hamza Abika, and it is open source under the MIT License.
-You may use, copy, modify, and distribute the code under the MIT terms — the license and copyright notice must be preserved in all copies. Presenting this project as your own work (including removing the copyright notice) violates the license.
-The ClipCraft name and logo are not covered by the MIT grant: they remain the author's brand and may not be used to brand another product.
+To configure an assistant, open **Settings → AI assistant**, select a provider
+or native agent, test the connection, and save. External agent access is a
+separate opt-in under **Settings → External agents**.
 
-See [LICENSE](./LICENSE) for the full MIT text.
+Keep `<name>.clipcraft.json` and `<name>.clipcraft.chat.json` together when moving
+a saved project if you want to retain its conversations. Older project files
+with embedded chat are still supported. Media files must also remain accessible.
 
----
+## Documentation
 
-<p align="center">
-  <sub>Open source under the MIT License · Copyright © 2026 Hamza Abika</sub>
-</p>
+- [Documentation index](docs/README.md)
+- [Native agents and shared editing tools](docs/agents/native-agent-tools.md)
+- [Connecting external agents over MCP](docs/agents/external-mcp.md)
+- [Editorial planning and transcript-driven edits](docs/agents/editorial-agent.md)
+- [Timeline context, motion tools, and graphics](docs/agents/agent-editing.md)
+- [Motion graphics runtime and live input editing](docs/design/motion-graphics.md)
+- [VoiceStudio connector](docs/media/voicestudio.md)
+- [Project files and chat history](docs/architecture/project-file.md)
+- [Export behaviour](docs/architecture/export-experience.md)
+- [Project structure and contributor commands](docs/architecture/project-structure.md)
+
+For contributors, the app uses Electron, React, Vite, and FFmpeg. Renderer
+features live in `src/features/`, privileged services in `electron/`, and shared
+contracts and data in `shared/`. Read [AGENTS.md](AGENTS.md) before contributing.
+
+```sh
+npm run test:structure   # Check imports and folder boundaries
+npm test -- --list      # List available suites
+npm test -- agents      # Run agent-focused suites
+```
+
+## License and attribution
+
+The original ClipCraft application was created by **Hamza Abika**. This
+repository is an independently maintained fork built on his work, with its own
+changes and development direction.
+
+The code is distributed under the [MIT License](LICENSE). Preserve the original
+copyright and license notices when using or redistributing it. Third-party
+components and assets retain their own terms; see
+[Third-party notices](THIRD-PARTY-NOTICES.md).
+
+The ClipCraft name and logo remain the original author's brand and are not
+covered by the MIT license grant.
