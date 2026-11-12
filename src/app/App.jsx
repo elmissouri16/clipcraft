@@ -874,12 +874,27 @@ export default function App() {
   };
 
   const split = useCallback(() => {
+    const at = readTime();
+    if (selection?.items) {
+      // Several clips: every selected clip under the playhead is cut, one undo step for all of
+      // them (a linked partner is cut by its pair, so the second half of a pair is skipped).
+      const p = projectRef.current, seen = new Set();
+      dispatch({ type: 'beginGesture' });
+      for (const it of selection.items) {
+        if (seen.has(`${it.track}:${it.id}`)) continue;
+        const partner = findLinkPartner(p, findClipIn(p, it.track, it.id));
+        if (partner) seen.add(`${partner.track}:${partner.clip.id}`);
+        dispatch({ type: 'split', track: it.track, id: it.id, t: at, newId: uid() });
+      }
+      dispatch({ type: 'endGesture' });
+      return;
+    }
     let tgt = selection;
     if (!tgt) {
-      const v = videoClipAt(project, readTime());
+      const v = videoClipAt(project, at);
       if (v) tgt = { track: 'video', id: v.clip.id };
     }
-    if (tgt) dispatch({ type: 'split', track: tgt.track, id: tgt.id, t: readTime(), newId: uid() });
+    if (tgt) dispatch({ type: 'split', track: tgt.track, id: tgt.id, t: at, newId: uid() });
   }, [selection, project, time]);
 
   // Delete everything left (or right) of the playhead in the selected clip when the playhead is inside it,
@@ -1177,7 +1192,7 @@ export default function App() {
     const clicked = { track, id: clip.id };
     const existing = selection?.items || (selection ? [{ track: selection.track, id: selection.id }] : []);
     const included = existing.some(r => r.track === track && r.id === clip.id);
-    if (!included) setSelection(clicked);
+    if (!included) select(clicked); // like a left click: a linked pair is selected together
     setMenu({ x: e.clientX, y: e.clientY, ...clicked, clip_refs: included ? existing : [clicked] });
   };
 
@@ -1486,7 +1501,15 @@ export default function App() {
     const okItem = (it) => it.track !== 'transition' && !(it.track === 'effect' && it.id.includes('|'));
     if (selection.items) {
       // Bulk duplicate: every selected clip, one undo step (locked layers refuse their own).
-      const items = selection.items.filter(okItem);
+      // A linked pair is selected as two items but duplicated as one: the reducer copies the
+      // partner along with the clip, so the partner's own item is skipped.
+      const p = projectRef.current, seen = new Set();
+      const items = selection.items.filter(okItem).filter((it) => {
+        if (seen.has(`${it.track}:${it.id}`)) return false;
+        const partner = findLinkPartner(p, findClipIn(p, it.track, it.id));
+        if (partner) seen.add(`${partner.track}:${partner.clip.id}`);
+        return true;
+      });
       if (!items.length) return;
       dispatch({ type: 'beginGesture' });
       items.forEach((it) => dispatch({ type: 'duplicate', ...it, newId: uid() }));
@@ -2076,7 +2099,7 @@ export default function App() {
         togglePlay: () => k.togglePlay(), split: () => k.split(), duplicate: () => k.duplicate(), extractAudio: () => k.extractAudio(),
         copy: () => k.copy(), cut: () => k.cut(), paste: () => k.paste(), delete: () => k.remove(),
         undo: () => dispatch({ type: 'undo' }), redo: () => dispatch({ type: 'redo' }),
-        stepBack: () => k.seek(k.readTime() - 1 / 30), stepForward: () => k.seek(k.readTime() + 1 / 30),
+        stepBack: () => k.seek(k.readTime() - 1 / (projectRef.current.fps || 30)), stepForward: () => k.seek(k.readTime() + 1 / (projectRef.current.fps || 30)),
         jumpBack: () => k.seek(k.readTime() - 1), jumpForward: () => k.seek(k.readTime() + 1), goStart: () => k.seek(0),
         trimLeft: () => k.trimSide('left'), trimRight: () => k.trimSide('right'), marker: () => k.toggleMarker(),
         razorTool: () => k.setTool('razor'), selectTool: () => k.setTool('select'),

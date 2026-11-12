@@ -476,8 +476,10 @@ kbd {
 .clip.text { background: var(--clip-text); }
 .clip.text.caption { background: var(--clip-caption); }
 .clip.audio { background: var(--clip-audio); }
-.clip.selected { box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px rgba(0, 0, 0, 0.6); z-index: 2; }
-.clip.drop-here { box-shadow: inset 0 0 0 2px var(--primary); }
+/* Rings are outlines, drawn above the clip's own content (an inset shadow would hide behind
+   the opaque filmstrip of a main-track clip). */
+.clip.selected { box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px rgba(0, 0, 0, 0.6); outline: 2px solid #fff; outline-offset: -2px; z-index: 2; }
+.clip.drop-here { box-shadow: inset 0 0 0 2px var(--primary); outline: 2px solid var(--primary); outline-offset: -2px; }
 .clip-bg { position: absolute; inset: 0; pointer-events: none; }
 .clip.audio .clip-bg { opacity: 0.5; }
 .clip-label {
@@ -1403,7 +1405,7 @@ body.resizing-row, body.resizing-row * { cursor: row-resize !important; user-sel
 
 /* Trim affordances (I): generous edge grips with a visible grip on hover/selection, and
    the live readout chip shown while an edge is dragged. */
-.handle { width: 12px; }
+.handle { width: 12px; max-width: 35%; } /* the two grips never cover each other on a tiny clip */
 .handle.left { border-radius: var(--r-sm) 0 0 var(--r-sm); }
 .handle.right { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
 .clip:hover .handle, .clip.selected .handle { background: rgba(255, 255, 255, 0.88); }
@@ -1729,7 +1731,7 @@ button.save-state.error:hover { background: var(--hover); }
 .curve-editor.compact .curve-glyph { width: 28px; height: 14px; }
 
 /* Replaceable clips: badge on the timeline and the strip above it */
-.clip.replaceable { box-shadow: inset 0 0 0 2px #22d3ee; }
+.clip.replaceable { box-shadow: inset 0 0 0 2px #22d3ee; outline: 2px solid #22d3ee; outline-offset: -2px; }
 .rep-badge { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-right: 4px; border-radius: var(--r-xs); background: #22d3ee; color: #082f49; font-size: 10px; font-weight: 800; }
 .timeline { position: relative; }
 .ts-strip { position: absolute; left: 110px; right: 16px; top: 48px; z-index: 30; padding: 8px 10px 10px; border-radius: var(--r-lg); background: rgba(10, 12, 18, 0.96); border: 1px solid var(--border-strong); box-shadow: var(--shadow); }
@@ -2973,7 +2975,7 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 /* CraftAI on the timeline (docs/agents/agent-editing.md): a spotlight on the clips and ranges the running tool works
    on, and a trail on the clips this request changed. Violet rings and an informational stripe; no glow (v14).
    The trail ring sits on ::before so it can fade without fading the clip (::after is the disabled stripe). */
-.clip.agent-live { box-shadow: inset 0 0 0 2px var(--primary); z-index: 2; }
+.clip.agent-live { box-shadow: inset 0 0 0 2px var(--primary); outline: 2px solid var(--primary); outline-offset: -2px; z-index: 2; }
 .clip.agent-live::after { content: ''; position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(-45deg, transparent 0 6px, rgba(130, 92, 251, .28) 6px 8px); background-size: 11.31px 11.31px;
   animation: agent-stripes .7s linear infinite; }

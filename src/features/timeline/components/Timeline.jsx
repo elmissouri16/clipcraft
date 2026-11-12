@@ -4,7 +4,7 @@ import {
   ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, AudioLines, Copy, CopyPlus, Eye, EyeOff, Film, Flag, GripVertical, Layers, Link2, Lock, LockOpen, Magnet, Mic, MoreHorizontal, MousePointer2, Music, Pencil, Plus, Scissors, Slice,
   Sparkles, Square, StretchHorizontal, Target, Trash2, Type, Undo2, Unlink, Volume2, VolumeX, Redo2, X, ZoomIn, ZoomOut, Captions, ScanLine, MessageSquarePlus, ChevronRight, Loader2,
 } from 'lucide-react';
-import { LAYERED, MIN_CLIP, clipLayer, effectObjects, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../../../state/store.js";
+import { LAYERED, MIN_CLIP, clipLayer, effectObjects, findClipIn, findLinkPartner, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../../../state/store.js";
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from "../../effects/filters.js";
 import { TRANSITIONS, effectInfo } from "../../effects/effects.js";
@@ -170,14 +170,16 @@ export default function Timeline({
       overRow = Math.max(0, Math.min(count - 1, Math.floor((ev.clientY - r.top) / rowOf(lane))));
       setLayerDrag({ track: lane, overRow });
     };
-    const up = () => {
+    const up = (ev) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       setLayerDrag(null);
-      if (overRow !== fromRow) dispatch({ type: 'moveLayer', track: lane, from: layer, to: rowToLayer(lane, overRow, count) });
+      if (ev?.type !== 'pointercancel' && overRow !== fromRow) dispatch({ type: 'moveLayer', track: lane, from: layer, to: rowToLayer(lane, overRow, count) });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
   // One header control row per layer (below the lane's title strip): lock, visibility,
   // mute + solo on sound-carrying lanes, and the layer menu — the reference's pattern in
@@ -341,22 +343,35 @@ export default function Timeline({
 
   // ---- Pointer editing ----
   // Generic pointer drag: calls onMove(deltaSeconds, event) until release, wrapped in one undo step.
+  // A press is not an edit: the gesture (and its undo step) only begins once the pointer has
+  // travelled a few pixels, so a click with a little jitter never nudges or trims the clip.
+  const DRAG_THRESHOLD = 3;
   const drag = (e, onMove, onEnd) => {
     e.stopPropagation();
     e.preventDefault();
     setDragging(e.currentTarget.closest('.clip')?.dataset.selId || null);
-    const x0 = e.clientX;
-    dispatch({ type: 'beginGesture' });
-    const move = (ev) => onMove((ev.clientX - x0) / pps, ev);
+    const x0 = e.clientX, y0 = e.clientY;
+    let started = false;
+    const move = (ev) => {
+      if (!started) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_THRESHOLD) return;
+        started = true;
+        dispatch({ type: 'beginGesture' });
+      }
+      onMove((ev.clientX - x0) / pps, ev);
+    };
     const up = (ev) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       setDragging(null);
+      if (!started) return;
       onEnd?.(ev); // inside the gesture, so a move to another track is part of the same undo step
       dispatch({ type: 'endGesture' });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   // Drag a keyframe diamond along its clip (all the properties keyed at that moment move together).
@@ -381,13 +396,25 @@ export default function Timeline({
   };
 
   // Snapping: pull a dragged clip's start or end (or a razor cut) to a nearby edge: other clips, markers, the playhead, zero.
-  const edgeTimes = (excludeId) => {
-    const edges = [0, readTime(), ...markers.map((m) => m.time)];
-    layout.forEach((l) => edges.push(l.start, l.end));
-    project.audioClips.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + freeLen('audio', c)));
-    project.textClips.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + c.duration));
-      (project.effectClips || []).forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + c.duration));
-    overlays.forEach((c) => c.id !== excludeId && edges.push(c.start, c.start + freeLen('overlay', c)));
+  // `exclude` names the dragged clip (and its linked partner, which moves with it): their own
+  // edges, read from the project as it was at pointer-down, are never snap targets.
+  // `playhead: false` leaves the playhead out while a trim is dragging it along.
+  const excludedIds = (exclude) => {
+    const ids = new Set([].concat(exclude ?? []));
+    for (const id of [...ids]) {
+      const partner = findLinkPartner(project, ['video', 'overlay', 'audio'].map((tr) => findClipIn(project, tr, id)).find(Boolean));
+      if (partner) ids.add(partner.clip.id);
+    }
+    return ids;
+  };
+  const edgeTimes = (exclude, { playhead = true } = {}) => {
+    const skip = excludedIds(exclude);
+    const edges = [0, ...(playhead ? [readTime()] : []), ...markers.map((m) => m.time)];
+    layout.forEach((l) => !skip.has(l.clip.id) && edges.push(l.start, l.end));
+    project.audioClips.forEach((c) => !skip.has(c.id) && edges.push(c.start, c.start + freeLen('audio', c)));
+    project.textClips.forEach((c) => !skip.has(c.id) && edges.push(c.start, c.start + c.duration));
+    (project.effectClips || []).forEach((c) => !skip.has(c.id) && edges.push(c.start, c.start + c.duration));
+    overlays.forEach((c) => !skip.has(c.id) && edges.push(c.start, c.start + freeLen('overlay', c)));
     return edges;
   };
   const snapMove = (start, len, excludeId) => {
@@ -401,10 +428,13 @@ export default function Timeline({
     }
     return best ? { start: Math.max(0, start + best.dd), at: best.at } : { start, at: null };
   };
-  const snapPoint = (t) => {
+  const snapPoint = (t, exclude = null, opts) => {
     const thr = 10 / pps;
-    let best = t;
-    for (const e of edgeTimes(null)) if (Math.abs(e - t) < thr && Math.abs(e - t) < Math.abs(best - t) + (best === t ? thr : 0)) best = e;
+    let best = t, dist = thr;
+    for (const e of edgeTimes(exclude, opts)) {
+      const dd = Math.abs(e - t);
+      if (dd < dist) { best = e; dist = dd; }
+    }
     return best;
   };
 
@@ -453,20 +483,31 @@ export default function Timeline({
   // trimmed and a readout chip shows the edge time + the clip's resulting length; the snap
   // guide lights when the edge lands on a snap target (playhead, neighbour, marker, zero).
   // The drag itself — values, clamping, undo — is exactly the existing handler.
+  // The readout is taken on the next frame: a dispatch from a window listener is rendered
+  // asynchronously, so reading the project right after it would show the previous move.
+  const trimRaf = useRef(0);
   const trimAware = (track, clip, mode, onMove) => (d, ev) => {
     onMove(d, ev);
-    const span = clipSpan(projectRef.current, track, clip.id);
-    if (!span) return;
-    const edgeTime = mode === 'left' ? span.start : span.start + span.len;
-    onSeek(edgeTime);
-    setTrimHud({ x: playheadX(edgeTime, pps, HEADER), text: t('timeline.time_and_length', { time: formatTime(edgeTime), seconds: span.len.toFixed(2) }) });
-    if (projectRef.current.snapping) {
-      const targets = edgeTimes(clip.id).filter((e) => Math.abs(e - span.start) > 1e-9 && Math.abs(e - (span.start + span.len)) > 1e-9);
-      const hit = targets.find((e) => Math.abs(e - edgeTime) * pps < 2);
-      setSnapAt(hit ?? null);
-    }
+    cancelAnimationFrame(trimRaf.current);
+    trimRaf.current = requestAnimationFrame(() => {
+      trimRaf.current = 0;
+      const span = clipSpan(projectRef.current, track, clip.id);
+      if (!span) return;
+      const edgeTime = mode === 'left' ? span.start : span.start + span.len;
+      onSeek(edgeTime);
+      setTrimHud({ x: playheadX(edgeTime, pps, HEADER), text: t('timeline.time_and_length', { time: formatTime(edgeTime), seconds: span.len.toFixed(2) }) });
+      if (projectRef.current.snapping) {
+        const targets = edgeTimes(clip.id, { playhead: false }).filter((e) => Math.abs(e - span.start) > 1e-9 && Math.abs(e - (span.start + span.len)) > 1e-9);
+        const hit = targets.find((e) => Math.abs(e - edgeTime) * pps < 2);
+        setSnapAt(hit ?? null);
+      }
+    });
   };
-  const endTrim = (onEnd) => (ev) => { setTrimHud(null); setSnapAt(null); onEnd?.(ev); };
+  const endTrim = (onEnd) => (ev) => {
+    cancelAnimationFrame(trimRaf.current);
+    trimRaf.current = 0;
+    setTrimHud(null); setSnapAt(null); onEnd?.(ev);
+  };
 
   // Locked layers refuse every pointer edit (the reducer guard is the backstop; the UI
   // never starts a gesture it knows will be refused).
@@ -482,17 +523,21 @@ export default function Timeline({
     onSelect(null);
   };
 
+  // Scrubbing stays inside the project (a free drop or drag may still go past its end).
+  const seekTime = (e) => Math.min(Math.max(0, duration), timeFromEvent(e));
   const scrub = (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.target.closest?.('.tl-head')) return;
     onSelect(null);
-    onSeek(timeFromEvent(e));
-    const move = (ev) => onSeek(timeFromEvent(ev));
+    onSeek(seekTime(e));
+    const move = (ev) => onSeek(seekTime(ev));
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   const selectContextRange = (e) => {
@@ -576,14 +621,16 @@ export default function Timeline({
     const up = (ev) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       setBox(null);
-      if (!moved) {
+      if (!moved && ev.type !== 'pointercancel') {
         if (!keep) onSelect(null);
-        onSeek(timeFromEvent(ev));
+        onSeek(seekTime(ev));
       }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   const laneAt = (ev) => document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('[data-lane]')?.dataset.lane;
@@ -593,13 +640,15 @@ export default function Timeline({
     if (isLayerLocked(project, 'video', 0)) return;
     onSelect({ track: 'video', id: clip.id });
     if (clip.gap) {
-      // Gaps only resize (and cannot be moved).
-      if (mode === 'move') return;
+      // Gaps only resize (and cannot be moved). The press still belongs to the gap: letting it
+      // reach the lane would clear the selection it just made.
+      if (mode === 'move') { e.stopPropagation(); e.preventDefault(); return; }
       drag(e, trimAware('video', clip, mode, (d) => dispatch({ type: 'trimClip', track: 'video', id: clip.id, edge: mode, delta: mode === 'left' ? d : -d })), endTrim());
       return;
     }
     const media = mediaById[clip.mediaId];
-    const isImage = media.type === 'image';
+    const isImage = media?.type === 'image';
+    const mediaEnd = media?.type === 'video' ? media.duration : clip.out;
     const o = { ...clip };
     const sp = clip.speed || 1;
     const grab = timeFromEvent(e) - (layout.find((l) => l.clip.id === clip.id)?.start ?? 0);
@@ -622,7 +671,7 @@ export default function Timeline({
         // content slipped — the clip collapsed instead of trimming.)
         dispatch({ type: 'trimClip', track: 'video', id: clip.id, edge: mode, delta: mode === 'left' ? d : -d });
       } else if (mode === 'right') {
-        dispatch({ type: 'update', track: 'video', id: clip.id, patch: { out: clamp(o.out + d * sp, o.in + MIN_CLIP * sp, isImage ? 3600 : media.duration) } });
+        dispatch({ type: 'update', track: 'video', id: clip.id, patch: { out: clamp(o.out + d * sp, o.in + MIN_CLIP * sp, isImage ? 3600 : mediaEnd) } });
       } else {
         // Reorder on the magnetic main track: drop index from the pointer position among the other clips.
         const others = videoLayout(project.videoClips.filter((c) => c.id !== clip.id));
@@ -658,6 +707,17 @@ export default function Timeline({
     }
     onSelect({ track, id: clip.id });
     const o = { ...clip };
+    // Audio linked to a main-track clip follows the picture, whose position is its place in the
+    // sequence: the sound cannot be moved on its own, and trimming its head is the picture's trim.
+    const mainPartner = track === 'audio' && clip.linkId ? findLinkPartner(project, clip) : null;
+    if (mainPartner?.track === 'video') {
+      if (mode === 'move') { e.stopPropagation(); e.preventDefault(); return; }
+      if (mode === 'left') {
+        if (trackLocked('video', mainPartner.clip)) return;
+        drag(e, trimAware(track, clip, mode, (d) => dispatch({ type: 'trimClip', track: 'video', id: mainPartner.clip.id, edge: 'left', delta: d })), endTrim());
+        return;
+      }
+    }
     let toMain = null; // overlay clip dragged down onto the main track: insert index
     const freeMove = (d, ev) => {
       if (track === 'overlay' && mode === 'move' && laneAt(ev) === 'video') {
@@ -679,7 +739,7 @@ export default function Timeline({
         const laneEl = LAYERED[track] && scrollRef.current?.querySelector(`[data-lane="${track}"]`);
         if (laneEl) {
           const want = layerAtY(track, laneEl, ev.clientY);
-          if (want !== layerOf(o) && layerFree(project, track, want, start, freeLen(track, o), clip.id)) {
+          if (want !== layerOf(o) && !isLayerLocked(project, track, want) && layerFree(project, track, want, start, freeLen(track, o), clip.id)) {
             patch.layer = want;
             o.layer = want;
           }
@@ -695,7 +755,7 @@ export default function Timeline({
       if (project.snapping && (track === 'text' || track === 'effect')) {
         // Duration-based clips: pull the dragged edge onto a snap target, like moves do.
         const edge0 = mode === 'left' ? o.start + d : o.start + o.duration + d;
-        const snapped = snapPoint(edge0);
+        const snapped = snapPoint(edge0, clip.id, { playhead: false });
         if (snapped !== edge0) { d += snapped - edge0; setSnapAt(snapped); }
       }
       let patch;
@@ -733,6 +793,7 @@ export default function Timeline({
   const zoomTo = (next, at, x) => {
     const el = scrollRef.current;
     const n = clamp(next, 2, 300);
+    if (n === pps) { zoomAnchor.current = null; return; } // nothing to lay out: no anchor may linger for a later Fit
     if (el) {
       const t = at ?? readTime();
       zoomAnchor.current = { t, x: x ?? t * pps - el.scrollLeft };
@@ -763,6 +824,8 @@ export default function Timeline({
       const t = c?.playing ? interpolateTime(c.time, c.stamp, performance.now(), c.rate || 1) : timeRef.current;
       const x = playheadX(t, ppsRef.current, HEADER);
       el.style.transform = `translateX(${x}px)`;
+      // Scrolled past the playhead: it must not show through the sticky lane headers.
+      el.style.visibility = sc && x < sc.scrollLeft + HEADER ? 'hidden' : '';
       if (c?.playing && sc) {
         const target = followScrollTarget(x, sc.scrollLeft, sc.clientWidth, HEADER);
         // This loop already runs at display rate. Starting a new smooth-scroll
@@ -804,6 +867,7 @@ export default function Timeline({
   // Zoom so the whole project fits the visible timeline.
   const fit = () => {
     const w = (scrollRef.current?.clientWidth || 900) - HEADER - 32;
+    zoomAnchor.current = null;
     setPps(clamp(w / Math.max(duration, 1), 2, 300));
     scrollRef.current?.scrollTo({ left: 0 });
   };
@@ -822,6 +886,12 @@ export default function Timeline({
   const step = [0.5, 1, 2, 5, 10, 15, 30, 60].find((s) => s * pps >= 90) || 120;
   const ticks = [];
   for (let t = Math.floor(viewport.from / step) * step; t * pps < width && t <= viewport.to; t += step) ticks.push(t);
+  // Labels show what the step needs: tenths below a one-second step, hours past the first.
+  const tickLabel = (t) => {
+    const h = Math.floor(t / 3600), rest = formatTime(t - h * 3600);
+    const mmss = step < 1 ? rest.slice(0, 7) : rest.slice(0, 5);
+    return h ? `${h}:${mmss}` : mmss;
+  };
 
   // A selected clip that lives on a free track (everything but the main track), with its current values.
   const findFree = (it) => {
@@ -1106,7 +1176,7 @@ export default function Timeline({
               {agentMarks.liveRanges.map((r, i) => <div key={`agent-ruler-${i}`} className="tl-agent-ruler" aria-label={t('timeline.agent_range_start_to_end', { agent: agentMarks.agent, title: agentMarks.liveTitle, start: formatTime(r.start), end: formatTime(r.end) })} style={{ left: r.start * pps, width: Math.max(18, (r.end - r.start) * pps) }}>{(r.end - r.start) * pps > 80 ? agentMarks.liveTitle : ''}</div>)}
               {markerEls}
               {ticks.map((t) => (
-                <div key={t} className="tick" style={{ left: t * pps }}><span>{formatTime(t).slice(0, 5)}</span></div>
+                <div key={t} className="tick" style={{ left: t * pps }}><span>{tickLabel(t)}</span></div>
               ))}
             </div>
           </div>
@@ -1168,10 +1238,10 @@ export default function Timeline({
           })}
 
           {visibleMarkers.map((m) => <div key={m.id} className="marker-line" style={{ left: HEADER + m.time * pps }} />)}
-          {tool === 'razor' && razorAt != null && <div className="razor-line" style={{ left: HEADER + razorAt * pps }} />}
-          {tool === 'razor' && razorAt != null && <div className="razor-time" style={{ left: HEADER + razorAt * pps }}>{formatTime(razorAt)}</div>}
-          {snapAt != null && <div className="snap-line" style={{ left: HEADER + snapAt * pps }} />}
-          {trimHud && <div className="trim-hud" style={{ left: trimHud.x }}>{trimHud.text}</div>}
+          {tool === 'razor' && razorAt != null && razorAt >= viewport.from && <div className="razor-line" style={{ left: HEADER + razorAt * pps }} />}
+          {tool === 'razor' && razorAt != null && razorAt >= viewport.from && <div className="razor-time" style={{ left: HEADER + razorAt * pps }}>{formatTime(razorAt)}</div>}
+          {snapAt != null && snapAt >= viewport.from && <div className="snap-line" style={{ left: HEADER + snapAt * pps }} />}
+          {trimHud && trimHud.x >= HEADER + viewport.from * pps && <div className="trim-hud" style={{ left: trimHud.x }}>{trimHud.text}</div>}
           <div className="playhead" ref={playheadRef} />
           {drop && drop.time != null && drop.lane !== 'clip' && (
             <div className="drop-time" style={{ left: HEADER + (drop.at ?? drop.time) * pps }}>{formatTime(drop.at ?? drop.time)}</div>

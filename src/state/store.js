@@ -541,6 +541,7 @@ function reduceProjectInner(p, a) {
       return { ...p, textClips: [...p.textClips.filter(c => !removed.has(c.id)), ...a.clips] };
     }
     case 'setMagnet': {
+      if (!!p.magnet?.[a.track] === !!a.on) return p;
       const magnet = { ...p.magnet, [a.track]: a.on };
       // Turning the main-track magnet on closes every gap.
       if (a.track === 'video' && a.on) return { ...p, magnet, videoClips: p.videoClips.filter((c) => !c.gap) };
@@ -553,7 +554,9 @@ function reduceProjectInner(p, a) {
       if (a.track === 'video') {
         // Deleting a gap, or deleting with the magnet on, closes the space; otherwise leave a gap behind.
         if (c.gap || p.magnet.video) return { ...p, videoClips: p.videoClips.filter((x) => x.id !== a.id) };
-        const list = p.videoClips.map((x) => (x.id === a.id ? newGap(x.id, clipLen(x)) : x));
+        // The gap covers the clip's visible span: its length less the overlap of the transition
+        // into it, so every later clip keeps its position.
+        const list = p.videoClips.map((x, i) => (x.id === a.id ? newGap(x.id, clipLen(x) - transitionDur(p.videoClips, i)) : x));
         return { ...p, videoClips: normalizeGaps(list) };
       }
       const rest = p[key].filter((x) => x.id !== a.id);
@@ -568,8 +571,10 @@ function reduceProjectInner(p, a) {
       const from = list.findIndex((c) => c.id === a.id);
       if (from < 0) return p;
       const [c] = list.splice(from, 1);
-      list.splice(Math.max(0, Math.min(a.toIndex, list.length)), 0, c);
-      return { ...p, videoClips: list };
+      const to = Math.max(0, Math.min(a.toIndex, list.length));
+      if (to === from) return p;
+      list.splice(to, 0, c);
+      return { ...p, videoClips: normalizeGaps(list, { keepTrailing: true }) }; // gaps that meet after the move merge
     }
     case 'setCaptions': {
       // Replaces previous auto captions with new ones (one undo step).
@@ -691,13 +696,16 @@ function reduceProjectInner(p, a) {
       // A copied clip at time `at`: main clips are inserted where `at` falls, others start at `at`.
       const key = TRACKS[a.track];
       if (!key || !a.clip) return p;
+      // The copy is independent: a pasted clip never shares its source's audio link
+      // (two clips with one linkId would fight over the partner).
+      const { linkId, linkOff, linkInOff, ...clip } = a.clip;
       if (a.track === 'video') {
         const list = [...p.videoClips];
         const index = videoLayout(list).filter((l) => (l.start + l.end) / 2 < a.at).length;
-        list.splice(index, 0, { ...a.clip, id: a.newId, transition: null });
+        list.splice(index, 0, { ...clip, id: a.newId, transition: null });
         return { ...p, videoClips: list };
       }
-      return { ...p, [key]: [...p[key], { ...a.clip, id: a.newId, start: Math.max(0, a.at) }] };
+      return { ...p, [key]: [...p[key], { ...clip, id: a.newId, start: Math.max(0, a.at) }] };
     }
     case 'cutRanges':
       return cutRanges(p, a.ranges, { ripple: a.ripple === true });
@@ -734,7 +742,7 @@ function reduceProject(p, a) {
 export function trimClip(p, { track, id, edge, delta }) {
   const key = TRACKS[track];
   const idx = p[key].findIndex((c) => c.id === id);
-  if (idx < 0) return p;
+  if (idx < 0 || !(Math.abs(delta) > 1e-9)) return p;
   const c = p[key][idx];
 
   if (track === 'video') {
@@ -746,6 +754,13 @@ export function trimClip(p, { track, id, edge, delta }) {
     const m = p.media.find((x) => x.id === c.mediaId);
     const sp = c.speed || 1;
     const maxOut = !m || m.type === 'image' ? Infinity : m.duration;
+    // A transition overlaps the two clips at the trimmed edge. The removed time comes out of
+    // that overlap first (the transition shortens, nothing else moves) and only the rest becomes
+    // a gap — so the far edge of the clip, and every later clip, stay where they were.
+    const shrinkTransition = (i, left) => {
+      const t = list[i].transition;
+      list[i] = { ...list[i], transition: left > 1e-6 ? { ...t, duration: left, ...(Number.isFinite(t.timelineOverlap) ? { timelineOverlap: left } : {}) } : null };
+    };
     let d;
     if (edge === 'left') {
       const prev = list[idx - 1];
@@ -754,8 +769,13 @@ export function trimClip(p, { track, id, edge, delta }) {
       d = Math.max((newIn - c.in) / sp, -avail);
       list[idx] = { ...c, in: c.in + d * sp };
       if (d > 0) {
-        if (prev && prev.gap) list[idx - 1] = { ...prev, out: prev.out + d };
-        else list.splice(idx, 0, newGap(`${id}-gl`, d));
+        const overlap = transitionDur(p.videoClips, idx);
+        const gap = Math.max(0, d - overlap);
+        if (overlap > 0) shrinkTransition(idx, overlap - d);
+        if (gap > 1e-9) {
+          if (prev && prev.gap) list[idx - 1] = { ...prev, out: prev.out + gap };
+          else list.splice(idx, 0, newGap(`${id}-gl`, gap));
+        }
       } else if (d < 0 && prev && prev.gap) list[idx - 1] = { ...prev, out: prev.out + d };
     } else {
       const after = list[idx + 1];
@@ -764,8 +784,13 @@ export function trimClip(p, { track, id, edge, delta }) {
       d = Math.max((c.out - newOut) / sp, -avail);
       list[idx] = { ...c, out: c.out - d * sp };
       if (d > 0) {
-        if (after && after.gap) list[idx + 1] = { ...after, out: after.out + d };
-        else if (after) list.splice(idx + 1, 0, newGap(`${id}-gr`, d));
+        const overlap = after && !after.gap ? transitionDur(p.videoClips, idx + 1) : 0;
+        const gap = Math.max(0, d - overlap);
+        if (overlap > 0) shrinkTransition(idx + 1, overlap - d);
+        if (gap > 1e-9) {
+          if (after && after.gap) list[idx + 1] = { ...after, out: after.out + gap };
+          else if (after) list.splice(idx + 1, 0, newGap(`${id}-gr`, gap));
+        }
       } else if (d < 0 && after && after.gap) list[idx + 1] = { ...after, out: after.out + d };
     }
     return { ...p, videoClips: normalizeGaps(list) };
@@ -994,6 +1019,7 @@ export function retimeTransition(p, clipId, transition) {
   const fail = error => ({ project: p, error });
   if (index < 1) return fail('Choose a main-track clip after the first clip.');
   if (isLayerLocked(p, 'video', 0)) return fail('The main track is locked.');
+  if (JSON.stringify(layout[index].clip.transition ?? null) === JSON.stringify(transition ?? null)) return { project: p, time_map: null };
   const videoClips = p.videoClips.map(c => c.id === clipId ? { ...c, transition } : c);
   const next = videoLayout(videoClips), delta = next[index].start - layout[index].start;
   if (Math.abs(delta) < 1e-10) return { project: placeLayers({ ...p, videoClips }), time_map: null };
@@ -1122,8 +1148,13 @@ function splitAt(p, track, id, t, newId) {
     if (!l || l.clip.gap || t - l.start < MIN_CLIP || l.end - t < MIN_CLIP) return p;
     const cut = l.clip.in + (t - l.start) * (l.clip.speed || 1);
     const list = [];
-    p.videoClips.forEach((c) => {
-      if (c.id !== id) return list.push(c);
+    p.videoClips.forEach((c, i) => {
+      if (c.id !== id) {
+        // The transition into the clip after the split keeps its overlap: the short right
+        // half must not re-clamp it (which would move every later clip).
+        const td = i === l.index + 1 && c.transition && !c.gap ? transitionDur(p.videoClips, i) : 0;
+        return list.push(td > 0 ? { ...c, transition: { ...c.transition, timelineOverlap: td } } : c);
+      }
       list.push({ ...c, out: cut, anim: splitAnim(c.anim, 'left'), ...sliceFades(c, 0, t - l.start, l.end - l.start) },
         { ...c, id: newId, in: cut, transition: null, anim: splitAnim(c.anim, 'right'), ...sliceFades(c, t - l.start, l.end - l.start, l.end - l.start) });
     });
@@ -1158,9 +1189,11 @@ function splitAt(p, track, id, t, newId) {
     const key = TRACKS[track];
     const c = p[key].find((x) => x.id === id);
     if (!c || t - c.start < MIN_CLIP || c.start + c.duration - t < MIN_CLIP) return p;
+    const halves = splitTimed(c, t, newId);
+    if (halves.length < 2) return p; // a caption whose words all fall on one side is not split
     return {
       ...p,
-      [key]: p[key].flatMap((x) => (x.id !== id ? [x] : splitTimed(x, t, newId))),
+      [key]: p[key].flatMap((x) => (x.id !== id ? [x] : halves)),
     };
   }
   return p;
@@ -1220,14 +1253,19 @@ function mapClip(p, track, id, fn) {
   return { ...p, [key]: p[key].map((c) => (c.id === id ? fn(c) : c)) };
 }
 
-// Splits a text clip at timeline time t. Caption words go to the half they are spoken in.
+// Splits a text clip at timeline time t. Caption words go to the half they are spoken in: a word
+// straddling the cut goes to the side holding more of it, never to both. When one half would be
+// left without words it returns the clip alone (no split).
 function splitTimed(x, t, newId) {
   const cut = t - x.start;
   const a = { ...x, duration: cut };
   const b = { ...x, id: newId, start: t, duration: x.duration - cut };
   if (x.words && x.words.length) {
-    Object.assign(a, cropWordTiming(x, 0, cut));
-    Object.assign(b, cropWordTiming(x, cut, x.duration));
+    const left = x.words.filter((w) => (Math.min(w.end, cut) - w.start) >= (w.end - Math.max(w.start, cut)));
+    const right = x.words.filter((w) => !left.includes(w));
+    if (!left.length || !right.length) return [x];
+    Object.assign(a, cropWordTiming({ ...x, words: left }, 0, cut));
+    Object.assign(b, cropWordTiming({ ...x, words: right }, cut, x.duration));
   }
   return [a, b];
 }
@@ -1254,14 +1292,24 @@ export function actionLocked(p, a) {
       return false;
     }
     case 'insertAudioClip': return isLayerLocked(p, 'audio', layerOf(a.clip));
-    case 'update': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'update':
+      // A move onto another layer is also refused when THAT layer is locked.
+      return clipLocked(p, a.track, clipOf(a.track, a.id))
+        || (a.patch?.layer !== undefined && LAYERED[a.track] && isLayerLocked(p, a.track, a.patch.layer));
     case 'updateMany': return a.updates.some((u) => clipLocked(p, u.track, clipOf(u.track, u.id)));
-    case 'duplicate': {
+    case 'duplicate':
+    case 'split': {
+      // Both halves of a linked pair are cut, so a locked partner refuses the split too.
       const clip = clipOf(a.track, a.id), partner = findLinkPartner(p, clip);
       return clipLocked(p, a.track, clip) || !!(partner && clipLocked(p, partner.track, partner.clip));
     }
-    case 'delete':
-    case 'split': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'delete': return clipLocked(p, a.track, clipOf(a.track, a.id));
+    case 'setMagnet':
+      // Turning the main-track magnet on removes its gaps.
+      return a.track === 'video' && !!a.on && !p.magnet?.video && p.videoClips.some((c) => c.gap) && isLayerLocked(p, 'video', 0);
+    case 'removeSrtCaptions': return p.textClips.some((c) => c.source === 'srt' && clipLocked(p, 'text', c));
+    case 'styleSrtCaptions': return p.textClips.some((c) => c.source === 'srt' && clipLocked(p, 'text', c));
+    case 'styleCaptions': return p.textClips.some((c) => c.caption && clipLocked(p, 'text', c));
     case 'trimClip': return clipLocked(p, a.track, clipOf(a.track, a.id));
     case 'paste': {
       if (a.track === 'video') return isLayerLocked(p, 'video', 0);
@@ -1270,7 +1318,7 @@ export function actionLocked(p, a) {
     case 'extendVideoTo':
     case 'moveVideo': return isLayerLocked(p, 'video', 0);
     case 'moveToOverlay': return isLayerLocked(p, 'video', 0);
-    case 'moveToMain': return clipLocked(p, 'overlay', clipOf('overlay', a.id));
+    case 'moveToMain': return clipLocked(p, 'overlay', clipOf('overlay', a.id)) || isLayerLocked(p, 'video', 0);
     case 'extractAudio': return clipLocked(p, a.track, clipOf(a.track, a.id));
     case 'cutRanges':
     case 'retimeVideo':
@@ -1282,6 +1330,8 @@ export function actionLocked(p, a) {
     case 'removeLayer': return isLayerLocked(p, a.track, a.layer);
     case 'deleteLayer': return a.track !== 'video' && isLayerLocked(p, a.track, a.layer);
     case 'setCaptions':
+      // Replaces the auto captions wherever they sit, then adds the new ones on layer 0.
+      return isLayerLocked(p, 'text', 0) || p.textClips.some((c) => c.caption && c.source !== 'srt' && clipLocked(p, 'text', c));
     case 'importSrtCaptions': return isLayerLocked(p, 'text', 0);
     case 'addEffectClip': return isLayerLocked(p, 'effect', 0);
     case 'insertAudioClip': return isLayerLocked(p, 'audio', layerOf(a.clip || {}));
