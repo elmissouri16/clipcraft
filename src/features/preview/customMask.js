@@ -21,13 +21,19 @@ export function rasterizeCustomMask(strokes, w, h) {
     const x1 = Math.min(w - 1, Math.ceil(cx + r));
     const y0 = Math.max(0, Math.floor(cy - r));
     const y1 = Math.min(h - 1, Math.ceil(cy + r));
-    const hard = r * 0.7;
+    const hard = r * 0.7, rr = r * r;
     for (let y = y0; y <= y1; y++) {
+      const dy = y + 0.5 - cy, dy2 = dy * dy;
       for (let x = x0; x <= x1; x++) {
-        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+        const i = y * w + x;
+        // Already at the stamp's value: blending leaves it there (stamps overlap heavily along a
+        // stroke, so most pixels of a disc were painted by the previous stamp).
+        if (out[i] === target) continue;
+        const dx = x + 0.5 - cx;
+        if (dx * dx + dy2 > rr) continue; // outside the disc: nothing to blend
+        const d = Math.hypot(dx, dy);
         if (d > r) continue;
         const cov = d <= hard ? 1 : (r - d) / (r - hard);
-        const i = y * w + x;
         out[i] = Math.round(out[i] * (1 - cov) + target * cov);
       }
     }

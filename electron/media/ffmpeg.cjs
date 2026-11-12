@@ -4,7 +4,7 @@ const { audioFadeFilters, audioAutomationFilters } = require('../audio/fades.cjs
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 
 const ffmpegPath = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
 // ffprobe-static ships an Intel-only macOS binary. Prefer the native platform
@@ -762,6 +762,27 @@ function effectiveExport(project) {
 
 // Which encoders the bundled FFmpeg actually has (checked once, synchronously — buildExportArgs is sync).
 let encoderSet = null;
+const parseEncoders = (out) => {
+  const set = new Set();
+  for (const line of String(out).split('\n')) {
+    const m = line.trim().match(/^\S+\s+(\S+)\s/);
+    if (m) set.add(m[1]);
+  }
+  return set;
+};
+// The same probe without blocking the main process: run at startup, so the first synchronous
+// hasEncoder() (export settings, the encoder pick) finds the answer ready.
+let warming = null;
+function warmEncoders() {
+  if (encoderSet) return Promise.resolve();
+  warming ||= new Promise((resolve) => {
+    execFile(ffmpegPath, ['-hide_banner', '-encoders'], { windowsHide: true, maxBuffer: 8 << 20 }, (error, stdout) => {
+      if (!encoderSet) encoderSet = error ? new Set() : parseEncoders(stdout);
+      resolve();
+    });
+  });
+  return warming;
+}
 function hasEncoder(name) {
   if (!encoderSet) {
     encoderSet = new Set();
@@ -1131,4 +1152,4 @@ async function sampleFrames(item, from, to, count = 8) {
 
 module.exports = {
   sampleFrames, analysisAudioPlan, audioAnalysisKey, buildTimelineAudioArgs,
-  toSdr, stillInput, graphFile, pickEncoder, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };
+  toSdr, stillInput, graphFile, pickEncoder, warmEncoders, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };

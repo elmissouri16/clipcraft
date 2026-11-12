@@ -19,10 +19,18 @@ function settingsFile() {
   return path.join(dir, 'settings.json');
 }
 
+// Getters are called often (several per preview request); the file is read again only when it
+// changed on disk. Each read still parses its own object: callers edit what they get.
+let cached = null; // { file, mtimeMs, size, text }
 function read() {
   try {
-    return JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
+    const file = settingsFile(), st = fs.statSync(file);
+    if (!cached || cached.file !== file || cached.mtimeMs !== st.mtimeMs || cached.size !== st.size) {
+      cached = { file, mtimeMs: st.mtimeMs, size: st.size, text: fs.readFileSync(file, 'utf8') };
+    }
+    return JSON.parse(cached.text);
   } catch {
+    cached = null;
     return {};
   }
 }

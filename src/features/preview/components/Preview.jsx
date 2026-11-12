@@ -616,7 +616,10 @@ export default function Preview({
     const w = Math.round(stage.clientWidth * dpr);
     const h = Math.round(stage.clientHeight * dpr);
     const previous = textState.current;
-    if (!previous || previous.project !== project) textState.current = { project, at: createTextFrameState(project, overlayRanges(project)) };
+    // Rebuilt only when what it reads changes (the text clips and the overlay ranges from the picture
+    // tracks), not on every new project identity: a chat edit or a video drag leaves it alone.
+    const inputs = [project.textClips, project.videoClips, project.overlayClips, project.effectClips];
+    if (!previous || previous.inputs.some((v, i) => v !== inputs[i])) textState.current = { inputs, at: createTextFrameState(project, overlayRanges(project)) };
     const cached = textState.current, state = cached.at(t), key = `${w}:${h}:${fontTick}:${state.key}`;
     if (cached.key === key) return;
     cached.key = key;

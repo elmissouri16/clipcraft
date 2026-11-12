@@ -1391,10 +1391,22 @@ function linkPairs(p) {
   }
   return byId;
 }
+// Main-track starts of one project, computed once per call (the layout is O(clips), and a
+// project with many linked pieces would otherwise lay the track out several times per pair).
+function picStarts(p) {
+  let starts = null;
+  return (track, clip) => {
+    if (track !== 'video') return clip.start;
+    if (!starts) { starts = new Map(); for (const l of videoLayout(p.videoClips)) starts.set(l.clip.id, l.start); }
+    return starts.has(clip.id) ? starts.get(clip.id) : null;
+  };
+}
+
 function syncLinked(prev, next) {
   const before = linkPairs(prev);
   const after = linkPairs(next);
   if (!before.size && !after.size) return next;
+  const prevStart = picStarts(prev), nextStart = picStarts(next);
   let out = next;
   const put = (track, id, patch) => { out = mapClip(out, track, id, (c) => ({ ...c, ...patch })); };
   for (const [linkId, pair] of after) {
@@ -1416,11 +1428,11 @@ function syncLinked(prev, next) {
     const pa = was.aud.clip;
     const num = (c, f) => (f === 'speed' ? c.speed || 1 : c[f] || 0);
     const vChanged = ['in', 'out', 'speed'].some((f) => num(v, f) !== num(pv, f))
-      || picStart(prev, was.pic.track, pv) !== picStart(next, pair.pic.track, v);
+      || prevStart(was.pic.track, pv) !== nextStart(pair.pic.track, v);
     const aChanged = ['in', 'out', 'speed', 'start'].some((f) => num(au, f) !== num(pa, f));
     if (vChanged) {
       const want = {
-        start: picStart(next, pair.pic.track, v) + (au.linkOff || 0),
+        start: nextStart(pair.pic.track, v) + (au.linkOff || 0),
         in: v.in + (au.linkInOff || 0),
         out: v.out + (au.linkInOff || 0),
         speed: v.speed || 1,
@@ -1656,15 +1668,16 @@ function reduceHistory(state, a) {
     // freeze them; reject only a newly introduced or worsened mismatch.
     if (a.type !== 'load') {
       const prior = linkPairs(state.present);
-      const drift = (p, pair) => {
+      const presentStart = picStarts(state.present), nextStart = picStarts(next);
+      const drift = (startOf, pair) => {
         if (!pair?.pic || !pair?.aud) return [0, 0, 0, 0];
         const pic = pair.pic.clip, aud = pair.aud.clip;
-        return [aud.start - picStart(p, pair.pic.track, pic) - (aud.linkOff || 0), aud.in - pic.in - (aud.linkInOff || 0),
+        return [aud.start - startOf(pair.pic.track, pic) - (aud.linkOff || 0), aud.in - pic.in - (aud.linkInOff || 0),
           aud.out - pic.out - (aud.linkInOff || 0), (aud.speed || 1) - (pic.speed || 1)].map(Math.abs);
       };
       for (const [id, pair] of linkPairs(next)) {
-        const was = drift(state.present, prior.get(id));
-        if (drift(next, pair).some((value, i) => value > 1e-6 && value > was[i] + 1e-6)) return state;
+        const was = drift(presentStart, prior.get(id));
+        if (drift(nextStart, pair).some((value, i) => value > 1e-6 && value > was[i] + 1e-6)) return state;
       }
     }
   }

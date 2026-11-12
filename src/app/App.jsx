@@ -338,13 +338,18 @@ export default function App() {
     if (docChanged) { a.fileDocDirty = true; a.slotDocDirty = true; }
     // At most once a second, and always the latest project (thumbnails arriving keep changing it).
     if (docChanged && !a.timer) {
-      a.timer = setTimeout(() => {
+      const tick = () => {
         a.timer = null;
+        // A drag in progress changes the project on every pointer move: the whole-project copy to
+        // the serializer waits for the release, then runs on the final state (the same one-second
+        // cadence otherwise; nothing a crash could lose is older than the gesture).
+        if (historyRef.current?.gestureStart) { a.timer = setTimeout(tick, 1000); return; }
         // An unsaved project offered back at start stays stored until the user answers or starts working.
         if (a.pendingRestore && !hasContent(a.project)) return;
         a.pendingRestore = false;
         keepRecovery(!a.file && hasContent(a.project));
-      }, 1000);
+      };
+      a.timer = setTimeout(tick, 1000);
     }
     if (a.file) {
       clearTimeout(a.fileTimer);

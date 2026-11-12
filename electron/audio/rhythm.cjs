@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { Worker, isMainThread, parentPort, workerData } = require('node:worker_threads');
 
 const SR = 11025, FRAME = 512, HOP = 128;
 const aborted = () => Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' });
@@ -117,6 +118,28 @@ function analyzeSamples(samples, { sr = SR, offset_sec = 0 } = {}) {
   };
 }
 
+// analyzeSamples takes about half a second per five minutes of audio. On a worker thread the main
+// process (every window's IPC) keeps responding meanwhile; the result is analyzeSamples' own.
+const analyzeInWorker = (samples, opts, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) return reject(aborted());
+  const copy = new Float32Array(samples); // its own buffer: handed to the worker without a second copy
+  const worker = new Worker(__filename, { workerData: { role: 'rhythm' } });
+  let settled = false;
+  const settle = (fn, value) => { if (settled) return; settled = true; signal?.removeEventListener('abort', stop); worker.terminate(); fn(value); };
+  const stop = () => settle(reject, aborted());
+  signal?.addEventListener('abort', stop, { once: true });
+  worker.once('message', (m) => (m.error ? settle(reject, Object.assign(new Error(m.error), { name: m.name })) : settle(resolve, m.result)));
+  worker.once('error', (e) => settle(reject, e));
+  worker.once('exit', (code) => { if (!settled) settle(reject, new Error(`Beat analysis stopped (${code}).`)); });
+  worker.postMessage({ samples: copy, opts }, [copy.buffer]);
+});
+if (!isMainThread && workerData?.role === 'rhythm') {
+  parentPort.once('message', ({ samples, opts }) => {
+    try { parentPort.postMessage({ result: analyzeSamples(samples, opts) }); }
+    catch (e) { parentPort.postMessage({ error: e.message, name: e.name }); }
+  });
+}
+
 const decode = (ffmpegPath, wav, { start, duration, signal }) => new Promise((resolve, reject) => {
   if (signal?.aborted) return reject(aborted());
   const args = ['-hide_banner', '-loglevel', 'error', ...(start ? ['-ss', String(start)] : []), ...(duration ? ['-t', String(duration)] : []), '-i', wav, '-ac', '1', '-ar', String(SR), '-f', 'f32le', '-'];
@@ -151,7 +174,7 @@ function createRhythmService({ renderAudio, ffmpegPath }) {
     async beats(project, opts = {}) {
       const start = Math.max(0, Number(opts.start_sec) || 0), end = Number(opts.end_sec);
       const duration = Number.isFinite(end) && end > start ? Math.min(end - start, 600) : 600;
-      return withWav(project, opts, async wav => ({ ok: true, ...analyzeSamples(await decode(ffmpegPath, wav, { start, duration, signal: opts.signal }), { offset_sec: start }), analyzed_sec: duration }));
+      return withWav(project, opts, async wav => ({ ok: true, ...await analyzeInWorker(await decode(ffmpegPath, wav, { start, duration, signal: opts.signal }), { offset_sec: start }, opts.signal), analyzed_sec: duration }));
     },
     async loudness(project, opts = {}) {
       return withWav(project, opts, wav => new Promise((resolve, reject) => {

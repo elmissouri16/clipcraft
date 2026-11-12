@@ -329,9 +329,14 @@ export class FxGL {
   keyTexture(unit, source) {
     const { gl } = this;
     this.keyTex ||= new Map();
+    this.keySource ||= new Map();
     let texture = this.keyTex.get(unit);
     if (!texture) { texture = gl.createTexture();this.keyTex.set(unit, texture); }
     gl.activeTexture(gl.TEXTURE0 + unit);gl.bindTexture(gl.TEXTURE_2D, texture);
+    // A painted mask arrives as a canvas that is replaced, never redrawn, when the strokes change
+    // (customMaskCanvas): the same canvas again is the same pixels, already on the GPU.
+    if (!source.data && this.keySource.get(unit) === source) return;
+    this.keySource.set(unit, source.data ? null : source);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

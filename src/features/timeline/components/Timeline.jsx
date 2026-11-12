@@ -64,7 +64,10 @@ export default function Timeline({
   onDetach, detachOk, onLinkToggle, linkMode, onAttachContext, contextVersion,
   agentRun, agentOwnsEdit, agentHasChanges, onShowAgent, agentFocus,
 }) {
-  const time = useClockTime(clockRef, pausedTime, playing);
+  // No clock subscription here: a 10 Hz sample would re-render every mounted clip during playback
+  // for a readout and three buttons. Those subscribe on their own (ClockReadout and
+  // PlayheadEditButtons, below); handlers read the live clock through readTime().
+  const time = playing ? (clockRef?.current?.time ?? pausedTime) : pausedTime;
   const readTime = () => clockRef?.current.time ?? time;
   const [pps, setPps] = useState(60); // pixels per second (zoom)
   const [drop, setDrop] = useState(null); // { lane, time, index, clipId }
@@ -701,7 +704,8 @@ export default function Timeline({
       const minStart = Math.min(...group.map((g) => g.clip.start));
       drag(e, (d) => {
         const dd = Math.max(-minStart, d);
-        group.forEach((g) => dispatch({ type: 'update', track: g.track, id: g.id, patch: { start: g.clip.start + dd } }));
+        // One action for the whole group: the store places layers and syncs links once per move, not once per clip.
+        dispatch({ type: 'updateMany', updates: group.map((g) => ({ track: g.track, id: g.id, patch: { start: g.clip.start + dd } })) });
       });
       return;
     }
@@ -927,7 +931,9 @@ export default function Timeline({
     }
     return tags.length ? tags : null;
   };
-  const fxObjects = useMemo(() => effectObjects(project), [project]);
+  // Keyed on the lists it reads, so a chat or caption edit does not rebuild the effect rows (and the layout measure that follows).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fxObjects = useMemo(() => effectObjects(project), [project.effectClips, project.videoClips, project.overlayClips]);
   // Rows of a layered lane: one per layer, empty ones included.
   const layerRows = (lane, clips) => {
     const count = layerCount(project, lane);
@@ -1073,16 +1079,6 @@ export default function Timeline({
     });
   };
 
-  // Toolbar availability mirrors App's shortcut handlers exactly — same target resolution
-  // (selection first, then the main-track clip under the playhead) and the same trimActions
-  // builder — so a button is enabled only when its shortcut would actually do something.
-  const trimTargets = [];
-  if (selection) trimTargets.push(selection);
-  const underPlayhead = videoClipAt(project, time);
-  if (underPlayhead && !(selection && selection.id === underPlayhead.clip.id)) trimTargets.push({ track: 'video', id: underPlayhead.clip.id });
-  const canTrim = (side) => trimTargets.some((tgt) => trimActions(project, { track: tgt.track, id: tgt.id, t: time, side, newId: tgt.id }).length > 0);
-  const canSplit = !!(selection || underPlayhead);
-
   return (
     <section className={`timeline${agentRun ? ' is-agent-working' : ''}${agentFocus?.fading ? ' agent-fading' : ''}`} aria-label={t('clip.timeline')} aria-description={agentRun ? t('timeline.craftai_is_working_manual_edits_interrupt') : undefined}>
       <div className="tl-main">
@@ -1098,9 +1094,7 @@ export default function Timeline({
             <IconBtn label={withShortcut(t('keymap.redo'), 'redo')} onClick={() => dispatch({ type: 'redo' })} disabled={!canRedo}><Redo2 size={16} /></IconBtn>
           </div>
           <div className="tool-cluster" role="group" aria-label={t('timeline.edit')}>
-            <IconBtn label={withShortcut(t('keymap.split_at_playhead'), 'split')} onClick={onSplit} disabled={!canSplit}><Scissors size={16} /></IconBtn>
-            <IconBtn label={withShortcut(t('keymap.delete_left_of_playhead'), 'trimLeft')} onClick={() => onTrimSide('left')} disabled={!canTrim('left')}><ArrowLeftToLine size={16} /></IconBtn>
-            <IconBtn label={withShortcut(t('keymap.delete_right_of_playhead'), 'trimRight')} onClick={() => onTrimSide('right')} disabled={!canTrim('right')}><ArrowRightToLine size={16} /></IconBtn>
+            <PlayheadEditButtons clockRef={clockRef} pausedTime={pausedTime} playing={playing} project={project} selection={selection} onSplit={onSplit} onTrimSide={onTrimSide} />
             <IconBtn label={withShortcut(t('keymap.duplicate'), 'duplicate')} onClick={onDuplicate} disabled={!selection}><Copy size={16} /></IconBtn>
             <IconBtn label={withShortcut(t('keymap.delete'), 'delete')} onClick={onDelete} disabled={!selection}><Trash2 size={16} /></IconBtn>
           </div>
@@ -1139,7 +1133,7 @@ export default function Timeline({
           <IconBtn label={t(project.snapping ? 'timeline.auto_snapping_on' : 'timeline.auto_snapping_off')} active={project.snapping}
             onClick={() => dispatch({ type: 'setProject', patch: { snapping: !project.snapping }, transient: true })}><Target size={16} /></IconBtn>
           </div>
-          <span className="tl-time"><b>{formatTime(time)}</b> / {formatTime(duration)}</span>
+          <ClockReadout clockRef={clockRef} pausedTime={pausedTime} playing={playing} duration={duration} />
           <div className="tool-cluster" role="group" aria-label={t('timeline.view')}>
             <IconBtn label={t('timeline.fit_the_project_in_the_timeline')} onClick={fit}><StretchHorizontal size={16} /></IconBtn>
             <IconBtn label={t('timeline.zoom_out_ctrl_mouse_wheel')} onClick={() => zoomTo(pps / 1.4)}><ZoomOut size={16} /></IconBtn>
@@ -1415,4 +1409,30 @@ export function makeSelection(items) {
   if (!items.length) return null;
   if (items.length === 1) return { ...items[0] };
   return { ...items[0], items };
+}
+
+// The two toolbar parts that follow the playhead during playback. They subscribe to the clock
+// themselves (10 Hz), so the rest of the timeline does not re-render for them.
+function ClockReadout({ clockRef, pausedTime, playing, duration }) {
+  const time = useClockTime(clockRef, pausedTime, playing);
+  return <span className="tl-time"><b>{formatTime(time)}</b> / {formatTime(duration)}</span>;
+}
+// Availability mirrors App's shortcut handlers exactly — same target resolution (selection first,
+// then the main-track clip under the playhead) and the same trimActions builder — so a button is
+// enabled only when its shortcut would actually do something.
+function PlayheadEditButtons({ clockRef, pausedTime, playing, project, selection, onSplit, onTrimSide }) {
+  const time = useClockTime(clockRef, pausedTime, playing);
+  const trimTargets = [];
+  if (selection) trimTargets.push(selection);
+  const underPlayhead = videoClipAt(project, time);
+  if (underPlayhead && !(selection && selection.id === underPlayhead.clip.id)) trimTargets.push({ track: 'video', id: underPlayhead.clip.id });
+  const canTrim = (side) => trimTargets.some((tgt) => trimActions(project, { track: tgt.track, id: tgt.id, t: time, side, newId: tgt.id }).length > 0);
+  const canSplit = !!(selection || underPlayhead);
+  return (
+    <>
+      <IconBtn label={withShortcut(t('keymap.split_at_playhead'), 'split')} onClick={onSplit} disabled={!canSplit}><Scissors size={16} /></IconBtn>
+      <IconBtn label={withShortcut(t('keymap.delete_left_of_playhead'), 'trimLeft')} onClick={() => onTrimSide('left')} disabled={!canTrim('left')}><ArrowLeftToLine size={16} /></IconBtn>
+      <IconBtn label={withShortcut(t('keymap.delete_right_of_playhead'), 'trimRight')} onClick={() => onTrimSide('right')} disabled={!canTrim('right')}><ArrowRightToLine size={16} /></IconBtn>
+    </>
+  );
 }

@@ -95,19 +95,32 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     requestAnimationFrame(() => launcherRef.current?.focus({ preventScroll: true }));
   };
   const isCurrent = () => mounted.current && getProject().id === projectId;
-  const saveChat = (next) => {
+  // The chat lives in the project (saved and restored with it). Storing it copies every session
+  // into every history snapshot, so while the user types, the project copy is refreshed at most a
+  // few times a second rather than once per keystroke; the composer shows `chat` at once. Any
+  // other chat change, a send, a session switch or unmount stores the latest draft immediately.
+  const pendingDraft = useRef(null); // a timer while a typed draft waits to reach the project
+  const storeChat = (next) => dispatch({ type: 'craftChat', projectId, chat: snapshotChatSessions(next) });
+  const flushDraft = () => {
+    if (!pendingDraft.current) return;
+    clearTimeout(pendingDraft.current);
+    pendingDraft.current = null;
+    if (getProject().id === projectId) storeChat(chatRef.current);
+  };
+  const saveChat = (next, { typing = false } = {}) => {
     if (!isCurrent()) return;
     chatRef.current = next;
     setChat(next);
-    dispatch({ type: 'craftChat', projectId, chat: snapshotChatSessions(next) });
+    if (!typing) { if (pendingDraft.current) { clearTimeout(pendingDraft.current); pendingDraft.current = null; } storeChat(next); return; }
+    if (!pendingDraft.current) pendingDraft.current = setTimeout(flushDraft, 200);
   };
-  const updateSession = (patch) => {
+  const updateSession = (patch, options) => {
     const current = chatRef.current;
     saveChat({ ...current, sessions: current.sessions.map((s) => s.id === current.activeSessionId
-      ? { ...s, ...(typeof patch === 'function' ? patch(s) : patch) } : s) });
+      ? { ...s, ...(typeof patch === 'function' ? patch(s) : patch) } : s) }, options);
   };
   const setMessages = (value) => updateSession((s) => ({ messages: typeof value === 'function' ? value(s.messages) : value }));
-  const setInput = (draft) => updateSession({ draft });
+  const setInput = (draft) => updateSession({ draft }, { typing: true });
 
   // Files from a drop, a paste or the picker: videos become references, the rest images.
   const attachFiles = async files => {
@@ -207,7 +220,10 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   }, [refreshConfig, settingsVersion, open]);
   useEffect(() => {
     mounted.current = true;
+    window.addEventListener('pagehide', flushDraft);
     return () => {
+      window.removeEventListener('pagehide', flushDraft);
+      flushDraft();
       mounted.current = false;
       canceled.current = true;
       configRequest.current++;
@@ -369,6 +385,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   };
 
   const send = (text) => {
+    flushDraft(); // a send attempt stores the draft as typed, whether or not the request starts
     const current = chatRef.current.sessions.find(s => s.id === chatRef.current.activeSessionId);
     const msg = text.trim() || (current.videos?.length ? 'Edit my footage in the style of the attached reference video.' : current.images.length ? 'Review the attached images.' : '');
     if (!msg || modelSaving || preparingRequest.current || importingImages.current || !config?.ready || !isCurrent() || externalRef.current?.holder || current.external) return;

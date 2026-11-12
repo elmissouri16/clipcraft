@@ -15,6 +15,20 @@ import { gradeExpr, hasGrade } from './grade.js';
 import { getLut, lutOn } from './lut.js';
 import { filterExpr, filterFxLook, hasFilter, isFilterFx, lutFilterRef } from './filters.js';
 
+// The grade's shader source is built from its numbers; the same grade (every frame of a graded
+// clip) reuses the text. Bounded like filterExpr's memo.
+const gradeMemo = new Map();
+function gradeSource(grade) {
+  const key = JSON.stringify(grade);
+  let expr = gradeMemo.get(key);
+  if (expr === undefined) {
+    expr = gradeExpr(grade);
+    if (gradeMemo.size >= 256) gradeMemo.delete(gradeMemo.keys().next().value);
+    gradeMemo.set(key, expr);
+  }
+  return expr;
+}
+
 const PIXEL = Object.fromEntries(PIXEL_EFFECTS.map((e) => [e.id, e.expr]));
 const OVERLAY = Object.fromEntries(OVERLAY_EFFECTS.map((e) => [e.id, e.draw]));
 export const isPixel = (id) => !!PIXEL[id];
@@ -105,7 +119,7 @@ export function pixelPasses(project, clip, clipStart, lt) {
   }
   const lut = lutOn(clip.grade?.lut) ? getLut(clip.grade.lut.ref) : null;
   if (lut) list.push({ lut, K: (clip.grade.lut.intensity ?? 100) / 100 });
-  const grade = hasGrade(clip) ? gradeExpr(clip.grade) : null;
+  const grade = hasGrade(clip) ? gradeSource(clip.grade) : null;
   if (grade) list.push({ expr: grade, T: lt });
   for (const id of clip.effects || []) {
     const k = clip.fxStrength?.[id];

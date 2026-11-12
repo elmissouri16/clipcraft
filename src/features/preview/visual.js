@@ -346,9 +346,13 @@ export function maskImages(project) {
 const customMaskCache = new Map();
 export function customMaskCanvas(clip, srcW, srcH) {
   const strokes = (clip.customMask && clip.customMask.strokes) || [];
-  const key = `${JSON.stringify(strokes)}|${srcW}x${srcH}`;
   const hit = customMaskCache.get(clip.id);
-  if (hit && hit.key === key) return hit.canvas;
+  // Every playback frame asks again: the same strokes array (the store keeps it by identity while
+  // the mask is untouched) answers without serializing the strokes; an equal copy (undo, reload)
+  // still matches by content.
+  if (hit && hit.strokes === strokes && hit.srcW === srcW && hit.srcH === srcH) return hit.canvas;
+  const key = `${JSON.stringify(strokes)}|${srcW}x${srcH}`;
+  if (hit && hit.key === key) { hit.strokes = strokes; return hit.canvas; }
   const w = Math.max(2, Math.min(640, Math.round(srcW) || 640));
   const h = Math.max(2, Math.round((w * (srcH || w)) / (srcW || w)));
   const keep = rasterizeCustomMask(strokes, w, h);
@@ -364,7 +368,7 @@ export function customMaskCanvas(clip, srcW, srcH) {
     img.data[i * 4 + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  customMaskCache.set(clip.id, { key, canvas });
+  customMaskCache.set(clip.id, { key, canvas, strokes, srcW, srcH });
   return canvas;
 }
 export function customMaskUrl(clip, srcW, srcH) {
