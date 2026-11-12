@@ -37,7 +37,8 @@ function register() {
 function sandboxWindow(width, height) {
   const win = new BrowserWindow({ show: false, width, height, useContentSize: true, frame: false, transparent: true, backgroundColor: '#00000000', enableLargerThanScreen: true,
     webPreferences: { preload: path.join(DIR, 'sandboxPreload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, partition: PARTITION,
-      offscreen: true, backgroundThrottling: false, spellcheck: false, webgl: false, devTools: false, navigateOnDragDrop: false } });
+      // The display's scale, as offscreen windows had before Electron 42 made 1.0 the default: the sandbox page sees the same devicePixelRatio as before.
+      offscreen: { deviceScaleFactor: require('electron').screen.getPrimaryDisplay().scaleFactor }, backgroundThrottling: false, spellcheck: false, webgl: false, devTools: false, navigateOnDragDrop: false } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   return win;

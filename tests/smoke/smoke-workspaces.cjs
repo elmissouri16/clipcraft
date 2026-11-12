@@ -38,7 +38,7 @@ module.exports = async (win, app, dir) => {
     check('brief suggestion fills draft without sending',await q('document.querySelector("textarea[aria-label=Message]").value.includes("first cut")&&!document.querySelector(".pilot-msg")'));
     await q(`window.__fve.load({id:'workspace-fixture',name:'Workspace fixture',ratio:'16:9',media:[{id:'source',type:'image',path:${JSON.stringify(imageFile)},width:320,height:180}],videoClips:[{id:'v',mediaId:'source',in:0,out:30}],audioClips:[],textClips:[{id:'title',text:'A real preview',start:0,duration:30}]})`);
     await until('!!document.querySelector(".is-docked textarea")');await type('Keep this draft');
-    await q(`window.__workspaceNodes={chat:document.querySelector('.pilot-shell'),player:document.querySelector('.player'),timeline:document.querySelector('.timeline')};`);
+    await q(`window.__workspaceNodes={chat:document.querySelector('.pilot-shell'),player:document.querySelector('.player'),timeline:document.querySelector('.timeline')};true`); // the statement's value must be cloneable (no DOM nodes)
     await mode('edit');await click('.pilot-fab');await until('!!document.querySelector(".pilot-input textarea")');
     check('draft survives mode change',await q('document.querySelector("textarea[aria-label=Message]").value==="Keep this draft"'));
     await click('button[title="Expand to Agent mode"]');await until('!!document.querySelector(".mode-agent")');

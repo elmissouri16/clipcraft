@@ -10,6 +10,10 @@ if (process.env.FVE_SMOKE && process.env.FVE_SMOKE_MODE === 'screenrec') {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream');
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 }
+// UI tests never touch the real macOS Keychain: safeStorage would ask the user to allow each new
+// Electron binary (or stall while the Keychain decides), once per test process. Their settings
+// live under the test folder and hold no keys, so Chromium's in-memory test keychain serves them.
+if (process.env.FVE_SMOKE && process.platform === 'darwin') app.commandLine.appendSwitch('use-mock-keychain');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -147,8 +151,8 @@ function createWindow() {
     reloadSoon();
   });
   win.webContents.on('unresponsive', () => logCrash('interface not responding', {}));
-  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-    if (level >= 3) logCrash('interface error', { message: String(message).slice(0, 500), at: `${path.basename(sourceId || '')}:${line}` });
+  win.webContents.on('console-message', (e) => { // the event object (Electron 35+); the positional arguments are deprecated
+    if (e.level === 'error') logCrash('interface error', { message: String(e.message).slice(0, 500), at: `${path.basename(e.sourceId || '')}:${e.lineNumber}` });
   });
   win.webContents.on('did-start-loading', () => externalAgents.rendererGone());
   win.webContents.on('render-process-gone', () => externalAgents.rendererGone());
@@ -1448,7 +1452,8 @@ async function captureTimelineFrame(plan,signal){
   if(signal?.aborted)throw Object.assign(new Error('Frame inspection stopped.'),{name:'AbortError'});
   const renderer=new BrowserWindow({width:plan.width,height:plan.height,useContentSize:true,show:false,frame:false,
     webPreferences:{preload:path.join(__dirname,"./agents/framePreload.cjs"),contextIsolation:true,nodeIntegration:false,
-      webSecurity:!process.env.VITE_DEV_SERVER_URL,offscreen:true,backgroundThrottling:false}});
+      // Rendered at the display's scale, as offscreen windows were before Electron 42 made 1.0 the default, so the inspected frames keep their detail.
+      webSecurity:!process.env.VITE_DEV_SERVER_URL,offscreen:{deviceScaleFactor:screen.getPrimaryDisplay().scaleFactor},backgroundThrottling:false}});
   const id=renderer.webContents.id;
   let timer,abort;
   try{

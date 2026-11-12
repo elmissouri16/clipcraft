@@ -95,7 +95,7 @@ module.exports=async(win,app,dir)=>{
     await q('document.querySelector(".btn-export").click()');await until('!!document.querySelector(".export-modal .lib-credits")');
     win.show();app.focus({steal:true});win.focus();await until('document.hasFocus()');
     await q('document.querySelector(".export-modal .lib-credits button").click()');await wait(100);
-    const clipboard=require('electron').clipboard.readText();check('Export offers copyable credits',clipboard.includes('Credit forest')&&clipboard.includes('Credit sound'));
+    const clipboard=await require('electron').clipboard.readText();check('Export offers copyable credits',clipboard.includes('Credit forest')&&clipboard.includes('Credit sound')); // readText returns a Promise since Electron 44
     fs.writeFileSync(path.join(dir,'credits.png'),(await win.capturePage()).toPNG());
     await q('document.querySelector(".export-modal button[aria-label=Close]").click()');
     result.layouts=[];

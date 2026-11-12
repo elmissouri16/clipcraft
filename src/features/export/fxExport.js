@@ -78,10 +78,16 @@ export async function renderFxPass(projectIn, onProgress, isCanceled) {
     // Each drawn frame's pixels are collected one frame later (gl.readAsync), so the GPU
     // copy overlaps the next upload and draw.
     const writes = [], IN_FLIGHT = 2, drawn = [];
-    const write = (output) => fxWrite(job.id, output).then(({ result, buffers }) => {
-      for (const b of buffers) if (b?.byteLength === size && pool.length < batch * 4) pool.push(b);
-      return unwrap(result);
-    });
+    const write = (output) => {
+      const sent = fxWrite(job.id, output).then(({ result, buffers }) => {
+        for (const b of buffers) if (b?.byteLength === size && pool.length < batch * 4) pool.push(b);
+        return unwrap(result);
+      });
+      // The loop awaits every write from `writes` and reports its failure there. A write that fails
+      // while the loop is still waiting on a read must not also be logged as an unhandled rejection.
+      sent.catch(() => {});
+      return sent;
+    };
     let pending = read(), count = 0, finished = 0, output = [];
     const settle = async () => {
       output.push(await gl.finish(drawn.shift(), take()));finished++;step();

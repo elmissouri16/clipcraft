@@ -1165,7 +1165,7 @@ module.exports = async function smoke(win, app, dir) {
       result.railLanguage = await q(`document.querySelector('.set2-rail button[data-section=language]')?.textContent.trim() || ''`);
       result.railGeneral = await q(`document.querySelector('.set2-rail-label')?.textContent.trim() || ''`);
       await q(`document.querySelector('.set2-rail button[data-section=language]').click()`);
-      await until(`!!document.querySelector('select[aria-label]') && document.querySelector('.set2-page-head h4')`, 5000);
+      await until(`!!document.querySelector('select[aria-label]') && !!document.querySelector('.set2-page-head h4')`, 5000); // a DOM node result cannot be returned since Electron 45
       result.languagePageTitle = await q(`document.querySelector('.set2-page-head h4')?.textContent || ''`);
       result.selected = await q(`document.querySelector('.set2-page select')?.value || ''`);
       await q(`document.querySelector('.settings .about-btn').click()`);

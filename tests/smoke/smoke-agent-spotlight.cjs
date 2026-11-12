@@ -78,7 +78,10 @@ module.exports = async (win, app, dir) => {
     check('the strip still names the running tool', await q('document.querySelector(".tl-agent-status")?.dataset.phase==="editing"'));
     await shot('spotlight-live-1400.png');
     // Back at the start (a programmatic scroll, not the user's): the early clips render again with their trail.
-    await q('document.querySelector(".tl-scroll").scrollLeft=0'); await until('!!document.querySelector(".clip[data-sel-id=v2]")');
+    // Let the smooth reveal finish first: Chromium (Electron 45) can apply the last step of a running smooth
+    // scroll after a plain scrollLeft assignment, which would leave the scroller a few pixels off zero.
+    for (let last = -1, same = 0; same < 3;) { const now = await q('document.querySelector(".tl-scroll").scrollLeft'); same = now === last ? same + 1 : 0; last = now; await wait(50); }
+    await q('document.querySelector(".tl-scroll").scrollTo({left:0,behavior:"instant"})'); await until('!!document.querySelector(".clip[data-sel-id=v2]")');
     check('trail: the trimmed and cut clips are marked, the shifted one is not', await q('document.querySelector(".clip[data-sel-id=v2]")?.dataset.agent==="done"&&document.querySelector(".clip[data-sel-id=v1]")?.dataset.agent==="done"&&!document.querySelector(".clip[data-sel-id=v3]")?.dataset.agent'));
     check('a seam line marks where the cut happened', await q(`[...document.querySelectorAll(".tl-agent-seam")].some(e=>Math.abs(parseFloat(e.style.left)-(192+${pps}))<2)`));
     await shot('spotlight-trail-live-1400.png');
@@ -87,7 +90,8 @@ module.exports = async (win, app, dir) => {
     await wait(100); runs[0].hold.release();
     await untilFn(() => runs[0].stage === 'ended', 'first run ends');
     await until('!document.querySelector("button[aria-label=Stop]")');
-    check('a user scroll wins over the next reveal', await q('document.querySelector(".tl-scroll").scrollLeft===0'));
+    const afterScroll = await q('document.querySelector(".tl-scroll").scrollLeft');
+    check(`a user scroll wins over the next reveal (scrollLeft ${afterScroll})`, afterScroll === 0);
     check('the status strip is gone after the run', await q('!document.querySelector(".tl-agent-status")'));
     check('no extra history: the request is one Undo step', await q('window.__fve.history().past.length===1'));
     await q(`document.querySelector(".tl-scroll").scrollLeft=${Math.round(38 * pps)};`); await wait(150);

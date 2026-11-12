@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 module.exports = async (win, app, dir) => {
   const { nativeImage, clipboard } = require('electron');
   const library = require('../../electron/library/library.cjs'), originalSearch = library.search;
-  const priorClipboard = clipboard.readText();
+  const priorClipboard = await clipboard.readText(); // the clipboard API is Promise-based since Electron 44
   library.search = async () => ({ results: [], page: 1, pages: 1 });
   const result = { checks: [], errors: [] }, q = js => win.webContents.executeJavaScript(js);
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -63,11 +63,11 @@ module.exports = async (win, app, dir) => {
     const reminderHeight = await q('document.querySelector(".lib-credit-reminder").getBoundingClientRect().height');
     await focusForClipboard();await click('.lib-credit-reminder button[aria-label="Copy credits"]');
     await until('!!document.querySelector(".lib-credit-reminder button[aria-label=\\"Credits copied\\"]")');
-    check('quick copy preserves the complete attribution', clipboard.readText() === credit);
+    check('quick copy preserves the complete attribution', await clipboard.readText() === credit);
     await capture('audio-reminder.png');await click('.lib-credit-link');await until('!!document.querySelector(".lib-credits pre")');
     check('the reminder opens the existing Credits view with full text', await q(`document.querySelector('.lib-credits pre').textContent===${JSON.stringify(credit)}&&!document.querySelector('.lib-credit-reminder')`));
     check('the compact reminder is smaller than the attribution card', reminderHeight < await q('document.querySelector(".lib-credits").getBoundingClientRect().height'));
-    await focusForClipboard();clipboard.clear();await click('.lib-credits button');await wait(100);check('full Credits view still copies attribution', clipboard.readText() === credit);
+    await focusForClipboard();await clipboard.clear();await click('.lib-credits button');await wait(100);check('full Credits view still copies attribution', await clipboard.readText() === credit);
     const size = await q('document.querySelector(".stage").getBoundingClientRect().height');
     check('resize handles remain visible without hover', await q('(()=>{const h=document.querySelector(".splitter.row"),s=getComputedStyle(h,"::after");return s.backgroundColor!=="rgba(0, 0, 0, 0)"&&parseFloat(s.width)>0&&parseFloat(s.height)>0;})()'));
     await q(`(()=>{const el=document.querySelector('.splitter.row'),r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+3;el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,clientX:x,clientY:y}));window.dispatchEvent(new PointerEvent('pointermove',{clientX:x,clientY:y+60}));window.dispatchEvent(new PointerEvent('pointerup',{clientX:x,clientY:y+60}));})()`);
@@ -75,6 +75,6 @@ module.exports = async (win, app, dir) => {
     check('resizing gives the portrait preview more height', await q(`document.querySelector('.stage').getBoundingClientRect().height>${size}`));
     await capture('resized-preview.png');check('no renderer errors', result.errors.length === 0);
   } catch (error) { result.error = error.stack;await capture('failure.png');result.dom = await q('document.body.innerText.slice(-3000)'); }
-  finally { library.search = originalSearch;clipboard.writeText(priorClipboard); }
+  finally { library.search = originalSearch;await clipboard.writeText(priorClipboard); }
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));console.log(JSON.stringify({ checks: result.checks, error: result.error, evidence: dir }));app.exit(result.error ? 1 : 0);
 };
