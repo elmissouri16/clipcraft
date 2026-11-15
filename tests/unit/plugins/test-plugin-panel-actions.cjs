@@ -1,0 +1,32 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),{PanelActions}=require('../../../electron/plugins/panelActions.cjs');
+(async()=>{
+ const {validateManifest}=await import('../../../shared/pluginManifest.mjs');
+ const example=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'../../../examples/plugins/project-dashboard/plugin.json')));
+ let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
+ check('dashboard declares a bounded same-package action',()=>assert.deepEqual(validateManifest(example).contributes.panels[0].commands,['add-chapter-markers']));
+ for(const edit of [m=>m.contributes.panels[0].commands=['unknown'],m=>m.contributes.panels[0].commands=['add-chapter-markers','add-chapter-markers'],m=>m.contributes.panels[0].commands=Array(9).fill('x'),m=>m.permissions.push('captions.read'),m=>m.contributes.panels[0].commands=['../x']]){const m=structuredClone(example);edit(m);check('invalid panel action declaration is rejected',()=>assert.throws(()=>validateManifest(m)));}
+ const events=[],cancelled=[],progress=[],manifest=validateManifest(example),command=manifest.contributes.commands[0];let valid=true;
+ const runtime={manager:{commandBundle:async()=>({manifest}),commandRuntime:{cancel:id=>cancelled.push(id)}},verify:async()=>{if(!valid)throw Error('revoked');},notify:(job,event)=>events.push(event)};
+ const broker=new PanelActions(runtime);const job=()=>({id:'panel-open',key:'a'.repeat(64),panel:manifest.contributes.panels[0],view:{webContents:{send:(_c,v)=>progress.push(v)}}});
+ let panel=job();await assert.rejects(broker.run(panel,{commandId:'other',input:{}}),/not declared/);checks++;
+ await assert.rejects(broker.run(panel,{commandId:command.id,input:{count:21}}),/Invalid/);checks++;
+ const begin=async()=>{const promise=broker.run(panel,{commandId:command.id,input:{count:3}});while(!panel.action)await new Promise(r=>setTimeout(r,1));return {promise,action:panel.action};};
+ let {promise,action}=await begin();let claimed=broker.claim(panel.id,action.id);
+ check('claim returns main-issued identity and validated input',()=>{assert.equal(claimed.runId,action.runId);assert.deepEqual(claimed.input,{count:3});});
+ check('action claim cannot be replayed or stolen by another panel',()=>{assert.equal(broker.claim(panel.id,action.id),null);assert.equal(broker.claim('other',action.id),null);});
+ const request={...claimed,commandId:command.id,key:panel.key,input:claimed.input,panelAction:{panelId:panel.id,actionId:action.id}};
+ check('forged command binding rejected',()=>assert.throws(()=>broker.bind({...request,runId:'forged'})));
+ broker.bind(request);check('command cannot bind twice',()=>assert.throws(()=>broker.bind(request)));
+ broker.cancel(panel);check('Stop targets only the owned command run',()=>assert.deepEqual(cancelled,[action.runId]));assert.deepEqual(await promise,{status:'canceled'});checks++;
+ check('late commit authorization is refused',()=>assert.equal(broker.find(panel.id,action.id),null));assert.equal(await broker.authorize(panel.id,action.id,action.runId),false);checks++;
+ ({promise,action}=await begin());broker.claim(panel.id,action.id);broker.bind({...request,runId:action.runId,panelAction:{panelId:panel.id,actionId:action.id}});
+ broker.progress(panel.id,action.id,{phase:'running',progress:12,message:'/private/should-not-pass',captions:['secret']});check('progress is bounded and strips arbitrary command data',()=>assert.deepEqual(progress.at(-1),{phase:'running',progress:1}));
+ valid=false;assert.equal(await broker.authorize(panel.id,action.id,action.runId),false);assert.deepEqual(await promise,{status:'canceled'});checks++;valid=true;
+ ({promise,action}=await begin());broker.claim(panel.id,action.id);broker.bind({...request,runId:action.runId,panelAction:{panelId:panel.id,actionId:action.id}});
+ assert.equal(await broker.authorize(panel.id,action.id,action.runId),true);checks++;
+ check('applying cannot falsely report a rollback',()=>assert.equal(broker.cancel(panel),false));panel.closed=true;broker.cancel(panel);broker.finish(panel.id,action.id,{phase:'completed',markersAdded:2,message:'ignored',path:'/secret'});assert.deepEqual(await promise,{status:'completed',markers_added:2});checks++;
+ panel=job();({promise,action}=await begin());broker.claim(panel.id,action.id);broker.finish(panel.id,action.id,{phase:'completed',markersAdded:99});assert.deepEqual(await promise,{status:'failed'});checks++;
+ ({promise,action}=await begin());broker.claim(panel.id,action.id);broker.finish(panel.id,action.id,{phase:'denied'});assert.deepEqual(await promise,{status:'denied'});assert.deepEqual(await broker.run(panel,{commandId:command.id,input:{count:3}}),{status:'denied'});check('denial blocks repeat requests for this opening',()=>assert.equal(panel.action,null));
+ check('closing idle panel does not cancel unrelated work',()=>{broker.cancel(job());assert.equal(cancelled.length,2);});
+ console.log(JSON.stringify({ok:true,checks}));
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -114,10 +114,27 @@ function composeSheet(files, { cols, rows, cw, ch }, signal, font = SHEET_FONTS.
   });
 }
 const cellLabel = f => f.source === 'media' ? `source ${f.source_time_sec}s` : `${f.source === 'clip' ? 'raw clip' : f.source === 'rendered' ? 'rendered' : 'timeline'} ${Number(f.time_sec).toFixed(2)}s`;
+const ANALYSIS_LIMITS = require('../../shared/subagentLimits.json');
 
 class AgentFrames {
-  constructor(captureTimeline) {this.captureTimeline=captureTimeline;this.records=new Map();this.dir=null;}
-  async inspect(owner,{project,source='timeline',clip_id,media_id,times_sec,source_times_sec,revision},signal) {
+  constructor(captureTimeline) {this.captureTimeline=captureTimeline;this.records=new Map();this.scopes=new Map();this.dir=null;}
+  openScope(owner, requestId) {
+    const key = `${owner}:${requestId}`;
+    if (this.scopes.has(key) || this.scopes.size >= ANALYSIS_LIMITS.maxConcurrent) throw Error('Too many active analysis frame scopes.');
+    this.scopes.set(key, { owner, limit: ANALYSIS_LIMITS.framesPerTask });return key;
+  }
+  closeScope(owner, requestId) {
+    const key = `${owner}:${requestId}`;this.scopes.delete(key);
+    for (const [id, frame] of this.records) if (frame.scopeKey === key) this.drop(id);
+  }
+  drop(id) { const frame=this.records.get(id);if(frame)fs.rmSync(frame.path,{force:true});this.records.delete(id); }
+  prune() {
+    const groups = new Map();
+    for (const [id, frame] of this.records) { const key = this.scopes.has(frame.scopeKey) ? frame.scopeKey : null;const group=groups.get(key)||[];group.push(id);groups.set(key,group); }
+    for (const [key, ids] of groups) for (const id of ids.slice(0, Math.max(0, ids.length - (key ? this.scopes.get(key).limit : 48)))) this.drop(id);
+  }
+  async inspect(owner,{project,source='timeline',clip_id,media_id,times_sec,source_times_sec,revision,requestId},signal) {
+    const key=`${owner}:${requestId}`,scopeKey=this.scopes.has(key)?key:undefined;
     const plans=await planFrames(project,source,clip_id,source==='media'?source_times_sec:times_sec,media_id);checkStop(signal);
     const pending=[];
     try {
@@ -132,12 +149,13 @@ class AgentFrames {
         const id=randomUUID(),file=path.join(this.dir,`${id}.jpg`);
         fs.writeFileSync(file,bytes,{flag:'wx'});
         const {media,project:ignored,...meta}=plan;
-        pending.push({owner,path:file,id,...meta,revision,fingerprint,image_hash:createHash('sha256').update(bytes).digest('hex')});
+        pending.push({owner,path:file,id,...meta,revision,fingerprint,...(scopeKey?{scopeKey}:{}),image_hash:createHash('sha256').update(bytes).digest('hex')});
       }
       checkStop(signal);
+      if(scopeKey&&!this.scopes.has(scopeKey))throw Error('Analysis frame scope expired.');
       for(const frame of pending)this.records.set(frame.id,frame);
-      while(this.records.size>48){const [id,frame]=this.records.entries().next().value;fs.rmSync(frame.path,{force:true});this.records.delete(id);}
-      return {frames:pending.map(({owner,path,...meta})=>meta),revision,note:'Actual image captures are attached to the next configured vision-model turn. Times are timeline seconds; clip captures show the source before edits.'};
+      this.prune();
+      return {frames:pending.map(({owner,path,scopeKey,...meta})=>meta),revision,note:'Actual image captures are attached to the next configured vision-model turn. Times are timeline seconds; clip captures show the source before edits.'};
     }catch(error){for(const frame of pending)fs.rmSync(frame.path,{force:true});throw error;}
   }
   // One numbered image for 2–6 captured frames of this owner. The cells keep their
@@ -154,10 +172,12 @@ class AgentFrames {
     fs.writeFileSync(file, bytes, { flag: 'wx' });
     const cells = frames.map((f, i) => ({ cell: i + 1, id: f.id, source: f.source, ...(Number.isFinite(f.time_sec) ? { time_sec: f.time_sec } : {}), ...(Number.isFinite(f.source_time_sec) ? { source_time_sec: f.source_time_sec } : {}), ...(f.clip_id ? { clip_id: f.clip_id } : {}), ...(f.media_id ? { media_id: f.media_id } : {}) }));
     const label = `Contact sheet of ${frames.length} frames, ${layout.cols} per row, numbered left to right then top to bottom: ${frames.map((f, i) => `#${i + 1} ${cellLabel(f)}`).join('; ')}. Each cell is a reduced copy; inspect a frame on its own for fine detail.`;
-    const record = { owner, path: file, id, source: 'sheet', revision: revision ?? frames[0].revision, cells, label, width: layout.cols * layout.cw, height: layout.rows * layout.ch };
+    const scopeKey=frames[0].scopeKey&&frames.every(f=>f.scopeKey===frames[0].scopeKey)?frames[0].scopeKey:undefined;
+    if(scopeKey&&!this.scopes.has(scopeKey)){fs.rmSync(file,{force:true});throw Error('Analysis frame scope expired.');}
+    const record = { owner, path: file, id, source: 'sheet', revision: revision ?? frames[0].revision, cells, label, width: layout.cols * layout.cw, height: layout.rows * layout.ch,...(scopeKey?{scopeKey}:{}) };
     this.records.set(id, record);
-    while (this.records.size > 48) { const [key, frame] = this.records.entries().next().value; fs.rmSync(frame.path, { force: true }); this.records.delete(key); }
-    const { owner: ignored, path: omitted, ...meta } = record;
+    this.prune();
+    const { owner: ignored, path: omitted, scopeKey: internalScope, ...meta } = record;
     return meta;
   }
   addExternal(owner, bytes, { revision, label }) {
@@ -167,7 +187,7 @@ class AgentFrames {
     fs.writeFileSync(file, bytes, { flag: 'wx' });
     const record = { owner, path: file, id, source: 'external', revision, label: String(label).slice(0, 600) };
     this.records.set(id, record);
-    while (this.records.size > 48) { const [key, frame] = this.records.entries().next().value; fs.rmSync(frame.path, { force: true }); this.records.delete(key); }
+    this.prune();
     const { owner: ignored, path: omitted, ...meta } = record;
     return meta;
   }
@@ -198,9 +218,9 @@ class AgentFrames {
   evidence(owner,ids,requestId){
     if(typeof requestId!=='string'||!requestId)throw new Error('Scene evidence requires an active agent request.');
     if(!Array.isArray(ids)||!ids.length||ids.length>6)throw new Error('Use one to six inspected frame IDs.');
-    return ids.map(id=>{const frame=this.records.get(id);if(!frame||frame.owner!==owner||frame.presentedFor!==requestId||!fs.existsSync(frame.path))throw new Error('Inspect and present the evidence frames in this request before describing a scene.');const {owner:ignored,path,...meta}=frame;return meta;});
+    return ids.map(id=>{const frame=this.records.get(id);if(!frame||frame.owner!==owner||frame.presentedFor!==requestId||!fs.existsSync(frame.path))throw new Error('Inspect and present the evidence frames in this request before describing a scene.');const {owner:ignored,path,scopeKey,...meta}=frame;return meta;});
   }
-  clearOwner(owner){for(const [id,frame] of this.records)if(frame.owner===owner){fs.rmSync(frame.path,{force:true});this.records.delete(id);}}
-  dispose(){this.records.clear();if(this.dir)fs.rmSync(this.dir,{recursive:true,force:true});this.dir=null;}
+  clearOwner(owner){for(const [id,frame] of this.records)if(frame.owner===owner)this.drop(id);for(const[key,scope]of this.scopes)if(scope.owner===owner)this.scopes.delete(key);}
+  dispose(){this.records.clear();this.scopes.clear();if(this.dir)fs.rmSync(this.dir,{recursive:true,force:true});this.dir=null;}
 }
 module.exports={AgentFrames,planFrames,sourceFrame,frameSize,sheetLayout,composeSheet};

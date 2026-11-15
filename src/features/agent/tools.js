@@ -26,6 +26,8 @@ import { EDITORIAL_DECLARATIONS, createEditorialTools } from './editorialTools.j
 import { REFERENCE_DECLARATIONS, createReferenceTools } from './referenceTools.js';
 import { PATH_DECLARATIONS, createPathTools } from './pathTools.js';
 import { GRAPHICS_DECLARATIONS, createGraphicsTools } from './graphicsTools.js';
+import { DISCOVERY_DECLARATIONS, DISCOVERY_READS, createDiscoveryTools } from './discoveryTools.js';
+import { PLUGIN_DECLARATIONS, createPluginTools } from './pluginTools.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -51,12 +53,12 @@ const N = { type: 'NUMBER' };
 const B = { type: 'BOOLEAN' };
 const SPEECH = { language: { ...S, description: 'en, ar, fr, es...; default auto' }, source: { ...S, enum: ['all', 'video', 'overlay', 'audio'], description: 'Audible mix by default. Select a track family or clip_ids to isolate speech from music.' },
   clip_ids: { type: 'ARRAY', items: S }, engine: { ...S, enum: ['local', 'cloud'] }, provider: { ...S, description: 'Cloud transcription: groq, openai, deepgram, elevenlabs' }, model: S };
-const NON_MUTATING = new Set(['analyze_reference', 'graphics_guide', 'analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options',
+const NON_MUTATING = new Set(['list_plugin_commands', ...DISCOVERY_READS, 'delegate_video_analysis', 'analyze_reference', 'graphics_guide', 'analyze_scenes', 'get_storyboard', 'annotate_scene', 'inspect_frames', 'get_project', 'list_options',
   'motion_guide', 'transcribe', 'search_sounds', 'list_voices', 'search_stock', 'export_video', 'review_section', 'list_local_media', 'export_subtitles', 'load_tools', 'recall_context',
   'edit_guide', 'log_footage', 'find_highlights', 'propose_edit_plan', 'critique_edit', 'get_beats']);
 // Our own audio planner's message (electron/media/ffmpeg.cjs analysisAudioPlan) when nothing is audible.
 const NOTHING_AUDIBLE = /^No audible clips in the selected \w+ source\./;
-const REQUIRED_PROOF = new Set(['inspect_frames', 'get_storyboard', 'analyze_scenes', 'annotate_scene', 'transcribe', 'export_video', 'export_subtitles', 'review_section', 'log_footage', 'get_beats']);
+const REQUIRED_PROOF = new Set([...DISCOVERY_READS, 'inspect_frames', 'get_storyboard', 'analyze_scenes', 'annotate_scene', 'transcribe', 'export_video', 'export_subtitles', 'review_section', 'log_footage', 'get_beats']);
 
 // Look of a text (edit_text). Ids come from list_options, so the declarations stay short: every step sends them,
 // and some free plans (Groq: 8K tokens a minute) count every token.
@@ -72,6 +74,8 @@ const STUDIO_MISSING = (st) => !st?.studio?.enabled ? 'VoiceStudio is off. Ask t
   : 'VoiceStudio lists no voice. Ask the user to create a voice profile in VoiceStudio.';
 
 export const TOOL_DECLARATIONS = [
+  ...PLUGIN_DECLARATIONS,
+  ...DISCOVERY_DECLARATIONS,
   ...EDITING_DECLARATIONS,
   ...FILE_DECLARATIONS,
   ...CAPTION_DECLARATIONS,
@@ -535,7 +539,7 @@ export function createToolRunner(ctx) {
   // the current canvas. Whole-source fit is a separate framing edit, never an
   // accidental insertion default (legacy fit arguments are intentionally ignored).
   // Returns { clip_id, track } or { error }.
-  const place = async (m, { as = 'main', start_sec = 0, main_index, name } = {}) => {
+  const place = async (m, { as = 'main', start_sec = 0, main_index, name, source_in, source_out } = {}) => {
     if (!m) return { error: 'Could not add the file to the project.' };
     const clipId = uid();
     const at = Math.max(0, Number(start_sec) || 0);
@@ -549,7 +553,8 @@ export function createToolRunner(ctx) {
     } else {
       track = 'video';
       const n = Number(main_index);
-      dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, preserveCanvas: true, ...(Number.isInteger(n) && n >= 0 ? { index: n } : {}) });
+      dispatch({ type: 'addToTimeline', mediaId: m.id, clipId, preserveCanvas: true, ...(Number.isInteger(n) && n >= 0 ? { index: n } : {}),
+        ...(source_in !== undefined || source_out !== undefined ? { sourceIn: source_in, sourceOut: source_out } : {}) });
     }
     if (m.type !== 'audio') dispatch({ type: 'update', track, id: clipId, patch: {
       crop: frameCrop(m, project().width, project().height),
@@ -853,7 +858,12 @@ export function createToolRunner(ctx) {
   const pathTools = createPathTools({ project, dispatch, after, needPicture });
   const graphicsTools = createGraphicsTools({ project, dispatch, after, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, settle: ctx.settle });
   const referenceTools = createReferenceTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled });
+  const discoveryTools = createDiscoveryTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, editActive: ctx.editActive,
+    onProgress: ctx.onToolProgress, place, dispatch, settle: ctx.settle, after, analysisScope: ctx.analysisScope });
+  const pluginTools = createPluginTools({api:ctx.api,allowPluginCommands:ctx.allowPluginCommands,getProject:project,dispatch,settle:ctx.settle,isCanceled:ctx.isCanceled,editActive:ctx.editActive,pluginCommandReady:ctx.pluginCommandReady,getPluginEditorContext:ctx.getPluginEditorContext,getPluginEditContext:ctx.getPluginEditContext,pluginEditApplied:ctx.pluginEditApplied,onProgress:ctx.onToolProgress});
   const tools = {
+    ...pluginTools,
+    ...discoveryTools,
     ...editorialTools,
     ...referenceTools,
     ...pathTools,

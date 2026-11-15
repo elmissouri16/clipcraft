@@ -1,0 +1,80 @@
+# Explicit plugin development sessions
+
+This stage adds a developer workflow, without adding scenario features or changing
+installed-package identity rules. Settings → Plugins → Developer mode can start
+one session from a user-chosen compiled payload folder (or an SDK source project
+with a built `dist`). The editor never compiles or evaluates source project tooling.
+
+## Isolation and lifetime
+
+A session captures the normal validated UTF-8 package bytes in memory. Each reload
+gets a new session/generation runtime key, separate from the real content fingerprint
+and every installed key. Its commands and panels can run through the existing
+sandbox, per-run/open consent, staging and commit guard. Static effects, transitions,
+presets and provider registrations are excluded from this first session slice:
+temporary rendering dependencies must not become unresolvable saved project pins.
+Those authors can keep using SDK build/validate and normal explicit installation.
+Installed inventory/activation, packages and production preferences never change.
+
+Reload first revokes the old key, closes its panel and cancels only its pending
+command. It validates a fresh snapshot, then publishes it without executing it.
+Invalid or identity-changing output leaves the session failed and non-runnable;
+a later explicit reload can recover. Plugin ID and publisher cannot change during
+a session; start another session for a different identity. Changes to permissions
+require the usual fresh execution/open consent. No panel automatically reopens. Completed manual development commands also need
+a single-use current-generation commit authorization from main; queued old results
+cannot apply after reload.
+A commit already past the existing atomic apply boundary may complete; no false
+rollback is reported. Project replacement still ends panel grants as before.
+
+Session state is not restored at startup. End/quit revokes its key, closes watchers
+and removes temporary session preferences. Preferences can survive reloads inside
+the same session but are never read from or written to installed-plugin storage.
+Only the main process owns source paths, snapshot bytes and session identifiers.
+Management IPC is restricted to the trusted editor main frame; plugin sandboxes
+cannot start/reload sessions or retrieve developer logs/source locations.
+
+## Workflow
+
+1. Run SDK build or watch outside the editor.
+2. Start a session by choosing the compiled folder or built source project.
+3. Use its command controls in Settings, or select its clearly marked development
+   panel from Plugin panels. Nothing executes on attach or reload.
+4. Choose Reload after a build. Optional Watch builds watches only that chosen
+   compiled directory and its replacement in the parent directory; it handles the
+   SDK's atomic dist replacement and never runs npm/compiler scripts. A bounded
+   one-second byte-fingerprint poll covers missed native filesystem notifications;
+   unchanged bytes do not revoke a working snapshot.
+5. Inspect in-memory lifecycle, command, console and error records, or clear them. Console errors are diagnostics; use
+   Reload to recover a faulting interface.
+6. End the session before starting another. Installed versions remain usable.
+
+## Diagnostics and limits
+
+The log is untrusted plain text, with a generation, source, severity and host time.
+Keep at most 200 records / 128 KiB, 1,000 characters per message and 30 incoming
+records per second; over-budget messages are dropped and counted. Notifications are
+batched. Commands forward at most 32 console messages through authenticated runtime
+IPC, only for development snapshots. Panel console events come from its exact native
+WebContents; failures/watchdog/crashes and host command outcomes are recorded too.
+Worker-result records describe staging/execution, while the command UI reports
+the actual verified applied result. No credentials, full snapshots or provider
+responses are automatically logged.
+Authored code can log its own approved data; this log stays in memory for the editor
+session and is cleared on a new development session. There is no remote inspector,
+arbitrary console evaluator, source map server or external reload endpoint.
+
+## Implementation and verification
+
+- Add a snapshot/session service with generation revocation, optional watcher,
+  bounded logs and isolated temporary preferences.
+- Route only development command/panel keys through that service. Keep normal
+  inventory and installation paths unchanged.
+- Add editor-only session/log IPC and localized Settings controls. Mark development
+  panel options and consent; keep selection across generations without opening code.
+- Capture worker/panel diagnostics with exact sender/token checks and size limits.
+- Test immutable installed packages/preferences, failed reload recovery, scoped
+  cancellation, permission changes, watcher replacement, log floods and forbidden IPC.
+- Use SDK-generated payloads in hidden real Electron tests, including actual worker
+  console output, panel errors, same-version reload, late approval, project changes
+  and cleanup. No foreground test windows or installer builds are required.

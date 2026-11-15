@@ -65,7 +65,7 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
     return () => document.removeEventListener('mousedown', outside);
   }, [open]);
 
-  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  useEffect(() => { if (disabled && !pending.current) setOpen(false); }, [disabled]);
 
   const saveChoice = async (write, close) => {
     if (disabled || pending.current || !config) return;
@@ -105,7 +105,7 @@ export default function CraftModelPicker({ config, disabled, onSaved, onSavingCh
   return (
     <div ref={root} className="pilot-model-wrap" onKeyDown={onKeyDown}>
       <button ref={badge} className="pilot-model" type="button" disabled={disabled || saving || !config}
-        title={config ? config.reasoningEffort ? t('pilot.model_badge_with_thinking', { provider: config.provider, model: config.model, effort: EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort }) : t('pilot.model_badge', { provider: config.provider, model: config.model }) : t('pilot.loading_ai_settings')}
+        title={config ? config.reasoningEffort ? t('pilot.model_badge_with_thinking', { provider: config.providerName||config.provider, model: config.model, effort: EFFORT_LABELS[config.reasoningEffort] || config.reasoningEffort }) : t('pilot.model_badge', { provider: config.providerName||config.provider, model: config.model }) : t('pilot.loading_ai_settings')}
         aria-label={t('pilot.choose_ai_model')} aria-haspopup="dialog" aria-expanded={open}
         onClick={() => setOpen((value) => !value)}>
         <span>{config?.model || t('pilot.choose_model')}</span><ChevronDown size={12} />

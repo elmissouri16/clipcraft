@@ -41,3 +41,15 @@ levels for models whose services do not report them.
 Default model ids in new rows are the services' stable aliases at the time of writing; "Load models"
 in Settings lists what the user's key can really use, and the connection test proposes one when the
 default is refused.
+
+
+## Installed provider plugins
+
+Stage 4b adds `contributes.aiProviders` over the existing OpenAI Chat Completions
+transport. Installed snapshots appear in the Assistant provider selector beside
+the built-in table. Their namespaced, fingerprinted identities have separate
+preferences, encrypted keys and destination consent. Only enabled, intact versions
+can send requests; a missing selected version remains explicitly unavailable.
+Plugin providers neither participate in nor leave through automatic fallback.
+Their model lists and vision flags are declared metadata; they do not trigger
+remote catalog requests. See [the author and security contract](../design/plugin-ai-providers.md).

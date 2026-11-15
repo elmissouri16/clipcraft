@@ -1,7 +1,12 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, net, nativeImage, powerSaveBlocker, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, net, nativeImage, powerSaveBlocker, Menu, screen, protocol } = require('electron');
+
+require('./plugins/ipcGuard.cjs').installCommandIpcGuard(ipcMain);
+require('./plugins/commandProtocol.cjs').registerCommandScheme(protocol,[require('./plugins/panelProtocol.cjs').PANEL_SCHEME]);
 
 const { scopedFetch, checkAbort, activityTimeout } = require("./system/cancel.cjs");
 app.setName('ClipCraft');
+const quietSmoke=!!process.env.FVE_SMOKE&&process.env.FVE_SMOKE_QUIET==='1';
+if(quietSmoke&&process.platform==='darwin')app.setActivationPolicy('accessory');
 // Keep the Windows driver workaround; macOS/Linux use Chromium's normal decode
 // policy. FVE_GPU_VIDEO=0/1 explicitly disables/allows GPU video on any platform.
 if (require('./system/videoPolicy.cjs').disableGpuVideo()) app.commandLine.appendSwitch('disable-accelerated-video-decode');
@@ -41,6 +46,11 @@ const AUDIO_EXT = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'wm
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 let win;
+const pluginManager = require('./plugins/ipc.cjs').registerPlugins({
+  ipcMain, app, dialog, getWindow:()=>win,
+  root:path.join(process.env.FVE_SMOKE || app.getPath('userData'),'plugins'),
+  examplesDirectory:!app.isPackaged && process.env.CLIPCRAFT_DEV_EXAMPLES === '1' ? path.join(__dirname,'../examples/plugins') : undefined,
+});
 let currentExport = null;
 let exportSleepBlocker = null;
 let exportBackgroundThrottle = null;
@@ -76,6 +86,7 @@ function createWindow() {
     backgroundColor: '#07070e',
     title: 'ClipCraft',
     show: false,
+    ...(quietSmoke?{focusable:false}:{}),
     // macOS: the window buttons sit inside ClipCraft's own top bar (one bar, not two).
     ...(mac ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 22, y: 24 } } : {}),
     // The .ico carries 16-256 px versions, so the title bar and taskbar stay sharp on Windows.
@@ -663,11 +674,15 @@ ipcMain.handle('app:closeCancel', () => { clearTimeout(closeTimer); relaunchOnCl
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
 const frameDirs = new Set();
 const agentExportTargets = new Map();
+pluginManager.commandRuntime.gifExporter=require('./export/pluginGif.cjs').createGifExporter({
+ dialog,getWindow:()=>win,isExportBusy:()=>!!currentExport||!!agentExportTargets.size,
+ createFrames:require('./export/pluginGifFrames.cjs').createGifFrames({ipcMain,BrowserWindow,manager:pluginManager}),
+});
 const agentExportOutputs = new Map();
 
 ipcMain.handle('agent:exportBegin', (event, req = {}) => {
   try {
-    if (currentExport || agentExportTargets.size) throw Error('Another export is already running.');
+    if (currentExport || agentExportTargets.size || pluginManager.commandRuntime.gifExporter.busy) throw Error('Another export is already running.');
     const key = agentRequestKey(event, req.requestId);
     if (agentRequests.has(key)) throw Error('This assistant request is already running.');
     const target = require('./agents/editorExport.cjs').createEditorExportTarget(req, {
@@ -683,6 +698,7 @@ ipcMain.handle('agent:exportBegin', (event, req = {}) => {
 });
 
 ipcMain.handle('export:begin', async (_e, suggested) => {
+  if(pluginManager.commandRuntime.gifExporter.busy)throw Error('A GIF export is already running.');
   let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'ui-export.mp4') : null;
   if (!file) {
     const base = String(suggested || 'export').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'export';
@@ -781,7 +797,7 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     if ((owned || target?.requestId) && (!owned || owned.sender.id !== event.sender.id || owned.requestId !== target.requestId || owned.file !== target.file)) throw Error('This assistant export target is not valid.');
     ownsFrames = frameDirs.has(target?.frameDir);
     if (owned?.controller.signal.aborted) return { canceled: true };
-    if (currentExport) throw Error('Another video is already being encoded.');
+    if (currentExport || pluginManager.commandRuntime.gifExporter.busy) throw Error('Another video is already being encoded.');
     const project = fxJobs.resolve(projectIn);
     if (owned && fs.existsSync(target.file) && project.media.some(m => m.path && fs.existsSync(m.path) && fs.realpathSync(m.path) === fs.realpathSync(target.file))) throw Error('Choose an output path different from source media.');
     const textFile = path.join(target.frameDir, 'text.mov');
@@ -960,7 +976,16 @@ ipcMain.handle('app:openHelp', (_e, url) => {
   return false;
 });
 
-ipcMain.handle('settings:get', () => settings.getPublic());
+pluginManager.providerService=require('./plugins/providerService.cjs').createProviderService({manager:pluginManager,settings,dialog,getWindow:()=>win});
+require('./plugins/providerGate.cjs').configure(pluginManager.providerService);
+app.on('before-quit',()=>pluginManager.providerService.revoke());
+const providerSetup=async(event,provider)=>{
+ if(require('./agents/providers.cjs').isPlugin(provider)){
+  if(event.sender!==win?.webContents||event.senderFrame!==win?.webContents.mainFrame)throw Error('Plugin providers are only available to the editor.');
+  await pluginManager.providerService.ensure(provider);
+ }
+};
+ipcMain.handle('settings:get', async()=>{await pluginManager.providerService.refresh();return settings.getPublic();});
 // UI language (docs/design/localization.md): settled at startup for both processes; the renderer asks
 // synchronously before React renders; a change is saved and applies after Restart.
 const i18n = require('./system/i18n.cjs');
@@ -1001,20 +1026,25 @@ ipcMain.handle('mcp:call', (event, { name, args, requestId, revision }) => withA
   }
 }));
 ipcMain.handle('mcp:test', async (_e, server) => mcpRegistry.test(server));
-ipcMain.handle('settings:save', (_e, patch) => {
+ipcMain.handle('settings:save', async(event, patch) => {
   try {
+    await providerSetup(event,patch.provider);
     return { ok: true, settings: settings.save(patch) };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 });
 ipcMain.handle('settings:clearKey', (_e, provider) => settings.clearKey(provider));
-ipcMain.handle('settings:saveProviderKey', (_e, provider, key) => {
-  try { return { ok: true, settings: settings.saveProviderKey(provider, key) }; }
+ipcMain.handle('settings:saveProviderKey', async(event, provider, key) => {
+  try { await providerSetup(event,provider); return { ok: true, settings: settings.saveProviderKey(provider, key) }; }
   catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('settings:setModel', (_e, provider, model) => {
   try { return { ok: true, settings: settings.setModel(provider, model) }; }
+  catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle('settings:setSubagents', (_e, provider, patch) => {
+  try { return { ok: true, settings: settings.setSubagents(provider, patch) }; }
   catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('settings:setReasoningEffort', async (_e, provider, model, effort) => {
@@ -1383,8 +1413,8 @@ ipcMain.handle('stock:add', (event, item, opts = {}) => withAgentJob(event, opts
 const draftConfig = (draft = {}) => {
   return ai.resolveDraft(settings.getActive(draft.provider), draft);
 };
-ipcMain.handle('ai:test', (_e, draft) => ai.testConnection(draftConfig(draft)));
-ipcMain.handle('ai:models', (_e, draft) => ai.listModels(draftConfig(draft),{refresh:!!draft?.refresh}));
+ipcMain.handle('ai:test', async(event, draft) => {try{await providerSetup(event,draft?.provider);return await ai.testConnection(draftConfig(draft));}catch(error){return {ok:false,error:error.message};}});
+ipcMain.handle('ai:models', async(event, draft) => {try{await providerSetup(event,draft?.provider);return await ai.listModels(draftConfig(draft),{refresh:!!draft?.refresh});}catch(error){return {ok:false,error:error.message};}});
 ipcMain.handle('ai:modelCapabilities', (_e, draft) => ai.modelCapabilities(draftConfig(draft), { refresh: !!draft?.refresh }));
 ipcMain.handle('ai:sdkStatus', async (_e, draft) => {
   const cfg = draftConfig(draft);
@@ -1438,10 +1468,11 @@ const agentRequests = new Map();
 const nativeRuns = new Map();
 const nativeOwners = new Set();
 const frameRenderJobs = new Map();
-ipcMain.handle('agent:frameJob',event=>{
+ipcMain.handle('agent:frameJob',async event=>{
   const job=frameRenderJobs.get(event.sender.id);
   if(!job)throw new Error('Unknown frame inspection renderer.');
-  return job.plan;
+  await pluginManager.ready;
+  return {...job.plan,pluginEffects:await pluginManager.effects(),pluginTransitions:await pluginManager.transitions()};
 });
 ipcMain.handle('agent:frameReady',(event,error)=>{
   const job=frameRenderJobs.get(event.sender.id);
@@ -1633,10 +1664,10 @@ ipcMain.handle('agent:step', async (event, req) => {
   try {
     const fb = require("./agents/aifallback.cjs");
     const active = settings.getActive();
-    const first = fb.TOOL_PROVIDERS.includes(req.provider) || localAgents.isProvider(req.provider) ? req.provider : active.provider;
+    const first = require('./agents/providers.cjs').isPlugin(req.provider)||fb.TOOL_PROVIDERS.includes(req.provider) || localAgents.isProvider(req.provider) ? req.provider : active.provider;
     if (localAgents.isProvider(first)) throw new Error('SDK editing now uses native tools. Restart ClipCraft to load the updated editor.');
     const keys = settings.getPublic().keys || {};
-    const order = fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
+    const order = require('./agents/providers.cjs').isPlugin(first)?[first]:fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
     // SDK choices are explicit: never silently send their conversations to an API
     // provider (or launch a local SDK as an API provider's fallback).
     const images=agentFrames.images(event.sender.id,req.frameIds||[]);
@@ -1692,23 +1723,25 @@ ipcMain.handle('agent:runNative', async (event, req) => {
     if (!event.sender.isDestroyed()) event.sender.send('agent:nativeStop', {requestId:req.requestId, ...(job.failure ? {error:job.failure} : {})});
   };
   job.controller.signal.addEventListener('abort', onAbort, {once:true});
-  const invoke = (name,args) => {
+  const invoke = (name,args,analysis) => {
     checkAbort(job.controller.signal);
     job.lifetime.touch();
     if (event.sender.isDestroyed()) throw new Error('The editor window closed.');
     if (++job.calls > 240) { job.failure = {code:'edit_limit',error:'The assistant reached its tool-call limit. Completed edits were kept. Continue from the current timeline.'}; job.controller.abort(); throw new Error(job.failure.error); }
     const callId = require('node:crypto').randomUUID();
     return new Promise((resolve,reject) => {
-      job.pending.set(callId,{resolve,reject});
-      event.sender.send('agent:nativeTool',{requestId:req.requestId,callId,name,args});
+      job.pending.set(callId,{resolve,reject,...(analysis ? {analysisRequestId:analysis.request_id} : {})});
+      event.sender.send('agent:nativeTool',{requestId:req.requestId,callId,name,args,...(analysis ? {analysis} : {})});
     });
   };
   try {
     const {validateToolCall} = await import('../shared/toolArguments.mjs');
-    const { tools, aliases } = require('./agents/contract.cjs').wireTools(req.tools);
     const cfg = settings.getActive(req.provider);
+    const declarations = req.tools.filter(tool => cfg.subagents || tool.name !== 'delegate_video_analysis');
+    const { tools, aliases } = require('./agents/contract.cjs').wireTools(declarations);
     job.cfg = cfg;
-    job.report = require('./agents/runReport.cjs').createRunReport({ dir:crashDir(), provider:cfg.provider, model:cfg.model, webResearch:require('./agents/research.cjs').enabled(cfg) });
+    job.declarations = declarations;job.invokeAnalysis = (name, args, scope) => invoke(name, args, scope);
+    job.report = require('./agents/runReport.cjs').createRunReport({ dir:crashDir(), provider:cfg.provider, model:cfg.model, webResearch:require('./agents/research.cjs').enabled(cfg), subagents:cfg.subagents, subagentConcurrency:cfg.subagentConcurrency });
     const attached = await chatImages.native(req.prompt, req.history, req.chatImageIds || []);
     const result = await localAgents.runEditorNative(cfg, {
       sessionKey:`${event.sender.id}:${req.sessionKey}`, tools, system:req.system, context:typeof req.context === 'string' ? req.context.slice(0, 4000) : '', ...attached,
@@ -1716,7 +1749,11 @@ ipcMain.handle('agent:runNative', async (event, req) => {
       onSearch:search=>{if(!event.sender.isDestroyed())event.sender.send('agent:nativeProgress',{requestId:req.requestId,event:{type:'tool',id:`native-web-${search.id}`,name:'web_search',label:search.query?`Searching web: ${search.query}`:'Searching the web',status:search.status}});},
       onTool:require('./agents/toolResult.cjs').createToolCaller({ tools, aliases, validateToolCall, report:job.report, invoke, agentFrames,
         ownerId:event.sender.id, requestId:req.requestId, provider:cfg.provider, model:cfg.model, checkAbort:()=>checkAbort(job.controller.signal) }),
-      isComplete:async()=>!!(await invoke('__native_status',{})).ready,
+      isComplete:async()=>await invoke('__native_status',{}),
+      onToolTimeout: name => {
+        job.failure = { code: 'edit_timeout', error: `The assistant tool ${name} timed out. Its request was stopped to prevent late changes. Completed edits were kept.` };
+        stop();
+      },
     });
     checkAbort(job.controller.signal);
     job.report?.finish({ outcome:'completed', tokenUsage:result.tokenUsage });
@@ -1738,6 +1775,17 @@ ipcMain.handle('agent:runNative', async (event, req) => {
     job.pending.clear();
     if(!event.sender.isDestroyed())event.sender.removeListener('destroyed',stop);
   }
+});
+const analysisDelegation = require('./agents/analysisDelegation.cjs').createAnalysisDelegation({
+  localAgents, agentFrames, agentRequests, sourceIndex: () => sourceDiscovery,
+  enabled: provider => settings.getActive(provider).subagents,
+  emit: (event, requestId, progress) => { if (!event.sender.isDestroyed()) event.sender.send('agent:nativeProgress', { requestId, event: progress }); },
+});
+ipcMain.handle('agent:delegateAnalysis', async (event, req = {}) => {
+  const job = nativeRuns.get(agentRequestKey(event, req.requestId));
+  if (!job || job.controller.signal.aborted) return { ok: false, error: 'Delegation requires an active native coordinator request.' };
+  try { return await analysisDelegation.run({ job, event, req, declarations: job.declarations }); }
+  catch (error) { return { ok: false, error: error.message, ...(job.controller.signal.aborted ? { canceled: true } : {}) }; }
 });
 // ---- External agents over MCP (docs/design/external-agent-mcp.md): an outside agent edits through
 // ClipCraft's MCP server (HTTP on 127.0.0.1) while ClipCraft is open; one agent at a time, never
@@ -1968,6 +2016,24 @@ let transcriptService;
 const getTranscriptService = () => transcriptService ||= require("./audio/audioAnalysis.cjs").createTranscriptService({
   cacheDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'transcript-cache'), whisperDir: whisperDir(),
   whisper, cloud: cloudCaptions, fetchImpl: net.fetch, getKey: service => settings.getServiceKey(service),
+});
+const sourceDiscovery = require('./agents/sourceDiscovery.cjs').registerSourceDiscovery({
+  ipcMain, root: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'source-index'), withAgentJob, agentFrames,
+  transcribe: async (media, start, end, language, signal) => {
+    // A chunk is a standalone analysis timeline: returned times start at zero.
+    const project = { width: media.width, height: media.height, fps: 24, media: [media],
+      videoClips: [{ id: 'source-chunk', mediaId: media.id, in: start, out: end, speed: 1, volume: 1 }],
+      overlayClips: [], audioClips: [], textClips: [], effectClips: [] };
+    try {
+      const result = await getTranscriptService().run(project, { engine: 'local', language, source: 'video', maxLen: 0 }, { signal });
+      return result.segments;
+    } catch (error) {
+      // A speech-free passage is normal in movies/gameplay. Engine failures and
+      // cancellations remain failures; only the recognizer's empty result is valid.
+      if (/^No speech was detected in the selected audible source\./.test(error.message)) return [];
+      throw error;
+    }
+  },
 });
 function runCaptionAnalysis(event, project, opts) {
   return withAgentJob(event, opts.requestId, signal => getTranscriptService().run(project, opts, { signal,

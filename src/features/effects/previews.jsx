@@ -1,5 +1,7 @@
+import {pluginEffectDefinition} from '../plugins/effectRegistry.js';
+import {effectExpression} from '../../../shared/pluginEffects.mjs';
 import React, { useEffect, useRef } from 'react';
-import { FX_TRANSITIONS, OVERLAY_EFFECTS, PIXEL_EFFECTS } from './catalog.js';
+import { fxTransition, FX_TRANSITIONS, OVERLAY_EFFECTS, PIXEL_EFFECTS } from './catalog.js';
 import { fxGL } from './gl.js';
 
 // Thumbnails for the Effects and Transitions panels: two REAL photographs (bundled in public/preview/,
@@ -244,12 +246,13 @@ export function drawPreview(ctx, kind, id, u, pair = 0) {
   const [a, b] = photoPair(pair);
   try {
     if (kind === 'transition') {
-      const fx = FX_TRANSITIONS.find((t) => t.id === id);
+      const fx = fxTransition(id);
       if (fx) ctx.drawImage(fxGL().transition(a, b, W, H, ease(u), fx.expr), 0, 0);
       else classicTransition(ctx, id, u, a, b);
       return;
     }
-    const px = PIXEL_EFFECTS.find((e) => e.id === id);
+    const plugin=pluginEffectDefinition(id);
+    const px = PIXEL_EFFECTS.find((e) => e.id === id) || (plugin ? {expr:effectExpression(plugin)} : null);
     const ov = OVERLAY_EFFECTS.find((e) => e.id === id);
     if (px) ctx.drawImage(fxGL().effects(a, W, H, [{ expr: px.expr, T: u }]), 0, 0);
     else if (ov) {

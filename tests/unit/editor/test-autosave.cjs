@@ -111,11 +111,14 @@ console.log('AUTOSAVE OK');
   assert.equal(store.readSlot(root, 'legacy').project.craftAI.sessions.length, 0, 'an embedded legacy chat reads as before');
   store.writeSlotChat(root, 'legacy', chat);
   assert.equal(store.readSlot(root, 'legacy').project.craftAI.sessions.length, 1, 'the sidecar wins over the embedded chat');
-  // ...unless the slot (written by an older app) is newer than the chat file.
+  // A newer empty legacy slot must not erase the sidecar's real conversation.
   const past = new Date(Date.now() - 60000);
   fs.utimesSync(store.chatPath(root, 'legacy'), past, past);
   fs.writeFileSync(path.join(root, 'legacy.json'), JSON.stringify({ id: 'legacy', title: 'Legacy', updatedAt: 5, project: { id: 'legacy', craftAI: { version: 1, sessions: [], activeSessionId: null } } }));
-  assert.equal(store.readSlot(root, 'legacy').project.craftAI.sessions.length, 0, 'an embedded chat in a newer slot wins over an older chat file');
+  assert.equal(store.readSlot(root, 'legacy').project.craftAI.sessions.length, 1, 'a newer empty embedded chat cannot erase sidecar content');
+  // A newer legacy slot with actual conversation content does take precedence.
+  fs.writeFileSync(path.join(root, 'legacy.json'), JSON.stringify({ id: 'legacy', title: 'Legacy', updatedAt: 6, project: { id: 'legacy', craftAI: JSON.parse(chat.replaceAll('s1', 'legacy-real-chat')) } }));
+  assert.equal(store.readSlot(root, 'legacy').project.craftAI.activeSessionId, 'legacy-real-chat', 'a newer embedded conversation with content wins');
   // Delete and cap eviction take the chat with them; the chat folder never pollutes the index.
   store.deleteSlot(root, 'legacy');
   assert.ok(!fs.existsSync(store.chatPath(root, 'legacy')), 'deleteSlot removes the chat too');

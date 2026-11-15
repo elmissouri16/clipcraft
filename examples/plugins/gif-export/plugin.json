@@ -1,0 +1,83 @@
+{
+  "id": "clipcraft.gif-export",
+  "name": "GIF export",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Export up to 15 seconds of the visible composition as a silent, looping GIF. Choose a new destination after approval. End 0 uses five seconds or the project end. The host renders and verifies the file.",
+  "permissions": [
+    "export.gif"
+  ],
+  "entry": "commands.js",
+  "contributes": {
+    "commands": [
+      {
+        "id": "export-gif",
+        "name": "Export GIF",
+        "description": "End is exclusive. No audio. Existing files are protected; choose a new filename.",
+        "parameters": [
+          {
+            "id": "start_sec",
+            "name": "Start (seconds)",
+            "min": 0,
+            "max": 1000000,
+            "step": 0.1,
+            "default": 0
+          },
+          {
+            "id": "end_sec",
+            "name": "End (seconds; 0 = five seconds or project end)",
+            "min": 0,
+            "max": 1000000,
+            "step": 0.1,
+            "default": 0
+          },
+          {
+            "id": "max_size",
+            "name": "Longest edge",
+            "type": "enum",
+            "default": "size-480",
+            "options": [
+              {
+                "value": "size-320",
+                "label": "320 px"
+              },
+              {
+                "value": "size-480",
+                "label": "480 px"
+              },
+              {
+                "value": "size-720",
+                "label": "720 px"
+              },
+              {
+                "value": "size-960",
+                "label": "960 px"
+              }
+            ]
+          },
+          {
+            "id": "fps",
+            "name": "Frame rate",
+            "type": "enum",
+            "default": "fps-10",
+            "options": [
+              {
+                "value": "fps-5",
+                "label": "5 fps"
+              },
+              {
+                "value": "fps-10",
+                "label": "10 fps"
+              },
+              {
+                "value": "fps-20",
+                "label": "20 fps"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

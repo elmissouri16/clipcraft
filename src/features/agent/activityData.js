@@ -3,6 +3,14 @@ const record=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const text=(v,n)=>typeof v==='string'?v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').slice(0,n):'';
 const finite=(v,fallback=null)=>Number.isFinite(v)&&v>=0?v:fallback;
 export const safeLocalPath=value=>typeof value==='string'&&value.length<4096&&(/^(?:\/(?!\/)|[A-Za-z]:[\\/]|\\\\)/.test(value))&&!/[\u0000-\u001f]/.test(value)?value:'';
+export function normalizeClipSuggestions(value) {
+  if (!record(value) || !Number.isFinite(value.duration_sec) || value.duration_sec <= 0 || !Number.isFinite(value.indexed_sec)) return undefined;
+  const picks = (Array.isArray(value.picks) ? value.picks : []).slice(0, 12).filter(p => record(p) && /^[a-f0-9]{64}$/.test(p.pick_id) && /^[a-f0-9]{64}$/.test(p.index_id)
+    && typeof p.media_id === 'string' && Number.isFinite(p.start_sec) && Number.isFinite(p.end_sec) && p.start_sec >= 0 && p.end_sec > p.start_sec && p.end_sec <= value.duration_sec && safeLocalPath(p.file) && /\.mp4$/i.test(p.file)).map(p => ({
+      pick_id: p.pick_id, index_id: p.index_id, media_id: text(p.media_id, 100), source_name: text(p.source_name, 200), start_sec: p.start_sec, end_sec: p.end_sec,
+      title: text(p.title, 120), reason: text(p.reason, 1000), confidence: ['low', 'medium', 'high'].includes(p.confidence) ? p.confidence : 'low', file: safeLocalPath(p.file) }));
+  return { duration_sec: value.duration_sec, indexed_sec: Math.max(0, Math.min(value.duration_sec, value.indexed_sec)), complete: value.complete === true, picks };
+}
 export function normalizeRenderProgress(value={}) {
   return {progress:Math.min(1,finite(value.progress,0)),stage:text(value.stage,100),phase:text(value.phase,32),remainingSeconds:finite(value.remainingSeconds),elapsedSeconds:finite(value.elapsedSeconds),
     step:finite(value.step),steps:finite(value.steps),timingStatus:text(value.timingStatus,80),stopping:!!value.stopping,done:!!value.done};
@@ -13,6 +21,7 @@ export function normalizeToolActivity(value) {
   if(Array.isArray(value.visuals))output.visuals=value.visuals.slice(0,6).filter(v=>record(v)&&safeLocalPath(v.src)).map(v=>({src:safeLocalPath(v.src),label:text(v.label,80),type:['image','video','audio'].includes(v.type)?v.type:'image',at_sec:finite(v.at_sec),duration_sec:finite(v.duration_sec)}));
   if(Number.isFinite(value.more_visuals))output.more_visuals=Math.min(100000,Math.max(0,value.more_visuals));
   if(record(value.render))output.render=normalizeRenderProgress(value.render);
+  if(record(value.discovery))output.discovery=normalizeClipSuggestions(value.discovery);
   if(record(value.progress)&&Number.isFinite(value.progress.total)&&value.progress.total>0)output.progress=Object.fromEntries(['total','completed','inserted','active','failed','elapsed_sec'].map(key=>[key,finite(value.progress[key],0)]));
   const c=value.change;
   if(record(c)&&Array.isArray(c.ranges)&&Number.isFinite(c.window_start)&&Number.isFinite(c.window_end)&&c.window_end>c.window_start){

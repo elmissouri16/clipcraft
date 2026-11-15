@@ -19,6 +19,7 @@ src/
     export/                Export orchestration and text rendering
     inspector/             Clip and project inspection UI
     library/               Media, assets, stock and favorites UI
+    plugins/               Plugin management, development controls and panel dock
     preview/               Composition, transforms and frame inspection
     recording/             Recording hooks and dialogs
     templates/             Template replacement and slot UI
@@ -43,6 +44,8 @@ tests/
   unit/<feature>/          Standalone Node regression suites
   smoke/                   Real Electron UI checks and their dispatcher
   fixtures/                Test-only CLIs, servers and service stubs
+packages/plugin-sdk/       Public author SDK source, types and Node authoring CLI
+                           (generated dist bundles the canonical editor contracts)
 scripts/                   Development and maintenance commands
 shared/                    Cross-process contracts, the AI provider presets (providers.json), the UI
                            dictionaries (i18n/en|fr|es.json, docs/design/localization.md) and bundled LUT data
@@ -102,3 +105,12 @@ Installer packaging and pushes require the explicit authorizations in
 
 See [reorganization validation](reorganization-validation.md) for the measured
 before/after test baseline and real-app checks for this layout change.
+
+
+The plugin panel/storage/action UI runners default to quiet tests: isolated hidden
+windows, no foreground activation on macOS, and non-focusable editor windows.
+`FVE_SMOKE_QUIET=1` enables this mode for compatible smoke workflows. Functional
+DOM/preload/IPC/worker checks still run in Electron. The panel runner explicitly
+skips native Tab/Shift-Tab host-focus assertions in quiet mode; hidden child-view
+capture may fail with `UnknownVizError` and never triggers a foreground fallback.
+Set `FVE_SMOKE_QUIET=0` only when an interactive focus/layout check is needed.

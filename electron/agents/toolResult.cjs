@@ -4,7 +4,7 @@
 const { readImages } = require('./agentImages.cjs');
 
 // A contact sheet replaces its cells as the one image sent for overview checks.
-const SHEET_TOOLS = ['inspect_frames', 'get_storyboard', 'review_section', 'export_video', 'complete_edit', 'analyze_reference', 'add_graphic', 'edit_graphic'];
+const SHEET_TOOLS = ['inspect_frames', 'get_storyboard', 'review_section', 'review_video_moment', 'export_video', 'complete_edit', 'analyze_reference', 'add_graphic', 'edit_graphic'];
 function frameIds(name, result) {
   if (SHEET_TOOLS.includes(name)) return result.sheet_ids?.length ? result.sheet_ids : result.sheet_id ? [result.sheet_id] : result.frames?.map((frame) => frame.id);
   return result.host_frames?.map((frame) => frame.id);

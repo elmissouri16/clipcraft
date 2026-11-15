@@ -41,6 +41,7 @@ function anthropicMessage(res, body, reply) {
 function startFakeModelServer({ reply = 'Done.' } = {}) {
   const requests = [];
   const server = http.createServer((req, res) => {
+    req.setEncoding('utf8');
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {

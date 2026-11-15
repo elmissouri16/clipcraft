@@ -52,7 +52,7 @@ const originalFetch = global.fetch;
   assert.equal(body.contents.at(-1).parts.find(part => part.inlineData).inlineData.data, data);
   let claudeMessage;
   const native = createNativeAgents({ resolveExecutable: cfg => cfg.provider === 'codex-sdk' ? path.resolve(__dirname, '../../fixtures/codex-native-stub.cjs') : '/fake/claude', childEnv: () => ({ ...process.env, FVE_NATIVE_FIXTURE_LOG: path.join(dir, 'protocol.jsonl') }),
-    loadSdk: async () => ({ createSdkMcpServer: () => ({ instance: { registerTool() {}, close() {} } }), query: ({ prompt }) => ({ async *[Symbol.asyncIterator]() { for await (const message of prompt) claudeMessage = message; yield { type: 'result', subtype: 'success', result: 'Seen', session_id: 'images' }; }, close() {} }) }) });
+    loadSdk: async () => ({ ...await import('@anthropic-ai/claude-agent-sdk'), query: ({ prompt }) => ({ async *[Symbol.asyncIterator]() { for await (const message of prompt) claudeMessage = message; yield { type: 'result', subtype: 'success', result: 'Seen', session_id: 'images' }; }, close() {} }) }) });
   try {
     const attached = await service.native('Make no changes', [], [id]);
     assert.equal(attached.images.length, 1);

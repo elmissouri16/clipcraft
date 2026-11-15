@@ -1,3 +1,4 @@
+import {registerPluginProviderMetadata} from '../providers.js';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Bot, Check, CircleAlert, Clock3, ImagePlus, ListPlus, Paperclip, Zap, Captions, Loader2, MessageCircle, MessageSquarePlus, RectangleVertical, Scissors, SlidersHorizontal, Square, Undo2, X } from 'lucide-react';
 import { runAgent } from "../runAgent.js";
@@ -6,10 +7,12 @@ import { makeAgentCtx } from "../agentCtx.js";
 import { addTimelineAttachment, resolveTimelineAttachments, timelineAttachmentLabel, timelineContextPart } from '../timelineContext.js';
 import { projectRevision, proposedPlanNote } from "../context.js";
 import CraftModelPicker from './CraftModelPicker.jsx';
+import SubagentControl from './SubagentControl.jsx';
 import Dropdown from "../../../components/ui/Dropdown.jsx";
 import { newChatSession, normalizeChatSessions, snapshotChatSessions } from "../chatSessions.js";
 import ToolActivityRow from './ToolActivityRow.jsx';
 import EditPlanCard from './EditPlanCard.jsx';
+import VideoClipPicks from './VideoClipPicks.jsx';
 import MessageQueue from './MessageQueue.jsx';
 import ImageAttachments from './ImageAttachments.jsx';
 import VideoAttachments from './VideoAttachments.jsx';
@@ -205,19 +208,23 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
   const refreshConfig = useCallback(async () => {
     const generation = ++configRequest.current;
     const s = await window.api.settingsGet();
+    registerPluginProviderMetadata(s.providerPlugins);
+    const pluginProvider=s.providerPlugins?.find(p=>p.id===s.provider);
     const sdk = ['codex-sdk', 'claude-agent-sdk', 'opencode-sdk'].includes(s.provider);
     const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
     const status = sdk ? await window.api.aiSdkStatus({ provider: s.provider, executablePath: s.executablePaths?.[s.provider] || '' }) : null;
     if (generation !== configRequest.current) return;
-    setConfig({ ready: sdk ? status.ok && status.authenticated !== false : s.provider === 'ollama' || !!s.keys[s.provider],
-      provider: s.provider, model: modelId || (sdk ? t('pilot.agent_cli_default', { agent: SDK_AGENTS[s.provider] }) : ''),
+    setConfig({ ready: sdk ? status.ok && status.authenticated !== false : pluginProvider ? !pluginProvider.unavailable&&pluginProvider.approved&&(!pluginProvider.needsKey||!!s.keys[s.provider]) : s.provider === 'ollama' || !!s.keys[s.provider],
+      provider: s.provider,providerName:pluginProvider?.name, model: modelId || (sdk ? t('pilot.agent_cli_default', { agent: SDK_AGENTS[s.provider] }) : ''),
       modelId, executablePath: s.executablePaths?.[s.provider] || '',
       reasoningEffort: s.reasoningEfforts?.[s.provider]?.[modelId] || '',
-      error: sdk ? status.error || (status.authenticated === false ? t('pilot.sign_in_with_command', { command: status.loginCommand }) : '') : '', sdk });
+      subagents: s.subagents?.[s.provider] === true, subagentConcurrency: s.subagentConcurrency?.[s.provider] || 2,
+      error: sdk ? status.error || (status.authenticated === false ? t('pilot.sign_in_with_command', { command: status.loginCommand }) : '') : pluginProvider?.unavailable?t('plugins.provider_unavailable'):'', sdk });
   }, []);
   useEffect(() => {
     refreshConfig();
   }, [refreshConfig, settingsVersion, open]);
+  useEffect(()=>window.api.onPluginsChanged?.(()=>refreshConfig()),[refreshConfig]);
   useEffect(() => {
     mounted.current = true;
     window.addEventListener('pagehide', flushDraft);
@@ -339,7 +346,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     const result = await runAgent({
       requestId, sessionKey: `${projectId}:${chatRef.current.activeSessionId}`,
       contents: contents.current,
-      ctx: makeAgentCtx({ app, provider: config?.provider, getProject, dispatch, settle, requestId, isCurrent, isStopped: () => canceled.current,
+      ctx: makeAgentCtx({ app, provider: config?.provider, getProject, dispatch, settle, requestId, isCurrent, isStopped: () => canceled.current, allowPluginCommands: true,
         chatImageIds: (item.images || []).map(image => image.id) }),
       isCanceled: () => canceled.current || !isCurrent(),
       onEvent: (ev) => {
@@ -540,6 +547,12 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                     )}
                     {m.pending && !m.steps?.length && <div className="pilot-thinking"><Loader2 size={14} className="spin" /> {t('pilot.thinking')}</div>}
                     {(() => {
+                      const discovery = m.steps?.findLast?.(s => s.status === 'done' && s.activity?.discovery)?.activity.discovery;
+                      if (!discovery) return null;
+                      return <VideoClipPicks data={discovery} actionable={!m.pending && !busy && !modelSaving && config?.ready && !holder && !session.external && !session.queue.length}
+                        onAdd={pick => send(`Add the proposed source clip to the end of my current timeline using add_video_clip with media_id ${JSON.stringify(pick.media_id)}, index_id ${JSON.stringify(pick.index_id)} and pick_id ${JSON.stringify(pick.pick_id)}. Keep the existing edit and use this pick's exact source range.`)} />;
+                    })()}
+                    {(() => {
                       const plan = m.steps?.findLast?.(s => s.name === 'propose_edit_plan' && s.status === 'done' && s.activity?.plan);
                       if (!plan) return null;
                       // Only the latest reply can be approved, and only once nothing else is running.
@@ -617,9 +630,13 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
                 <div className="pilot-input-tools">
                   <button type="button" className="pilot-attach-button" aria-label={t('pilot.attach_images_or_reference_videos')} title={t('pilot.attach_images_or_reference_videos_or_drop')} disabled={imagesLoading || preparing || (session.images.length >= MAX_CHAT_IMAGES && (session.videos?.length || 0) >= MAX_CHAT_VIDEOS)} onClick={() => attachFiles(null)}><Paperclip size={17} /></button>
                   {docked && <button type="button" className="icon-btn sm pilot-attach-selection" onClick={onAttachSelection} disabled={!hasSelection} aria-label={t('pilot.attach_selected_clips')} title={`${t('pilot.attach_selected_clips')} · ${t('pilot.shift_drag_the_timeline_ruler_to_attach_a')}`}><Clock3 size={14} /></button>}
+                  <SubagentControl config={config} disabled={busy || preparing || modelSaving || !!holder || !!session.external} onSavingChange={setModelSaving} onSaved={s => {
+                    configRequest.current++;
+                    setConfig(previous => ({ ...previous, subagents: s.subagents?.[s.provider] === true, subagentConcurrency: s.subagentConcurrency?.[s.provider] || 2 }));
+                  }} />
                 </div>
                 <div className="pilot-input-end">
-                  <CraftModelPicker config={config} disabled={busy || preparing} onSavingChange={setModelSaving} onSaved={(s) => {
+                  <CraftModelPicker config={config} disabled={busy || preparing || modelSaving} onSavingChange={setModelSaving} onSaved={(s) => {
               configRequest.current++;
               const modelId = s.models[s.provider] || s.defaultModels?.[s.provider] || '';
               setConfig((previous) => ({ ...previous, modelId,

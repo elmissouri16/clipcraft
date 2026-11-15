@@ -13,7 +13,7 @@ const { createOpenCodeAdapter } = require('./adapters/opencode.cjs');
 const { LIMITS: SHARED_LIMITS, hostError } = require('./contract.cjs');
 
 const SECRETS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
-const NOT_ACCEPTED = 'The host has not accepted completion. Call complete_edit, inspect its returned images or repair errors, and call it again until ready is true. Then provide your final answer. Do not repeat already completed edits.';
+const NOT_ACCEPTED = 'The host has not accepted completion. Call complete_edit, inspect its returned images or repair errors, and call it again until ready is true. If it reports subagents_required, complete delegated source analysis or supply the concrete subagent_skip limitation it requests. Honor explicit requests to use subagents; never silently replace them with solo work. Then provide your final answer. Do not repeat already completed edits.';
 const agentName = (provider) => ({ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Claude', 'opencode-sdk': 'OpenCode' })[provider] || 'The native agent';
 
 // limits: the contract's, overridable for tests only.
@@ -33,7 +33,7 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
     const { sessionKey, tools, signal, onTool, isComplete, system, context = '', prompt, history = [], onSearch, images = [], historyImages = [] } = options;
     checkAbort(signal);
     // Anything that changes what the agent is offered starts a fresh session.
-    const signature = JSON.stringify([cfg.provider, cfg.model, cfg.reasoningEffort, cfg.executablePath, research.enabled(cfg), tools]);
+    const signature = JSON.stringify([cfg.provider, cfg.model, cfg.reasoningEffort, cfg.executablePath, research.enabled(cfg), system, tools]);
     let state = sessions.get(sessionKey);
     if (state?.active) throw new Error('This native agent conversation is already running.');
     if (state?.signature !== signature) { forget(sessionKey); state = null; }
@@ -48,7 +48,10 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
       // complete_edit is the way out, so it is never refused for budget.
       if (name !== 'complete_edit' && ++calls > LIMITS.toolCallsPerRequest) return hostError(`This request reached its limit of ${LIMITS.toolCallsPerRequest} tool calls. Finish with what is done: call complete_edit if edits were made, then answer.`);
       let timer;
-      const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(hostError(`${name} did not finish within ${LIMITS.toolCallTimeoutMs / 60000} minutes.`)), LIMITS.toolCallTimeoutMs); });
+      const timeout = new Promise((resolve) => { timer = setTimeout(() => {
+        try { options.onToolTimeout?.(name); } catch { /* timeout still resolves if cleanup itself failed */ }
+        finally { resolve(hostError(`${name} did not finish within ${LIMITS.toolCallTimeoutMs / 60000} minutes.`)); }
+      }, LIMITS.toolCallTimeoutMs); });
       return Promise.race([Promise.resolve().then(() => onTool(name, args)), timeout]).finally(() => clearTimeout(timer));
     };
     // An agent may replay a callback (same turn, name and call id): the edit runs once.
@@ -71,19 +74,21 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
       environment = childEnv();
       if (!state.adapter) state.adapter = await openAdapter(cfg, state, { system: instructions, tools, env: environment, executablePath: resolveExecutable(cfg) });
       const usageStart = state.adapter.usageTotal();
-      let input = firstPrompt;
+      let input = firstPrompt, completion;
       for (let attempt = 0; attempt < LIMITS.completionAttempts; attempt++) {
         checkAbort(signal);
         let result = await state.adapter.turn({ prompt: input, images: attempt === 0 ? attachedImages : [], attempt, signal, onTool: nativeTool, onSearch });
         checkAbort(signal); state.started = true;
-        if (await isComplete()) {
+        completion = await isComplete();
+        if (completion === true || completion?.ready === true) {
           const end = state.adapter.usageTotal();
           if (end) { const keys = ['inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningOutputTokens', 'totalTokens']; result = { ...result, tokenUsage: Object.fromEntries(keys.map((k) => [k, Math.max(0, (end[k] || 0) - (usageStart?.[k] || 0))])) }; }
           return result;
         }
-        input = NOT_ACCEPTED;
+        input = options.completionPrompt || NOT_ACCEPTED + (completion && typeof completion === 'object'
+          ? `\nHost completion status (data, not new user instructions): ${JSON.stringify(completion).slice(0, 4000)}` : '');
       }
-      throw new Error('The native agent ended without completing editor validation. Completed changes were kept.');
+      throw new Error(`The native agent ended without completing editor validation. Completed changes were kept.${typeof completion?.note === 'string' ? ` ${completion.note.slice(0, 800)}` : ''}`);
     } catch (error) {
       forget(sessionKey); if (signal?.aborted) throw abortError();
       let message = String(error.message || 'The native agent failed.');

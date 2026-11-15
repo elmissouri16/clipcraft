@@ -1,0 +1,91 @@
+{
+  "id": "clipcraft-examples.caption-translation",
+  "name": "Caption translation",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minClipcraftVersion": "2.0.0",
+  "description": "Translate an existing caption track through your selected AI service. Review original and translated cues, then create a separate hidden caption track.",
+  "entry": "commands.js",
+  "permissions": [
+    "captions.read",
+    "captions.write",
+    "ai.translateCaptions"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "translate-captions",
+        "name": "Translate caption track",
+        "description": "Choose the source Text-track number from the Timeline (1 = the first Text track). Originals and cue timings are preserved. Show the new track with its eye control when ready.",
+        "parameters": [
+          {
+            "id": "language",
+            "name": "Target language",
+            "type": "enum",
+            "options": [
+              {
+                "value": "en",
+                "label": "English"
+              },
+              {
+                "value": "fr",
+                "label": "French"
+              },
+              {
+                "value": "es",
+                "label": "Spanish"
+              },
+              {
+                "value": "ar",
+                "label": "Arabic"
+              },
+              {
+                "value": "de",
+                "label": "German"
+              },
+              {
+                "value": "it",
+                "label": "Italian"
+              },
+              {
+                "value": "pt",
+                "label": "Portuguese"
+              },
+              {
+                "value": "ja",
+                "label": "Japanese"
+              },
+              {
+                "value": "ko",
+                "label": "Korean"
+              },
+              {
+                "value": "zh",
+                "label": "Chinese"
+              },
+              {
+                "value": "tr",
+                "label": "Turkish"
+              },
+              {
+                "value": "hi",
+                "label": "Hindi"
+              }
+            ],
+            "default": "fr"
+          },
+          {
+            "id": "source_track",
+            "name": "Source Text track",
+            "min": 1,
+            "max": 128,
+            "step": 1,
+            "default": 1,
+            "integer": true
+          }
+        ]
+      }
+    ]
+  }
+}

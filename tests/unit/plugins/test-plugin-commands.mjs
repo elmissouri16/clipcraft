@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {EventEmitter} from 'node:events';
+import {createRequire} from 'node:module';
+import {validateManifest} from '../../../shared/pluginManifest.mjs';
+import {commandInput,commandSnapshot,commandMarkers,uniqueCommandMarkers} from '../../../shared/pluginCommands.mjs';
+import {emptyProject,historyReducer} from '../../../src/state/store.js';
+const require=createRequire(import.meta.url),{PluginManager}=require('../../../electron/plugins/manager.cjs'),{installCommandIpcGuard}=require('../../../electron/plugins/ipcGuard.cjs'),{CommandRuntime}=require('../../../electron/plugins/commandRuntime.cjs'),tar=require('tar');
+const sample=JSON.parse(await fs.readFile(new URL('../../../examples/plugins/chapter-markers/plugin.json',import.meta.url)));
+const sourceCode=await fs.readFile(new URL('../../../examples/plugins/chapter-markers/commands.js',import.meta.url));
+let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
+const manifest=validateManifest(sample),command=manifest.contributes.commands[0];
+check('command manifest and permissions accepted',()=>assert.deepEqual(manifest.permissions,['project.read','markers.write']));
+for(const edit of [p=>p.entry='../commands.js',p=>p.permissions.push('network'),p=>p.contributes.commands.push(p.contributes.commands[0]),p=>p.contributes.commands[0].parameters[0].default=1.2]){const p=structuredClone(sample);edit(p);check('reject malformed executable manifest',()=>assert.throws(()=>validateManifest(p)));}
+for(const input of [{count:1.5},{count:Infinity},{count:101},{shell:'bad'}])check('reject invalid input',()=>assert.throws(()=>commandInput(command,input)));
+check('command defaults are validated',()=>assert.deepEqual(commandInput(command,{}),{count:5}));
+check('summary excludes paths',()=>assert.throws(()=>commandSnapshot({duration_sec:10,fps:24,markers:[],markers_total:0,path:'/secret'})));
+for(const proposal of [[{time:11,label:'bad'}],[{time:1,label:'x\n'}],[{time:1,label:'x',type:'delete'}],Array.from({length:501},()=>({time:1,label:'x'}))])check('reject invalid proposal',()=>assert.throws(()=>commandMarkers(proposal,10)));
+const base={...emptyProject(),videoClips:[{id:'gap',gap:true,in:0,out:10,speed:1}],markers:[]};
+const markers=[{time:0,label:'Chapter 1'},{time:2,label:'Chapter 2'}],initial={past:[],present:base,future:[]};
+let state=historyReducer(initial,{type:'pluginMarkers',base,markers,ids:['one','two']});
+check('one atomic marker edit',()=>{assert.equal(state.past.length,1);assert.equal(state.present.markers.length,2);});
+check('one Undo removes all proposals',()=>assert.equal(historyReducer(state,{type:'undo'}).present.markers.length,0));
+check('stale base is refused',()=>assert.equal(historyReducer(state,{type:'pluginMarkers',base,markers,ids:['three','four']}),state));
+check('active agent transaction refuses plugin writes',()=>assert.equal(historyReducer({...initial,agentEdit:{token:'agent'}},{type:'pluginMarkers',base,markers,ids:['one','two']}).present,base));
+check('gesture refuses plugin writes',()=>assert.equal(historyReducer({...initial,gestureStart:base},{type:'pluginMarkers',base,markers,ids:['one','two']}).present,base));
+check('duplicate frame positions are skipped',()=>assert.equal(uniqueCommandMarkers({...base,markers:[{id:'existing',time:0,label:''}]},[{time:0,label:'x'},{time:.001,label:'y'},{time:2,label:'z'}],10).length,1));
+const root=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-command-unit-'));
+try{
+ const folder=path.join(root,'source');await fs.mkdir(folder);await fs.writeFile(path.join(folder,'plugin.json'),JSON.stringify(sample));await fs.writeFile(path.join(folder,'commands.js'),sourceCode);
+ const manager=new PluginManager(path.join(root,'installed'),'2.0.0');let rows=await manager.install(folder,true),key=rows[0].key;
+ check('command package contains executable entry',()=>assert.equal(rows[0].manifest.entry,'commands.js'));
+ const archive=path.join(root,'command.tgz');await tar.c({file:archive,gzip:true,cwd:folder},['plugin.json','commands.js']);await manager.install(archive);checks++;
+ await fs.writeFile(path.join(folder,'commands.js'),Buffer.concat([sourceCode,Buffer.from('\n// changed')]));
+ await assert.rejects(manager.install(folder,true),/different content/);checks++;
+ await fs.writeFile(path.join(root,'installed',key,'commands.js'),'export function run(){}');
+ assert.ok((await manager.list())[0].error);checks++;console.log('PASS modified installed code invalidates integrity');
+ await manager.remove(key);await fs.writeFile(path.join(folder,'commands.js'),sourceCode);rows=await manager.install(folder,true);key=rows[0].key;
+ class IPC extends EventEmitter{constructor(){super();this.handlers=new Map();}handle(name,fn){this.handlers.set(name,fn);}}
+ const ipc=new IPC();installCommandIpcGuard(ipc);
+ const owner=new EventEmitter();owner.send=()=>{};owner.mainFrame={};
+ const ownerWindow={webContents:owner,isDestroyed:()=>false};
+ class Window extends EventEmitter{
+  constructor(){super();this.webContents=new EventEmitter();this.webContents.id=Window.next++;this.webContents.mainFrame={};this.webContents.setWindowOpenHandler=()=>{};this.closed=false;}
+  isDestroyed(){return this.closed;}loadURL(){return Promise.resolve();}destroy(){this.closed=true;this.emit('closed');}
+ }Window.next=1;
+ const session={fromPartition:()=>({protocol:{handle(){}},setPermissionRequestHandler(){},setPermissionCheckHandler(){},on(){},webRequest:{onBeforeRequest(){}},closeAllConnections:()=>Promise.resolve()})};
+ const runtime=new CommandRuntime({ipcMain:ipc,BrowserWindow:Window,session,manager,getWindow:()=>ownerWindow,timeoutMs:1000});
+ const blockedRuntime=new CommandRuntime({ipcMain:new IPC(),BrowserWindow:Window,session,manager,getWindow:()=>ownerWindow,sandboxEnabled:false});
+ await assert.rejects(blockedRuntime.run({},async()=>true),/process sandboxing/);checks++;
+ const request={runId:'unit-run',key,commandId:command.id,input:{count:5},snapshot:{duration_sec:10,fps:24,markers:[],markers_total:0}};
+ check('runtime denies unknown sender',()=>assert.throws(()=>ipc.handlers.get('pluginRuntime:job')({sender:{id:99},senderFrame:{}}),/Unknown/));
+ const denied=await runtime.run(request,async()=>false);check('denied run never launches code',()=>assert.equal(denied.status,'denied'));
+ let answer;
+ const approvalPending=runtime.run(request,()=>new Promise(resolve=>{answer=resolve;}));
+ for(let i=0;i<100&&!answer;i++)await new Promise(r=>setTimeout(r,2));
+ runtime.cancel(request.runId);
+ assert.equal((await approvalPending).status,'canceled');assert.equal(runtime.active,null);answer(true);checks++;
+ const start=async()=>{const promise=runtime.run(request,async()=>true);for(let i=0;i<100&&!runtime.jobs.size;i++)await new Promise(r=>setTimeout(r,5));const job=[...runtime.jobs.values()][0];assert.ok(job);const event={sender:job.window.webContents,senderFrame:job.window.webContents.mainFrame};const payload=ipc.handlers.get('pluginRuntime:job')(event,true);return {promise,job,event,payload};};
+ let active=await start();
+ check('wrong token cannot write development logs',()=>assert.throws(()=>ipc.handlers.get('pluginRuntime:log')(active.event,'wrong',{level:'info',message:'forged'}),/Unknown/));
+ check('installed command cannot impersonate a development logger',()=>assert.equal(ipc.handlers.get('pluginRuntime:log')(active.event,active.payload.token,{level:'info',message:'forged'}),false));
+ for(const channel of ['plugins:startDevelopment','plugins:reloadDevelopment','plugins:development']){ipc.handle(channel,()=>true);check('command sandbox cannot access developer management',()=>assert.throws(()=>ipc.handlers.get(channel)(active.event),/cannot access/));}
+ check('job handoff cannot repeat',()=>assert.throws(()=>ipc.handlers.get('pluginRuntime:job')(active.event,true),/already taken/));
+ await assert.rejects(ipc.handlers.get('pluginRuntime:call')({...active.event,senderFrame:{}},active.payload.token,'project.read',null),/Unknown/);checks++;
+ await assert.rejects(ipc.handlers.get('pluginRuntime:call')(active.event,'wrong','project.read',null),/Unknown/);checks++;
+ const summary=await ipc.handlers.get('pluginRuntime:call')(active.event,active.payload.token,'project.read',null);check('granted read exposes only summary',()=>assert.deepEqual(Object.keys(summary).sort(),['duration_sec','fps','markers','markers_total']));
+ ipc.handle('project:save',()=>{throw Error('Privileged handler should not run');});
+ check('legacy privileged invoke blocked for sandbox',()=>assert.throws(()=>ipc.handlers.get('project:save')(active.event),/cannot access/));
+ let stopped=false;ipc.on('recbar:stop',()=>{stopped=true;});ipc.emit('recbar:stop',active.event);check('legacy privileged event blocked for sandbox',()=>assert.equal(stopped,false));
+ await ipc.handlers.get('pluginRuntime:call')(active.event,active.payload.token,'markers.add',[{time:1,label:'one'}]);
+ ipc.handlers.get('pluginRuntime:finish')(active.event,active.payload.token,{ok:true,message:'done'});
+ const completed=await active.promise;check('valid completion returns staged proposals',()=>assert.equal(completed.markers.length,1));
+ active=await start();await ipc.handlers.get('pluginRuntime:call')(active.event,active.payload.token,'markers.add',[{time:1,label:'one'}]);
+ await assert.rejects(ipc.handlers.get('pluginRuntime:call')(active.event,active.payload.token,'shell.exec',{}),/Unsupported/);checks++;
+ assert.equal((await active.promise).status,'failed');checks++;console.log('PASS invalid request poisons entire run');
+ active=await start();runtime.cancel(request.runId);check('cancel discards proposals and closes runtime',()=>assert.equal(active.job.closed,true));assert.equal((await active.promise).status,'canceled');checks++;
+ active=await start();owner.emit('did-start-navigation');assert.equal((await active.promise).status,'canceled');checks++;
+ active=await start();const timedOut=await active.promise;check('host watchdog terminates stalled runtime',()=>assert.match(timedOut.error,/time limit/));
+ const {createEditorContext}=await import('../../../src/features/plugins/editorContext.js'),readContext=createEditorContext();
+ request.editor=readContext(base,null,{time_sec:2,playing:false});
+ const unsolicited=await runtime.run(request,async()=>true);check('unsolicited editor context is refused without its permission',()=>assert.equal(unsolicited.status,'failed'));assert.match(unsolicited.error,/editor.read/);checks++;
+ const originalBundle=manager.commandBundle.bind(manager);manager.commandBundle=async key=>{const b=await originalBundle(key);return {...b,manifest:{...b.manifest,permissions:[...b.manifest.permissions,'editor.read']}};};
+ active=await start();const captured=structuredClone(request.editor);request.editor.playhead.time_sec=7;
+ const editor=await ipc.handlers.get('pluginRuntime:call')(active.event,active.payload.token,'editor.read',null);check('command context is a frozen-at-start projection',()=>assert.deepEqual(editor,captured));
+ ipc.handlers.get('pluginRuntime:finish')(active.event,active.payload.token,{ok:true,message:'read only'});assert.equal((await active.promise).status,'completed');checks++;
+ active=await start();await assert.rejects(ipc.handlers.get('pluginRuntime:call')(active.event,active.payload.token,'editor.read',{full:true}),/no arguments/);const badEditor=await active.promise;check('commands cannot request extra editor data',()=>assert.equal(badEditor.status,'failed'));
+ console.log(JSON.stringify({ok:true,checks}));
+}finally{await fs.rm(root,{recursive:true,force:true});}

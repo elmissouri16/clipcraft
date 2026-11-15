@@ -74,6 +74,31 @@ try {
   settings.save({ provider: 'openai', model: 'api-model', webResearch: true });
   assert.equal(settings.getActive().webResearch, false, 'API providers have no native research');
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).ai.webResearch.openai, undefined);
+  assert.deepEqual({ ...settings.getPublic().subagents }, { 'codex-sdk': false, 'claude-agent-sdk': false, 'opencode-sdk': false });
+  assert.deepEqual({ ...settings.getPublic().subagentConcurrency }, { 'codex-sdk': 2, 'claude-agent-sdk': 2, 'opencode-sdk': 2 });
+  for (const provider of ['codex-sdk', 'claude-agent-sdk', 'opencode-sdk']) {
+    settings.save({ provider, model: '', subagents: true });assert.equal(settings.getActive().subagents, true);
+    settings.save({ provider, model: '' });assert.equal(settings.getActive().subagents, true, 'ordinary saves preserve delegation choice');
+    settings.save({ provider, model: '', subagents: false });assert.equal(settings.getActive().subagents, false);
+    const beforeQuick = JSON.parse(fs.readFileSync(file, 'utf8'));
+    settings.setSubagents(provider, { enabled: true, concurrency: 6 });
+    const afterQuick = JSON.parse(fs.readFileSync(file, 'utf8')), expectedQuick = structuredClone(beforeQuick);
+    expectedQuick.ai.subagents[provider] = true;expectedQuick.ai.subagentConcurrency = { ...(expectedQuick.ai.subagentConcurrency || {}), [provider]: 6 };
+    assert.deepEqual(afterQuick, expectedQuick, 'composer delegation updates preserve models, credentials, endpoints and unrelated preferences');
+    assert.equal(settings.getActive().subagentConcurrency, 6);
+    settings.setSubagents(provider, { concurrency: 1 });assert.equal(settings.getActive().subagents, true);assert.equal(settings.getActive().subagentConcurrency, 1);
+    const beforeInvalid = fs.readFileSync(file, 'utf8');
+    for (const concurrency of [0, 7, 1.5, '6']) assert.throws(() => settings.setSubagents(provider, { concurrency }), /between 1 and 6/);
+    assert.equal(fs.readFileSync(file, 'utf8'), beforeInvalid);
+    for (fault of ['write', 'rename']) {
+      assert.throws(() => settings.setSubagents(provider, { enabled: false, concurrency: 3 }), /disk full|rename blocked/);
+      assert.equal(fs.readFileSync(file, 'utf8'), beforeInvalid, 'failed composer saves preserve the old preference');
+    }
+    fault = null;
+  }
+  settings.save({ provider: 'openai', model: 'api-model', subagents: true });assert.equal(settings.getActive().subagents, false);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).ai.subagents.openai, undefined);
+  assert.throws(() => settings.setSubagents('codex-sdk', { enabled: false }), /provider changed/);
   settings.save({ provider: 'codex-sdk', model: '', webResearch: true });
   settings.save({ provider: 'openai', model: 'api-model' });
   assert.equal(settings.getActive().provider, 'openai');
@@ -152,7 +177,7 @@ try {
   assert.equal(settings.getActive('groq').apiKey, 'synthetic-provider-key');
   assert.ok(!fs.readFileSync(file, 'utf8').includes('synthetic-provider-key'));
   assert.ok(!JSON.stringify(publicCredential).includes('synthetic-provider-key'));
-  for (const name of ['provider', 'models', 'baseUrls', 'executablePaths', 'reasoningEfforts', 'webResearch']) {
+  for (const name of ['provider', 'models', 'baseUrls', 'executablePaths', 'reasoningEfforts', 'webResearch', 'subagents', 'subagentConcurrency']) {
     assert.deepEqual(withCredential.ai[name], beforeCredential.ai[name], `key-only save preserves ${name}`);
   }
   assert.deepEqual(withCredential.services, beforeCredential.services);

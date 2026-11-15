@@ -5,17 +5,27 @@ import { TOOL_GROUPS, createToolCatalog } from './toolCatalog.js';
 import { SYSTEM_PROMPT } from './runAgent.js';
 import { prepareContext, projectRevision } from './context.js';
 import { createToolHost } from './toolHost.js';
+import { createAnalysisHost } from './analysisHost.js';
+import { DELEGATE_ANALYSIS, SUBAGENT_SKIP } from '../../../shared/subagents.mjs';
+import { activityTime } from './toolActivity.js';
+import { t, tn } from '../../i18n/index.js';
 
 const COMPLETE = { name: 'complete_edit', description: 'Required before finishing. Validate the live edit and inspect any missing changed regions. If ready is false, review the returned images or repair failed operations, then call again. Only finish after ready is true.', parameters: { type: 'OBJECT', properties: {} } };
 const IMAGES = { name: 'generate_images', description: 'Generate independent scene images concurrently, then insert them in request order. Use up to 12 scenes. Reuse an existing character reference before batching. Failed scenes have separate operation IDs; retry only those scenes with generate_image and retry_of.', parameters: { type: 'OBJECT', properties: { scenes: { type: 'ARRAY', minItems: 1, maxItems: 12, items: TOOL_DECLARATIONS.find(tool => tool.name === 'generate_image').parameters } }, required: ['scenes'] } };
 // Every native agent is offered this list: all editor tool groups, the user's MCP tools and
 // complete_edit; image generation only where the agent can generate images (Codex).
-export function nativeTools(provider, externalTools = []) {
-  const declarations = TOOL_DECLARATIONS.filter(tool => provider === 'codex-sdk' || tool.name !== 'generate_image');
+export function nativeTools(provider, externalTools = [], { subagents = false, pluginCommands = true } = {}) {
+  const declarations = TOOL_DECLARATIONS.filter(tool => (provider === 'codex-sdk' || tool.name !== 'generate_image') && (pluginCommands || !['list_plugin_commands','run_plugin_command'].includes(tool.name)));
   const catalog = createToolCatalog(declarations, externalTools);
   catalog.load([...Object.keys(TOOL_GROUPS), 'external']);
-  return { catalog, tools: [...catalog.tools(), COMPLETE, ...(provider === 'codex-sdk' ? [IMAGES] : [])] };
+  const complete = subagents ? { ...COMPLETE,
+    description: `${COMPLETE.description} With subagents enabled, completion also requires at least one completed child analysis or a concrete subagent_skip explanation. An unchanged edit or a proposed plan does not waive this requirement.`,
+    parameters: { ...COMPLETE.parameters, properties: { subagent_skip: SUBAGENT_SKIP } },
+  } : COMPLETE;
+  return { catalog, tools: [...catalog.tools(), complete, ...(subagents ? [DELEGATE_ANALYSIS] : []), ...(provider === 'codex-sdk' ? [IMAGES] : [])] };
 }
+
+const delegationPrompt = '\nAnalysis subagents are enabled. When the user explicitly asks to use subagents, honor that request: first get_video_analysis to reuse evidence, fill missing source and speech coverage with index_video, then delegate useful source analysis before proposing a plan or editing. Do not substitute solo inspection or treat the enabled setting as proof that children ran. Analysts inspect scene choices, context and missed moments; reviewers can challenge candidates later. Use audiovisual evidence by default. Visual-only analysis requires an explicit reason and disclosed missing speech; never silently disable transcription to avoid unavailable tools or latency. Children can read original dialogue independently of the timeline mix or recap narration. Respect configured concurrency. Children inspect only; you coordinate and edit. Personally review finalists with your own frames before proposing clips. Report assigned versus actually reviewed coverage and failed tasks honestly. If delegation is not applicable or cannot run, record the concrete reason with complete_edit.subagent_skip; it is shown to the user. Explicit requests cannot be skipped merely because the task is small. Never claim children ran without inspected results.';
 
 // The instructions every native agent receives, sent once per session through its system channel.
 export const nativeSystemPrompt = () => SYSTEM_PROMPT.replace('- Load needed tool groups with load_tools. Batch independent reads and group loads; perform edits in order. Only use available tools. Explain unsupported requests briefly.', '- Editor tools are registered natively. Call them directly; do not emit JSON tool requests in your answer. Perform dependent edits in order. load_tools is optional discovery. Explain unsupported requests briefly.') + '\nUse only registered ClipCraft tools for editing; no native filesystem or shell work. Before your final answer call complete_edit until ready is true. Review images returned by that tool. Describe actual edits in the final reply without internal tool/protocol names. When generate_images is available, use it for parallel scene images; it preserves insertion order and bounds native generation concurrency.';
@@ -26,6 +36,7 @@ const STALE = 'The project changed during this request. Completed edits were kep
 export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, requestId, sessionKey }) {
   const initialRevision = projectRevision(ctx.getProject());
   let host = null, offTool, offStop, offProgress;
+  let analysis;
   const finish = result => ({ ...result, changed: !!host?.changed(), operations: host?.operations || [] });
   const interrupted = () => ({ error:{ error:host.staleError, code:'edit_interrupted', ...(host.interruption ? { interruption:host.interruption } : {}) } });
   // Before the host exists (the MCP tool listing), the same interruption result the host gives.
@@ -36,18 +47,32 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
   };
   try {
     if (!ctx.api.agentRunNative || !ctx.api.onAgentNativeTool) throw new Error('Restart ClipCraft to load native agent support.');
+    const preferences = await ctx.api.settingsGet?.();
+    const subagents = preferences?.subagents?.[ctx.provider] === true;
+    analysis = createAnalysisHost({ ctx, requestId, isCanceled, enabled: subagents });
     const external = await ctx.api.mcpTools?.({ requestId });
     const stale = early(); if (stale) return finish(stale);
     if (external?.problems?.length) onEvent({ type:'tool', id:'native-mcp-warning', name:'mcp', label:external.problems.map(p=>`${p.server}: ${p.error}`).join('; '), status:'error' });
-    const { catalog, tools } = nativeTools(ctx.provider, external?.tools || []);
-    host = createToolHost({ ctx, contents, onEvent, isCanceled, requestId, tools, catalog });
+    const { catalog, tools } = nativeTools(ctx.provider, external?.tools || [], { subagents });
+    host = createToolHost({ ctx: { ...ctx, delegateAnalysis: args => analysis.delegate(args) }, contents, onEvent, isCanceled, requestId, tools, catalog, completionPolicy: analysis });
     offTool = ctx.api.onAgentNativeTool(call => {
       if (call.requestId !== requestId) return;
-      host.enqueue(call).then(result => ctx.api.agentNativeToolResult({ requestId, callId:call.callId, result }), error => ctx.api.agentNativeToolResult({ requestId, callId:call.callId, result:{ error:error.message } })).catch(() => {});
+      const task = call.analysis ? analysis.run(call) : host.enqueue(call);
+      task.then(result => ctx.api.agentNativeToolResult({ requestId, callId:call.callId, result }), error => ctx.api.agentNativeToolResult({ requestId, callId:call.callId, result:{ error:error.message } })).catch(() => {});
     });
     offStop = ctx.api.onAgentNativeStop?.(event => { if (event.requestId === requestId) host.stop(event.error); });
-    offProgress = ctx.api.onAgentNativeProgress?.(event => { if (event.requestId === requestId && event.event) onEvent(event.event); });
-    const nativeSystem = nativeSystemPrompt(), requestContext = nativeRequestContext(initialRevision);
+    offProgress = ctx.api.onAgentNativeProgress?.(event => {
+      if (event.requestId !== requestId || !event.event) return;
+      const e = event.event;
+      if (e.type !== 'analysis_agent') { onEvent(e);return; }
+      const title = t(e.role === 'reviewer' ? 'subagents.reviewer' : 'subagents.analyst', { number: e.number });
+      onEvent({ type: 'tool', id: e.id, name: 'subagent_analysis', label: title, status: e.status, activity: { title,
+        description: `${activityTime(e.start_sec)}–${activityTime(e.end_sec)}`,
+        outcome: e.status === 'done' ? tn('subagents.findings', e.findings_count || 0) : e.status === 'error' ? t('subagents.failed') : '',
+      } });
+    });
+    const nativeSystem = nativeSystemPrompt() + (subagents ? delegationPrompt : '');
+    const requestContext = nativeRequestContext(initialRevision) + (subagents ? `\nConfigured concurrent analysis agents: ${preferences.subagentConcurrency?.[ctx.provider] || 2}.` : '');
     const prompt = contents.at(-1)?.parts?.filter(part=>part.text).map(part=>part.text).join('\n') || '';
     const history = prepareContext(contents.slice(0, -1)).contents;
     const response = await ctx.api.agentRunNative({ requestId, sessionKey, provider:ctx.provider, system:nativeSystem, context:requestContext, prompt, history, tools, chatImageIds: ctx.chatImageIds || [] });
@@ -58,8 +83,11 @@ export async function runNativeAgent({ contents, ctx, onEvent, isCanceled, reque
     if (!response.ok) return finish({ error:response });
     host.check();
     if (!host.settled()) return finish({ error:{ error:'The native agent ended without completing edit validation. Completed changes remain undoable.' } });
-    contents.push({ role:'model', parts:[{ text:response.text || 'Done.' }] });
-    return finish({ text:response.text || 'Done.', ...(response.tokenUsage ? { tokenUsage:response.tokenUsage } : {}) });
+    let text = response.text || 'Done.';
+    if (analysis.skipReason && !text.includes(analysis.skipReason)) text += `\n\n${t('subagents.not_used_reason', { reason: analysis.skipReason })}`;
+    if (analysis.visualOnlyReason && !text.includes(analysis.visualOnlyReason)) text += `\n\n${t('subagents.visual_only_notice', { reason: analysis.visualOnlyReason })}`;
+    contents.push({ role:'model', parts:[{ text }] });
+    return finish({ text, ...(response.tokenUsage ? { tokenUsage:response.tokenUsage } : {}) });
   } catch (error) { if (host?.staleError) return finish(interrupted()); if(host?.stopError)return finish({error:host.stopError}); return finish(host?.canceled() || isCanceled() ? { canceled:true, text:'' } : { error:{ error:error.message } }); }
-  finally { offTool?.(); offStop?.(); offProgress?.(); }
+  finally { analysis?.clear();offTool?.(); offStop?.(); offProgress?.(); }
 }

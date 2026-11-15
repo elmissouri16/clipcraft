@@ -3,7 +3,7 @@
 import { snapshotRevision } from '../../state/projectIdentity.js';
 export function projectRevision(project) {
   return snapshotRevision(project, () => {
-  const { craftAI, ...editor } = project;
+  const { craftAI, posterImage, posterImageAt, ...editor } = project;
   editor.media = (project.media || []).map(({ thumb, thumbCount, thumbInterval, thumbW, thumbH, wave, poster,
     proxy, proxies, lightProxy, optimizing, proxyRequired, proxyFailed, ...media }) => media);
   const json = JSON.stringify(editor);

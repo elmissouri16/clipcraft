@@ -1,0 +1,70 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+module.exports=async(win,app,dir)=>{
+ const {dialog}=require('electron'),originalDialog=dialog.showOpenDialog,originalSave=dialog.showSaveDialog;
+ const ff=require('../../electron/media/ffmpeg.cjs'),tar=require('tar');
+ const q=s=>win.webContents.executeJavaScript(s),wait=ms=>new Promise(r=>setTimeout(r,ms));
+ const result={checks:[],errors:[]};
+ const until=async s=>{for(let i=0;i<300;i++){if(await q(s))return;await wait(50);}throw Error('Timeout '+s);};
+ const click=s=>q(`document.querySelector(${JSON.stringify(s)}).click()`);
+ const button=(scope,text)=>q(`(()=>{const b=[...document.querySelectorAll(${JSON.stringify(scope+' button')})].find(b=>b.textContent.trim()===${JSON.stringify(text)});if(!b)throw Error('Missing button: '+${JSON.stringify(text)});b.click();})()`);
+ const check=(name,value)=>{assert.ok(value,name);result.checks.push(name);};
+ win.webContents.setBackgroundThrottling(false);
+ win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)result.errors.push(message);});
+ try {
+  const savedFile=path.join(dir,'selected-project.clipcraft.json');
+  dialog.showSaveDialog=async()=>({canceled:false,filePath:savedFile});
+  const restarting=process.env.FVE_PLUGIN_RESTART==='1';
+  const archive=path.join(dir,'example.clipcraft-plugin.tgz');
+  await tar.c({file:archive,gzip:true,cwd:path.resolve(__dirname,'../../examples/plugins/review-copy')},['plugin.json']);
+  dialog.showOpenDialog=async()=>({canceled:false,filePaths:[archive]});
+  await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');
+  await click('.home-frame-card');await until('!!document.querySelector(".topbar")');await q('document.querySelector(".welcome-go")?.click()');
+  if(!restarting) {
+  await click('button[aria-label="Settings"]');await until('!!document.querySelector(".settings2")');await click('[data-section="plugins"]');
+  await until('!!document.querySelector(".plugin-settings[aria-busy=false]")');
+  if(process.env.CLIPCRAFT_DEV_EXAMPLES==='1') check('dev startup enables example without manual installation',await q('[...document.querySelectorAll(".plugin-row")].some(e=>e.textContent.includes("Review copy")&&e.textContent.includes("Enabled"))'));
+  await button('.plugin-settings','Install package');
+  await until(`[...document.querySelectorAll('.plugin-row')].some(e=>e.textContent.includes('Review copy'))&&!document.querySelector('.plugin-settings[aria-busy=true]')`);
+  check('package installs through Settings',true);await q('[...document.querySelectorAll(".plugin-row")].find(e=>e.textContent.includes("Review copy")).click()');
+  check('details show unverified publisher and permissions',await q('document.querySelector(".plugin-settings").textContent.includes("unverified")&&document.querySelector(".plugin-settings").textContent.includes("Permissions: none")'));
+  fs.writeFileSync(path.join(dir,'plugin-settings.png'),(await win.capturePage()).toPNG());
+  await click('button[aria-label="Close settings"]');
+  const source=path.join(dir,'source.png');require('node:child_process').execFileSync(ff.ffmpegPath,['-v','error','-y','-f','lavfi','-i','testsrc2=s=1280x720','-frames:v','1',source]);
+  await q(`window.__fve.load(${JSON.stringify({id:'plugin-smoke',name:'Plugin proof',width:1280,height:720,fps:24,ratio:'16:9',media:[{id:'m',path:source,type:'image',width:1280,height:720}],videoClips:[{id:'v',mediaId:'m',in:0,out:1,speed:1,effects:[]}],audioClips:[],textClips:[],overlayClips:[],effectClips:[]})})`);
+  await click('.btn-export');await until('!!document.querySelector("button[aria-label=Quality]")');
+  await click('button[aria-label=Quality]');await until('[...document.querySelectorAll("[role=option]")].some(b=>b.textContent.includes("Review copy"))');
+  await q('[...document.querySelectorAll("[role=option]")].find(b=>b.textContent.includes("Review copy")).click()');
+  await until('!!window.__fve.rawProject().exportSettings?.pluginPreset');
+  const saved=await q('window.__fve.rawProject()');
+  check('selected preset stores custom settings and provenance',saved.exportSettings.preset==='custom'&&saved.exportSettings.custom.resCap===720&&saved.exportSettings.pluginPreset.version==='1.0.0');
+  const savedPath=await q(`window.api.saveProject(JSON.stringify(window.__fve.rawProject()),null,{name:'Plugin proof',chat:null})`);
+  check('project saves through real persistence service',savedPath===savedFile&&!!JSON.parse(fs.readFileSync(savedFile,'utf8')).exportSettings.pluginPreset);
+  fs.writeFileSync(path.join(dir,'plugin-export.png'),(await win.capturePage()).toPNG());
+  await q('document.querySelector(".modal-backdrop").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+  await until('!document.querySelector(".export-modal")');
+  fs.writeFileSync(path.join(dir,'prepare-result.json'),JSON.stringify(result,null,2));
+  return app.exit(0);
+  }
+  check('inventory survives full app restart',await q(`(async()=>{const rows=await window.api.pluginsList();return rows.some(row=>row.enabled&&row.manifest?.id==='clipcraft-examples.review-copy');})()`));
+  await click('button[aria-label="Settings"]');await until('!!document.querySelector(".settings2")');await click('[data-section="plugins"]');await until('!!document.querySelector(".plugin-row")');await q('[...document.querySelectorAll(".plugin-row")].find(e=>e.textContent.includes("Review copy")).click()');
+  await button('.plugin-settings','Remove');await button('.plugin-settings','Remove this version');await until('![...document.querySelectorAll(".plugin-row")].some(e=>e.textContent.includes("Review copy"))');
+  check('removal works through Settings',true);await click('button[aria-label="Close settings"]');
+  const reopened=await q(`window.api.openProjectPath(${JSON.stringify(savedFile)})`);
+  check('saved file opens through real project service',!reopened.error);
+  await q(`window.__fve.load(${JSON.stringify(JSON.parse(fs.readFileSync(savedFile,'utf8')))})`);
+  await click('.btn-export');await until('!!document.querySelector("button[aria-label=Quality]")');
+  check('reopened project shows saved preset without plugin',await q('document.querySelector("button[aria-label=Quality]").textContent.includes("saved settings")'));
+  await q('document.querySelector(".modal-backdrop").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+  await until('!document.querySelector(".export-modal")');
+  await q('window.__fve.exportNow()');
+  check('real export succeeds without installed plugin',await q('!!document.querySelector(".modal-icon.ok")'));
+  const file=path.join(dir,'ui-export.mp4'),meta=await ff.probe(file);
+  result.output={file,width:meta.width,height:meta.height,fps:meta.fps,duration:meta.duration};
+  check('export uses saved resolution and frame rate',meta.width===720&&meta.height===406&&Math.abs(meta.fps-24)<.01);
+  require('node:child_process').execFileSync(ff.ffmpegPath,['-v','error','-i',file,'-f','null','-']);
+  check('export fully decodes',true);
+  check('no renderer errors',result.errors.length===0);
+ } catch(error) {result.error=error.stack;result.dom=await q('document.body.innerText.slice(-2500)');}
+ finally {dialog.showOpenDialog=originalDialog;dialog.showSaveDialog=originalSave;}
+ fs.writeFileSync(path.join(dir,'result.json'),JSON.stringify(result,null,2));app.exit(result.error?1:0);
+};

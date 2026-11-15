@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { startFakeModelServer } = require('../../fixtures/fake-model-server.cjs');
@@ -25,6 +26,19 @@ const missing = PROVIDERS.filter((p) => { try { findExecutable(p, '', { env: pro
 if (missing.length) { console.log(`AGENT PARITY SKIPPED (not installed: ${missing.join(', ')})`); process.exit(0); }
 
 const server = await startFakeModelServer();
+// HTTP chunks may split a multibyte tool description. Preserve the original text.
+const unicodeBody = Buffer.from(JSON.stringify({ description: 'Source range 0–1' }));
+const unicodeSplit = unicodeBody.indexOf(Buffer.from('–')) + 1;
+await new Promise((resolve, reject) => {
+  const request = http.request(`${server.url}/unicode-probe`, { method: 'POST' }, (response) => {
+    response.resume();
+    response.on('end', resolve);
+  });
+  request.on('error', reject);
+  request.write(unicodeBody.subarray(0, unicodeSplit));
+  setTimeout(() => request.end(unicodeBody.subarray(unicodeSplit)), 10);
+});
+assert.equal(server.requests.at(-1).body.description, 'Source range 0–1');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-parity-'));
 const codexHome = path.join(root, 'codex'), claudeHome = path.join(root, 'claude');
 fs.mkdirSync(codexHome); fs.mkdirSync(claudeHome);
@@ -36,9 +50,10 @@ const agents = createLocalAgents({ env, home: os.homedir() });
 const system = nativeSystemPrompt(), context = nativeRequestContext('parity-check');
 
 // What one agent sent its model for one request.
-async function capture(provider, webResearch) {
+async function capture(provider, webResearch, subagents = false) {
   const from = server.requests.length;
-  const { tools: offered } = wireTools(nativeTools(provider).tools);
+  const declarations = nativeTools(provider, [], { subagents }).tools;
+  const { tools: offered } = wireTools(declarations);
   await agents.runEditorNative({ provider, model: 'probe', webResearch }, { sessionKey: `${provider}-${webResearch}`, tools: offered, system, context,
     prompt: 'Parity check request.', history: [], onTool: async () => ({ content: [{ type: 'text', text: '{}' }] }), isComplete: async () => true, signal: AbortSignal.timeout(120000) });
   agents.closeNativeSessions();
@@ -49,7 +64,7 @@ async function capture(provider, webResearch) {
   const tools = new Map(), other = [];
   for (const t of b.tools) {
     const name = String(t.name || t.type).replace(/^mcp__clipcraft__/, '');
-    if (t.name?.startsWith('mcp__clipcraft__') || (provider === 'codex-sdk' && t.type === 'function' && nativeTools(provider).tools.some((d) => d.name === name))) tools.set(name, { description: t.description, schema: t.parameters || t.input_schema });
+    if (t.name?.startsWith('mcp__clipcraft__') || (provider === 'codex-sdk' && t.type === 'function' && declarations.some((d) => d.name === name))) tools.set(name, { description: t.description, schema: t.parameters || t.input_schema });
     else other.push(t.name || t.type);
   }
   return { tools, other,
@@ -66,9 +81,11 @@ const count = (haystack, needle) => haystack.split(needle).length - 1;
 
 const checks = [];
 try {
-  for (const webResearch of [false, true]) {
-    const [codex, claude] = [await capture('codex-sdk', webResearch), await capture('claude-agent-sdk', webResearch)];
-    const label = `web research ${webResearch ? 'on' : 'off'}`;
+  for (const webResearch of [false, true]) for (const subagents of [false, true]) {
+    const [codex, claude] = [await capture('codex-sdk', webResearch, subagents), await capture('claude-agent-sdk', webResearch, subagents)];
+    const label = `web research ${webResearch ? 'on' : 'off'}, subagents ${subagents ? 'on' : 'off'}`;
+    assert.equal(codex.tools.has('delegate_video_analysis'), subagents);
+    assert.equal(claude.tools.has('delegate_video_analysis'), subagents);
     // Same tools, apart from image generation.
     const codexNames = [...codex.tools.keys()].filter((n) => !IMAGE_TOOLS.includes(n)).sort(), claudeNames = [...claude.tools.keys()].sort();
     assert.deepEqual(claudeNames, codexNames, `${label}: same ClipCraft tools`);

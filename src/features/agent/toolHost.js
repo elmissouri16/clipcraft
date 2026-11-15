@@ -15,7 +15,7 @@ import { t } from '../../i18n/index.js';
 
 // ctx: the agent context (agentCtx.js). contents: the request's model log (recall_context reads it).
 // tools/catalog: from nativeTools(). isCanceled: the owner's cancel state.
-export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, tools, catalog }) {
+export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, tools, catalog, completionPolicy }) {
   const initial = ctx.getProject(), initialRevision = projectRevision(initial);
   const initialIssues = new Set(validateAgentProject(initial).issues), failures = new Map(), operations = [];
   let editorialReviewed = null, staleError = null, interruption = null, stopError = null, stopped = false, finalized = null, visual = [], changed = false, index = 0;
@@ -29,10 +29,13 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
   const editChanged = () => changed && projectRevision(ctx.getProject()) !== initialRevision;
   // A turn that changed nothing (an answer, a proposed plan) has nothing to
   // validate; any edit requires an explicit, current complete_edit.
-  const settled = () => !failures.size && (finalized === projectRevision(ctx.getProject()) || (!changed && projectRevision(ctx.getProject()) === initialRevision));
+  const settled = () => (completionPolicy?.ready() ?? true) && !failures.size && (finalized === projectRevision(ctx.getProject()) || (!changed && projectRevision(ctx.getProject()) === initialRevision));
   const validOwner = () => { if (canceled()) throw new Error(stopError?.error || 'Editing stopped.'); if (ctx.editActive && !ctx.editActive()) { staleError = 'The project changed during this request. Completed edits were kept. Continue from the current timeline.'; const cause = ctx.editInterruption?.();interruption = cause?.token === requestId ? cause : null;ctx.api.agentCancel?.(requestId).catch(()=>{});throw new Error(staleError); } };
   const remember = (name, args, result, id, before = ctx.getProject()) => {
     result.operation_id = id;
+    // A user refusal ends plugin execution for this request. Do not require a
+    // later retry of earlier plugin failures in order to finish the edit.
+    if(name==='run_plugin_command'&&result.permission_denied)for(const [key,failure] of failures)if(failure.name==='run_plugin_command')failures.delete(key);
     if (result.error && !result.not_applicable && runner.requiresSuccess(name)) {
       result.failed_operation_id = id; failures.set(id, { name, key: editTarget(name, args), error: result.error, targets: failureTargets(args, before) });
     } else if (!result.error) for (const [key, failure] of failures) {
@@ -40,8 +43,10 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     }
     operations.push({ id, name, changed: !!result.changed, status: result.error ? 'failed' : 'completed', revision: result.revision, ...(result.error ? { error: result.error } : {}) });
   };
-  const verify = async () => {
+  const verify = async (args) => {
     validOwner();
+    const prerequisite = completionPolicy?.verify(args);
+    if (prerequisite) return prerequisite;
     pruneFailures(failures, ctx.getProject());
     if (failures.size) return { ...unresolvedReport(failures), ready:false };
     const validation = validateAgentProject(ctx.getProject());
@@ -70,11 +75,15 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
         note:'This edit introduced these editorial issues. Fix them, or call complete_edit again if each one is intentional and say why in the final reply.' };
     }
     finalized = current;
-    return { ready:true, revision:finalized, validation, visual_samples_checked:visual.length > 0 && visual.every(region=>region.checked), ...(editorial.length ? { editorial_notes:editorial } : {}) };
+    return { ready:true, revision:finalized, validation, visual_samples_checked:visual.length > 0 && visual.every(region=>region.checked), ...(editorial.length ? { editorial_notes:editorial } : {}), ...completionPolicy?.report() };
   };
   const execute = async call => {
     validOwner();
-    if (call.name === '__native_status') return { ready:settled() };
+    if (call.name === '__native_status') {
+      if (completionPolicy && !completionPolicy.ready()) return { ...completionPolicy.verify(), code: 'analysis_pending' };
+      if (failures.size) return { ...unresolvedReport(failures), ready: false, code: 'unresolved_operations' };
+      return { ready: settled(), ...(!settled() ? { code: 'edit_validation_pending', note: 'Validate the current revision with complete_edit and review the returned changed-region images.' } : {}) };
+    }
     const beforeProject = ctx.getProject();
     const id = `native-${index++}`, before = projectRevision(beforeProject);
     const event = { type:'tool', id, name:call.name, label:call.name === 'complete_edit' ? t('activity.validating_the_completed_edit') : call.name === 'generate_images' ? t('activity.generating_scene_images') : describeCall(call.name, call.args), activity:describeToolActivity(call.name,call.args,beforeProject), status:'running' };
@@ -85,7 +94,8 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     try {
       const error = validateToolCall(call, tools);
       if (error) result = { error };
-      else if (call.name === 'complete_edit') result = await verify();
+      else if (call.name === 'complete_edit') result = await verify(call.args);
+      else if (call.name === 'delegate_video_analysis') result = await ctx.delegateAnalysis(call.args);
       else if (call.name === 'load_tools') result = catalog.load(call.args.groups);
       else if (call.name === 'recall_context') result = recallContext(contents, call.args);
       else if (call.name.startsWith('mcp_')) {

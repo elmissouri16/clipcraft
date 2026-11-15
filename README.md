@@ -145,6 +145,8 @@ with embedded chat are still supported. Media files must also remain accessible.
 - [Native agents and shared editing tools](docs/agents/native-agent-tools.md)
 - [Connecting external agents over MCP](docs/agents/external-mcp.md)
 - [Editorial planning and transcript-driven edits](docs/agents/editorial-agent.md)
+- [Long-video clip discovery and preview suggestions](docs/agents/source-discovery.md)
+- [Optional analysis subagents for native agents](docs/agents/analysis-subagents.md)
 - [Timeline context, motion tools, and graphics](docs/agents/agent-editing.md)
 - [Motion graphics runtime and live input editing](docs/design/motion-graphics.md)
 - [VoiceStudio connector](docs/media/voicestudio.md)

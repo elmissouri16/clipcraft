@@ -1,3 +1,4 @@
+import {assertPluginEffects} from '../plugins/effectRegistry.js';
 // The animated-effects pass of the export: every frame that needs an animated effect or transition is decoded by
 // FFmpeg (electron/export/fxjobs.cjs), drawn here with the preview's WebGL shaders, and stored for the final export.
 import { videoLayout } from "../../state/store.js";
@@ -8,7 +9,7 @@ import { easeValue } from "../effects/easing.js";
 import { bakeColorLut } from "./colorLut.js";
 import { fxRead, fxWrite } from "./fxChannel.js";
 
-const fxTr = (c) => c.transition && fxTransition(c.transition.type);
+const fxTr = (c) => c.transition && fxTransition(c.transition.type,c.transition);
 const cacheEpoch = Date.now(); // invalidate session renders after renderer code reloads
 const lutDigests = new WeakMap();
 const passSignature = async passes => Promise.all(passes.map(async pass => {
@@ -53,6 +54,7 @@ export function fxWork(project) {
 // Returns the project to export: clips with animated effects point at their rendered files, animated transitions
 // at their rendered segments. Returns null when canceled.
 export async function renderFxPass(projectIn, onProgress, isCanceled) {
+  assertPluginEffects(projectIn);
   const total = fxWork(projectIn);
   if (!total) return projectIn;
   const gl = fxGL();
@@ -134,6 +136,7 @@ export async function renderFxPass(projectIn, onProgress, isCanceled) {
       passes:await passSignature(pixelPasses(projectIn,clip,start,from))});
     const job = unwrap(await window.api.fxBegin(project, { kind: 'clip', track, clipId: clip.id, from, to, cacheKey }));
     if (!(await pump(job, (frame, k) => {
+      assertPluginEffects(projectIn);
       const passes = pixelPasses(projectIn, clip, start, from + k / job.fps);
       if (!passes.length) return { bytes: frame };
       gl.effects({ data: frame }, job.width, job.height, passes);
@@ -173,6 +176,7 @@ export async function renderFxPass(projectIn, onProgress, isCanceled) {
     stats.transitions++;
     const job = unwrap(await window.api.fxBegin(project, { kind: 'transition', clipId: l.clip.id, cacheKey }));
     if (!(await pump(job, (pair, k) => {
+      assertPluginEffects(projectIn);
       gl.transition({ data: pair.a }, { data: pair.b }, job.width, job.height, easeValue(l.clip.transition?.ease, k / job.fps / job.len), t.expr);
       return gl.readAsync(job.width, job.height);
     }, 2))) return null;

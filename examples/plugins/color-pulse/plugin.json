@@ -1,0 +1,21 @@
+{
+  "id": "clipcraft-examples.color-pulse",
+  "name": "Color pulse",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minClipcraftVersion": "2.0.0",
+  "description": "A rhythmic color pulse with adjustable amount and speed, rendered identically in preview and export.",
+  "permissions": [],
+  "contributes": {
+    "effects": [{
+      "id": "color-pulse",
+      "name": "Color pulse",
+      "expression": "clip(S(X,Y)*(1+{{amount}}*(0.5+0.5*sin(T*{{speed}}*2*PI))*C(0.3,-0.2,0.45)),0,255)",
+      "parameters": [
+        {"id":"amount","name":"Amount","min":0,"max":1,"step":0.01,"default":0.6},
+        {"id":"speed","name":"Speed (Hz)","min":0.1,"max":4,"step":0.1,"default":1}
+      ]
+    }]
+  }
+}

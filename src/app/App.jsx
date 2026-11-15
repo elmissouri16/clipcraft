@@ -1,3 +1,12 @@
+import {usePluginActions} from '../features/plugins/usePluginActions.js';
+import PluginActionDialog from '../features/plugins/components/PluginActionDialog.jsx';
+import {pluginActionMenuItem} from '../features/plugins/components/PluginActionsMenu.jsx';
+import {pluginEditsApplied} from '../state/store.js';
+import {createEditorContext} from '../features/plugins/editorContext.js';
+import PluginPanelDock from '../features/plugins/components/PluginPanelDock.jsx';
+import PluginTranslationReview from '../features/plugins/components/PluginTranslationReview.jsx';
+import {usePluginCommands} from '../features/plugins/usePluginCommands.js';
+import {refreshPluginEffects,subscribePluginEffects,pluginEffectsRevision,assertPluginEffects} from '../features/plugins/effectRegistry.js';
 import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
@@ -60,6 +69,15 @@ import { catalogName } from '../i18n/catalog.js';
 // in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
 
 export default function App() {
+  const [,setPluginRevision]=useState(pluginEffectsRevision);
+  useEffect(()=>{
+    let live=true;
+    const off=subscribePluginEffects(()=>{if(live)setPluginRevision(pluginEffectsRevision());});
+    const refresh=()=>refreshPluginEffects().catch(error=>{if(live)showAlert(error.message);});
+    refresh();const changed=window.api?.onPluginsChanged?.(refresh);
+    return ()=>{live=false;off();changed?.();};
+  },[]);
+
   const [state, reduceDispatch] = useReducer(historyReducer, { past: [], present: emptyProject(), future: [] });
   const [projectLoadVersion, setProjectLoadVersion] = useState(0);
   const loadVersionRef = useRef(projectLoadVersion);
@@ -143,6 +161,7 @@ export default function App() {
   });
   const agentMode = workspaceMode === 'agent';
   const [agentDrawer, setAgentDrawer] = useState(null);
+  const [pluginPanelsOpen,setPluginPanelsOpen]=useState(false);
   useEffect(() => { try { localStorage.setItem('clipcraft.workspaceMode', workspaceMode); } catch {} }, [workspaceMode]);
   const { layout: panes, startDrag: startResize, reset: resetSize, nudge: nudgeSize, setRightCollapsed, setBottom: setTimelineHeight } = useLayout(workspaceMode, !!agentDrawer);
   const [tool, setTool] = useState('select'); // timeline tool: 'select' | 'razor'
@@ -1337,6 +1356,7 @@ export default function App() {
         attachTimelineContext({ kind: 'range', start_sec: clip.start_sec, end_sec: clip.end_sec });
       } catch (error) { setTimelineContextRequest({ id: uid(), projectId: projectRef.current.id, loadVersion: projectLoadVersion, error: error.message }); }
     } },
+    ...(pluginActions.items('clip-menu',sel).length?['sep',{label:t('plugins.actions_menu'),submenu:pluginActions.items('clip-menu',sel).map(pluginActionMenuItem)}]:[]),
     'sep', ...clipEditingMenuItems(sel),
   ];
   const clipEditingMenuItems = (sel) => {
@@ -1827,7 +1847,7 @@ export default function App() {
   // The rendered cover (export:coverFrame's per-project poster file) is the home card's picture;
   // the timestamp lets the card reload the file when the same path holds a new render.
   const changePosterImage = (file) => {
-    dispatch({ type: 'setProject', patch: { posterImage: file, posterImageAt: Date.now() } });
+    dispatch({ type: 'projectVisuals', projectId: exporting?.project.id, patch: { posterImage: file, posterImageAt: Date.now() } });
   };
   const exportRunning = useRef(false);
   const exportCanceled = useRef(false);
@@ -1848,6 +1868,8 @@ export default function App() {
     exportReporter.current = publish;
     const stopIfCanceled = () => { if (exportCanceled.current) throw new Error('Export canceled'); };
     try {
+      await refreshPluginEffects();
+      assertPluginEffects(project);
       target = presetTarget || await window.api.exportBegin(name);
       if (target.canceled) return { canceled: true };
       project = exportRenderPlan(project, eff);
@@ -1876,6 +1898,7 @@ export default function App() {
       }
       progress.start('encode');
       off = window.api.onExportProgress((fraction,detail) => progress.update(fraction,{...detail,restart:!!detail?.retry}));
+      assertPluginEffects(project);
       const res = await window.api.exportRun(toExport,target,textFrames);off();off = null;
       if (res.canceled) exportCanceled.current = true;stopIfCanceled();
       if (!res.ok) throw new Error(res.error || t('app.the_video_could_not_be_exported'));
@@ -1999,6 +2022,10 @@ export default function App() {
     getEditorState: () => ({ ...editorRef.current, playhead_sec: readTime() }),
     getAgentEdit: () => historyRef.current.agentEdit,
     getAgentInterruption: () => historyRef.current.agentInterruption,
+    getPluginEditorContext: () => readPluginContext(),
+    getPluginEditContext: () => capturePluginEditContext(),
+    pluginEditApplied: action => pluginEditsApplied(historyRef.current,action),
+    pluginCommandReady: () => !exportRunning.current && !historyRef.current.gestureStart,
     addProbed: (res, agentToken) => {
       if (!res?.path) return null;
       const m = projectRef.current.media.find((x) => x.path === res.path);
@@ -2120,6 +2147,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const pluginContext=useRef(null);
+  if(!pluginContext.current||pluginContext.current.epoch!==projectLoadVersion)pluginContext.current={epoch:projectLoadVersion,read:createEditorContext()};
+  const readPluginContext=()=>pluginContext.current.read(projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing});
+  const capturePluginEditContext=()=>{const snapshot=readPluginContext();return {snapshot,targets:pluginContext.current.read.targets(snapshot)};};
+  const pluginCommands=usePluginCommands({getHistory:()=>historyRef.current,getEditorContext:readPluginContext,getEditContext:capturePluginEditContext,getVersion:()=>loadVersionRef.current,dispatch,hasProject:screen==='editor',isBusy:()=>!!agentRunRef.current||exportRunning.current});
+  const pluginActions=usePluginActions(pluginCommands,{project,selection,epoch:projectLoadVersion,getHistory:()=>historyRef.current,getVersion:()=>loadVersionRef.current,getSelection:()=>editorRef.current.selection,hasProject:screen==='editor',isBusy:()=>!!agentRunRef.current||exportRunning.current});
+
   if (screen === 'home') {
     return (
       <div className="app home-app">
@@ -2131,8 +2165,9 @@ export default function App() {
           onDiscardUnsaved={discardUnsaved} agentBadge={externalBadge}
           onSettings={() => setSettingsOpen(true)} />
         {externalApproval}
+      <PluginTranslationReview />
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
-        {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
+        {settingsOpen && <SettingsDialog pluginCommands={pluginCommands} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
           onAbout={() => setAboutOpen('settings')} />}
         {aboutOpen && <AboutDialog onClose={() => { setAboutOpen(false); if (aboutOpen === 'settings') setSettingsOpen(true); }} />}
       </div>
@@ -2144,7 +2179,7 @@ export default function App() {
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
-      <TopBar agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
+      <TopBar pluginActions={pluginActions} onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
         onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }} />
 
       <div className="agent-workspace-tools" hidden={!agentMode}>
@@ -2175,17 +2210,17 @@ export default function App() {
           onAddPeek={(m) => { setPeekId(null); setAssetPeek(null); if (m && m.assetPath) addFile(m.assetPath, m.assetWhere || 'main'); else if (m) addToTimeline(m.id); }}
           quality={quality} onQualityChange={async (q) => { const st = await window.api.qualitySet(q); setPlaybackQuality(st.quality); setQuality(st.quality); }}
           clockRef={clockRef}
-          propertiesCollapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onToggleProperties={() => agentMode ? setAgentDrawer(d => d === 'properties' ? null : 'properties') : setRightCollapsed(!panes.rightCollapsed)}
+          propertiesCollapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onToggleProperties={() => {setPluginPanelsOpen(false);return agentMode ? setAgentDrawer(d => d === 'properties' ? null : 'properties') : setRightCollapsed(!panes.rightCollapsed);}}
           trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))}
           cropEdit={cropEdit} onCropDraft={setCropDraft}
           colorPick={colorPick} onColorPicked={finishColorPick} />
-        <Inspector collapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onCollapse={() => {
+        {pluginPanelsOpen&&(!agentMode||agentDrawer==='plugins')?<PluginPanelDock getEditorContext={readPluginContext} controller={pluginCommands} project={project} projectEpoch={projectLoadVersion} onClose={()=>{setPluginPanelsOpen(false);if(agentMode)setAgentDrawer(null);}}/>:<Inspector onSelectEffect={setSelection} collapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onCollapse={() => {
           if (agentMode) setAgentDrawer(null); else setRightCollapsed(true);
           requestAnimationFrame(() => document.querySelector('.properties-toggle')?.focus());
         }} project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} clockRef={clockRef} playing={playing} onSeek={seek}
           onAddTextOver={addTextOver}
           onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
-          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} onColorPick={(sel) => startColorPick(sel)} />
+          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} onColorPick={(sel) => startColorPick(sel)} />}
         {/* Splitters straddle the one-pixel divider between panels (6px wide, centred on it). */}
         <Splitter which="left" style={{ left: panes.left - 3 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_left_panel')} />
         {!agentMode && !panes.rightCollapsed && <Splitter which="right" style={{ right: panes.right - 3 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_properties_panel')} />}
@@ -2204,6 +2239,7 @@ export default function App() {
         tool={tool} setTool={setTool} onTrimSide={trimSide} onMarker={toggleMarker} recorder={recorder} onToggleRecord={toggleRecording}
         onDropItem={dropItem} onDropFiles={dropFiles} canUndo={!!state.past.length} canRedo={!!state.future.length} onClipMenu={openClipMenu} onAddText={addText}
         overlay={slots.length > 0 && <SlotStrip slots={slots} media={project.media} selection={selection} onPick={pickSlot} onReplace={replaceSlot} title={project.template?.title} />} />
+      {pluginActions.request&&<PluginActionDialog key={pluginActions.request.id} request={pluginActions.request} onSubmit={pluginActions.submit} onClose={pluginActions.close}/>}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
       {speedAsk && (() => {
         const c = findClip(project, speedAsk);
@@ -2227,7 +2263,7 @@ export default function App() {
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
-      {settingsOpen && <SettingsDialog initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
+      {settingsOpen && <SettingsDialog pluginCommands={pluginCommands} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
         onAbout={() => setAboutOpen('settings')}
         onProxiesCleared={(deleted) => projectRef.current.media.forEach((m) => {
           if (m.lightProxy && deleted.includes(m.lightProxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { lightProxy: null } });
@@ -2245,6 +2281,7 @@ export default function App() {
         onImport={importMedia} onAttachSelection={() => selection && attachTimelineContext({ kind: 'clips', clip_refs: selection.items || [{ track: selection.track, id: selection.id }] })} hasSelection={!!selection}
         app={pilotApp} external={{ holder: external.holder, onDisconnect: external.disconnect, subscribe: external.subscribe, yieldEdit: external.yieldEdit }} />
       {externalApproval}
+      <PluginTranslationReview />
       {dragOver && <div className="drop-overlay"><div>{t('app.drop_files_to_import_them')}</div></div>}
       {renderJob && (
         <div className="render-job" role="status">
@@ -2300,7 +2337,7 @@ export default function App() {
           <button className="btn btn-sm btn-ghost" onClick={() => setColorPick(null)}>{t('app.cancel')}</button>
         </div>
       )}
-      {exporting && <ExportDialog state={exporting} onCancel={cancelExport} onStart={confirmExport}
+      {exporting && <ExportDialog pluginCommands={pluginCommands} state={exporting} onCancel={cancelExport} onStart={confirmExport}
         onClose={() => { if(exportRunning.current)return; if(exporting.target?.frameDir)window.api.exportAbort(exporting.target.frameDir);setExporting(null); }} onShow={() => window.api.showInFolder(exporting.file)}
         onOpen={() => window.api.openFile(exporting.file)} onPickTarget={pickExportTarget}
         onRename={renameExport} onSettings={changeExportSettings} onResolution={changeExportResolution}

@@ -1,4 +1,4 @@
-import { clipLen, projectDuration, videoLayout } from "../../state/store.js";
+import { clipLen, projectDuration, videoLayout, renderable } from "../../state/store.js";
 
 const visualClip = (clip, project) => {
   const { volume, muted, fadeIn, fadeOut, fadeInOffset, fadeOutOffset, audioFx, enhance, volumeKeys, ...visual } = clip;
@@ -15,9 +15,13 @@ function regions(project) {
 // Requirements refer to affected intervals, rather than accepting any frame at
 // the latest revision. Removed/moved clips also require checking the old area.
 export function changedVisualRegions(before, after) {
+  before=renderable(before);after=renderable(after);
   const old = new Map(regions(before).map(region => [region.key, region]));
   const next = new Map(regions(after).map(region => [region.key, region]));
-  const layers = p => Object.entries(p.layerState || {}).filter(([key]) => !key.startsWith('audio:'));
+  const layers = p => {
+    const occupied=new Set([...(p.videoClips.length?['video:0']:[]),...(p.overlayClips||[]).map(c=>`overlay:${c.layer??0}`),...(p.textClips||[]).map(c=>`text:${c.layer??0}`),...(p.effectClips?.length?['effect:0']:[])]);
+    return Object.entries(p.layerState||{}).filter(([key])=>occupied.has(key));
+  };
   const globalChange = ['width', 'height', 'background', 'fps'].some(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
     || JSON.stringify(layers(before)) !== JSON.stringify(layers(after));
   const duration = projectDuration(after), fps = after.fps || 30, requirements = [];

@@ -111,6 +111,7 @@ pass unchanged.
   function, `externalCapabilities(settings)`:
   - `generate_image`/`generate_images` only when ClipCraft has a signed-in image provider (Codex),
     the same rule as today;
+  - plugin command discovery/execution is CraftAI-only for now; outside clients cannot load or invoke it;
   - the user's own MCP servers (`external` group) are **not** re-exported. The outside agent can
     connect them itself, and re-exporting would nest MCP calls.
 - **Instructions:** `nativeSystemPrompt()` is sent as the MCP `initialize` `instructions`, the same

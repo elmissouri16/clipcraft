@@ -1,3 +1,4 @@
+const pluginGate=require('../plugins/providerGate.cjs');
 const { attachImages, openAiParts, anthropicParts } = require('./agentImages.cjs');
 // AI provider layer for the CraftAI assistant. Runs only in the main process so API keys never reach the UI.
 // chat() takes plain messages and returns text; tool calling is added on top of this later.
@@ -23,7 +24,7 @@ function resolveDraft(saved, draft = {}) {
     model,
     reasoningEffort: model === saved.model ? saved.reasoningEffort || ''
       : typeof saved.reasoningEfforts?.[model] === 'string' ? saved.reasoningEfforts[model] : '',
-    baseUrl: draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
+    baseUrl: providers.isPlugin(saved.provider) ? saved.baseUrl : draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
     apiKey: (draft.apiKey || '').trim() || saved.apiKey,
     executablePath: draft.executablePath !== undefined ? String(draft.executablePath).trim() : saved.executablePath,
     webResearch: typeof draft.webResearch === 'boolean' ? draft.webResearch : saved.webResearch,
@@ -69,17 +70,34 @@ function normalizeModel(provider, model) {
 }
 
 async function http(url, { headers, body, timeoutMs = 45000, signal }, key) {
+  const pluginScope=pluginGate.current();
+  if(pluginScope)signal=signal?AbortSignal.any([signal,pluginScope.signal]):pluginScope.signal;
+  if(pluginScope){
+    await pluginScope.verify();
+    if(url!==`${pluginScope.baseUrl}/chat/completions`||!body)throw Error('Plugin provider request escaped its approved endpoint.');
+    const vision=providers.byId(pluginScope.provider)?.models.find(m=>m.id===body.model)?.vision;
+    const hasImage=value=>value&&typeof value==='object'&&(value.type==='image_url'||value.type==='input_image'||Object.values(value).some(hasImage));
+    if(!vision&&hasImage(body))throw Error('This plugin model does not declare image support. Choose a vision-capable provider.');
+  }
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res, raw;
   try {
     res = await fetch(url, {
       method: body ? 'POST' : 'GET',
+      ...(pluginScope?{redirect:'manual'}:{}),
       headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
       body: body ? JSON.stringify(body) : undefined,
       signal: signal ? AbortSignal.any([ctl.signal, signal]) : ctl.signal,
     });
-    raw = await res.text();
+    if(pluginScope){
+      if(res.status>=300&&res.status<400)throw Error('Redirects from plugin providers are blocked.');
+      const reader=res.body?.getReader();let bytes=0;const chunks=[];
+      if(reader){try{while(true){const chunk=await reader.read();if(chunk.done)break;bytes+=chunk.value.length;if(bytes>4*1024*1024)throw Error('Plugin provider response exceeds 4 MiB.');chunks.push(Buffer.from(chunk.value));}}finally{await reader.cancel().catch(()=>{});}}
+      raw=reader?Buffer.concat(chunks).toString('utf8'):await res.text();
+      if(Buffer.byteLength(raw)>4*1024*1024)throw Error('Plugin provider response exceeds 4 MiB.');
+      await pluginScope.verify();
+    }else raw = await res.text();
   } catch (e) {
     if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
     const why = e.name === 'AbortError' ? 'timed out' : redact(e.cause?.code || e.message, key);
@@ -137,6 +155,7 @@ const textOf = (parts) => (parts || []).map((p) => p.text || '').join('');
 async function modelCapabilities(cfg, { refresh = false, signal } = {}) {
   if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
   const model = normalizeModel(cfg.provider, cfg.model);
+  if(providers.isPlugin(cfg.provider))return {ok:true,model,reasoningEfforts:[],source:'plugin declaration',vision:!!providers.byId(cfg.provider)?.models.find(m=>m.id===model)?.vision};
   const key = createHash('sha256').update(JSON.stringify([cfg.provider, model, cfg.baseUrl, cfg.executablePath, cfg.apiKey])).digest('hex');
   const cached = capabilityCache.get(key);
   if (!refresh && cached && Date.now() - cached.time < 180000) return cached.value;
@@ -217,7 +236,8 @@ async function geminiGenerate(cfg, body, timeoutMs, signal) {
   const vertexFirst = /^AQ\./.test(apiKey);
   const vertex = { label: 'Vertex AI', run: () => http(`${cfg.vertexBase || base || VERTEX_EXPRESS_BASE}/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, { body, timeoutMs, signal }, apiKey) };
   const studio = { label: 'Google AI Studio (Gemini API)', run: () => http(`${cfg.studioBase || base || GEMINI_BASE}/v1beta/models/${model}:generateContent`, { headers: { 'x-goog-api-key': apiKey }, body, timeoutMs, signal }, apiKey) };
-  const attempts = vertexFirst ? [vertex, studio] : [studio, vertex];
+  const candidates = vertexFirst ? [vertex, studio] : [studio, vertex];
+  const attempts = cfg.allowEndpointFallback === false ? candidates.slice(0, 1) : candidates;
   const failures = [];
   for (const a of attempts) {
     try {
@@ -226,7 +246,7 @@ async function geminiGenerate(cfg, body, timeoutMs, signal) {
       failures.push({ label: a.label, e });
       // A custom address is used as given. Only a key/endpoint mismatch is worth trying the other endpoint for.
       // A 404 means the key was accepted and the model is the problem, so it is reported as is.
-      if (base || ![400, 401, 403].includes(e.status)) throw e;
+      if (base || cfg.allowEndpointFallback === false || ![400, 401, 403].includes(e.status)) throw e;
     }
   }
   // Both endpoints refused the key: say what each one answered so the real cause is visible.
@@ -239,18 +259,19 @@ async function geminiGenerate(cfg, body, timeoutMs, signal) {
 }
 
 // cfg: { provider, model, baseUrl, apiKey }; messages: [{ role: 'user' | 'assistant', content }]; system: string.
-async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs }) {
+async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs, signal }) {
+  if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
   if (localAgents.isProvider(cfg.provider)) {
-    if (cfg.reasoningEffort) await selectedThinking(cfg);
-    return localAgents.chat(cfg, { system, messages, timeoutMs });
+    if (cfg.reasoningEffort) await selectedThinking(cfg, signal);
+    return localAgents.chat(cfg, { system, messages, timeoutMs, signal });
   }
   const { provider, apiKey } = cfg;
   const model = normalizeModel(provider, cfg.model);
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
-  if (provider !== 'ollama' && !apiKey) throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
-  const capability = await selectedThinking(cfg);
+  if (provider !== 'ollama' && providers.byId(provider)?.needsKey!==false && !apiKey) throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
+  const capability = await selectedThinking(cfg, signal);
   if (thinking.usesResponses(cfg)) {
-    const result = await responsesAgentStep(cfg, { system, contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), tools: [], maxTokens, timeoutMs });
+    const result = await responsesAgentStep(cfg, { system, contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), tools: [], maxTokens, timeoutMs, signal });
     return result.text;
   }
 
@@ -260,23 +281,23 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
       generationConfig: { maxOutputTokens: maxTokens, ...(capability ? { thinkingConfig: { thinkingLevel: cfg.reasoningEffort.toUpperCase() } } : {}) },
     };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
-    const j = await geminiGenerate({ ...cfg, model }, body, timeoutMs);
+    const j = await geminiGenerate({ ...cfg, model }, body, timeoutMs, signal);
     return textOf(j?.candidates?.[0]?.content?.parts);
   }
 
   if (provider === 'ollama') {
     const j = await http(`${(base || OLLAMA_DEFAULT).replace(/\/v1$/, '')}/api/chat`, {
-      body: { model, stream: false, ...(capability ? { think: capability.values[cfg.reasoningEffort] } : {}), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
-      timeoutMs: timeoutMs || 120000,
+      body: { model, stream: false, options: { num_predict: maxTokens }, ...(capability ? { think: capability.values[cfg.reasoningEffort] } : {}), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
+      timeoutMs: timeoutMs || 120000, signal,
     });
     return j?.message?.content || '';
   }
 
   if (openAiLike(provider)) {
     const j = await http(`${openAiBase(cfg)}/chat/completions`, {
-      headers: { authorization: `Bearer ${apiKey}`, ...providers.headers(provider) },
+      headers: { ...(apiKey?{authorization: `Bearer ${apiKey}`} : {}), ...providers.headers(provider) },
       body: { model, max_tokens: maxTokens, ...openAiThinking(cfg), messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages] },
-      timeoutMs,
+      timeoutMs, signal,
     }, apiKey);
     return j?.choices?.[0]?.message?.content || '';
   }
@@ -285,7 +306,7 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs })
     const j = await http(`${base || 'https://api.anthropic.com'}/v1/messages`, {
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: { model, max_tokens: capability ? Math.max(maxTokens, 8192) : maxTokens, ...(capability ? { output_config: { effort: cfg.reasoningEffort } } : {}), ...(system ? { system } : {}), messages },
-      timeoutMs,
+      timeoutMs, signal,
     }, apiKey);
     return textOf(j?.content);
   }
@@ -502,7 +523,7 @@ async function ollamaAgentStep(cfg, { system, contents, tools, maxTokens, timeou
 }
 
 async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }) {
-  if (!cfg.apiKey && cfg.provider !== 'ollama') throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
+  if (!cfg.apiKey && cfg.provider !== 'ollama' && providers.byId(cfg.provider)?.needsKey!==false) throw new AiError('No API key saved for this provider. Add it in Settings.', 0);
   const base = openAiBase(cfg);
   const capability = await selectedThinking(cfg, signal);
   if (cfg.provider === 'ollama' && capability) return ollamaAgentStep(cfg, { system, contents, tools, maxTokens, timeoutMs, signal }, capability);
@@ -624,11 +645,12 @@ async function testConnection(cfg) {
 // Asks the provider which models this key can use, so the user picks a real model id instead of typing one.
 // Returns { ok, models: [id...] } or { ok: false, error }.
 async function listModels(cfg, {refresh=false}={}) {
+  if(providers.isPlugin(cfg.provider))return {ok:true,models:providers.byId(cfg.provider).models.map(m=>m.id),source:'plugin declaration'};
   if (localAgents.isProvider(cfg.provider)) return localAgents.listModels(cfg,{refresh});
   const { provider, apiKey } = cfg;
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
   try {
-    if (provider !== 'ollama' && !apiKey) throw new AiError('Paste or save an API key first, then load the models.', 0);
+    if (provider !== 'ollama' && providers.byId(provider)?.needsKey!==false && !apiKey) throw new AiError('Paste or save an API key first, then load the models.', 0);
     let ids = [];
     if (provider === 'gemini') {
       // The models list is part of the AI Studio API (AIza keys). Vertex express keys cannot list models there.
@@ -641,7 +663,7 @@ async function listModels(cfg, {refresh=false}={}) {
       const j = await http(`${(base || 'http://localhost:11434').replace(/\/v1\/?$/, '')}/api/tags`, {}); // the native API sits beside /v1
       ids = (j?.models || []).map((m) => m.name);
     } else if (openAiLike(provider)) {
-      const j = await http(`${openAiBase({ provider, baseUrl: base })}/models`, { headers: { authorization: `Bearer ${apiKey}`, ...providers.headers(provider) } }, apiKey);
+      const j = await http(`${openAiBase({ provider, baseUrl: base })}/models`, { headers: { ...(apiKey?{authorization: `Bearer ${apiKey}`} : {}), ...providers.headers(provider) } }, apiKey);
       // Groq also lists speech and safety models: keep the chat ones.
       ids = (j?.data || []).filter((m) => m.active !== false && !/whisper|tts|guard|orpheus|playai/i.test(m.id)).map((m) => m.id);
     } else if (provider === 'claude') {
@@ -656,4 +678,4 @@ async function listModels(cfg, {refresh=false}={}) {
   }
 }
 
-module.exports = { chat, agentStep, testConnection, listModels, modelCapabilities, normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };
+module.exports = { chat:pluginGate.guarded(chat), agentStep:pluginGate.guarded(agentStep), testConnection:pluginGate.guarded(testConnection), listModels:pluginGate.guarded(listModels), modelCapabilities:pluginGate.guarded(modelCapabilities), normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };

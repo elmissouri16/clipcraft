@@ -34,16 +34,27 @@ const snap = (v, list) => list.reduce((best, x) => (Math.abs(x - v) < Math.abs(b
 export function storedExportSettings(project) {
   const s = project && project.exportSettings;
   if (s && EXPORT_PRESET_ORDER.includes(s.preset)) {
-    return { preset: s.preset, custom: { ...CUSTOM_DEFAULTS, ...(s.custom || {}) } };
+    return { preset: s.preset, custom: { ...CUSTOM_DEFAULTS, ...(s.custom || {}) }, ...(s.preset === 'custom' && validPluginPreset(s.pluginPreset) ? { pluginPreset: { ...s.pluginPreset } } : {}) };
   }
   const crf = (project && project.crf) || 20;
   const preset = crf >= 26 ? 'low' : crf >= 21 ? 'medium' : crf >= 17 ? 'high' : 'ultra';
   return { preset, custom: { ...CUSTOM_DEFAULTS, crf } };
 }
 
+// Provenance is display-only. The settings snapshot is always the encoder's authority.
+function validPluginPreset(p) {
+  return p && typeof p === 'object' && ['pluginId','contributionId','version','digest','name'].every(k => typeof p[k] === 'string' && p[k].length > 0 && p[k].length <= 200);
+}
+export function pluginPresetPatch(project, preset) {
+  return settingsPatch(project, { preset:'custom', custom:{...preset.settings}, pluginPreset:{
+    pluginId:preset.pluginId, contributionId:preset.contributionId, version:preset.version, digest:preset.digest, name:preset.name,
+  } });
+}
+
 // Stored-settings patch for picking a preset / editing Custom, keeping project.crf in sync.
 export function settingsPatch(project, next) {
   const stored = { preset: next.preset, custom: { ...CUSTOM_DEFAULTS, ...(next.custom || {}) } };
+  if (next.preset === 'custom' && validPluginPreset(next.pluginPreset)) stored.pluginPreset = { ...next.pluginPreset };
   const patch = { exportSettings: stored };
   const eff = stored.preset === 'custom' ? stored.custom : EXPORT_PRESETS[stored.preset];
   if (eff && eff.mode === 'crf') patch.crf = eff.crf;
@@ -90,7 +101,7 @@ export function resolveExport(project, caps = {}) {
 
   return {
     preset: stored.preset,
-    presetName: stored.preset === 'custom' ? t('curve-editor.custom') : EXPORT_PRESETS[stored.preset].name,
+    presetName: stored.preset === 'custom' ? stored.pluginPreset?.name || t('curve-editor.custom') : EXPORT_PRESETS[stored.preset].name,
     codecFamily,
     codecLabel: codecFamily === 'h265' ? hardware ? 'H.265 · VideoToolbox' : 'H.265 · libx265' : 'H.264',
     mode,

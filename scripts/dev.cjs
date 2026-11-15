@@ -49,7 +49,7 @@ async function startDev() {
   };
   const launchApp = () => {
     app = spawn(process.execPath, [require.resolve('electron/cli.js'), '.'], {
-      ...options, env: { ...process.env, VITE_DEV_SERVER_URL: url },
+      ...options, env: { ...process.env, VITE_DEV_SERVER_URL: url, CLIPCRAFT_DEV_EXAMPLES: '1' },
     });
     app.once('error', (err) => { console.error('[dev]', err.message); shutdown(1); });
     app.once('exit', (code) => { if (!quitting && !restarting) shutdown(code ?? 1); });

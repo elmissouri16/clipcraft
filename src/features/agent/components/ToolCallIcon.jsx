@@ -11,6 +11,8 @@ const Lens = () => <><circle cx="21.5" cy="20.5" r="5" fill="var(--tool-ground, 
 const Plus = () => <path d="M24 4v8 M20 8h8" />;
 const Glint = () => <path d="m24 3 1.5 4.5L30 9l-4.5 1.5L24 15l-1.5-4.5L18 9l4.5-1.5Z" fill="currentColor" fillOpacity=".18" />;
 const ART = {
+  pluginFind: [<><Surface x={3} y={4} width={19} height={24} /><path d="M7 10h10 M7 16h7 M7 22h5" /></>, <><circle cx="23" cy="21" r="6" fill="var(--tool-ground)" /><path d="m27 25 3 4 M20 21h6" /></>],
+  pluginRun: [<><path d="M5 12h6V7h10v5h6v16H5Z" fill="currentColor" fillOpacity=".1" /><path d="M14 3v4 M18 3v4" /></>, <path d="m13 15 7 4-7 4Z" fill="currentColor" fillOpacity=".25" />],
   project: [<><Surface x={6} y={3} width={20} height={26} /><path d="M10 8h12 M10 24h7" /></>, <><rect x="10" y="12" width="12" height="8" rx="1.5" fill="currentColor" fillOpacity=".14" /><path d="m15 14 4 2-4 2" /></>],
   options: [<path d="M5 8h22 M5 16h22 M5 24h22" />, <><rect x="10" y="5" width="4" height="6" rx="2" fill="var(--tool-ground)" /><rect x="20" y="13" width="4" height="6" rx="2" fill="var(--tool-ground)" /><rect x="8" y="21" width="4" height="6" rx="2" fill="var(--tool-ground)" /></>],
   scenes: [<><Surface y={9} height={15} /><path d="M11 10v13 M21 10v13" /></>, <><path d="M16 4v24" strokeDasharray="2 3" /><path d="m12.5 4 3.5 3 3.5-3" /></>],
@@ -87,8 +89,20 @@ const ART = {
   effectLayer: [<><Surface x={3} y={21} width={26} height={7} rx={2} /><path d="M9 21v7 M23 21v7" /></>, <path d="m16 3 1.5 5 4.5 1.5-4.5 1.5L16 16l-1.5-5L10 9.5 14.5 8Z" fill="currentColor" fillOpacity=".18" />],
   importFile: [<><path d="M7 3h12l7 7v19H7Z" fill="currentColor" fillOpacity=".08" /><path d="M19 3v7h7" /></>, <><path d="M16 13v10 M12 19l4 4 4-4" /></>],
   beats: [<><path d="M4 26h24" /><path d="M7 26v-6 M12 26v-12 M17 26v-6 M22 26v-12 M27 26v-6" /></>, <><circle cx="12" cy="9" r="2.5" fill="currentColor" fillOpacity=".25" /><circle cx="22" cy="9" r="2.5" fill="currentColor" fillOpacity=".25" /></>],
+  sourceIndex: [<><Surface x={3} y={7} width={26} height={19} /><path d="M9 7v19 M19 7v19 M3 13h26 M3 20h26" /></>, <path d="M3 3h10 M3 29h18" strokeDasharray="2 2" />],
+  sourceAnalysis: [<><Surface x={3} y={4} width={24} height={24} /><path d="M7 10h15 M7 16h10 M7 22h5" /></>, <><circle cx="24" cy="24" r="6" fill="var(--tool-ground)" /><path d="m21 24 2 2 4-5" /></>],
+  sourceDialogue: [<><Surface x={2} y={5} width={12} height={22} /><path d="M6 5v22 M10 5v22 M2 11h12 M2 21h12" /></>, <path d="M18 9h11 M18 15h9 M18 21h11 M18 27h6" />],
+  sourceFind: [<><Picture /><circle cx="21" cy="21" r="6" fill="var(--tool-ground)" /></>, <><path d="m25.5 25.5 4 4 M18 21h6 M21 18v6" /></>],
+  sourceReview: [<><Surface x={2} y={8} width={8} height={17} /><Surface x={12} y={8} width={8} height={17} /><Surface x={22} y={8} width={8} height={17} /></>, <path d="M4 4h24 M16 1v6 M4 28h24" />],
+  sourcePicks: [<><Surface x={9} y={3} width={20} height={8} /><Surface x={9} y={13} width={20} height={8} /><Surface x={9} y={23} width={20} height={6} /></>, <path d="m2 6 2 2 3-4 M3 16h3 M3 26h3" />],
+  sourceAdd: [<><Surface x={3} y={17} width={26} height={11} /><path d="M10 17v11 M21 17v11" /></>, <path d="M16 2v11 M11 8l5 5 5-5" />],
+  delegateAnalysis: [<><circle cx="16" cy="7" r="4" /><circle cx="7" cy="25" r="4" /><circle cx="25" cy="25" r="4" /></>, <path d="M16 11v5 M7 21v-5h18v5" />],
+  analysisAgent: [<><Surface x={3} y={7} width={18} height={20} /><circle cx="24" cy="10" r="5" fill="var(--tool-ground)" /></>, <><path d="M7 13h9 M7 18h9 M7 23h5 m15-9 4 4" /></>],
 };
 export const TOOL_ICONS = {
+  list_plugin_commands:'pluginFind',run_plugin_command:'pluginRun',
+  delegate_video_analysis:'delegateAnalysis',subagent_analysis:'analysisAgent',
+  get_video_analysis:'sourceAnalysis',read_video_transcript:'sourceDialogue',index_video:'sourceIndex',find_video_moments:'sourceFind',review_video_moment:'sourceReview',propose_video_clips:'sourcePicks',add_video_clip:'sourceAdd',
   get_project:'project',list_options:'options',analyze_reference:'reference',analyze_scenes:'scenes',get_storyboard:'storyboard',annotate_scene:'annotation',
   remove_silences:'silence',cut_range:'cut',keep_ranges:'keep',transcribe:'transcript',add_captions:'captions',add_text:'text',edit_text:'editText',
   delete_clip:'remove',split_at:'split',set_speed:'speed',set_volume:'volume',set_filter:'filter',set_effects:'effects',add_transition:'transition',

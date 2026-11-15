@@ -108,6 +108,7 @@ function drawKeyed(cv, src, w, h, chroma, passes = [], opts = {}) {
     cv.height = ch;
   }
   const ctx = cv.getContext('2d');
+  cv.dataset.renderError='';
   try {
     const color = parseInt(chroma.color.slice(1), 16), params = chromaParams(chroma);
     const key = cpu || crop ? { key: { on: chroma.on, color: [(color >> 16)&255, (color >> 8)&255, color&255],
@@ -120,7 +121,7 @@ function drawKeyed(cv, src, w, h, chroma, passes = [], opts = {}) {
     const rh = beforeCrop ? Math.max(2, Math.round(h * Math.min(1, cap / w))) : ch;
     const out = fxGL().effects(src, rw, rh, key ? [...passes, key] : passes);
     ctx.clearRect(0, 0, cw, ch);ctx.drawImage(out, 0, 0, cw, ch);return;
-  } catch { /* Keep the CPU key/mask fallback when the GPU is unavailable. */ }
+  } catch(error) { if(passes.length)cv.dataset.renderError='Could not render an effect: '+error.message; /* Keep normal preview fallback. */ }
   // The sub-rectangle of a source-geometry painted mask that survives the crop,
   // in that companion's own pixels.
   const subRect = (ew, eh) => (crop
@@ -178,6 +179,7 @@ function armSwap(el) {
 }
 
 function syncMedia(el, url, localTime, playing, volume, rate = 1) {
+  if(window.frameInspection?.onFrame)el.dataset.frameExpectedTime=String(Math.max(0,localTime));
   if (el.dataset.src !== url) {
     el.dataset.src = url;
     el.dataset.swap = '1';
@@ -340,7 +342,7 @@ export default function Preview({
     const enhSounding = new Set(); // enhanced picture clips heard at t; the rest get paused below
     const active = mainIndex.at(t).filter(l => mediaById[l.clip.mediaId]);
     const incoming = active.length === 2 ? active[1] : null;
-    const fxTr = incoming && incoming.trans > 0 ? fxTransition(incoming.clip.transition.type) : null;
+    const fxTr = incoming && incoming.trans > 0 ? fxTransition(incoming.clip.transition.type,incoming.clip.transition) : null;
     const tr = incoming && incoming.trans > 0 && !fxTr ? transitionStyles(incoming.clip.transition.type, (t - incoming.start) / incoming.trans) : null;
 
     [0, 1].forEach((k) => {
@@ -427,11 +429,13 @@ export default function Preview({
         const kc = keyed[k].current;
         const srcEl = kc.style.display === 'block' ? kc : m.type === 'image' ? imgs[k].current : vids[k].current;
         const motion = (hasMotion(item.clip) || item.clip.pin) ? stateAtPinned(project, {track:'video',clip:item.clip},t-item.start,clipLen(item.clip)) : undefined;
-        try { drawTransitionFrame(off,srcEl,item.clip,project,motion,redraw); } catch { /* frame not ready */ }
+        off.dataset.renderError='';
+        try { drawTransitionFrame(off,srcEl,item.clip,project,motion,redraw); } catch(error) { off.dataset.renderError='Could not render a transition: '+error.message; }
         return off;
       };
       const a = frameOf(outgoing, 'a');
       const b = frameOf(incoming, 'b');
+      tc.dataset.renderError=a.dataset.renderError||b.dataset.renderError||'';
       const out = fxGL().transition(a, b, pw, ph, easeValue(incoming.clip.transition?.ease, (t - incoming.start) / incoming.trans), fxTr.expr);
       tc.getContext('2d').drawImage(out, 0, 0);
       tc.style.display = 'block';

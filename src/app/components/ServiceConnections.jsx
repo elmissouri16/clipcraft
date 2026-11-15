@@ -21,7 +21,7 @@ function connections(providers) {
     { id: 'custom', name: t('services.custom_assistant_service'), slots: [] },
   ];
   // Any other assistant provider that stores a key (a preset row such as xAI, Mistral or DeepSeek) gets its own group.
-  for (const p of providers) if (p.needsKey && !groups.some(g => g.id === p.id)) groups.splice(groups.findIndex(g => g.id === 'custom'), 0, { id: p.id, name: t(`providers.${p.id}.name`), slots: [] });
+  for (const p of providers) if (p.needsKey && !groups.some(g => g.id === p.id)) groups.splice(groups.findIndex(g => g.id === 'custom'), 0, { id: p.id, name: p.plugin?`${p.name} · ${p.version||t('plugins.unavailable')}`:t(`providers.${p.id}.name`), slots: [] });
   return groups.map(group => {
     const assistant = providers.find(p => p.id === group.id && p.needsKey);
     return { ...group, url: group.url || assistant?.keyUrl,

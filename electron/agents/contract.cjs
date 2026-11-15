@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 // The renderer's tool declarations as JSON Schema tools every agent receives, plus the map back
 // from wire names (letters, digits, _ and -, at most 64) to ClipCraft names. Each tool accepts
 // retry_of: the failed operation(s) a call replaces.
-// Text and schema both agents can carry unchanged. Codex drops maxItems, so each limit moves into
+// Text and schema both agents can carry unchanged. Codex drops maxItems and string-length bounds, so each limit moves into
 // the field's description (calls are still validated against the original declarations in the
 // renderer); Claude rewrites the ellipsis character, so descriptions use three dots.
 const plain = (text) => String(text || '').replace(/\u2026/g, '...');
@@ -14,12 +14,16 @@ function portable(schema) {
   if (!schema || typeof schema !== 'object') return schema;
   const out = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (key === 'maxItems') continue;
+    if (['maxItems', 'minLength', 'maxLength'].includes(key)) continue;
     out[key] = key === 'description' ? plain(value) : ['properties', 'definitions', '$defs'].includes(key) && value && typeof value === 'object'
       ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, portable(v)])) : portable(value);
   }
-  if (Number.isInteger(schema.maxItems)) {
-    const limit = `At most ${schema.maxItems} items.`;
+  const limits = [];
+  if (Number.isInteger(schema.maxItems)) limits.push(`At most ${schema.maxItems} items.`);
+  if (Number.isInteger(schema.minLength)) limits.push(`At least ${schema.minLength} characters.`);
+  if (Number.isInteger(schema.maxLength)) limits.push(`At most ${schema.maxLength} characters.`);
+  if (limits.length) {
+    const limit = limits.join(' ');
     out.description = out.description ? `${out.description.replace(/\s*$/, '')}${/[.!?]$/.test(out.description.trim()) ? '' : '.'} ${limit}` : limit;
   }
   return out;

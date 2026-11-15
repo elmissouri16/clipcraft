@@ -161,15 +161,21 @@ completion check failures, duration, tokens, outcome. Counts only.
 - **Identical tool text:** Claude's tool server lists the contract's JSON Schemas directly (its Zod
   round trip added ±2^53 bounds to every integer field). The contract writes text and schemas both
   transports carry unchanged: three-dot ellipses (Claude rewrote `…`) and limits as description
-  text, since Codex drops `maxItems`. The renderer still validates calls against the original limits.
+  text, since Codex drops `maxItems` and string-length bounds. The renderer and analysis submission
+  host still validate calls against the original limits.
 - **Memory:** already one policy: sessions live in memory for both, and a fresh session (new
   settings, restart, error) receives the prepared chat history.
+
 - **Tool names:** Claude's `mcp__clipcraft__` prefix comes from the SDK and cannot be removed; all
   ClipCraft text uses bare names, which both agents map.
 - **Verified at the wire:** `tests/unit/agents/test-agent-parity.mjs` runs both installed agents
   against the fake model API and fails on any difference in ClipCraft tools, descriptions, schemas,
   instruction text or placement, request context, or unexpected built-ins (skips when an agent is
   not installed). `test-agent-limits.mjs` covers the limits.
+
+Optional [analysis subagents](../agents/analysis-subagents.md) use independent native sessions
+with source-only tools. The Subagents setting controls whether the coordinator receives the
+delegation tool; the main editor remains the sole timeline writer.
 
 ## Phase 3 results
 

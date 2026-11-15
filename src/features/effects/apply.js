@@ -1,3 +1,4 @@
+import {isPluginEffect,pluginEffectSource} from '../plugins/effectRegistry.js';
 // Which animated effects act at a moment, shared by the player and the export.
 // Effects come from two places:
 //   - on a clip (clip.effects): they last the whole clip, their time T starts with the clip;
@@ -46,7 +47,7 @@ const TRACK_CLASSIC = {
 };
 export const isClassic = (id) => !!TRACK_CLASSIC[id];
 // Effects that end up baked into a clip's frames by the export's effects pass.
-export const isShaderFx = (id) => isPixel(id) || isClassic(id) || isFilterFx(id);
+export const isShaderFx = (id) => isPixel(id) || isClassic(id) || isFilterFx(id) || isPluginEffect(id);
 
 // ---- Effect regions ----
 // An effect instance may carry a region: { x, y, w, h, feather, shape, invert } in normalized
@@ -124,14 +125,16 @@ export function pixelPasses(project, clip, clipStart, lt) {
   for (const id of clip.effects || []) {
     const k = clip.fxStrength?.[id];
     if (k === 0) continue;
-    if (isPixel(id)) list.push({ expr: fxWrap(PIXEL[id], clip.fxRegions?.[id], k), T: lt });
+    if (isPluginEffect(id)) { const source=pluginEffectSource(id,clip.pluginEffects?.[id]);if(source)list.push({expr:fxWrap(source,clip.fxRegions?.[id],k),T:lt}); }
+    else if (isPixel(id)) list.push({ expr: fxWrap(PIXEL[id], clip.fxRegions?.[id], k), T: lt });
     else if (classicViaShader(clip, id)) list.push({ expr: fxWrap(TRACK_CLASSIC[id], clip.fxRegions?.[id], k), T: lt });
   }
   const t = clipStart + lt;
   for (const e of freeOn(project, t)) {
     const k = e.strength;
     if (k === 0) continue;
-    if (isPixel(e.fx)) list.push({ expr: fxWrap(PIXEL[e.fx], e.region, k), T: t - e.start });
+    if (isPluginEffect(e.fx)) { const source=pluginEffectSource(e.fx,e.pluginEffect);if(source)list.push({expr:fxWrap(source,e.region,k),T:t-e.start}); }
+    else if (isPixel(e.fx)) list.push({ expr: fxWrap(PIXEL[e.fx], e.region, k), T: t - e.start });
     else if (isClassic(e.fx)) list.push({ expr: fxWrap(TRACK_CLASSIC[e.fx], e.region, k), T: t - e.start });
     else if (isFilterFx(e.fx)) {
       // A filter look on the Effects track: the same look expression a clip filter uses, at the
@@ -147,15 +150,15 @@ export function pixelPasses(project, clip, clipStart, lt) {
 
 // True when some pixel effect touches the clip's time range (it then needs the effects pass at export).
 export function clipHasPixelFx(project, clip, clipStart, len) {
-  if (hasFilter(clip) || hasGrade(clip) || lutOn(clip.grade?.lut) || (clip.effects || []).some((id) => clip.fxStrength?.[id] !== 0 && (isPixel(id) || classicViaShader(clip, id)))) return true;
-  return (project.effectClips || []).some((e) => !e.disabled && e.strength !== 0 && isShaderFx(e.fx) && e.start < clipStart + len && e.start + e.duration > clipStart);
+  if (hasFilter(clip) || hasGrade(clip) || lutOn(clip.grade?.lut) || (clip.effects || []).some((id) => clip.fxStrength?.[id] !== 0 && (isPixel(id) || classicViaShader(clip, id) || (isPluginEffect(id) && !clip.pluginEffects?.[id]?.disabled)))) return true;
+  return (project.effectClips || []).some((e) => !e.disabled && !e.pluginEffect?.disabled && e.strength !== 0 && isShaderFx(e.fx) && e.start < clipStart + len && e.start + e.duration > clipStart);
 }
 
 // Quantized local intervals needing shader work. Static per-clip looks cover
 // the whole clip; effects-track objects cover only their actual overlap.
 export function pixelEffectRanges(project, clip, clipStart, len, fps) {
   if (clipHasPixelFx({ ...project, effectClips: [] }, clip, clipStart, len)) return [[0, len]];
-  const ranges = (project.effectClips || []).filter(e => !e.disabled && e.strength !== 0 && isShaderFx(e.fx))
+  const ranges = (project.effectClips || []).filter(e => !e.disabled && !e.pluginEffect?.disabled && e.strength !== 0 && isShaderFx(e.fx))
     .map(e => [Math.max(0, Math.floor((e.start - clipStart) * fps + 1e-7) / fps),
       Math.min(len, Math.ceil((e.start + e.duration - clipStart) * fps - 1e-7) / fps)])
     .filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);

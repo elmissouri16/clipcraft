@@ -15,7 +15,7 @@ import { loadLutLibrary, saveLutLibrary, addLutEntry, removeLutEntry } from "../
 import { formatTime, previewPath, proxyPrefOn, toFileUrl, uid } from "../../../state/store.js";
 import { COLLECTIONS, PACKS, COLLECTION_ITEMS, loadFavorites, saveFavorites, toggleFavorite } from "../../effects/collections.js";
 import { parseSRT, regroupSegments } from "../../text/subtitles.js";
-import { EFFECTS, EFFECT_GROUPS, FILTERS, TRANSITIONS } from "../../effects/effects.js";
+import { allEffects, EFFECT_GROUPS, FILTERS, TRANSITIONS, allTransitions } from "../../effects/effects.js";
 import { dragProps } from "../../timeline/dnd.js";
 import Slider from "../../../components/ui/Slider.jsx";
 import Dropdown from '../../../components/ui/Dropdown.jsx';
@@ -360,7 +360,7 @@ function EffectsTab({ target, updateTarget, clipSelected, onAddFreeEffect, onAdd
   const pick = (id) => (clipSelected && target ? toggle(id) : onAddFreeEffect(id));
   const q = query.trim().toLowerCase();
   // The search matches the shown (translated) name and the English catalog name alike.
-  const groups = EFFECT_GROUPS.map((g) => [g, EFFECTS.filter((e) => e.group === g && (!q || e.name.toLowerCase().includes(q) || catalogName('effect', e).toLowerCase().includes(q)))]).filter(([, list]) => list.length);
+  const groups = [...EFFECT_GROUPS, 'Plugins'].map((g) => [g, allEffects().filter((e) => e.group === g && (!q || e.name.toLowerCase().includes(q) || catalogName('effect', e).toLowerCase().includes(q)))]).filter(([, list]) => list.length);
   return (
     <>
       <Head title={t('library.effects')} hint={clipSelected ? t('library.click_to_add_to_or_remove_from_selected') : t('library.click_to_add_on_the_effects_track')} />
@@ -399,7 +399,7 @@ function TransitionsTab({ target, updateTarget }) {
   const [collection, setCollection] = useState('All'); // 'All' | 'fav' | a COLLECTIONS id
   const [favs, setFavs] = useState(() => loadFavorites());
   const toggleFav = (slug) => { const next = toggleFavorite(favs, slug); setFavs(next); saveFavorites(localStorage, next); };
-  const engineById = Object.fromEntries(TRANSITIONS.map((t) => [t.id, t]));
+  const engineById = Object.fromEntries(allTransitions().map((t) => [t.id, t]));
   // Shown name of the engine transition a catalog item runs (the data keeps the English engineName).
   const engineLabel = (e) => catalogName('transition', engineById[e.engineId] || { id: e.engineId, name: e.engineName });
   const applyEngine = (engineId, fxDuration) => {
@@ -441,6 +441,7 @@ function TransitionsTab({ target, updateTarget }) {
           if (ok && cur) updateTarget({ transition: { ...cur, duration: d } });
         }} />
       </div>
+      {allTransitions().some(t=>t.plugin)&&<div className="fx-group plugin-transitions"><span className="lib-group-name pad-x">{t('plugins.title')}</span><div className="tile-grid">{allTransitions().filter(t=>t.plugin&&(!query||t.name.toLowerCase().includes(query.toLowerCase()))).map(t=>tile(t.id,t.id,t.name))}</div></div>}
       <div className="seg-tabs tr-view" role="group" aria-label={t('library.transition_library')}>
         <button className={view === 'catalog' ? 'on' : ''} aria-pressed={view === 'catalog'} onClick={() => setView('catalog')}>{t('library.catalog_count', { count: COLLECTION_ITEMS.length })}</button>
         <button className={view === 'classic' ? 'on' : ''} aria-pressed={view === 'classic'} onClick={() => setView('classic')}>{t('library.built_in')}</button>

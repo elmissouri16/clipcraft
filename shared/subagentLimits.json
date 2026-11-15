@@ -1,0 +1,9 @@
+{
+  "concurrent": 2,
+  "maxConcurrent": 6,
+  "tasksPerBatch": 6,
+  "tasksPerRequest": 18,
+  "callsPerTask": 24,
+  "framesPerTask": 24,
+  "timeoutMs": 300000
+}

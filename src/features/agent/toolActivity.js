@@ -2,6 +2,7 @@ import { videoLayout } from '../../state/store.js';
 import { activityEvidence } from './activityEvidence.js';
 import { normalizePlan } from './editorialTools.js';
 import { toolTargets } from './toolTargets.js';
+import { normalizeClipSuggestions } from './activityData.js';
 import { t, tn } from '../../i18n/index.js';
 // Bounded display data only. Local image/output references have their own typed
 // schema; never copy raw arguments/results, credentials or image bytes here.
@@ -18,6 +19,10 @@ const count=(n,key)=>Number.isFinite(n)?tn(key,n):'';
 // Motion measured after a keyframe edit (src/features/timeline/motionQuality.js), in a few words.
 const motionNote=m=>{if(!m)return '';const turns=(m.reversals||[]).filter(r=>!r.after_hold).length,issues=[[m.stops?.length||0,'activity.stops'],[m.jerks?.length||0,'activity.jolts'],[turns,'activity.reversals']].filter(([n])=>n>0).map(([n,key])=>tn(key,n));return issues.length?issues.join(', '):t('activity.smooth_motion');};
 const TITLES={
+  list_plugin_commands:t('plugins.agent_discover'),run_plugin_command:t('plugins.agent_run'),
+  delegate_video_analysis:t('subagents.delegating'),
+  get_video_analysis:t('discovery.analysis'),read_video_transcript:t('discovery.transcript'),
+  index_video:t('discovery.indexing'),find_video_moments:t('discovery.finding'),review_video_moment:t('discovery.reviewing'),propose_video_clips:t('discovery.proposing'),add_video_clip:t('discovery.adding'),
   get_project:t('activity.reading_the_timeline'),list_options:t('activity.finding_available_styles'),load_tools:t('activity.preparing_editing_tools'),recall_context:t('activity.recalling_earlier_work'),
   analyze_reference:t('activity.studying_the_reference_edit'),analyze_scenes:t('activity.finding_scene_boundaries'),get_storyboard:t('activity.reviewing_scene_samples'),annotate_scene:t('activity.saving_a_scene_note'),
   remove_silences:t('activity.removing_silent_sections'),cut_range:t('activity.cutting_a_section'),keep_ranges:t('activity.keeping_selected_sections'),delete_clip:t('activity.removing_a_clip'),
@@ -79,6 +84,8 @@ function activity(name,args={},project={},result) {
     case 'duck_audio':description=join([count(a.target_clip_ids?.length,'activity.music_clips'),count(a.speech_clip_ids?.length,'activity.speech_clips'),Number.isFinite(a.duck_volume)?t('activity.percent_during_speech',{percent:Math.round(a.duck_volume*100)}):'']);break;
     case 'edit_caption_words':description=join([clip,count(a.words?.length,'activity.words'),t('activity.aligning_highlights_with_speech')]);break;
     case 'caption_tools':description=join([clip,human(a.action),a.path?basename(a.path):'']);break;
+    case 'list_plugin_commands':description=clean(a.query);break;
+    case 'run_plugin_command':description=clean(r.command_name||a.command_id);break;
     case 'export_subtitles':description=join([t('activity.srt_subtitle_file'),a.path?basename(a.path):'']);break;
     case 'inspect_frames':case 'get_storyboard':description=join([a.source==='clip'?t('activity.source_before_edits'):a.source==='media'?t('activity.library_source'):t('activity.composed_timeline'),count((a.times_sec||a.source_times_sec)?.length,'activity.frames'),(a.times_sec||a.source_times_sec||[]).map(activityTime).join(', ')]);break;
     case 'review_section':description=join([range,t('activity.local_picture_and_audio_measurements')]);break;
@@ -114,6 +121,8 @@ function activity(name,args={},project={},result) {
   }
   if(result&&!r.error){
     if(r.status==='unchanged'){outcome=t('activity.already_matches_the_requested_settings');unchanged=true;}
+    else if(name==='run_plugin_command')outcome=r.artifact?.format==='gif'?`GIF saved · ${r.artifact.width}×${r.artifact.height} · ${r.artifact.duration_sec} s`:Number.isInteger(r.clips_changed)?tn('plugins.clips_completed',r.clips_changed):r.captions_added?t('plugins.translation_completed',{count:r.captions_added,track:r.caption_track}):tn('plugins.agent_result',r.markers_added||0);
+    else if(name==='list_plugin_commands')outcome=tn('plugins.agent_commands_found',r.commands?.length||0);
     else if(name==='generate_images')outcome=count(r.results?.filter(x=>!x.error).length,'activity.scene_images_added_count');
     else if(name==='complete_edit')outcome=r.ready?t('activity.edit_checks_passed'):Number.isFinite(r.checked_regions)?t('activity.regions_reviewed',{checked:r.checked_regions,total:r.total_regions}):'';
     else if(['inspect_frames','get_storyboard','review_section'].includes(name))outcome=join([count(r.frames?.length,'activity.frames_captured'),r.artifact?.duration_sec?t('activity.rendered_locally',{seconds:seconds(r.artifact.duration_sec)}):'']);
@@ -121,7 +130,11 @@ function activity(name,args={},project={},result) {
     else if(name==='log_footage')outcome=join([count(r.sentences_total,'activity.sentences'),r.fillers?count(r.fillers.count,'activity.fillers'):'',Array.isArray(r.retakes)?count(r.retakes.length,'activity.retakes'):'']);
     else if(name==='critique_edit')outcome=join([Number.isFinite(r.score)?t('activity.score',{score:r.score}):'',count(r.issues?.length,'activity.issues')]);
     else if(name==='get_beats')outcome=join([Number.isFinite(r.bpm)?`${r.bpm} BPM`:'',count(r.beats?.values?.length,'activity.beats')]);
-    else if(name==='find_highlights')outcome=count(r.candidates?.length,'activity.candidates');
+    else if(name==='find_highlights'||name==='find_video_moments')outcome=count(r.candidates?.length,'activity.candidates');
+    else if(name==='delegate_video_analysis')outcome=r.partial?t('subagents.partial'):tn('subagents.tasks_completed',r.tasks?.length||0);
+    else if(name==='index_video')outcome=t('discovery.chunks_done',{completed:r.completed_chunks,total:r.total_chunks});
+    else if(name==='propose_video_clips')outcome=count(r.picks?.length,'activity.candidates');
+    else if(name==='review_video_moment')outcome=count(r.frames?.length,'activity.frames_captured');
     else if(['remove_fillers','remove_retakes'].includes(name)&&r.dry_run)outcome=count(name==='remove_fillers'?r.cuts:r.candidates?.length,'activity.candidates');
     else if(name==='propose_edit_plan')outcome=t('activity.waiting_for_your_approval');
     else if(name==='transcribe')outcome=join([count(r.matched_segments??r.total_segments,'activity.speech_segments'),r.cached?t('activity.reused_existing_transcript'):'']);
@@ -146,7 +159,8 @@ function activity(name,args={},project={},result) {
 export function describeToolActivity(name,args,project,result,afterProject=project,actions=[]) {
   // Invalid model arguments still belong to the runner's normal validation.
   // Formatting must never stop an edit or bypass that validation.
-  try{const targets=toolTargets(name,args,project,result,afterProject,actions);return {...activity(name,args,project,result),...activityEvidence(name,args,project,result,afterProject),...(targets?{targets}:{}),...(name==='propose_edit_plan'&&result?.plan&&!result.error?{plan:normalizePlan(result.plan)}:{})};}catch{return {title:TITLES[name]||'',description:'',excerpt:'',excerptLabel:'',outcome:''};}
+  try{const targets=toolTargets(name,args,project,result,afterProject,actions);return {...activity(name,args,project,result),...activityEvidence(name,args,project,result,afterProject),...(targets?{targets}:{}),...(name==='propose_edit_plan'&&result?.plan&&!result.error?{plan:normalizePlan(result.plan)}:{}),
+    ...(['index_video','propose_video_clips'].includes(name)&&result?.ok&&!result.error?{discovery:normalizeClipSuggestions(result)}:{})};}catch{return {title:TITLES[name]||'',description:'',excerpt:'',excerptLabel:'',outcome:''};}
 }
 export function imageActivityProgress(progress) {
   const {completed,total,inserted,active,failed,elapsed_sec}=progress;

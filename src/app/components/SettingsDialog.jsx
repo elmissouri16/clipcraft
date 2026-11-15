@@ -1,16 +1,18 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { PRESETS, nativeAgentName } from '../../features/agent/providers.js';
+import { PRESETS, nativeAgentName,registerPluginProviderMetadata } from '../../features/agent/providers.js';
 import { t, tn, rich, formatNumber, LANGUAGES, getLanguage, resolveLanguage } from '../../i18n/index.js';
 import ServiceConnections from './ServiceConnections.jsx';
+import PluginSettings from '../../features/plugins/components/PluginSettings.jsx';
 import { SettingsPage, SettingsGroup } from './SettingsLayout.jsx';
 import Dropdown from "../../components/ui/Dropdown.jsx";
 import { AudioLines, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, Gauge, Info, Keyboard, Loader2, Server, Sparkles, Trash2, X, Languages } from 'lucide-react';
 import ShortcutSettings from './ShortcutSettings.jsx';
 import { ENGINE_NAMES, defaultSpeech, studioVoicesOf, usableEngines } from '../../features/audio/voiceDefault.js';
 import { VOICESTUDIO_URL } from '../../features/audio/components/TextToSpeech.jsx';
+import { SUBAGENT_LIMITS } from '../../../shared/subagents.mjs';
 
 // Providers come from the preset table (shared/providers.json): name, key page, hint, default address.
-const PROVIDERS = PRESETS;
+
 // Display name of a native agent in the runtime controls.
 const nativeName = nativeAgentName;
 
@@ -97,6 +99,7 @@ function ProxySettings({ onCleared }) {
 // Settings pages, grouped in the rail: editor preferences, AI, then connected services.
 const SECTION_GROUPS = [
   { label: t('settings.general'), items: [
+    { id: 'plugins', label:t('plugins.title'), icon:Server, title:t('plugins.title'), description:t('plugins.description') },
     { id: 'language', label: t('settings.language'), icon: Languages, title: t('settings.language'), description: t('settings.the_language_of_clipcrafts_interface') },
     { id: 'quality', label: t('settings.performance'), icon: Gauge, title: t('settings.performance'), description: t('settings.how_clipcraft_plays_and_processes_media') },
     { id: 'shortcuts', label: t('settings.shortcuts'), icon: Keyboard, title: t('settings.keyboard_shortcuts'), description: t('settings.remap_any_editor_shortcut') },
@@ -113,11 +116,13 @@ const SECTION_GROUPS = [
 ];
 const SECTIONS = SECTION_GROUPS.flatMap(g => g.items);
 
-export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, initialSection = 'ai' }) {
+export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, initialSection = 'ai', pluginCommands }) {
   const [section, setSection] = useState(initialSection === 'stock' || initialSection.startsWith('services') ? 'services' : initialSection);
   const [serviceTarget, setServiceTarget] = useState((initialSection.startsWith('services:') ? initialSection.slice('services:'.length) : '') || (initialSection === 'stock' ? 'pixabay' : ''));
   const openService = target => { setServiceTarget(target || ''); setSection('services'); };
   const [saved, setSaved] = useState(null); // public settings from the main process
+  const PROVIDERS=[...PRESETS,...(saved?.providerPlugins||[])];
+  useEffect(()=>{registerPluginProviderMetadata(saved?.providerPlugins||[]);},[saved]);
   const paneRef = useRef(null);
   const dialogRef = useRef(null);
   const opener = useRef(document.activeElement);
@@ -134,6 +139,8 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
   const [baseUrl, setBaseUrl] = useState('');
   const [executablePath, setExecutablePath] = useState('');
   const [webResearch, setWebResearch] = useState(false);
+  const [subagents, setSubagents] = useState(false);
+  const [subagentConcurrency, setSubagentConcurrency] = useState(SUBAGENT_LIMITS.concurrent);
   const [sdkStatus, setSdkStatus] = useState(null);
   const [runtimeProgress, setRuntimeProgress] = useState(null);
   const [runtimeError, setRuntimeError] = useState('');
@@ -165,11 +172,15 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
     setBaseUrl(s.baseUrls[p] || '');
     setExecutablePath(s.executablePaths?.[p] || '');
     setWebResearch(!!s.webResearch?.[p]);
+    setSubagents(!!s.subagents?.[p]);
+    setSubagentConcurrency(s.subagentConcurrency?.[p] || SUBAGENT_LIMITS.concurrent);
     setResult(null);
     setCustomModel(false);
   };
   useEffect(() => {
-    window.api.settingsGet().then((s) => load(s));
+    let live=true;window.api.settingsGet().then(s=>{if(live)load(s);});
+    const off=window.api.onPluginsChanged?.(()=>window.api.settingsGet().then(s=>{if(live)setSaved(s);}));
+    return()=>{live=false;off?.();};
   }, []);
 
   useEffect(() => {
@@ -218,9 +229,9 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
   };
   if (!saved) return null;
   const page = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
-  const info = PROVIDERS.find((p) => p.id === provider);
+  const info = PROVIDERS.find((p) => p.id === provider)||{id:provider,plugin:true,unavailable:true,name:t('plugins.provider_unavailable'),needsKey:true};
   const hint = saved.keys[provider];
-  const draft = { provider, model, baseUrl, executablePath, ...(info?.sdk ? { webResearch } : {}) };
+  const draft = { provider, model, baseUrl, executablePath, ...(info?.sdk ? { webResearch, subagents, subagentConcurrency } : {}) };
   const runtimeBusy = installingProvider === provider || (runtimeProgress && runtimeProgress.stage !== 'ready');
   const installRuntime = async () => {
     const selected = provider;
@@ -245,6 +256,8 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
     setBaseUrl(saved.baseUrls[p] || '');
     setExecutablePath(saved.executablePaths?.[p] || '');
     setWebResearch(!!saved.webResearch?.[p]);
+    setSubagents(!!saved.subagents?.[p]);
+    setSubagentConcurrency(saved.subagentConcurrency?.[p] || SUBAGENT_LIMITS.concurrent);
     setResult(null);
     setModels([]);
     setCustomModel(false);
@@ -319,10 +332,10 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
           <div className="set2-pane" ref={paneRef}>
         {section === 'ai' && (
         <SettingsPage title={page.title} description={page.description} actions={<>
-            <button className="btn" onClick={test} disabled={!!busy || (info.needsKey && !hint) || (info.sdk && (!sdkStatus?.ok || sdkStatus.authenticated === false))}>
+            <button className="btn" onClick={test} disabled={!!busy || info.unavailable || (info.needsKey && !hint) || (info.sdk && (!sdkStatus?.ok || sdkStatus.authenticated === false))}>
               {busy === 'test' ? <Loader2 size={14} className="spin" /> : null} {t('settings.test_connection')}
             </button>
-            <button className="btn btn-primary" onClick={save} disabled={!!busy}>
+            <button className="btn btn-primary" onClick={save} disabled={!!busy||info.unavailable}>
               {busy === 'save' ? <Loader2 size={14} className="spin" /> : null} {t('close.save')}
             </button>
         </>}>
@@ -330,10 +343,11 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
             <label className="field">
               <span className="sr-only">{t('settings.provider')}</span>
               <select value={provider} aria-label={t('settings.provider')} onChange={(e) => switchProvider(e.target.value)}>
-                {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{t(`providers.${p.id}.name`)}{saved.keys[p.id] ? '  ✓' : ''}</option>)}
+                {!PROVIDERS.some(p=>p.id===provider)&&<option value={provider}>{t('plugins.provider_unavailable')}</option>}
+                {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.plugin?`${p.name} · ${p.version||t('plugins.unavailable')}`:t(`providers.${p.id}.name`)}{saved.keys[p.id] ? '  ✓' : ''}</option>)}
               </select>
             </label>
-            <p className="set2-note">{t(`providers.${provider}.hint`)}</p>
+            <p className="set2-note">{info.plugin?(info.unavailable?t('plugins.provider_unavailable'):info.description):t(`providers.${provider}.hint`)}</p>
             {info.keyUrl && (
               <button className="btn btn-ghost btn-sm link-btn" type="button" onClick={() => window.api.openHelp(info.keyUrl)}>
                 <ExternalLink size={13} /> {t(`providers.${provider}.key_label`)}
@@ -390,11 +404,21 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
                 </span>
                 <input type="checkbox" className="switch" aria-label={t('settings.web_research')} checked={webResearch} onChange={(e) => setWebResearch(e.target.checked)} />
               </label>
+              <label className="set2-switch-row">
+                <span className="set2-switch-text"><b>{t('subagents.setting')}</b><small className="muted">{t('subagents.setting_hint')}</small></span>
+                <input type="checkbox" className="switch" aria-label={t('subagents.setting')} checked={subagents} onChange={e => setSubagents(e.target.checked)} />
+              </label>
+              <label className="field"><span>{t('subagents.concurrency')}</span>
+                <Dropdown ariaLabel={t('subagents.concurrency')} value={subagentConcurrency} disabled={!subagents} onChange={setSubagentConcurrency}
+                  options={Array.from({ length: SUBAGENT_LIMITS.maxConcurrent }, (_, i) => ({ value: i + 1, label: String(i + 1) }))} />
+                <small className="muted">{t('subagents.concurrency_hint')}</small>
+              </label>
             </>
           )}
+          {info.plugin&&!info.unavailable&&<p className="set2-note">{t('plugins.provider_destination',{endpoint:info.baseUrl})}</p>}
           {info.needsKey && <div className="service-key-link"><span className="set2-note">{hint ? t('settings.api_key_saved_hint', { hint }) : t('settings.no_api_key_saved_for_this_provider')}</span><button type="button" className="btn btn-sm" onClick={() => openService(`assistant:${provider}`)}>{t('settings.manage_api_key')}</button></div>}
 
-          {(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && (
+          {!info.plugin&&(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && (
             <label className="field">
               <span>{provider === 'custom' ? t('settings.address_required_for_custom') : t('settings.address_optional_for_hosted_services')}</span>
               <input type="text" value={baseUrl} spellCheck={false} placeholder={info.baseUrl || t('settings.default')} onChange={(e) => setBaseUrl(e.target.value)} />
@@ -410,13 +434,13 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
 
           <SettingsGroup label={t('settings.model')} aside={
               <button className="btn btn-ghost btn-sm" type="button" onClick={loadModels}
-                disabled={!!busy || modelsLoading || (info.needsKey && !hint) || (info.sdk && !sdkStatus?.ok)}>
+                disabled={!!busy || info.unavailable || modelsLoading || (info.needsKey && !hint) || (info.sdk && !sdkStatus?.ok)}>
                 {busy === 'models' || modelsLoading ? <Loader2 size={13} className="spin" /> : null} {info.sdk ? t('settings.refresh_models') : t('settings.load_models')}
               </button>
           }>
           <label className="field">
             <span className="sr-only">{t('settings.model')}</span>
-            {info.sdk ? (
+            {info.plugin ? <><Dropdown ariaLabel={t('settings.ai_model')} value={model} disabled={!!busy||info.unavailable} options={(info.models||[]).map(m=>({value:m.id,label:m.name}))} onChange={setModel}/><small className="muted">{t('plugins.provider_models_note')}</small></> : info.sdk ? (
               <>
                 <Dropdown ariaLabel={t('settings.ai_model')} className="settings-model-picker" value={customModel ? '__custom__' : model} disabled={!!busy}
                   options={[
@@ -465,6 +489,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
 
         </SettingsPage>
         )}
+        {section === 'plugins' && <SettingsPage title={page.title} description={page.description}><PluginSettings commands={pluginCommands} /></SettingsPage>}
         {section === 'external' && <SettingsPage title={page.title} description={page.description}><ExternalAgentSettings /></SettingsPage>}
         {section === 'mcp' && <SettingsPage title={page.title} description={page.description}><McpSettings saved={saved} onSaved={(st) => setSaved(st)} /></SettingsPage>}
         {section === 'speech' && (

@@ -5,7 +5,7 @@ const root = path.join(__dirname, '..');
 const problems = [];
 const walk = dir => fs.readdirSync(dir, { withFileTypes:true }).flatMap(entry => entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)]);
 const exists = file => [file, ...['.js','.jsx','.cjs','.mjs','.json','/index.js','/index.cjs'].map(ext => file+ext)].some(candidate => fs.existsSync(candidate));
-for (const folder of ['src','electron','tests','scripts']) {
+for (const folder of ['src','electron','tests','scripts','packages/plugin-sdk/src']) {
   for (const file of walk(path.join(root, folder)).filter(file => /\.(?:[cm]?js|jsx)$/.test(file))) {
     const source = fs.readFileSync(file, 'utf8');
     const imports = /(?:^\s*(?:import|export)\s+(?:[^;]*?\s+from\s*)?|\b(?:require(?:\.resolve)?|import)\s*\(\s*)(['"])(\.{1,2}\/[^'"\n]+)\1/gm;

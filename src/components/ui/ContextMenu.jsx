@@ -5,7 +5,7 @@ import { t } from '../../i18n/index.js';
 // Floating menu at (x, y). items: [{ label, icon, shortcut, onClick, disabled, hint } |
 // { label, icon, submenu: [items], disabled, hint } | 'sep'].
 // Closes on a click outside, Escape, scroll or resize; stays inside the window.
-export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip_menu') }) {
+export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip_menu'),className='' }) {
   const ref = useRef(null);
   const subRef = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
@@ -41,34 +41,43 @@ export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip
     const el = subRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    if (r.bottom > window.innerHeight - 4) {
-      const top = Math.max(4, window.innerHeight - r.height - 4);
-      if (Math.abs(top - subPos.top) > 1) setSubPos({ ...subPos, top });
-    }
+    const top=Math.max(4,Math.min(subPos.top,window.innerHeight-r.height-4));
+    let left=subPos.left;
+    if(r.right>window.innerWidth-4){const anchor=ref.current?.querySelector('[data-sub-open="true"]')?.getBoundingClientRect();left=Math.max(4,(anchor?.left||window.innerWidth)-r.width-3);}
+    if(Math.abs(top-subPos.top)>1||Math.abs(left-subPos.left)>1)setSubPos({left,top});
   }, [openSub, subPos]);
 
   useEffect(() => {
-    const down = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
+    const down = (e) => { if (!ref.current?.contains(e.target)) onClose('outside'); };
     const key = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+      const parent=ref.current?.querySelector('[data-sub-open="true"] > button');
+      if(e.key==='ArrowRight'&&document.activeElement?.getAttribute('aria-haspopup')==='menu'&&ref.current?.contains(document.activeElement)){
+        e.preventDefault();if(document.activeElement.getAttribute('aria-expanded')!=='true')document.activeElement.click();requestAnimationFrame(()=>subRef.current?.querySelector('button:not(:disabled)')?.focus());
+      }
+      if((e.key==='ArrowLeft'||e.key==='Escape')&&subRef.current?.contains(document.activeElement)){
+        e.preventDefault();e.stopPropagation();setOpenSub(-1);parent?.focus();return;
+      }
+      if (e.key === 'Escape') { e.preventDefault();e.stopPropagation(); onClose('escape'); }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        const btns = [...ref.current.querySelectorAll('button:not(:disabled)')];
+        const within=subRef.current?.contains(document.activeElement),scope=within?subRef.current:ref.current;
+        const btns = [...scope.querySelectorAll('button:not(:disabled)')].filter(button=>within||!subRef.current?.contains(button));
         const i = btns.indexOf(document.activeElement);
         btns[(i + (e.key === 'ArrowDown' ? 1 : -1) + btns.length) % btns.length]?.focus();
       }
     };
+    const wheel=event=>{if(!ref.current?.contains(event.target))onClose('scroll');};
     window.addEventListener('pointerdown', down, true);
     window.addEventListener('keydown', key, true);
     window.addEventListener('resize', onClose);
-    window.addEventListener('wheel', onClose, { passive: true });
+    window.addEventListener('wheel', wheel, { passive: true });
     return () => {
       window.removeEventListener('pointerdown', down, true);
       window.removeEventListener('keydown', key, true);
       window.removeEventListener('resize', onClose);
-      window.removeEventListener('wheel', onClose);
+      window.removeEventListener('wheel', wheel);
     };
-  }, [onClose]);
+  }, [onClose,openSub]);
 
   const renderItems = (list, sub = false) => list.map((it, i) => {
     if (it === 'sep') return <div key={i} className="ctx-sep" role="separator" />;
@@ -83,7 +92,7 @@ export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip
             <ChevronRight size={13} className="ctx-chev" />
           </button>
           {openSub === i && subPos && (
-            <div className="ctx-menu ctx-sub" role="menu" aria-label={it.label} style={subPos} ref={subRef}>
+            <div className="ctx-menu ctx-sub" data-detailed-menu={it.submenu.some(item=>item.detail)||undefined} role="menu" aria-label={it.label} style={subPos} ref={subRef}>
               {renderItems(it.submenu, true)}
             </div>
           )}
@@ -91,18 +100,19 @@ export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip
       );
     }
     return (
-      <button key={i} role="menuitem" disabled={it.disabled} title={it.disabled ? it.hint : undefined}
+      <button key={i} role="menuitem" disabled={it.disabled}
         onMouseEnter={() => { if (!sub) setOpenSub(-1); }}
-        onClick={() => { onClose(); it.onClick(); }}>
+        id={it.id} data-menu-detail={it.detail?true:undefined} title={it.disabled?it.hint:it.detail?it.label+' · '+it.detail:undefined}
+        onClick={() => { onClose('choose'); it.onClick(); }}>
         <span className="ctx-icon">{Icon && <Icon size={15} />}</span>
-        <span className="ctx-label">{it.label}</span>
+        <span className="ctx-label">{it.label}{it.detail&&<small className="ctx-detail">{it.detail}</small>}</span>
         {it.shortcut && <kbd>{it.shortcut}</kbd>}
       </button>
     );
   });
 
   return (
-    <div className="ctx-menu" role="menu" aria-label={label} ref={ref} style={pos} onContextMenu={(e) => e.preventDefault()}>
+    <div className={`ctx-menu ${className}`} role="menu" aria-label={label} ref={ref} style={pos} onContextMenu={(e) => e.preventDefault()}>
       {renderItems(items)}
     </div>
   );

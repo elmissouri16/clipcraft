@@ -92,9 +92,10 @@ const answer = () => ({ role: 'user', parts: [{ functionResponse: { name: 'get_p
     respond = ({ url, body }) => url.endsWith('/api/show') ? { thinking: { values: body.model === 'binary-model' ? [true, false] : ['low', 'high'] } }
       : { message: { content: '', tool_calls: [{ function: { name: 'get_project', arguments: {} } }] } };
     const ollama = { provider: 'ollama', model: 'binary-model', baseUrl: 'http://localhost:11434/v1', reasoningEffort: 'off' };
-    const ns = await ai.agentStep(ollama, req);
+    const outputBudget = 1536;
+    const ns = await ai.agentStep(ollama, { ...req, maxTokens: outputBudget });
     assert.equal(last().body.think, false);
-    assert.equal(last().body.options.num_predict, 1024, 'native thinking requests retain the previous agent output budget');
+    assert.equal(last().body.options.num_predict, outputBudget, 'native thinking requests preserve the caller output budget');
     assert.ok(last().url.endsWith('/api/chat'));
     await ai.agentStep(ollama, { ...req, contents: [...contents, ns.content, answer()] });
     assert.deepEqual(last().body.messages.find((m) => m.role === 'assistant').tool_calls[0].function.arguments, {});

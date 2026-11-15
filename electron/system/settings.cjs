@@ -9,8 +9,8 @@ const { app, safeStorage } = require('electron');
 
 // The provider list and each one's default model come from the preset table (shared/providers.json).
 const providerPresets = require('../agents/providers.cjs');
-const PROVIDERS = providerPresets.ids();
-const DEFAULT_MODELS = providerPresets.defaultModels();
+const providerIds = () => providerPresets.ids();
+const defaultModels = () => providerPresets.defaultModels();
 
 function settingsFile() {
   // UI tests must never touch the real settings.
@@ -118,21 +118,47 @@ function warmKeys() {
 const WEB_RESEARCH_DEFAULTS = require('../agents/research.cjs').DEFAULTS;
 const webResearchOf = (ai, provider) => provider in WEB_RESEARCH_DEFAULTS
   ? (typeof ai.webResearch?.[provider] === 'boolean' ? ai.webResearch[provider] : WEB_RESEARCH_DEFAULTS[provider]) : false;
+const subagentsOf = (ai, provider) => provider in WEB_RESEARCH_DEFAULTS && ai.subagents?.[provider] === true;
+const SUBAGENT_LIMITS = require('../../shared/subagentLimits.json');
+const subagentConcurrencyOf = (ai, provider) => Number.isInteger(ai.subagentConcurrency?.[provider]) && ai.subagentConcurrency[provider] >= 1 && ai.subagentConcurrency[provider] <= SUBAGENT_LIMITS.maxConcurrent
+  ? ai.subagentConcurrency[provider] : SUBAGENT_LIMITS.concurrent;
 
 // What the renderer may see.
+function pluginProviderApproved(provider){return read().ai?.pluginProviderConsents?.[provider]===true;}
+function approvePluginProvider(provider){
+ const row=providerPresets.byId(provider);if(!row?.plugin)throw Error('Plugin provider is unavailable.');
+ const data=read();data.ai={...(data.ai||{}),pluginProviderConsents:{...(data.ai?.pluginProviderConsents||{}),[provider]:true},pluginProviderLabels:{...(data.ai?.pluginProviderLabels||{}),[provider]:row.name}};write(data);
+}
+function assertPluginProvider(provider,model,baseUrl){
+ if(!providerPresets.isPlugin(provider))return;
+ const row=providerPresets.byId(provider);
+ if(!row?.plugin)throw Error('This plugin provider is unavailable. Enable its exact installed version in Settings.');
+ if(!pluginProviderApproved(provider))throw Error('Approve this plugin provider in Settings before using it.');
+ if(model&&!row.models.some(m=>m.id===model))throw Error('Choose a model declared by this plugin provider.');
+ if(baseUrl&&baseUrl!==row.baseUrl)throw Error('Plugin provider endpoints cannot be overridden.');
+}
+function pluginProviderPublic(ai){
+ const rows=providerPresets.all().filter(p=>p.plugin).map(p=>({...p,approved:ai.pluginProviderConsents?.[p.id]===true}));
+ const missing=new Set([ai.provider,...Object.keys(ai.keys||{})].filter(id=>providerPresets.isPlugin(id)&&!rows.some(p=>p.id===id)));
+ for(const id of missing)rows.push({id,name:ai.pluginProviderLabels?.[id]||'Unavailable plugin provider',short:ai.pluginProviderLabels?.[id]||'Unavailable plugin provider',plugin:true,unavailable:true,needsKey:true,models:[],defaultModel:'',baseUrl:''});
+ return rows;
+}
 function getPublic() {
   const ai = read().ai || {};
   const keys = {};
-  for (const p of PROVIDERS) if (ai.keys && ai.keys[p]) keys[p] = ai.keys[p].hint;
+  for (const p of [...providerIds(),...Object.keys(ai.keys||{}).filter(providerPresets.isPlugin)]) if (ai.keys && ai.keys[p]) keys[p] = ai.keys[p].hint;
   return {
-    provider: PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini',
-    models: { ...DEFAULT_MODELS, ...(ai.models || {}) },
+    provider: providerIds().includes(ai.provider)||providerPresets.isPlugin(ai.provider) ? ai.provider : 'gemini',
+    models: { ...defaultModels(), ...(ai.models || {}) },
     baseUrls: ai.baseUrls || {},
     executablePaths: ai.executablePaths || {},
     reasoningEfforts: ai.reasoningEfforts || {},
     webResearch: Object.fromEntries(Object.keys(WEB_RESEARCH_DEFAULTS).map((p) => [p, webResearchOf(ai, p)])),
+    subagents: Object.fromEntries(Object.keys(WEB_RESEARCH_DEFAULTS).map(p => [p, subagentsOf(ai, p)])),
+    subagentConcurrency: Object.fromEntries(Object.keys(WEB_RESEARCH_DEFAULTS).map(p => [p, subagentConcurrencyOf(ai, p)])),
     keys, // provider -> "…abcd" for providers that have a saved key
-    defaultModels: DEFAULT_MODELS,
+    providerPlugins: pluginProviderPublic(ai),
+    defaultModels: defaultModels(),
     // Not probed here (this runs at launch): assumed available until a save or a read proves otherwise,
     // in which case that save fails with the secure-storage message and the next read reports false.
     encryption: !encryptionRefused,
@@ -277,6 +303,7 @@ function clearServiceKey(name) {
 // Manage credentials without changing the selected assistant, its model or endpoint.
 function saveProviderKey(provider, value) {
   if (!providerPresets.keyed().includes(provider)) throw new Error(t('main.provider_does_not_use_api_key'));
+  if(providerPresets.isPlugin(provider))assertPluginProvider(provider);
   const key = String(value || '').trim();
   if (!key) throw new Error(t('main.paste_a_key_first'));
   if (!encryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
@@ -289,19 +316,22 @@ function saveProviderKey(provider, value) {
 // Active configuration for the main process, including the decrypted key.
 function getActive(providerOverride) {
   const ai = read().ai || {};
-  const provider = providerOverride || (PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini');
-  const model = (ai.models && ai.models[provider]) || DEFAULT_MODELS[provider];
+  const provider = providerOverride || (providerIds().includes(ai.provider)||providerPresets.isPlugin(ai.provider) ? ai.provider : 'gemini');
+  const model = (ai.models && ai.models[provider]) || defaultModels()[provider];
+  assertPluginProvider(provider,model);
   const effort = ai.reasoningEfforts?.[provider]?.[model];
   const apiKey = decryptEntry(ai.keys && ai.keys[provider]); // '' when saved under another account or corrupted
   return {
     provider,
     model,
-    baseUrl: (ai.baseUrls && ai.baseUrls[provider]) || '',
+    baseUrl: providerPresets.isPlugin(provider)?providerPresets.byId(provider).baseUrl:(ai.baseUrls && ai.baseUrls[provider]) || '',
     apiKey,
     executablePath: (ai.executablePaths && ai.executablePaths[provider]) || '',
     reasoningEffort: typeof effort === 'string' ? effort : '',
     reasoningEfforts: ai.reasoningEfforts?.[provider] || {},
     webResearch: webResearchOf(ai, provider),
+    subagents: subagentsOf(ai, provider),
+    subagentConcurrency: subagentConcurrencyOf(ai, provider),
   };
 }
 
@@ -309,14 +339,21 @@ function getActive(providerOverride) {
 function save(patch) {
   const data = read();
   const ai = data.ai || {};
-  const provider = PROVIDERS.includes(patch.provider) ? patch.provider : ai.provider || 'gemini';
+  if(providerPresets.isPlugin(patch.provider)&&!providerPresets.byId(patch.provider))throw Error('Plugin provider is unavailable.');
+  const provider = providerIds().includes(patch.provider) ? patch.provider : ai.provider || 'gemini';
+  assertPluginProvider(provider, (patch.model||'').trim()||defaultModels()[provider],patch.baseUrl);
   ai.provider = provider;
-  ai.models = { ...(ai.models || {}), [provider]: (patch.model || '').trim() || DEFAULT_MODELS[provider] };
-  ai.baseUrls = { ...(ai.baseUrls || {}), [provider]: (patch.baseUrl || '').trim().replace(/\/+$/, '') };
+  ai.models = { ...(ai.models || {}), [provider]: (patch.model || '').trim() || defaultModels()[provider] };
+  ai.baseUrls = { ...(ai.baseUrls || {}), [provider]: providerPresets.isPlugin(provider)?providerPresets.byId(provider).baseUrl:(patch.baseUrl || '').trim().replace(/\/+$/, '') };
   if (['codex-sdk', 'claude-agent-sdk'].includes(provider) && patch.executablePath !== undefined) {
     ai.executablePaths = { ...(ai.executablePaths || {}), [provider]: String(patch.executablePath || '').trim() };
   }
   if (provider in WEB_RESEARCH_DEFAULTS && typeof patch.webResearch === 'boolean') ai.webResearch = { ...(ai.webResearch || {}), [provider]: patch.webResearch };
+  if (provider in WEB_RESEARCH_DEFAULTS && typeof patch.subagents === 'boolean') ai.subagents = { ...(ai.subagents || {}), [provider]: patch.subagents };
+  if (provider in WEB_RESEARCH_DEFAULTS && patch.subagentConcurrency !== undefined) {
+    if (!Number.isInteger(patch.subagentConcurrency) || patch.subagentConcurrency < 1 || patch.subagentConcurrency > SUBAGENT_LIMITS.maxConcurrent) throw Error(t('subagents.invalid_concurrency', { max: SUBAGENT_LIMITS.maxConcurrent }));
+    ai.subagentConcurrency = { ...(ai.subagentConcurrency || {}), [provider]: patch.subagentConcurrency };
+  }
   if (typeof patch.apiKey === 'string' && patch.apiKey.trim()) {
     if (!encryptionAvailable()) {
       throw new Error(t('main.secure_storage_not_available'));
@@ -338,12 +375,13 @@ function clearKey(provider) {
 // Quick model changes from CraftAI must not rewrite provider credentials,
 // endpoints, executable paths, or other preferences from a stale UI snapshot.
 function setModel(provider, model) {
-  if (!PROVIDERS.includes(provider) || typeof model !== 'string') throw new Error(t('main.invalid_ai_model_selection'));
+  if (!providerIds().includes(provider) || typeof model !== 'string') throw new Error(t('main.invalid_ai_model_selection'));
   const data = read();
   const ai = data.ai || {};
-  const active = PROVIDERS.includes(ai.provider) ? ai.provider : 'gemini';
+  assertPluginProvider(provider,model);
+  const active = providerIds().includes(ai.provider)||providerPresets.isPlugin(ai.provider) ? ai.provider : 'gemini';
   if (active !== provider) throw new Error(t('main.ai_provider_changed'));
-  ai.models = { ...(ai.models || {}), [provider]: model.trim() || DEFAULT_MODELS[provider] };
+  ai.models = { ...(ai.models || {}), [provider]: model.trim() || defaultModels()[provider] };
   data.ai = ai;
   write(data);
   return getPublic();
@@ -351,16 +389,29 @@ function setModel(provider, model) {
 
 function setReasoningEffort(provider, model, effort, allowedLevels) {
   const levels = allowedLevels || require("../agents/thinking.cjs").SDK_LEVELS[provider] || [];
-  if (!PROVIDERS.includes(provider) || typeof model !== 'string' || typeof effort !== 'string' || (effort && (!model || !levels.includes(effort)))) throw new Error(t('main.invalid_thinking_effort'));
+  if (!providerIds().includes(provider) || typeof model !== 'string' || typeof effort !== 'string' || (effort && (!model || !levels.includes(effort)))) throw new Error(t('main.invalid_thinking_effort'));
   const data = read();
   const ai = data.ai || {};
-  if (ai.provider !== provider || (ai.models?.[provider] || DEFAULT_MODELS[provider]) !== model) throw new Error(t('main.ai_provider_or_model_changed'));
+  if (ai.provider !== provider || (ai.models?.[provider] || defaultModels()[provider]) !== model) throw new Error(t('main.ai_provider_or_model_changed'));
   ai.reasoningEfforts = { ...(ai.reasoningEfforts || {}),
     [provider]: { ...(ai.reasoningEfforts?.[provider] || {}), [model]: effort },
   };
   data.ai = ai;
   write(data);
   return getPublic();
+}
+
+// Composer changes update only delegation preferences, never model, endpoint or keys.
+function setSubagents(provider, patch = {}) {
+  if (!(provider in WEB_RESEARCH_DEFAULTS) || !patch || typeof patch !== 'object' || Array.isArray(patch)
+    || Object.keys(patch).some(key => !['enabled', 'concurrency'].includes(key))
+    || patch.enabled !== undefined && typeof patch.enabled !== 'boolean'
+    || patch.concurrency !== undefined && (!Number.isInteger(patch.concurrency) || patch.concurrency < 1 || patch.concurrency > SUBAGENT_LIMITS.maxConcurrent)) throw Error(t('subagents.invalid_concurrency', { max: SUBAGENT_LIMITS.maxConcurrent }));
+  const data = read(), ai = data.ai || {};
+  if (ai.provider !== provider) throw Error(t('main.ai_provider_changed'));
+  if (patch.enabled !== undefined) ai.subagents = { ...(ai.subagents || {}), [provider]: patch.enabled };
+  if (patch.concurrency !== undefined) ai.subagentConcurrency = { ...(ai.subagentConcurrency || {}), [provider]: patch.concurrency };
+  data.ai = ai;write(data);return getPublic();
 }
 
 // Playback quality (which scaled copy the player uses; the export always reads the originals).
@@ -417,4 +468,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getVoiceStudio, setVoiceStudio, getFirstRun, setFirstRun, PROVIDERS, DEFAULT_MODELS };
+module.exports = { warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, setSubagents, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getVoiceStudio, setVoiceStudio, getFirstRun, setFirstRun, pluginProviderApproved,approvePluginProvider,get PROVIDERS(){return providerIds();},get DEFAULT_MODELS(){return defaultModels();} };

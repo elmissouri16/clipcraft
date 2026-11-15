@@ -1,0 +1,21 @@
+{
+  "id": "clipcraft-examples.local-ai",
+  "name": "Local AI provider",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "An original provider-plugin example for a local OpenAI-compatible Ollama service. Install qwen2.5:7b separately, then select and test this provider in Settings. Installation makes no requests.",
+  "permissions": [],
+  "contributes": {
+    "aiProviders": [{
+      "id": "local-chat",
+      "name": "Local AI (plugin)",
+      "description": "Local Chat Completions with tool calling. Requires Ollama and the declared model to be installed separately.",
+      "protocol": "openai",
+      "baseUrl": "http://localhost:11434/v1",
+      "needsKey": false,
+      "defaultModel": "qwen2.5:7b",
+      "models": [{"id":"qwen2.5:7b","name":"Qwen 2.5 7B","vision":false}]
+    }]
+  }
+}

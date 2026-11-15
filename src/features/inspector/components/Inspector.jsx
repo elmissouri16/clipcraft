@@ -1,8 +1,9 @@
+import PluginEffectControls from '../../plugins/components/PluginEffectControls.jsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useClockTime } from '../../preview/useClockTime.js';
 import { Blend, Film, Layers, Music, PanelRightClose, RotateCcw, Settings2, Sparkles, Type } from 'lucide-react';
 import { clipLen, formatTime, parseEffectKey, videoLayout } from "../../../state/store.js";
-import { EFFECTS, RATIOS, TRANSITIONS, effectInfo, sizeFor } from "../../effects/effects.js";
+import { EFFECTS, RATIOS, allTransitions, effectInfo, sizeFor } from "../../effects/effects.js";
 import { EXPORT_PRESETS, ENCODER_PRESETS, RES_CAPS, FPS_CHOICES, AUDIO_RATES, storedExportSettings, settingsPatch, resolveExport } from "../../export/exportQuality.js";
 import Slider from "../../../components/ui/Slider.jsx";
 import CurveEditor from './CurveEditor.jsx';
@@ -183,10 +184,12 @@ function TransitionPanel({ project, selection, dispatch }) {
   const clip = clips[i];
   const tr = clip && clip.transition;
   if (!tr) return <div className="fields"><div className="info dim">{t('inspector.this_transition_was_removed')}</div></div>;
-  const def = TRANSITIONS.find((t) => t.id === tr.type);
+  const transitions=allTransitions();
+  if(!transitions.some(t=>t.id===tr.type))transitions.push({id:tr.type,name:tr.pluginTransition?.name||tr.type,duration:tr.duration,fx:!!tr.pluginTransition});
+  const def = transitions.find((t) => t.id === tr.type);
   const set = (transition) => dispatch({ type: 'update', track: 'video', id: clip.id, patch: { transition } });
   // A transition can use at most half of each clip it joins.
-  const max = Math.max(0.2, Math.min(clipLen(clip), clipLen(clips[i - 1])) / 2);
+  const max = Math.max(0.05, Math.min(clipLen(clip), clipLen(clips[i - 1]||clip)) / 2);
   const others = clips.filter((c, k) => k > 0 && !c.gap && !clips[k - 1].gap);
   const applyAll = () => {
     dispatch({ type: 'beginGesture' });
@@ -202,19 +205,20 @@ function TransitionPanel({ project, selection, dispatch }) {
       <label className="field">
         <span>{t('home.name')}</span>
         <select value={tr.type} onChange={(e) => {
-          const t = TRANSITIONS.find((x) => x.id === e.target.value);
+          const t = transitions.find((x) => x.id === e.target.value);
           set({ type: t.id, duration: Math.min(max, t.fx ? t.duration : tr.duration), ...(t.fx && /zoom/i.test(t.id) ? { ease: 'smooth' } : {}) });
         }}>
-          {TRANSITIONS.map((t) => <option key={t.id} value={t.id}>{catalogName('transition', t)}</option>)}
+          {transitions.map((t) => <option key={t.id} value={t.id}>{catalogName('transition', t)}</option>)}
         </select>
       </label>
-      <Slider dispatch={dispatch} label={t('animation-panel.duration')} value={Math.min(tr.duration, max)} min={0.1} max={Number(max.toFixed(2))} step={0.05}
+      <Slider dispatch={dispatch} label={t('animation-panel.duration')} value={Math.min(tr.duration, max)} min={Math.min(0.1,max)} max={Number(max.toFixed(2))} step={0.05}
         fmt={(v) => `${v.toFixed(2)}s`} onChange={(duration) => set({ ...tr, duration })} />
       </div>
+      <PluginEffectControls kind="transition" id={tr.type} instance={tr.pluginTransition} onChange={pluginTransition=>set({...tr,pluginTransition})} onUpgrade={(type,pluginTransition)=>set({...tr,type,pluginTransition})} />
       <div className="insp-card">
         <div className="insp-card-title">{t('inspector.motion_curve')}</div>
         {def?.fx ? (
-          <CurveEditor value={tr.ease} onChange={(ease) => set(ease === undefined ? { type: tr.type, duration: tr.duration } : { ...tr, ease })} />
+          <CurveEditor value={tr.ease} onChange={(ease) => set({ ...tr, ease })} />
         ) : (
           <p className="dim small">{t('inspector.this_transition_renders_with_the_export_en')}</p>
         )}
@@ -307,13 +311,14 @@ function FreeEffectPanel({ project, selection, dispatch, onAddTextOver = null })
   const set = (patch) => dispatch({ type: 'update', track: 'effect', id: c.id, patch });
   return (
     <div className="fields">
-      <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{effectLabel(e, c.fx)}</b><span className="dim">{t('inspector.on_the_effects_track')}</span></div></div>
+      <div className="fx-head"><span className="fx-icon">{e?.icon || '✨'}</span><div><b>{c.pluginEffect?.name||effectLabel(e, c.fx)}</b><span className="dim">{t('inspector.on_the_effects_track')}</span></div></div>
       <div className="insp-card">
         <div className="insp-card-title">{t('inspector.timing')}</div>
       <p className="dim small">{t(e?.group === 'Filters' ? 'inspector.gives_every_picture_under_it_this_look' : 'inspector.acts_on_every_picture_under_it')}</p>
       <Num label={t('inspector.start_s')} value={c.start} min={0} onChange={(start) => set({ start: Math.max(0, start) })} />
       <Num label={t('graphic.duration_s')} value={c.duration} min={0.1} onChange={(d) => set({ duration: Math.max(0.1, d) })} />
       </div>
+      <PluginEffectControls id={c.fx} instance={c.pluginEffect} onChange={pluginEffect=>set({pluginEffect})} onUpgrade={(fx,pluginEffect)=>set({fx,pluginEffect})} />
       {!NO_STRENGTH.includes(c.fx) && <StrengthControl value={c.strength} dispatch={dispatch}
         onChange={(k) => set({ strength: k >= 1 ? undefined : k })} />}
       <RegionControls region={c.region || null} dispatch={dispatch}
@@ -324,12 +329,12 @@ function FreeEffectPanel({ project, selection, dispatch, onAddTextOver = null })
   );
 }
 
-function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
+function EffectPanel({ project, selection, dispatch, onAddTextOver = null, onSelectEffect }) {
   if (!selection.id.includes('|')) return <FreeEffectPanel project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} />;
   const { track, clipId, fx } = parseEffectKey(selection.id);
   const list = track === 'overlay' ? project.overlayClips || [] : project.videoClips;
   const clip = list.find((c) => c.id === clipId);
-  const e = EFFECTS.find((x) => x.id === fx);
+  const e = effectInfo(fx);
   const media = clip && project.media.find((m) => m.id === clip.mediaId);
   if (!clip || !(clip.effects || []).includes(fx)) return <div className="fields"><div className="info dim">{t('inspector.this_effect_was_removed')}</div></div>;
   // Region storage for a clip-attached effect: the clip's fxRegions map, keyed by effect id.
@@ -350,6 +355,14 @@ function EffectPanel({ project, selection, dispatch, onAddTextOver = null }) {
       <div className="insp-card">
       <p className="dim small">{t('inspector.the_effect_runs_for_the_whole_clip_and_mov')}</p>
       </div>
+      <PluginEffectControls id={fx} instance={clip.pluginEffects?.[fx]}
+        onChange={instance=>dispatch({type:'update',track,id:clipId,patch:{pluginEffects:{...clip.pluginEffects,[fx]:instance}}})}
+        onUpgrade={(next,instance)=>{
+          const pluginEffects={...clip.pluginEffects};delete pluginEffects[fx];pluginEffects[next]=instance;
+          const remap=map=>{const result={...map};if(Object.hasOwn(result,fx)){result[next]=result[fx];delete result[fx];}return result;};
+          dispatch({type:'update',track,id:clipId,patch:{effects:[...new Set(clip.effects.map(id=>id===fx?next:id))],pluginEffects,fxStrength:remap(clip.fxStrength),fxRegions:remap(clip.fxRegions)}});
+          onSelectEffect?.({track:'effect',id:`${track}|${clipId}|${next}`});
+        }} />
       {!NO_STRENGTH.includes(fx) && <StrengthControl value={clip.fxStrength?.[fx]} dispatch={dispatch} onChange={setStrength} />}
       <RegionControls region={clip.fxRegions?.[fx] || null} dispatch={dispatch} onChange={setRegion} />
       <AddTextCard onAddTextOver={onAddTextOver} start={clipStartTl(project, track, clip)} duration={clipLenTl(track, clip)} />
@@ -366,7 +379,7 @@ function InspectorHeader({ Icon, title, onCollapse }) {
   </div>;
 }
 
-export default function Inspector({ collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null }) {
+export default function Inspector({ collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect }) {
   const bodyRef = useRef(null);
   useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [selection?.track, selection?.id]);
   const time = useClockTime(clockRef, pausedTime, playing && !collapsed);
@@ -387,7 +400,7 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
     return (
       <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
         <InspectorHeader Icon={Sparkles} title={t('inspector.effect')} onCollapse={onCollapse} />
-        <div className="inspector-body" ref={bodyRef}>{multi}<EffectPanel project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
+        <div className="inspector-body" ref={bodyRef}>{multi}<EffectPanel onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
       </aside>
     );
   }

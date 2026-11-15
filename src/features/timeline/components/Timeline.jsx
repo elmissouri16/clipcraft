@@ -1,3 +1,4 @@
+import {pluginTransitionProblem} from '../../plugins/transitionRegistry.js';
 import { withShortcut } from '../../../app/keymap.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -7,7 +8,7 @@ import {
 import { LAYERED, MIN_CLIP, clipLayer, effectObjects, findClipIn, findLinkPartner, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../../../state/store.js";
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from "../../effects/filters.js";
-import { TRANSITIONS, effectInfo } from "../../effects/effects.js";
+import { allTransitions, effectInfo } from "../../effects/effects.js";
 import { clipCss } from "../../effects/effects.js";
 import { activeDrag, isFiles, isInternal, laneFor, readPayload } from '../dnd.js';
 import { followScrollTarget, interpolateTime, playheadX } from "../../preview/playbackClock.js";
@@ -1047,10 +1048,12 @@ export default function Timeline({
           })}
           {layout.filter((l) => l.trans > 0 && visible(l.clip.id, l.start, l.trans)).map((l) => {
             const sel = selection?.track === 'transition' && selection.id === l.clip.id;
-            const def = TRANSITIONS.find((t) => t.id === l.clip.transition.type);
-            const name = def ? catalogName('transition', def) : l.clip.transition.type;
+            const def = allTransitions().find((t) => t.id === l.clip.transition.type);
+            const unavailable=!!pluginTransitionProblem(l.clip.transition.type,l.clip.transition.pluginTransition);
+            const label = def ? catalogName('transition', def) : l.clip.transition.pluginTransition?.name||l.clip.transition.type;
+            const name=unavailable?`${label} · ${t('plugins.unavailable')}`:label;
             return (
-              <button key={'tr' + l.clip.id} className={`tr-pill ${sel ? 'on' : ''}`}
+              <button key={'tr' + l.clip.id} className={`tr-pill ${sel ? 'on' : ''} ${unavailable?'tr-unavailable':''}`} aria-invalid={unavailable||undefined}
                 style={{ left: l.start * pps, width: Math.max(22, l.trans * pps) }}
                 title={t('timeline.transition_title', { name, seconds: l.trans.toFixed(1) })}
                 aria-label={t('timeline.transition_name', { name })} aria-pressed={sel}

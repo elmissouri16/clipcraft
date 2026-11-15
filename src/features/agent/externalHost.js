@@ -24,11 +24,11 @@ const NO_PROJECT = 'No project is open. Call list_projects and open_project, or 
 export const TOOL_CALLS_PER_EDIT = 300;
 const CRAFT_BUSY = 'CraftAI is editing this project in ClipCraft. Retry when it finishes.';
 
-// The list every external agent is offered: the project tools, then exactly the native list. The
+// The list every external agent is offered: the project tools, then the native list excluding plugin commands. The
 // user's own MCP servers are not re-exported (the outside agent can connect them itself).
 export function externalCapabilities(provider) { return { imageGeneration: provider === 'codex-sdk' }; }
 export function externalTools(provider) {
-  const { catalog, tools } = nativeTools(externalCapabilities(provider).imageGeneration ? 'codex-sdk' : 'external', []);
+  const { catalog, tools } = nativeTools(externalCapabilities(provider).imageGeneration ? 'codex-sdk' : 'external', [], { pluginCommands: false });
   return { catalog, tools: [...PROJECT_TOOLS, ...tools] };
 }
 export const externalInstructions = () => `${nativeSystemPrompt()}

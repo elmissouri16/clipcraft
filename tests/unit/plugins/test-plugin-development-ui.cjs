@@ -1,0 +1,21 @@
+// SDK-built snapshots exercised in hidden Electron; author compilation stays outside the editor.
+const fs=require('node:fs'),fsp=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict'),{promisify}=require('node:util'),{spawn,execFile}=require('node:child_process'),net=require('node:net'),runFile=promisify(execFile);
+(async()=>{
+ const root=path.resolve(__dirname,'../../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-development-ui-'));
+ await require('../../../scripts/build-plugin-sdk.cjs').buildSdk();const sdk=require('../../../packages/plugin-sdk/dist/authoring.cjs'),source=path.join(dir,'source');await sdk.createPlugin(source,{id:'studio.developer-harness',name:'Developer harness',publisher:'SDK fixture',template:'panel'});await runFile('npm',['install','--offline','--ignore-scripts','--no-audit','--no-fund'],{cwd:source,timeout:60000});
+ const manifest=JSON.parse(await fsp.readFile(path.join(source,'plugin.json')));manifest.permissions=['project.read','markers.write'];manifest.contributes.panels[0].permissions=['project.read','storage.local'];await fsp.writeFile(path.join(source,'plugin.json'),JSON.stringify(manifest));
+ const panelSource=await fsp.readFile(path.join(source,'src/panel.ts'),'utf8');await fsp.writeFile(path.join(source,'src/panel.ts'),panelSource+`\nconsole.warn('panel snapshot A');\n`);
+ const command=revision=>`import {defineCommand} from '@clipcraft/plugin-sdk';\nexport const run=defineCommand({async run(context){await context.markers.add([{time:1,label:'${revision} marker'}]);console.log('worker ${revision} staged');await context.progress(.4,'Waiting');await new Promise(resolve=>setTimeout(resolve,${revision==='A'?300:1200}));return {message:'Prepared ${revision}'};}});\n`;
+ await fsp.writeFile(path.join(source,'src/commands.ts'),command('A'));const first=await sdk.buildPlugin(source);const archive=path.join(dir,'installed.tgz');await sdk.packPlugin(first.directory,archive);await fsp.cp(first.directory,path.join(dir,'snapshot-a'),{recursive:true});
+ await fsp.writeFile(path.join(source,'src/commands.ts'),command('B'));await fsp.writeFile(path.join(source,'src/panel.ts'),panelSource+`\nconsole.warn('panel snapshot B');\n`);const second=await sdk.buildPlugin(source);await fsp.cp(second.directory,path.join(dir,'snapshot-b'),{recursive:true});await fsp.rm(first.directory,{recursive:true});await fsp.cp(path.join(dir,'snapshot-a'),first.directory,{recursive:true});
+ await fsp.writeFile(path.join(dir,'fixtures.json'),JSON.stringify({source,archive,installedKey:first.key}));fs.mkdirSync(path.join(dir,'settings-test'));fs.writeFileSync(path.join(dir,'settings-test/settings.json'),JSON.stringify({firstRun:{tourSeen:true,packPromptSeen:true}}));
+ const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});}),url='http://127.0.0.1:'+port,fd=fs.openSync(path.join(dir,'runtime.log'),'w');const vite=spawn(process.execPath,[path.join(root,'node_modules/vite/bin/vite.js'),'--host','127.0.0.1','--port',String(port),'--strictPort'],{cwd:root,stdio:['ignore',fd,fd]});let electron;
+ try{
+  let ready=false;for(let i=0;i<100;i++){try{ready=(await fetch(url)).ok;}catch{}if(ready)break;await new Promise(r=>setTimeout(r,50));}assert.ok(ready);
+  for(const reopen of [false,true]){
+   electron=spawn(process.env.ELECTRON_BIN||require('electron'),[root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_QUIET:'1',FVE_SMOKE_MODE:'plugin-development',FVE_DEVELOPMENT_REOPEN:reopen?'1':'0',VITE_DEV_SERVER_URL:url,CLIPCRAFT_DEV_EXAMPLES:'0'}});
+   const code=await new Promise(resolve=>{const timer=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},120000);electron.once('exit',code=>{clearTimeout(timer);resolve(code);});});const result=JSON.parse(fs.readFileSync(path.join(dir,reopen?'reopen-result.json':'result.json')));assert.equal(code,0,result.error);assert.ok(result.ok,result.error);assert.equal(result.windowsShown,0);
+  }
+  console.log('Hidden development-session workflows passed; evidence: '+dir);
+ }finally{electron?.kill();vite.kill();fs.closeSync(fd);}
+})().catch(error=>{console.error(error);process.exitCode=1;});

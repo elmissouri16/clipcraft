@@ -59,11 +59,12 @@ export function ToolChange({ change, failed }) {
 export function ToolRender({ render, onCancel, review=false }) {
   if(!render||!Number.isFinite(render.progress))return null;
   const percent=Math.round(Math.max(0,Math.min(1,render.progress))*100);
-  return <div className="pilot-inline-export" role="group" aria-label={review?t('activity.preview_rendering_progress'):t('export.export_progress')}>
-    <div className="pilot-inline-export-heading"><strong>{render.stopping?t('activity.stopping_export'):render.stage||t('activity.preparing_export')}</strong><span>{percent}%</span></div>
-    <progress value={percent} max={100} aria-label={review?t('activity.section_preview_progress'):t('activity.video_export_progress')} />
-    <div className="pilot-inline-export-timing"><span>{formatRemaining(render.remainingSeconds)||(render.phase==='verify'?t('activity.checking_the_saved_file'):render.timingStatus||t('activity.estimating_time_remaining'))}</span>{Number.isFinite(render.elapsedSeconds)&&<span>{formatElapsed(render.elapsedSeconds)} {t('activity.elapsed')}</span>}</div>
-    {onCancel&&render.phase!=='verify'&&!render.done&&<button type="button" className="pilot-export-cancel" onClick={onCancel} disabled={render.stopping}>{render.stopping?t('pilot.stopping_ellipsis'):review?t('activity.cancel_preview'):t('activity.cancel_export')}</button>}
+  const indexing=render.phase==='index';
+  return <div className="pilot-inline-export" role="group" aria-label={indexing?t('discovery.indexing'):review?t('activity.preview_rendering_progress'):t('export.export_progress')}>
+    <div className="pilot-inline-export-heading"><strong>{indexing?t('discovery.indexing'):render.stopping?t('activity.stopping_export'):render.stage||t('activity.preparing_export')}</strong><span>{percent}%</span></div>
+    <progress value={percent} max={100} aria-label={indexing?t('discovery.indexing'):review?t('activity.section_preview_progress'):t('activity.video_export_progress')} />
+    <div className="pilot-inline-export-timing"><span>{indexing?t('discovery.chunks_done',{completed:render.step||0,total:render.steps||0}):formatRemaining(render.remainingSeconds)||(render.phase==='verify'?t('activity.checking_the_saved_file'):render.timingStatus||t('activity.estimating_time_remaining'))}</span>{Number.isFinite(render.elapsedSeconds)&&<span>{formatElapsed(render.elapsedSeconds)} {t('activity.elapsed')}</span>}</div>
+    {onCancel&&render.phase!=='verify'&&!render.done&&<button type="button" className="pilot-export-cancel" onClick={onCancel} disabled={render.stopping}>{render.stopping?t('pilot.stopping_ellipsis'):indexing?t('discovery.stop_indexing'):review?t('activity.cancel_preview'):t('activity.cancel_export')}</button>}
   </div>;
 }
 export function ToolOutput({ artifact }) {

@@ -1,3 +1,5 @@
+import {preferredPluginTransitions} from '../plugins/transitionRegistry.js';
+import {preferredPluginEffects,pluginEffectDefinition,isPluginEffect} from '../plugins/effectRegistry.js';
 // Catalog of looks shared by the UI. Filters are GPU looks (src/features/effects/filters.js), the same in the player and the
 // export; the export side (electron/media/ffmpeg.cjs) maps the remaining keys (classic adjustments, simple effects).
 import { FX_TRANSITIONS, OVERLAY_EFFECTS, PIXEL_EFFECTS } from "./catalog.js";
@@ -47,6 +49,8 @@ export const EFFECTS = [
   ...OVERLAY_EFFECTS.map(({ id, name, icon }) => ({ id, name, icon, group: OVERLAY_GROUPS[id] || 'Particles & Weather' })),
 ];
 
+export const allEffects = () => [...EFFECTS, ...preferredPluginEffects()];
+
 export const TRANSITIONS = [
   { id: 'fade', name: 'Crossfade' },
   { id: 'fadeblack', name: 'Fade to Black' },
@@ -59,6 +63,8 @@ export const TRANSITIONS = [
   { id: 'dissolve', name: 'Dissolve' },
   ...FX_TRANSITIONS.map(({ id, name, duration }) => ({ id, name, duration, fx: true })),
 ];
+
+export const allTransitions=()=>[...TRANSITIONS,...preferredPluginTransitions()];
 
 export const ANIMATIONS = [
   { id: 'none', name: 'None' },
@@ -107,4 +113,5 @@ export function textAnim(clip, lt) {
 // Name and icon of an effect id wherever the UI labels one (timeline, inspector): a catalog effect, or a
 // filter look placed on the Effects track ('filter:<look>', src/features/effects/filters.js).
 export const effectInfo = (id) => EFFECTS.find((x) => x.id === id)
+  || (isPluginEffect(id) ? {id,name:pluginEffectDefinition(id)?.name||id.split('/').at(-1).split('@')[0],icon:'◈',group:'Plugins',plugin:true} : null)
   || (isFilterFx(id) ? { id, name: `${filterName(filterFxLook(id))} filter`, icon: '◐', group: 'Filters' } : null);

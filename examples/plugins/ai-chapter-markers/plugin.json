@@ -1,0 +1,17 @@
+{
+  "id":"clipcraft-examples.ai-chapter-markers",
+  "name":"AI chapter markers",
+  "publisher":"ClipCraft examples",
+  "version":"1.0.0",
+  "apiVersion":1,
+  "minClipcraftVersion":"2.0.0",
+  "description":"Suggest chapter titles and timestamps from existing timeline captions. Review suggestions before applying markers.",
+  "entry":"commands.js",
+  "permissions":["project.read","captions.read","ai.chapters","markers.write"],
+  "contributes":{"commands":[{
+    "id":"suggest-chapters",
+    "name":"Suggest chapter markers",
+    "description":"Uses the selected AI service after text-sharing approval. Requires existing captions; no transcription or media upload.",
+    "parameters":[{"id":"count","name":"Maximum chapters","min":1,"max":20,"step":1,"default":5,"integer":true}]
+  }]}
+}

@@ -1,3 +1,4 @@
+import {isPluginTransition,pluginTransitionSpec,pluginTransitionInstance} from '../plugins/transitionRegistry.js';
 // Animated effects and transitions, written from scratch for ClipCraft.
 //
 // Transitions and "pixel" effects are expressions (see expr.js): the export prints them for FFmpeg (xfade custom /
@@ -948,4 +949,4 @@ export const OVERLAY_EFFECTS = [
 // The legacy Dissolve tile used a crossfade in preview and a noise dissolve in
 // FFmpeg. Render its pixel reveal through the same expression on both paths.
 const DISSOLVE = { id: 'dissolve', expr: 'if(lt(hash(X+Y*W+17),P),B(X,Y),A(X,Y))' };
-export const fxTransition = (id) => FX_TRANSITIONS.find((t) => t.id === id) || (id === 'dissolve' ? DISSOLVE : null);
+export const fxTransition = (id, transition) => isPluginTransition(id) ? pluginTransitionSpec(transition||{type:id,pluginTransition:pluginTransitionInstance(id)}) : FX_TRANSITIONS.find((t) => t.id === id) || (id === 'dissolve' ? DISSOLVE : null);

@@ -1,3 +1,4 @@
+import PluginCommands from '../../plugins/components/PluginCommands.jsx';
 // Export dialog: cover + settings form, then the encoding view, then the done card.
 // Structure is the classic export sheet (cover left, form right, footer with duration + size),
 // drawn entirely in ClipCraft's own design system. Every number on it comes from the SAME
@@ -10,7 +11,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, CircleAlert, CircleCheck, Clapperboard, FolderOpen, ImagePlus, Play, X } from 'lucide-react';
 import {
   AUDIO_RATES, CUSTOM_DEFAULTS, ENCODER_PRESETS, EXPORT_PRESETS, EXPORT_PRESET_ORDER, FPS_CHOICES,
-  estimateExport, settingsPatch, storedExportSettings, summaryRows,
+  estimateExport, settingsPatch, storedExportSettings, summaryRows, pluginPresetPatch,
 } from '../exportQuality.js';
 import { exportDuration, toFileUrl } from "../../../state/store.js";
 import { coverTargetFor, posterSourceFor, spriteFrameStyle } from "../../../app/recents.js";
@@ -82,8 +83,15 @@ function Row({ label, children }) {
   return <div className="x-row"><span className="x-row-label">{label}</span><div className="x-row-ctl">{children}</div></div>;
 }
 
-export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen, onStart, onPickTarget, onRename, onSettings, onResolution, onPosterAt, onPosterImage }) {
+export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen, onStart, onPickTarget, onRename, onSettings, onResolution, onPosterAt, onPosterImage, pluginCommands }) {
+  const [exportKind,setExportKind]=useState('video'),[gifPlugins,setGifPlugins]=useState([]);
+  const pluginBusy=['permission','running','review','applying'].includes(pluginCommands?.status?.phase);
+  useEffect(()=>{let live=true;const refresh=()=>window.api?.pluginsList?.().then(rows=>{if(live)setGifPlugins(rows.filter(r=>r.enabled&&r.manifest?.permissions?.includes('export.gif')));}).catch(()=>{});refresh();const off=window.api?.onPluginsChanged?.(refresh);return()=>{live=false;off?.();};},[]);
+  const exportType=<label className="plugin-export-type"><span>{t('plugins.export_type')}</span><Dropdown ariaLabel={t('plugins.export_type')} value={exportKind} disabled={pluginBusy} onChange={setExportKind} options={[{value:'video',label:t('plugins.video_export')},...gifPlugins.map(row=>({value:row.key,label:row.manifest.name}))]}/></label>;
   const [choosing, setChoosing] = useState(false);
+  const [pluginPresets, setPluginPresets] = useState([]);
+  const [pluginError, setPluginError] = useState('');
+  useEffect(() => { let live=true; window.api?.pluginPresets?.().then(items=>{if(live)setPluginPresets(items);}).catch(error=>{if(live)setPluginError(error.message);}); return ()=>{live=false;}; }, []);
   const [details, setDetails] = useState(false);
   const [encodingDetails, setEncodingDetails] = useState(false);
   const [coverT, setCoverT] = useState(() => (typeof state.project?.posterAt === 'number' ? state.project.posterAt : 0));
@@ -96,7 +104,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
   },[state.ready,state.done,!!state.error]);
   const dialogKeys = event => {
     if (event.defaultPrevented) return;
-    if(event.key==='Escape'&&(state.ready||state.done||state.error)){event.preventDefault();event.stopPropagation();onClose();return;}
+    if(event.key==='Escape'&&!pluginBusy&&(state.ready||state.done||state.error)){event.preventDefault();event.stopPropagation();onClose();return;}
     if(event.key!=='Tab')return;
     const buttons=[...dialog.current.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter(e=>e.getClientRects().length);
     const first=buttons[0],last=buttons.at(-1);
@@ -114,7 +122,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           <pre className="error-log">{state.error}</pre>
           <div className="modal-actions">
             <button className="btn" onClick={onClose}>{t('app.close')}</button>
-            {state.project && state.eff && <button className="btn btn-primary" onClick={onStart}>{t('export.try_again')}</button>}
+            {state.project && state.eff && <button className="btn btn-primary" disabled={pluginBusy} onClick={onStart}>{t('export.try_again')}</button>}
           </div>
         </div>
       </div>
@@ -221,6 +229,24 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
     );
   }
 
+  if(exportKind!=='video'){
+    const row=gifPlugins.find(r=>r.key===exportKind);
+    return (
+      <div ref={dialog} onKeyDown={dialogKeys} tabIndex={-1} className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="export-title">
+        <div className="modal export-modal export-ready">
+          <div className="x-head">
+            <h3 id="export-title">{t('plugins.gif_export')}</h3>
+            <button type="button" className="icon-btn" disabled={pluginBusy} onClick={onClose} aria-label={t('app.close')}><X size={16}/></button>
+          </div>
+          <div className="plugin-export-body">
+            {exportType}
+            {row?<PluginCommands row={row} controller={pluginCommands} exportMode/>:<p role="alert">{t('plugins.gif_unavailable')}</p>}
+          </div>
+          <div className="x-footer"><button type="button" className="btn btn-ghost" disabled={pluginBusy} onClick={onClose}>{t('app.close')}</button></div>
+        </div>
+      </div>
+    );
+  }
   const { project, eff } = state;
   const stored = storedExportSettings(project);
   const custom = { ...CUSTOM_DEFAULTS, ...(stored.custom || {}) };
@@ -239,6 +265,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
         <div className="x-body">
           <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={choosing} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} />
           <div className="x-form">
+            {exportType}
             <MediaCredits project={project} />
             <Row label={t('home.name')}>
               <input type="text" value={state.name || ''} onChange={(e) => onRename(e.target.value)} aria-label={t('export.output_file_name')} />
@@ -255,9 +282,14 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
                 ]} />
             </Row>
             <Row label={t('export.quality')}>
-              <Dropdown value={eff.preset} ariaLabel={t('export.quality')}
-                onChange={(v) => onSettings(settingsPatch(project, { preset: v, custom }))}
-                options={EXPORT_PRESET_ORDER.map((id) => ({ value: id, label: id === 'custom' ? t('curve-editor.custom') : EXPORT_PRESETS[id].name }))} />
+              <Dropdown value={stored.pluginPreset ? `plugin:${stored.pluginPreset.digest}/${stored.pluginPreset.contributionId}` : eff.preset} ariaLabel={t('export.quality')}
+                onChange={(v) => { const preset=pluginPresets.find(p=>`plugin:${p.digest}/${p.contributionId}`===v); onSettings(preset ? pluginPresetPatch(project,preset) : settingsPatch(project, {preset:v,custom})); }}
+                options={[
+                  ...EXPORT_PRESET_ORDER.map(id=>({value:id,label:id==='custom'?t('curve-editor.custom'):EXPORT_PRESETS[id].name})),
+                  ...pluginPresets.map(p=>({value:`plugin:${p.digest}/${p.contributionId}`,label:`${p.name} · ${p.pluginName}`})),
+                  ...(stored.pluginPreset && !pluginPresets.some(p=>p.digest===stored.pluginPreset.digest&&p.contributionId===stored.pluginPreset.contributionId) ? [{value:`plugin:${stored.pluginPreset.digest}/${stored.pluginPreset.contributionId}`,label:t('plugins.saved_preset',{name:stored.pluginPreset.name})}] : []),
+                ]} />
+              {pluginError && <span role="alert">{pluginError}</span>}
             </Row>
             {eff.preset === 'custom' && (
               <div className="x-custom">
@@ -322,7 +354,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           </span>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={onClose}>{t('app.cancel')}</button>
-            <button className="btn btn-primary" onClick={onStart}>{t('topbar.export')}</button>
+            <button className="btn btn-primary" disabled={pluginBusy} onClick={onStart}>{t('topbar.export')}</button>
           </div>
         </div>
       </div>

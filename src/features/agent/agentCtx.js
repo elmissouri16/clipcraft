@@ -2,10 +2,11 @@
 // external MCP agents build it here, so both write through the same guards: every dispatch carries
 // the request's agentToken (a user edit without one interrupts the request), and nothing is written
 // once the owner is gone (isCurrent) or stopped (isStopped).
-export function makeAgentCtx({ app, provider, getProject, dispatch, settle, requestId, isCurrent, isStopped, chatImageIds = [] }) {
+export function makeAgentCtx({ app, provider, getProject, dispatch, settle, requestId, isCurrent, isStopped, chatImageIds = [], allowPluginCommands = false }) {
   const live = () => isCurrent() && !isStopped();
   return {
     ...app,
+    allowPluginCommands,
     chatImageIds,
     provider,
     getProject: () => {

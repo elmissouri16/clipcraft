@@ -431,6 +431,9 @@ function colorLutFilter(clip, m, W, H) {
 // opts.raw: only the main track's picture, as raw RGBA frames on stdout (frames for the effects pass).
 // opts.encoder: H.264 encoder (see pickEncoder); libx264 when not given.
 function buildExportArgs(project, outFile, opts = {}) {
+  for(let i=1;i<(project.videoClips||[]).length;i++){const clip=project.videoClips[i];
+    if(typeof clip.transition?.type==='string'&&clip.transition.type.startsWith('plugin-transition:')&&transitionDur(project.videoClips,i)>0&&!project.fxSegments?.[clip.id])throw Error('Plugin transitions must be rendered by the effects pass before encoding.');
+  }
   const eff = effectiveExport(project), W = eff.outW, H = eff.outH;
   const fps = Math.min(project.fps || 30, eff.outFps);
   const bg = project.background || '#000000';

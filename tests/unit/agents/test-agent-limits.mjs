@@ -52,4 +52,61 @@ assert.ok(Object.isFrozen(LIMITS));
   assert.deepEqual(seenImages, [2]);
   agents.close();
 }
-console.log('AGENT LIMITS OK (budget with complete_edit exempt, per-call timeout, completion attempts, image cap; host-enforced)');
+// Structured completion status is not truthy success. Give the model the actual
+// missing prerequisite rather than blindly asking for another validation call.
+{
+  const prompts = [];let turns = 0;
+  class PendingSession {
+    async run({ prompt }) { prompts.push(prompt);turns++;return { text: 'not ready' }; }
+    close() {}
+  }
+  const agents = createNativeAgents({ loadSdk: async () => ({}), resolveExecutable: () => '/fake', childEnv: () => ({}), CodexSession: PendingSession, limits: { ...LIMITS, completionAttempts: 2 } });
+  try {
+    await assert.rejects(agents.run({ provider: 'codex-sdk' }, { ...base, isComplete: async () => ({ ready: false, code: 'analysis_pending', note: 'Source evidence is still missing.' }), onTool: async () => ({ content: [] }) }), /Source evidence is still missing/);
+    assert.equal(turns, 2);assert.match(prompts[1], /analysis_pending/);assert.match(prompts[1], /Source evidence is still missing/);
+  } finally { agents.close(); }
+}
+// A production host can revoke ownership when a tool times out. Its late
+// completion must not be allowed to change the edit after that request ended.
+{
+  const agents = make({ ...LIMITS, toolCallTimeoutMs: 20 }), controller = new AbortController();let release, writes = 0, timedOut = false;
+  script = async onTool => { await onTool('add_text', {});return { text: 'late' }; };
+  try {
+    await assert.rejects(agents.run({ provider: 'codex-sdk' }, { ...base, signal: controller.signal,
+      onToolTimeout: () => { timedOut = true;controller.abort(); },
+      onTool: () => new Promise(resolve => { release = () => { if (!controller.signal.aborted) writes++;resolve({ content: [] }); }; }),
+    }), { name: 'AbortError' });
+    release();await Promise.resolve();assert.equal(timedOut, true);assert.equal(writes, 0);
+  } finally { agents.close(); }
+}
+// Analysis sessions finish by submitting findings, without being prompted to edit.
+{
+  const prompts = [];let submitted = false;
+  class AnalysisSession {
+    async run({ prompt, onTool }) { prompts.push(prompt);if (prompts.length === 2) await onTool('submit_analysis', {});return { text: 'analysis' }; }
+    close() {}
+  }
+  const agents = createNativeAgents({ loadSdk: async () => ({}), resolveExecutable: () => '/fake', childEnv: () => ({}), CodexSession: AnalysisSession });
+  await agents.run({ provider: 'codex-sdk' }, { ...base, completionPrompt: 'Submit source findings with submit_analysis.', isComplete: async () => submitted,
+    onTool: async () => { submitted = true;return { content: [{ type: 'text', text: '{"ready":true}' }] }; } });
+  assert.equal(prompts[1], 'Submit source findings with submit_analysis.');agents.close();
+}
+// Changed coordinator instructions must reach an already-open chat, even if its
+// tool names/settings are unchanged. Stable instructions still reuse a session.
+{
+  const systems = [];
+  class UpdatedSession {
+    constructor({ system }) { systems.push(system); }
+    async run() { return { text: 'done' }; }
+    close() {}
+  }
+  const agents = createNativeAgents({ loadSdk: async () => ({}), resolveExecutable: () => '/fake', childEnv: () => ({}), CodexSession: UpdatedSession });
+  try {
+    await agents.run({ provider: 'codex-sdk' }, { ...base, onTool: async () => ({ content: [] }) });
+    await agents.run({ provider: 'codex-sdk' }, { ...base, onTool: async () => ({ content: [] }) });
+    assert.equal(systems.length, 1, 'stable coordinator instructions reuse the conversation');
+    await agents.run({ provider: 'codex-sdk' }, { ...base, system: 'Honor explicit subagent requests.', onTool: async () => ({ content: [] }) });
+    assert.equal(systems.length, 2);assert.match(systems[1], /Honor explicit subagent requests/);
+  } finally { agents.close(); }
+}
+console.log('AGENT LIMITS OK (budget, timeout, completion attempts, image cap, analysis completion and instruction refresh; host-enforced)');

@@ -13,10 +13,10 @@ const check = async (name, fn) => { await fn(); checks.push(name); };
 const names = (tools) => tools.map((t) => t.name);
 const PROJECT = names(PROJECT_TOOLS);
 
-await check('the external list is the project tools plus exactly the native list', () => {
+await check('the external list excludes CraftAI-only plugin commands', () => {
   assert.deepEqual(PROJECT, ['get_status', 'list_projects', 'create_project', 'open_project', 'save_project', 'close_project']);
-  assert.deepEqual(names(externalTools('gemini').tools), [...PROJECT, ...names(nativeTools('claude-agent-sdk').tools)]);
-  assert.deepEqual(names(externalTools('codex-sdk').tools), [...PROJECT, ...names(nativeTools('codex-sdk').tools)]);
+  assert.deepEqual(names(externalTools('gemini').tools), [...PROJECT, ...names(nativeTools('claude-agent-sdk', [], { pluginCommands:false }).tools)]);
+  assert.deepEqual(names(externalTools('codex-sdk').tools), [...PROJECT, ...names(nativeTools('codex-sdk', [], { pluginCommands:false }).tools)]);
 });
 await check('image generation only with a Codex sign-in; no re-exported MCP tools', () => {
   assert.ok(!names(externalTools('claude-agent-sdk').tools).some((n) => /generate_image/.test(n)));
@@ -25,7 +25,7 @@ await check('image generation only with a Codex sign-in; no re-exported MCP tool
 });
 await check('every shared tool reaches the agent with the native wire schema and description', () => {
   const external = new Map(wireTools(externalTools('gemini').tools).tools.map((t) => [t.name, t]));
-  for (const tool of wireTools(nativeTools('claude-agent-sdk').tools).tools) assert.deepEqual(external.get(tool.name), tool, tool.name);
+  for (const tool of wireTools(nativeTools('claude-agent-sdk', [], { pluginCommands:false }).tools).tools) assert.deepEqual(external.get(tool.name), tool, tool.name);
   for (const name of PROJECT) assert.equal(external.get(name).parameters.type, 'object', name);
 });
 await check('the instructions are the native ones plus how projects work in the app', () => {
