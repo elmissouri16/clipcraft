@@ -1,7 +1,7 @@
 import { askConfirm } from '../../../app/dialogs.js';
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Loader2, Plus, Search, Star, X } from 'lucide-react';
-import { CUSTOM_GROUP, allFonts, fontById, fontsReady, importFonts, onFontsChanged, removeFont } from '../fonts.js';
+import { CUSTOM_GROUP, allFonts, fontById, fontStatus, fontsReady, importFonts, onFontsChanged, removeFont } from '../fonts.js';
 import { t } from '../../../i18n/index.js';
 
 const FAV_KEY = 'clipcraft.favoriteFonts';
@@ -33,9 +33,11 @@ export default function FontPicker({ value, onChange }) {
   const [, setTick] = useState(0);
   const listRef = useRef(null);
   useEffect(() => {
-    fontsReady().then(() => setTick((n) => n + 1));
-    return onFontsChanged(() => setTick((n) => n + 1));
-  }, []);
+    let live = true;
+    fontsReady([{font:value,text:fontById(value).name,bold:false}]).then(() => live && setTick(n => n + 1));
+    const off = onFontsChanged(() => setTick((n) => n + 1));
+    return () => { live=false;off(); };
+  }, [value]);
   // Scroll the chosen font into view when the list opens.
   useEffect(() => {
     if (open) listRef.current?.querySelector('.font-row.on')?.scrollIntoView({ block: 'center' });
@@ -47,6 +49,27 @@ export default function FontPicker({ value, onChange }) {
   const words = q.trim().toLowerCase();
   const shown = fonts.filter((f) => (words ? f.name.toLowerCase().includes(words)
     : group === 'All' || (group === 'Favorites' ? favs.has(f.id) : f.group === group)));
+  const shownKey = shown.map(f => f.id).join(',');
+  useEffect(() => {
+    if (!open || !listRef.current) return;
+    const observer = new IntersectionObserver(entries => {
+      const clips = [];
+      for (const entry of entries) if (entry.isIntersecting) {
+        const font = fonts.find(f => f.id === entry.target.dataset.fontId);
+        if (font) clips.push({font:font.id,text:font.name+(font.group==='Arabic'?ARABIC_SAMPLE:''),bold:false});
+        observer.unobserve(entry.target);
+      }
+      if (clips.length) fontsReady(clips);
+    }, {root:listRef.current});
+    listRef.current.querySelectorAll('[data-font-id]').forEach(row => observer.observe(row));
+    return () => observer.disconnect();
+  }, [open, shownKey]);
+
+  const selectFont = async f => {
+    const missing = await fontsReady([{font:f.id,text:f.name,bold:false}]);
+    if (missing.length) { setNote(t('fonts.preview_missing',{names:missing.join(', ')}));return; }
+    onChange(f.id);setOpen(false);setNote('');
+  };
 
   const toggleFav = (id) => {
     const next = new Set(favs);
@@ -85,12 +108,12 @@ export default function FontPicker({ value, onChange }) {
     e.stopPropagation();
     add(files);
   };
-  const fontStyle = (f) => ({ fontFamily: `"${f.family}", Arial, sans-serif`, fontWeight: f.regular });
+  const fontStyle = (f) => fontStatus(f.id) === true ? { fontFamily: `"${f.family}", Arial, sans-serif`, fontWeight: f.regular } : undefined;
 
   return (
     <div className="font-picker">
       <button type="button" className={`font-current ${open ? 'open' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span style={fontStyle(cur)}>{cur.name}</span>
+        <span style={fontStyle(cur)}>{fontStatus(value) === false ? t('fonts.missing_name',{name:fonts.find(f=>f.id===value)?.name||value}) : cur.name}</span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       {open && (
@@ -100,7 +123,7 @@ export default function FontPicker({ value, onChange }) {
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(false); }}
           onDrop={onDrop}>
           <div className="font-tools">
-            <form className="lib-search" onSubmit={(e) => { e.preventDefault(); if (shown[0]) { onChange(shown[0].id); setOpen(false); } }}>
+            <form className="lib-search" onSubmit={(e) => { e.preventDefault(); const first=shown.find(f=>fontStatus(f.id)!==false);if(first)selectFont(first); }}>
               <Search size={14} aria-hidden="true" />
               <input type="search" autoFocus value={q} placeholder={t('font-picker.search_fonts')} aria-label={t('font-picker.search_fonts')} onChange={(e) => setQ(e.target.value)} />
               {q && <button type="button" className="lib-search-clear" aria-label={t('search.clear_search')} onClick={() => setQ('')}><X size={13} /></button>}
@@ -117,11 +140,12 @@ export default function FontPicker({ value, onChange }) {
           {note && <p className="error-text">{note}</p>}
           <div className="font-list" ref={listRef} role="listbox" aria-label={t('font-picker.fonts')}>
             {shown.map((f) => (
-              <div key={f.id} className={`font-row ${f.id === cur.id ? 'on' : ''}`} role="option" aria-selected={f.id === cur.id}>
-                <button type="button" className="font-name" style={fontStyle(f)} onClick={() => { onChange(f.id); setOpen(false); }} title={f.name}>
+              <div key={f.id} data-font-id={f.id} className={`font-row ${f.id === cur.id ? 'on' : ''}`} role="option" aria-selected={f.id === cur.id} aria-disabled={fontStatus(f.id)===false}>
+                <button type="button" className="font-name" style={fontStyle(f)} disabled={fontStatus(f.id)===false} onClick={() => selectFont(f)} title={f.name}>
                   {f.name.replace(/ \(Arabic\)$/, '')}
                   {f.group === 'Arabic' && <span className="font-sample">{ARABIC_SAMPLE}</span>}
                 </button>
+                <small className="font-source">{t(fontStatus(f.id)===false?'fonts.unavailable':`fonts.${f.source}`)}</small>
                 {f.group === CUSTOM_GROUP && (
                   <button type="button" className="font-icon" onClick={() => remove(f)} aria-label={t('text.remove_name', { name: f.name })} title={t('font-picker.remove_from_your_fonts')}><X size={13} /></button>
                 )}

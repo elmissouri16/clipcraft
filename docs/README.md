@@ -1,5 +1,6 @@
 # Contributor documentation
 
+- [Bundled, system and imported fonts](media/fonts.md) — loading, availability and export checks.
 - [Public plugin SDK and authoring tools](../packages/plugin-sdk/README.md) — typed helpers, scaffolding, checking, bundling, validation and packaging.
 - [Plugin developer sessions](design/plugin-development.md) — temporary snapshots, reload, build watching and bounded runtime diagnostics.
 - [Plugin UI actions](design/plugin-ui-actions.md) — declarative menu entries, selection conditions and host command controls.

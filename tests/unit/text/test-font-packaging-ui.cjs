@@ -3,6 +3,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),asse
 const {spawn}=require('node:child_process'),net=require('node:net');
 (async()=>{
  const root=path.resolve(__dirname,'../../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'clipcraft-font-packaging-ui-'));
+ fs.mkdirSync(path.join(dir,'fonts-test'));fs.copyFileSync(path.join(root,'node_modules/@fontsource/montserrat/files/montserrat-latin-400-normal.woff2'),path.join(dir,'fonts-test/Smoke Imported.woff2'));
  fs.mkdirSync(path.join(dir,'settings-test'));fs.writeFileSync(path.join(dir,'settings-test/settings.json'),JSON.stringify({firstRun:{tourSeen:true,packPromptSeen:true}}));
  const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
  const fd=fs.openSync(path.join(dir,'runtime.log'),'w'),url='http://127.0.0.1:'+port;

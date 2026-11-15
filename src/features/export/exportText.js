@@ -15,7 +15,7 @@ const cacheEpoch = Date.now();
 export async function renderTextFrames(project, frameDir, onProgress, isCanceled) {
   const fxClips = overlayRanges(project);
   if (!project.textClips.length && !fxClips.length) return 0;
-  await fontsReady();
+  await fontsReady(project.textClips, { strict: true });
   const { width: W, height: H, fps } = project.renderSize || project;
   const count = Math.ceil(exportDuration(project) * fps);
   const cacheKey = JSON.stringify({epoch:cacheEpoch,fonts:getFontRevision(),width:project.width,height:project.height,

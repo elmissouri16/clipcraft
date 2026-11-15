@@ -21,6 +21,12 @@ const runFile=promisify(execFile),repo=path.resolve(__dirname,'../../..'),sdk=pa
   check('installable output excludes source, dependency and build metadata files',()=>assert.deepEqual(built.files.sort(),['commands.js','panel.css','panel.html','panel.js','plugin.json']));
   await assert.rejects(validatePlugin(panel),e=>e.code==='VALIDATION_FAILED');record('source workspace cannot be installed as compiled payload');
   const packagePath=path.join(evidence,'panel.tgz');await packPlugin(built.directory,packagePath);assert.equal((await validatePlugin(packagePath)).key,built.key);record('packaged byte snapshot validates against both SDK and host');
+  const standalone=path.join(evidence,'standalone');await fs.cp(built.directory,standalone,{recursive:true});
+  for(const code of ['import "missing";','export * from "missing";','export {value} from "missing";','export async function run(){await import("missing");}','export async function run(input){await import(input.module);}','export function run(){return ()=>require("missing");}']){
+   await fs.writeFile(path.join(standalone,'commands.js'),code);await assert.rejects(validatePlugin(standalone),e=>e.code==='UNSUPPORTED_IMPORT');
+  }
+  record('standalone validation rejects static imports, re-exports, dynamic imports and nested require calls');
+  await fs.writeFile(path.join(standalone,'commands.js'),'// import("missing") and require("missing") are comments.\nconst text="require(\\\"missing\\\")";export function run(){return {message:text};}');await validatePlugin(standalone);record('standalone validation accepts local exports and import-like text without executing code');
   await assert.rejects(packPlugin(built.directory,packagePath),e=>e.code==='OUTPUT_EXISTS');record('packaging refuses overwrite');
   await assert.rejects(createPlugin(panel,{id:'studio.other',name:'Other',publisher:'Studio'}),e=>e.code==='OUTPUT_EXISTS');record('scaffolding refuses an existing directory');
   const original=await fs.readFile(path.join(panel,'src/commands.ts'),'utf8'),lastGood=built.key;
@@ -73,7 +79,9 @@ async function checkEditor(context:CommandContext,panel:PanelClient){
  await panel.editor.stage({documentId:'d',revision:1,operations:[]});
 }
 `);
-  const resolvedTsc=require.resolve('typescript/bin/tsc',{paths:[installed]});
+  const compilerPackage=require.resolve('typescript/package.json',{paths:[installed]});
+  const resolvedTsc=path.resolve(path.dirname(compilerPackage),require(compilerPackage).bin.tsc);
+  const compilerVersion=await runFile(process.execPath,[resolvedTsc,'--version']);check('clean consumer runs the SDK-pinned native TypeScript compiler',()=>assert.equal(compilerVersion.stdout.trim(),'Version '+require(path.join(installed,'package.json')).dependencies.typescript));
   await runFile(process.execPath,[resolvedTsc,'--noEmit','--strict','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext',path.join(panel,'positive.ts'),path.join(panel,'manifest-types.ts'),path.join(panel,'editor-types.ts')]);record('public ESM and authoring declarations work in a NodeNext consumer');
   await fs.writeFile(path.join(panel,'negative.ts'),`import {connectPanel,defineCommand,type PluginManifest} from '@clipcraft/plugin-sdk';\nasync function x(){const c=await connectPanel();c.dispatch({type:'delete'});await c.storage.set('x',()=>{});}\nconst p:PluginManifest={id:'a.b',name:'A',publisher:'B',version:'1.0.0',apiVersion:99,contributes:{},permissions:['filesystem']};\ndefineCommand(async ctx=>{await ctx.markers.add([{time:'wrong',label:'x'}]);});\n`);
   await assert.rejects(runFile(process.execPath,[resolvedTsc,'--noEmit','--strict','--target','ES2022','--module','ESNext','--moduleResolution','Bundler',path.join(panel,'negative.ts')]));record('public types reject invented editor APIs, non-JSON values and invalid contracts');

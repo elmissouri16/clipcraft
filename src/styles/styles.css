@@ -910,6 +910,9 @@ input.switch:checked::after { transform: translateX(16px); }
   border: 0; background: none; color: var(--text); font-size: 17px; text-align: left; cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .font-sample { font-size: 15px; color: var(--text-2); direction: rtl; }
+.font-source { flex: none; color: var(--text-3); font: 10px var(--font-ui, sans-serif); white-space: nowrap; }
+.font-row[aria-disabled="true"] .font-name { opacity: .55; }
+.preview-font-warning { flex: none; margin: 0; padding: 6px 12px; color: var(--text-2); background: var(--surface-2); font-size: 12px; }
 .font-icon { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: var(--r-s); background: none; color: var(--text-3); cursor: default; opacity: 0; }
 .font-row:hover .font-icon, .font-icon:focus-visible, .font-icon.fav { opacity: 1; }
 .font-icon:hover { color: var(--text); background: var(--surface-4); }

@@ -134,6 +134,19 @@ await check('variable fonts answer to their family; the bundled list is offered'
   assert.deepEqual([near.missing, near.fonts.map((f) => f.weight)], [[], [800]], 'a missing weight uses the nearest bundled face');
 });
 
+await check('motion graphic fonts retain inline subsets and refuse partial family loads', async () => {
+  const rule = (url,range) => ({type:5,style:{getPropertyValue:key=>({'font-family':'Inline font','font-weight':'400','font-style':'normal',src:`url("${url}") format("woff2")`,'unicode-range':range})[key]||''}});
+  const doc = {baseURI:'http://app/',styleSheets:[{cssRules:[rule('data:font/woff2;base64,d09GMg==','U+0000-00FF'),rule('/inline-arabic.woff2','U+0600-06FF')]}]};
+  const fetched=[];
+  const good=await resolveGraphicFonts(['Inline font 400'],{doc,fetchImpl:async url=>{fetched.push(url);return {ok:true,arrayBuffer:async()=>new Uint8Array([119,79,70,50]).buffer};}});
+  assert.deepEqual(good.missing,[]);assert.equal(good.fonts.length,2);assert.ok(!fetched.some(url=>url.startsWith('data:')),'inline font data never uses a CSP-blocked fetch');assert.equal(good.fonts[0].data,'d09GMg==');assert.equal(good.fonts[1].unicodeRange,'U+0600-06FF');
+  doc.styleSheets[0].cssRules.push(rule('data:font/woff2,%77%4F%46%32','U+0100-017F'));
+  const percent=await resolveGraphicFonts(['Inline font 400'],{doc,fetchImpl:async()=>{throw Error('unexpected fetch');}});assert.deepEqual(percent.missing,[]);assert.equal(percent.fonts[2].data,'d09GMg==');
+  doc.styleSheets[0].cssRules.push(rule('/unavailable-subset.woff2','U+0400-04FF'));
+  const partial=await resolveGraphicFonts(['Inline font 400'],{doc,fetchImpl:async()=>({ok:false,status:404})});
+  assert.deepEqual(partial.missing,['Inline font 400'],'cached good subsets must not conceal a missing subset');
+});
+
 await check('design warnings: small text, long still holds, very long graphics', () => {
   // The graphic CraftAI first made for the US states request: 28 px notes, 7.5 s still pages, 50 s.
   const first = designWarnings({ width: 1080, fps: 30, duration_sec: 50, stats: { min_font_px: 28, longest_still_frames: 225, longest_still_from: 75 } });

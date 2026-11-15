@@ -39,10 +39,11 @@ async function checkPlugin(directory,{appVersion=APP_VERSION}={}){
  const root=await workspace(directory),manifest=await manifestAt(root,appVersion),entries=[...(manifest.entry?['commands.ts']:[]),...(manifest.contributes.panels?.[0]?.script?['panel.ts']:[])];
  if(!entries.length)return {manifest,typecheck:'not-needed'};
  for(const name of entries)await regular(path.join(root,'src',name));
- const tsc=require.resolve('typescript/bin/tsc');
+ const compilerPackage=require.resolve('typescript/package.json');
+ const tsc=path.resolve(path.dirname(compilerPackage),require(compilerPackage).bin.tsc);
  for(const entry of entries){
   const result=await new Promise((resolve,reject)=>{
-   const child=spawn(process.execPath,[tsc,'--noEmit','--pretty','false','--strict','--target','ES2022','--module','ESNext','--moduleResolution','Bundler','--lib',entry==='commands.ts'?'ES2022,WebWorker':'ES2022,DOM',path.join(root,'src',entry)],{cwd:root,stdio:['ignore','pipe','pipe']});
+   const child=spawn(process.execPath,[tsc,'--ignoreConfig','--noEmit','--pretty','false','--strict','--target','ES2022','--module','ESNext','--moduleResolution','Bundler','--lib',entry==='commands.ts'?'ES2022,WebWorker':'ES2022,DOM',path.join(root,'src',entry)],{cwd:root,stdio:['ignore','pipe','pipe']});
    let text='';const record=chunk=>{text=(text+chunk).slice(0,16000);};child.stdout.on('data',record);child.stderr.on('data',record);const timeout=setTimeout(()=>child.kill('SIGKILL'),30000);child.on('error',error=>{clearTimeout(timeout);reject(error);});child.on('close',code=>{clearTimeout(timeout);resolve({code,text});});
   });
   if(result.code!==0)fail('TYPECHECK_FAILED','TypeScript check failed for '+entry+'.',result.text);
@@ -50,10 +51,14 @@ async function checkPlugin(directory,{appVersion=APP_VERSION}={}){
  return {manifest,typecheck:'passed'};
 }
 function standalone(source,name){
- const ts=require('typescript'),ast=ts.createSourceFile(name,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+ // TypeScript 7 no longer exposes the legacy JavaScript parser API.
+ const ast=require('acorn').parse(source,{ecmaVersion:'latest',sourceType:'module',sourceFile:name});
  const visit=node=>{
-  if(ts.isImportDeclaration(node)||ts.isExportDeclaration(node)&&node.moduleSpecifier||ts.isImportEqualsDeclaration(node)||ts.isCallExpression(node)&&(node.expression.kind===ts.SyntaxKind.ImportKeyword||ts.isIdentifier(node.expression)&&node.expression.text==='require'))fail('UNSUPPORTED_IMPORT','Installed scripts must be standalone; bundle all imports first.');
-  ts.forEachChild(node,visit);
+  if(node.type==='ImportDeclaration'||node.type==='ImportExpression'||(node.type==='ExportNamedDeclaration'||node.type==='ExportAllDeclaration')&&node.source||node.type==='CallExpression'&&node.callee.type==='Identifier'&&node.callee.name==='require')fail('UNSUPPORTED_IMPORT','Installed scripts must be standalone; bundle all imports first.');
+  for(const value of Object.values(node)){
+   if(Array.isArray(value)){for(const child of value)if(child&&typeof child.type==='string')visit(child);}
+   else if(value&&typeof value.type==='string')visit(value);
+  }
  };visit(ast);
 }
 async function bundleSource(root,name,format){

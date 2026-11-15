@@ -12,7 +12,7 @@ const noop=()=>{};
 export default function FrameInspection(){
   const [job,setJob]=useState(null);
   useEffect(()=>{const off=window.frameInspection.onFrame?.(update=>setJob(previous=>({...previous,...update})));window.frameInspection.load().then(async value=>{
-    setPluginEffects(value.pluginEffects||[]);setPluginTransitions(value.pluginTransitions||[]);setPlaybackQuality('full');if(value.gifExport)assertPluginEffects(value.project);await fontsReady();await loadProjectLuts(value.project);
+    setPluginEffects(value.pluginEffects||[]);setPluginTransitions(value.pluginTransitions||[]);setPlaybackQuality('full');if(value.gifExport)assertPluginEffects(value.project);await fontsReady(value.project.textClips,{strict:!!value.gifExport});await loadProjectLuts(value.project);
     setJob(value);
   }).catch(error=>window.frameInspection.ready(error.message));return()=>off?.();},[]);
   useEffect(()=>{

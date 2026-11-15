@@ -607,11 +607,18 @@ export default function Preview({
   // Text layer: drawn with the same canvas renderer the export uses.
   const textCanvas = useRef(null);
   const [fontTick, setFontTick] = useState(0);
+  const [missingFonts, setMissingFonts] = useState([]);
   const textState = useRef(null);
+  const fontKey = useMemo(() => JSON.stringify(project.textClips.map(({font,text,bold,italic,uppercase}) => ({font,text,bold,italic,uppercase}))), [project.textClips]);
   useEffect(() => {
-    fontsReady().then(() => setFontTick((n) => n + 1));
-    return onFontsChanged(() => setFontTick((n) => n + 1));
-  }, []);
+    let live = true;
+    const prepare = () => fontsReady(project.textClips).then(missing => {
+      if (live) { setMissingFonts(missing);setFontTick(n => n + 1); }
+    });
+    prepare();
+    const off = onFontsChanged(prepare);
+    return () => { live = false;off(); };
+  }, [fontKey]);
   const drawText = t => {
     const cv = textCanvas.current;
     const stage = stageRef.current;
@@ -744,6 +751,7 @@ export default function Preview({
           )}
         </div>
       </div>
+      {missingFonts.length > 0 && <p className="preview-font-warning" role="status">{t('fonts.preview_missing', { names: missingFonts.join(', ') })}</p>}
       <div className="transport">
         <span className="tc"><b ref={timeLabel}>{formatTime(time)}</b><span> / {formatTime(duration)}</span></span>
         <div className="transport-btns">

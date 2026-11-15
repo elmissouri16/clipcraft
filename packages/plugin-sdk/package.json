@@ -13,5 +13,5 @@
   },
   "bin": {"clipcraft-plugin": "./dist/cli.cjs"},
   "sideEffects": false,
-  "dependencies": {"esbuild": "0.25.12", "tar": "7.5.22", "typescript": "5.9.3"}
+  "dependencies": {"acorn": "8.19.0", "esbuild": "0.25.12", "tar": "7.5.22", "typescript": "7.0.2"}
 }

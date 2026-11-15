@@ -91,9 +91,12 @@ import '@fontsource/baloo-bhaijaan-2/400.css';
 import '@fontsource/baloo-bhaijaan-2/800.css';
 import '@fontsource/readex-pro/400.css';
 import '@fontsource/readex-pro/700.css';
+import { createFontLoader, textFontRequests } from './fontLoading.js';
+import { t } from '../../i18n/index.js';
 
 // bold: weight used when the clip is bold (null = the font has a single weight).
-const F = (id, name, family, group, bold = 700, regular = 400) => ({ id, name, family, group, bold, regular });
+const SYSTEM_IDS = new Set(['arialblack','impact','showcard','cooper','stencil','broadway','georgia','garamond','times','brush','segoescript','inkfree','majalla','tahoma','arial','segoe','segoeblack','bahnschrift','calibri','verdana','trebuchet','comic','consolas']);
+const F = (id, name, family, group, bold = 700, regular = 400) => ({ id, name, family, group, bold, regular, source: SYSTEM_IDS.has(id) ? 'system' : 'bundled' });
 
 export const FONT_LIST = [
   F('montserrat', 'Montserrat', 'Montserrat', 'Popular', 900),
@@ -200,30 +203,33 @@ export function onFontsChanged(fn) {
 export const allFonts = () => [...custom, ...FONT_LIST];
 
 const faces = {};
+let loader;
 async function loadCustom(list) {
-  const next = [];
-  for (const { id, name } of list) {
-    const family = `ClipCraft ${id}`;
-    if (!faces[id]) {
-      try {
-        const data = await window.api.fontData(id);
-        if (!data) continue;
-        const face = new FontFace(family, data);
-        await face.load();
-        document.fonts.add(face);
-        faces[id] = face;
-      } catch {
-        continue; // not a font the browser can read
-      }
-    }
-    next.push(F(id, name, family, CUSTOM_GROUP));
-  }
   Object.keys(faces).filter((id) => !list.some((f) => f.id === id)).forEach((id) => {
-    document.fonts.delete(faces[id]);
+    faces[id].then(face => document.fonts.delete(face), () => {});
     delete faces[id];
+    loader?.invalidate(id);
   });
-  custom = next;
+  custom = list.map(({id,name}) => ({ ...F(id,name,`ClipCraft ${id}`,CUSTOM_GROUP),source:'custom' }));
   changed();
+}
+
+function fontLoader() {
+  return loader ||= createFontLoader({
+    fontSet: document.fonts,
+    localFace: family => new FontFace('ClipCraft local font probe', `local(${JSON.stringify(family)})`),
+    customFace: async font => {
+      if (!faces[font.id]) faces[font.id] = (async () => {
+        const data = await window.api.fontData(font.id);
+        if (!data) throw Error('Font data is unavailable.');
+        const face = await new FontFace(font.family, data).load();
+        document.fonts.add(face);
+        return face;
+      })().catch(error => { delete faces[font.id];throw error; });
+      await faces[font.id];
+    },
+    onChange: () => listeners.forEach(fn => fn()),
+  });
 }
 
 let customReady = null;
@@ -251,22 +257,26 @@ export function fontById(id) {
   return BY_ID[id] || custom.find((f) => f.id === id) || BY_ID[LEGACY[id]] || BY_ID.arial;
 }
 
+export function fontStatus(id) {
+  const font = BY_ID[id] || custom.find(f => f.id === id) || BY_ID[LEGACY[id]];
+  return font ? loader?.status(font.id) : false;
+}
+
 export function cssFont(fontId, sizePx, bold, italic) {
   const f = fontById(fontId);
   const weight = bold ? f.bold ?? f.regular : f.regular;
   return `${italic ? 'italic ' : ''}${weight} ${sizePx}px "${f.family}", Arial, sans-serif`;
 }
 
-// Resolves once every bundled font face and your fonts have been loaded (canvas text needs loaded fonts).
-let ready = null;
-export function fontsReady() {
-  if (!ready) {
-    const loads = [customFonts()];
-    FONT_LIST.forEach((f) => {
-      const weights = [f.regular, f.bold].filter((w, i, a) => w != null && a.indexOf(w) === i);
-      weights.forEach((w) => loads.push(document.fonts.load(`${w} 32px "${f.family}"`, 'Aa أب').catch(() => {})));
-    });
-    ready = Promise.all(loads).then(() => document.fonts.ready);
-  }
-  return ready;
+// Only the requested faces and actual text subsets; callers choose preview fallback or strict export.
+export async function fontsReady(clips = [], { strict = false } = {}) {
+  await customFonts();
+  const missing = new Set();
+  await Promise.all(textFontRequests(clips).map(async request => {
+    const font = BY_ID[request.font] || custom.find(f => f.id === request.font) || BY_ID[LEGACY[request.font]];
+    if (!font || !await fontLoader().load(font, request)) missing.add(font?.name || request.font);
+  }));
+  const names = [...missing].sort();
+  if (strict && names.length) throw Error(t('fonts.export_missing', { names: names.join(', ') }));
+  return names;
 }

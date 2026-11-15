@@ -56,6 +56,9 @@ and the correct DOM or WebWorker library. Its check cannot be bypassed by changi
 `include`/`exclude` in tsconfig. Additional imported source is checked and bundled.
 The generated tsconfig provides editor completion; arbitrary tsconfig transforms,
 compiler plugins and source-entry overrides are not a supported build extension.
+Type checking uses the pinned TypeScript 7 native CLI; keep its platform-specific
+optional dependency installed. Standalone JavaScript validation uses Acorn rather
+than the removed TypeScript JavaScript compiler API.
 Declare every runtime asset in plugin.json. Only the fixed declared root files are
 emitted. Commands are bundled ESM; panel scripts are bundled IIFE. Dependencies
 must be browser-compatible and fully bundled; Node imports and unresolved imports

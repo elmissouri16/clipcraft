@@ -12,6 +12,20 @@ const base64 = (buffer) => {
   for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(out);
 };
+// Decode inline assets locally: CSP permits font data, but not fetch(data:) connections.
+const inlineBase64 = url => {
+  const comma = url.indexOf(','), header = url.slice(0, comma), payload = url.slice(comma + 1);
+  if (/;base64$/i.test(header)) return btoa(atob(decodeURIComponent(payload)));
+  const bytes = [];
+  for (let i = 0; i < payload.length; i++) {
+    if (payload[i] === '%') {
+      const hex = payload.slice(i + 1, i + 3);
+      if (!/^[\da-f]{2}$/i.test(hex)) throw Error('Invalid inline font.');
+      bytes.push(parseInt(hex, 16));i += 2;
+    } else bytes.push(payload.charCodeAt(i));
+  }
+  return base64(new Uint8Array(bytes).buffer);
+};
 // Font-face rules of every same-origin stylesheet.
 function faces(doc) {
   const out = [];
@@ -33,7 +47,7 @@ export async function resolveGraphicFonts(specs = [], { doc = globalThis.documen
   const rules = faces(doc), fonts = [], missing = [];
   for (const spec of specs.slice(0, 6)) {
     const m = /^(.*?)(?:\s+(\d{3}))?$/.exec(String(spec).trim()), family = m[1], weights = m[2] ? [Number(m[2])] : [400, 700];
-    let found = false;
+    let found = false, failed = false;
     const ofFamily = rules.filter((r) => [family.toLowerCase(), `${family.toLowerCase()} variable`].includes(unquote(r.style.getPropertyValue('font-family')).toLowerCase())
       && (r.style.getPropertyValue('font-style') || 'normal') === 'normal');
     for (const weight of weights) {
@@ -46,17 +60,21 @@ export async function resolveGraphicFonts(specs = [], { doc = globalThis.documen
         matching = ofFamily.filter((r) => declared(r) === declared(nearest));
       }
       for (const rule of matching) {
-        const url = /url\(["']?([^"')]+\.woff2[^"')]*)["']?\)/.exec(rule.style.getPropertyValue('src'))?.[1];
-        if (!url) continue;
+        // Vite may inline small subsets instead of emitting a .woff2 asset.
+        const url = [...rule.style.getPropertyValue('src').matchAll(/url\(\s*(?:"([^"]+)"|'([^']+)'|([^\s)]+))\s*\)/g)]
+          .map(match => match[1] || match[2] || match[3]).find(value => /\.woff2(?:[?#]|$)/i.test(value) || /^data:(?:font\/woff2|application\/(?:font-woff2|x-font-woff2))(?:;|,)/i.test(value));
+        if (!url) { failed = true;continue; }
         const absolute = new URL(url, rule.parentStyleSheet?.href || doc.baseURI).href;
-        if (!cache.has(absolute)) cache.set(absolute, fetchImpl(absolute).then((r) => { if (!r.ok) throw Error(String(r.status)); return r.arrayBuffer(); }).then(base64));
+        if (!cache.has(absolute)) cache.set(absolute, absolute.startsWith('data:')
+          ? Promise.resolve().then(() => inlineBase64(absolute))
+          : fetchImpl(absolute).then((r) => { if (!r.ok) throw Error(String(r.status)); return r.arrayBuffer(); }).then(base64));
         try {
           fonts.push({ family, weight, style: 'normal', unicodeRange: rule.style.getPropertyValue('unicode-range') || undefined, data: await cache.get(absolute) });
           found = true;
-        } catch { cache.delete(absolute); }
+        } catch { cache.delete(absolute);failed = true; }
       }
     }
-    if (!found) missing.push(String(spec));
+    if (!found || failed) missing.push(String(spec));
   }
   return { fonts, missing };
 }

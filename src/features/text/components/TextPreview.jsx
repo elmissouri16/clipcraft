@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { drawTextClip } from "../render.js";
 import { fontsReady } from '../fonts.js';
 import { t } from '../../../i18n/index.js';
@@ -11,10 +11,20 @@ const VH = 720;
 export default function TextPreview({ style, text, hover, width = 150, height = 84, loopDur = 2.2 }) {
   const ref = useRef(null);
   const raf = useRef(0);
+  const [visible, setVisible] = useState(false);
   // Callers often build the style inline; key the drawing on its content, not its identity.
   const styleKey = useMemo(() => JSON.stringify(style), [style]);
 
   useEffect(() => {
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { setVisible(true);observer.disconnect(); }
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
     const cv = ref.current;
     const dpr = window.devicePixelRatio || 1;
     cv.width = Math.round(width * dpr);
@@ -39,7 +49,7 @@ export default function TextPreview({ style, text, hover, width = 150, height = 
       drawTextClip(ctx, clip, lt, VW, VH);
     };
     let alive = true;
-    fontsReady().then(() => {
+    fontsReady([clip]).then(() => {
       if (!alive) return;
       if (!hover) {
         const words = sample.split(/\s+/).length;
@@ -59,7 +69,7 @@ export default function TextPreview({ style, text, hover, width = 150, height = 
       cancelAnimationFrame(raf.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [styleKey, text, hover, width, height, loopDur]);
+  }, [visible, styleKey, text, hover, width, height, loopDur]);
 
   return <canvas ref={ref} style={{ width, height, display: 'block' }} aria-hidden="true" />;
 }
