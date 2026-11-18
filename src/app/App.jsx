@@ -472,7 +472,7 @@ export default function App() {
   // not made yet; 'failed' is not retried). While the copy is missing the player uses a fallback file.
   const mediaKey = project.media.map((m) => `${m.path}|${m.thumbCount ? 1 : 0}|${m.poster ? 1 : 0}|${m.wave ? 1 : 0}|${m.optimizing ? 1 : 0}|${m.lightProxy == null ? 0 : 1}|${m.proxies?.[quality] == null ? 0 : 1}|${m.proxyRequired ? 1 : 0}|${m.proxyFailed ? 1 : 0}`).join(';') + `|${quality}`;
   useEffect(() => {
-    const missing = project.media.filter((m) => (m.type === 'video' && (!m.thumbCount || !m.poster || m.optimizing || levelCopyState(m, quality) === 'fallback')) || (m.hasAudio && !m.wave));
+    const missing = project.media.filter((m) => !m.missing && ((m.type === 'video' && (!m.thumbCount || !m.poster || m.optimizing || levelCopyState(m, quality) === 'fallback')) || (m.hasAudio && !m.wave)));
     if (missing.length) {
       window.api.ensureVisuals(missing.map(({ path, type, duration, hasAudio, width, height, proxy, lightProxy, proxies, proxyRequired, proxyFailed, pixFmt, hdr, vcodec, acodec, profile }) => ({ path, type, duration, hasAudio, width, height, proxy, lightProxy, proxies, proxyRequired, proxyFailed, pixFmt, hdr, vcodec, acodec, profile })));
     }
@@ -819,6 +819,16 @@ export default function App() {
     const used = [p.videoClips, p.overlayClips || [], p.audioClips].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
     if (used && !askConfirm(tn('app.media_used_by_clips', used, { name: m.name }), t('home.remove'))) return;
     dispatch({ type: 'removeMedia', id });
+  };
+  // Locate…: an offline item is pointed at its file again (its id and clips stay); other offline items from the
+  // same old folder follow when their files sit at the same relative place under the new folder. One Undo step.
+  const locateMedia = async (id) => {
+    const m = projectRef.current.media.find((x) => x.id === id);
+    if (!m || !window.api.locateMedia) return;
+    const res = await window.api.locateMedia(m.path, projectRef.current.media.filter((x) => x.missing && x.id !== id).map((x) => x.path));
+    if (!res?.path) return;
+    const others = projectRef.current.media.filter((x) => x.missing && x.id !== id && typeof res.moved?.[x.path] === 'string');
+    dispatch({ type: 'relinkMedia', changes: [{ id, path: res.path }, ...others.map((x) => ({ id: x.id, path: res.moved[x.path] }))] });
   };
 
   const startVoiceOver = () => { recordStamp.current = projectStamp(); return recorder.start(readTime()); };
@@ -2413,7 +2423,7 @@ export default function App() {
       <div className="workspace" style={{ gridTemplateColumns: panes.rightCollapsed ? `${panes.left}px minmax(0, 1fr)` : `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch} settingsVersion={settingsVersion}
           onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} onTtsBegin={projectStamp} selectedText={selectedText}
-          onOpenSettings={(section) => setSettingsOpen(typeof section === 'string' ? section : true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
+          onOpenSettings={(section) => setSettingsOpen(typeof section === 'string' ? section : true)} onRemoveMedia={removeMedia} onLocateMedia={locateMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
           recorder={recorder} onStartRecord={startVoiceOver} onAddText={addText} onAddTextOver={addTextOver}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
           target={target} updateTarget={updateTarget} selectedCount={selectedPictures(project, selection).length}

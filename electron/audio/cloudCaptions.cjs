@@ -52,15 +52,29 @@ const parseDeepgram = j => j?.results?.utterances?.length
   ? withWords(j.results.utterances.map(u => ({ ...u, text: u.transcript })), [])
   : groupWords(j?.results?.channels?.[0]?.alternatives?.[0]?.words);
 
-// Group real provider word boundaries, never distribute a phrase's time by length.
+// Scripts written without spaces between words (and their full-width punctuation).
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\u3000-\u303F\uFF01-\uFF60]/u;
+// Group real provider word boundaries, never distribute a phrase's time by length. Words are joined the way
+// the provider spaced them when it sends spacing entries (ElevenLabs); otherwise with a space, except next
+// to a script written without spaces (Chinese, Japanese, Thai), where words run together.
 function groupWords(words) {
-  const list = cleanWords((words || []).filter(w => !w.type || w.type === 'word'));
+  const raw = Array.isArray(words) ? words : [];
+  const spaced = raw.some(w => w?.type === 'spacing' && /\s/.test(String(w.text ?? '')));
+  const list = []; let gap = false;
+  for (const w of raw) {
+    if (w?.type === 'spacing') { gap = gap || /\s/.test(String(w.text ?? '')); continue; }
+    if (w?.type && w.type !== 'word') continue;
+    const [clean] = cleanWords([w]);
+    if (clean) list.push({ word: clean, gap });
+    gap = false;
+  }
   const segs = []; let cur = null;
   const flush = () => { if (cur) segs.push(cur); cur = null; };
-  for (const w of list) {
+  for (const { word: w, gap: sp } of list) {
     if (cur && (w.start - cur.end > 1 || w.end - cur.start > 8)) flush();
     if (!cur) cur = { start: w.start, end: w.end, text: '', words: [] };
-    cur.text += (cur.text ? ' ' : '') + w.text; cur.end = w.end; cur.words.push(w);
+    const sep = !cur.text ? '' : spaced ? (sp ? ' ' : '') : UNSPACED.test([...cur.text].pop()) || UNSPACED.test([...w.text][0]) ? '' : ' ';
+    cur.text += sep + w.text; cur.end = w.end; cur.words.push(w);
     if (/[.!?…。؟]$/.test(w.text)) flush();
   }
   flush(); return cleanSegments(segs);

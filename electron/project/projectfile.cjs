@@ -48,6 +48,16 @@ function checkGenerated(projectJson, cacheDir) {
           changed = true;
         }
       }
+      // A source file that is not there (and was not found next to the project) is offline, not "optimizing":
+      // no copy can be made of it until the user locates it.
+      if (typeof out.path === 'string' && out.path && !fs.existsSync(out.path)) {
+        if (!out.missing || out.optimizing) changed = true;
+        out.missing = true;
+        delete out.optimizing;
+      } else if (out.missing) {
+        delete out.missing;
+        changed = true;
+      }
       return out;
     });
     // A Voice Enhancer render that is gone (project opened on another computer, cache cleared): the export would
@@ -69,6 +79,60 @@ function checkGenerated(projectJson, cacheDir) {
   } catch {
     return projectJson;
   }
+}
+
+// Media whose file is no longer where the project recorded it (the project folder copied to another computer,
+// a drive with another letter, a Windows project opened here). The recorded path's trailing components are
+// tried under the project file's own folder (both separators understood): clip.mp4, Footage/clip.mp4, ...
+// A file is adopted only when exactly one candidate exists and, when the project recorded a size, it matches.
+const isFile = (file) => { try { return fs.statSync(file).isFile(); } catch { return false; } };
+const pathParts = (file) => String(file || '').split(/[\\/]+/).filter((s) => s && s !== '.' && s !== '..' && !/^[A-Za-z]:$/.test(s));
+function movedCandidates(recorded, projectDir) {
+  const parts = pathParts(recorded), out = [];
+  for (let k = 1; k <= Math.min(parts.length, 8); k++) {
+    const file = path.join(projectDir, ...parts.slice(-k));
+    if (isFile(file) && !out.includes(file)) out.push(file);
+  }
+  return out;
+}
+function findMovedMedia(m, projectDir) {
+  if (!m || typeof m.path !== 'string' || !m.path || !projectDir) return null;
+  const found = movedCandidates(m.path, projectDir);
+  if (found.length !== 1) return null;
+  if (Number.isFinite(m.size) && m.size > 0) { try { if (fs.statSync(found[0]).size !== m.size) return null; } catch { return null; } }
+  return found[0];
+}
+function relocateMedia(projectJson, projectFile) {
+  try {
+    const p = JSON.parse(projectJson);
+    if (!projectFile || !Array.isArray(p.media)) return projectJson;
+    const dir = path.dirname(projectFile);
+    let changed = false;
+    p.media = p.media.map((m) => {
+      if (!m || typeof m.path !== 'string' || !m.path || fs.existsSync(m.path)) return m;
+      const file = findMovedMedia(m, dir);
+      if (!file) return m;
+      changed = true;
+      return { ...m, path: file };
+    });
+    return changed ? JSON.stringify(p) : projectJson;
+  } catch {
+    return projectJson;
+  }
+}
+function relocateMediaProject(project, projectFile) {
+  const text = JSON.stringify(project), moved = relocateMedia(text, projectFile);
+  return moved === text ? project : JSON.parse(moved);
+}
+// Locate: the user pointed the offline item at `oldFile` to `newFile`; another offline item that sat under the
+// same old folder is looked for at the same relative path under the new folder. Returns that path or null.
+function relocatedPath(oldFile, newFile, otherFile) {
+  const from = pathParts(oldFile).slice(0, -1), other = pathParts(otherFile);
+  if (!from.length || other.length <= from.length) return null;
+  const windows = /^[A-Za-z]:|\\/.test(String(oldFile));
+  const same = (a, b) => (windows ? a.toLowerCase() === b.toLowerCase() : a === b);
+  if (!from.every((part, i) => same(part, other[i]))) return null;
+  return path.join(path.dirname(newFile), ...other.slice(from.length));
 }
 
 // The same check for a project already parsed (an autosave slot): the project itself when nothing changed.
@@ -109,4 +173,4 @@ function isProjectDocument(projectJson) {
   return !!p && typeof p === 'object' && !Array.isArray(p) && Array.isArray(p.media) && Array.isArray(p.videoClips);
 }
 
-module.exports = { checkGenerated, checkGeneratedProject, refreshSizes, isProjectDocument };
+module.exports = { checkGenerated, checkGeneratedProject, refreshSizes, isProjectDocument, relocateMedia, relocateMediaProject, findMovedMedia, relocatedPath };

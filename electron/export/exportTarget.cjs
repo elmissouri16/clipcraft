@@ -27,4 +27,20 @@ function exportTargetProblem({ file, mediaPaths = [], confirmed = null, user = t
   return null;
 }
 
-module.exports = { exportTargetProblem };
+// Names of the source files the export would read that are not on disk: media used by a clip on the main,
+// overlay or audio track. Empty when everything is there.
+function missingExportMedia(project, exists = fs.existsSync) {
+  const media = new Map((project?.media || []).filter(Boolean).map((m) => [m.id, m]));
+  const names = [];
+  for (const key of ['videoClips', 'overlayClips', 'audioClips']) {
+    for (const c of Array.isArray(project?.[key]) ? project[key] : []) {
+      const m = c && !c.gap && media.get(c.mediaId);
+      if (!m || typeof m.path !== 'string' || !m.path || exists(m.path)) continue;
+      const name = m.name || path.basename(m.path.replace(/\\/g, '/'));
+      if (!names.includes(name)) names.push(name);
+    }
+  }
+  return names;
+}
+
+module.exports = { exportTargetProblem, missingExportMedia };

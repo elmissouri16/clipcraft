@@ -125,7 +125,7 @@ function Head({ title, hint, children }) {
 
 // A media item. Click selects it and plays it in the player (then Delete removes it), double-click adds it to the
 // timeline.
-function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
+function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking, onLocate }) {
   const onKeyDown = (e) => {
     if (!onRemove || (e.key !== 'Delete' && e.key !== 'Backspace')) return;
     // Handled here so the timeline's Delete shortcut does not also remove the selected clip.
@@ -161,8 +161,12 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
           </div>
         )}
         {m.type !== 'image' && <span className="asset-dur">{formatTime(m.duration).slice(0, 5)}</span>}
-        {m.optimizing && <span className="asset-opt" title={t('library.making_a_light_preview_copy_so_this_video')}>{t('library.optimizing')}</span>}
-        {!m.optimizing && proxyPrefOn() && previewPath(m) !== (m.proxy || m.path) && (
+        {m.missing && <span className="asset-badge" title={t('library.offline_hint', { path: m.path })}>{t('library.offline')}</span>}
+        {m.missing && onLocate && (
+          <button className="asset-opt" style={{ border: 0 }} onClick={() => onLocate(m.id)} aria-label={t('library.locate_name', { name: m.name })} title={t('library.offline_hint', { path: m.path })}>{t('library.locate')}</button>
+        )}
+        {m.optimizing && !m.missing && <span className="asset-opt" title={t('library.making_a_light_preview_copy_so_this_video')}>{t('library.optimizing')}</span>}
+        {!m.optimizing && !m.missing && proxyPrefOn() && previewPath(m) !== (m.proxy || m.path) && (
           <span className="asset-opt proxy" title={t('library.plays_from_a_scaled_proxy_copy_at_the_curr')}>{t('library.proxy')}</span>
         )}
         {m.graphic && <span className="asset-badge graphic" title={t('library.motion_graphic_edit_its_text_and_data_in_t')}>{t('library.graphic')}</span>}
@@ -181,7 +185,7 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking }) {
   );
 }
 
-function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onStockAdd, onAddFile, onOpenSettings, stockKey, sub, setSub, onRecordScreen, onPeek, peekId, browserMemory }) {
+function MediaTab({ media, onImport, onAdd, onRemoveMedia, onLocateMedia, onAddAsOverlay, onStockAdd, onAddFile, onOpenSettings, stockKey, sub, setSub, onRecordScreen, onPeek, peekId, browserMemory }) {
   const visual = media; // videos, photos and audio
   // One source switcher replaces the old second rail: Yours / Favorites / Stock live in a
   // segmented control at the top of the panel; Stock adds a kind switch + category chips.
@@ -256,7 +260,7 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onAddAsOverlay, onSto
             </div>
             {shownMedia.length ? (
               <div className="asset-grid">
-                {shownMedia.map((m) => <MediaCard key={m.id} m={m} onAdd={onAdd} onRemove={onRemoveMedia} onOverlay={onAddAsOverlay} onPeek={onPeek} peeking={peekId === m.id} />)}
+                {shownMedia.map((m) => <MediaCard key={m.id} m={m} onAdd={onAdd} onRemove={onRemoveMedia} onLocate={onLocateMedia} onOverlay={onAddAsOverlay} onPeek={onPeek} peeking={peekId === m.id} />)}
               </div>
             ) : (
               <p className="empty-note">{treeSel === 'graphic'

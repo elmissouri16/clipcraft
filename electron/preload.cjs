@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('api', {
   pluginsEnable: (key, enabled) => ipcRenderer.invoke('plugins:enable', key, enabled),
   pluginsRemove: key => ipcRenderer.invoke('plugins:remove', key),
   importMedia: () => ipcRenderer.invoke('media:import'),
+  locateMedia: (oldPath, others) => ipcRenderer.invoke('media:locate', oldPath, others),
   wasRecovered: () => ipcRenderer.invoke('app:recovered'),
   readLut: (ref) => ipcRenderer.invoke('lut:read', ref),
   lutStamp: (ref) => ipcRenderer.invoke('lut:stamp', ref),

@@ -26,9 +26,10 @@ export function subtitleTimestamp(seconds) {
   const ms = Math.round(Math.max(0, seconds) * 1000), pad = (n, size) => String(n).padStart(size, '0');
   return `${pad(Math.floor(ms / 3600000), 2)}:${pad(Math.floor(ms / 60000) % 60, 2)}:${pad(Math.floor(ms / 1000) % 60, 2)},${pad(ms % 1000, 3)}`;
 }
+// A blank line ends a cue in SubRip, so a caption's empty lines are dropped (its text lines are kept).
 export function captionsToSrt(cues) {
   return [...cues].sort((a, b) => a.start - b.start || a.id.localeCompare(b.id)).map((cue, i) =>
-    `${i + 1}\n${subtitleTimestamp(cue.start)} --> ${subtitleTimestamp(cue.start + cue.duration)}\n${cue.text.trim()}\n`).join('\n');
+    `${i + 1}\n${subtitleTimestamp(cue.start)} --> ${subtitleTimestamp(cue.start + cue.duration)}\n${cue.text.split(/\r\n?|\n/).map(l => l.trim()).filter(Boolean).join('\n')}\n`).join('\n');
 }
 export function createCaptionTools(env) {
   const { project, dispatch, after, findClip, api } = env;

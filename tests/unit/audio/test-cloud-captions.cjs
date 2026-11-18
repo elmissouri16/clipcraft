@@ -76,6 +76,13 @@ const stub = (payload, status = 200) => {
     ]);
     assert.deepEqual(segments[0].words.map(w => [w.text, w.start, w.end]), [['Hello', 0, 0.4], ['world.', 0.45, 0.9]]);
     assert.equal(segments[0].word_timing, 'measured');
+    // Words in a script written without spaces run together; a provider's own spacing entries are kept.
+    const ja = ['今日', 'は', 'とても', '良い', '天気', 'です', 'ね。'].map((text, i) => ({ text, start: i * 0.3, end: i * 0.3 + 0.25, type: 'word' }));
+    assert.deepEqual(cc.groupWords(ja).map(s => s.text), ['今日はとても良い天気ですね。'], 'Japanese words are joined without spaces');
+    assert.deepEqual(cc.groupWords(ja.map(({ text, start, end }) => ({ word: text, punctuated_word: text, start, end }))).map(s => s.text), ['今日はとても良い天気ですね。'], 'Deepgram-shaped Japanese words too');
+    const sp = (start) => ({ text: ' ', start, end: start, type: 'spacing' });
+    assert.deepEqual(cc.groupWords([{ text: '東京', start: 0, end: 0.3, type: 'word' }, sp(0.3), { text: 'Tower', start: 0.35, end: 0.6, type: 'word' }, { text: 'です', start: 0.6, end: 0.8, type: 'word' }]).map(s => s.text), ['東京 Towerです'], 'spacing entries decide the gaps when the provider sends them');
+    assert.deepEqual(cc.groupWords([{ text: 'Hi', start: 0, end: 0.2, type: 'word' }, { text: 'there', start: 0.3, end: 0.5, type: 'word' }]).map(s => s.text), ['Hi there'], 'spaced scripts keep their spaces');
     assert.equal(calls[0].init.headers['xi-api-key'], 'el');
     assert.equal(calls[0].init.body.get('model_id'), 'scribe_v1');
   }

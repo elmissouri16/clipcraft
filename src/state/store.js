@@ -371,6 +371,20 @@ function reduceProjectInner(p, a) {
       return Object.entries(a.patch || {}).every(([key,value]) => JSON.stringify(p[key]) === JSON.stringify(value)) ? p : { ...p, ...a.patch };
     case 'addMedia':
       return a.items.length ? { ...p, media: [...p.media, ...a.items] } : p;
+    case 'relinkMedia': {
+      // Locate: re-point media items at their files' new places ({ changes: [{ id, path }] }). The items keep
+      // their ids, so every clip using them stays; copies made from the old file are made again. One Undo step.
+      const moved = new Map((Array.isArray(a.changes) ? a.changes : []).filter((c) => c && typeof c.id === 'string' && typeof c.path === 'string' && c.path).map((c) => [c.id, c.path]));
+      let changed = false;
+      const media = p.media.map((m) => {
+        const file = moved.get(m.id);
+        if (!file || (file === m.path && !m.missing)) return m;
+        changed = true;
+        const { missing, optimizing, thumb, thumbCount, thumbInterval, thumbW, thumbH, wave, proxy, proxies, lightProxy, poster, ...rest } = m;
+        return { ...rest, path: file, ...(m.type === 'video' ? { optimizing: true } : {}) };
+      });
+      return changed ? { ...p, media } : p;
+    }
     case 'removeMedia':
       return {
         ...p,

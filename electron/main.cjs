@@ -417,6 +417,24 @@ ipcMain.handle('media:import', async () => {
   return res.canceled ? [] : probeAll(res.filePaths);
 });
 
+// Locate an offline media item: the user picks its file; other offline items that sat under the same old
+// folder are looked for at the same relative path under the chosen file's folder. Only paths of files that
+// exist are returned; the renderer re-points the items (one Undo step) and their copies are made again.
+ipcMain.handle('media:locate', async (_e, oldPath, others) => {
+  if (typeof oldPath !== 'string' || !oldPath) return null;
+  const name = path.basename(oldPath.replace(/\\/g, '/'));
+  const res = await dialog.showOpenDialog(win, { title: i18n.t('main.locate_media', { name }), properties: ['openFile'],
+    filters: [{ name: i18n.t('app.media'), extensions: [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT] }, { name: i18n.t('main.filter_all_files'), extensions: ['*'] }] });
+  if (res.canceled || !res.filePaths[0]) return null;
+  const chosen = res.filePaths[0], pf = require('./project/projectfile.cjs'), moved = {};
+  for (const other of Array.isArray(others) ? others.slice(0, 5000) : []) {
+    if (typeof other !== 'string' || other === oldPath) continue;
+    const file = pf.relocatedPath(oldPath, chosen, other);
+    try { if (file && fs.statSync(file).isFile()) moved[other] = file; } catch { /* not under the new folder */ }
+  }
+  return { path: chosen, moved };
+});
+
 // Files dropped from Explorer.
 ipcMain.handle('media:probe', (_e, files) => {
   const ok = [...VIDEO_EXT, ...AUDIO_EXT, ...IMAGE_EXT];
@@ -656,7 +674,8 @@ ipcMain.handle('project:open', async () => {
   const text = fs.readFileSync(file, 'utf8');
   if (!pf.isProjectDocument(text)) return { error: i18n.t('main.not_a_project_file', { name: path.basename(file) }) };
   projectFiles.add(file);
-  return { file, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
+  // Media moved along with the project folder is found again next to the project file (relocateMedia).
+  return { file, json: await pf.refreshSizes(pf.checkGenerated(pf.relocateMedia(text, file), mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
 });
 
 // Reopen a known project file by path (Home screen recents): same refresh as project:open,
@@ -670,7 +689,7 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
   // Any other JSON file stays as it is: it never becomes an auto save target.
   if (!pf.isProjectDocument(text)) return { error: i18n.t('main.not_a_project_file', { name: path.basename(file) }) };
   // A held chat file throws past here on purpose: the renderer shows it instead of opening with an empty chat.
-  const result = { file, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
+  const result = { file, json: await pf.refreshSizes(pf.checkGenerated(pf.relocateMedia(text, file), mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
   projectFiles.add(file);
   return result;
 });
@@ -693,7 +712,7 @@ ipcMain.handle('slots:read', (_e, id) => {
   if (autosaveStore.fileChangedSince(slot, autosaveDir())) return { ...slot, fileChanged: true };
   // Generated copies the slot records may be gone since (Clear proxies, a cleaned cache): the same
   // check as a file open drops them so they are made again.
-  if (slot?.project) slot = { ...slot, project: require('./project/projectfile.cjs').checkGeneratedProject(slot.project, mediaCacheDir()) };
+  if (slot?.project) { const pf = require('./project/projectfile.cjs'); slot = { ...slot, project: pf.checkGeneratedProject(typeof slot.file === 'string' ? pf.relocateMediaProject(slot.project, slot.file) : slot.project, mediaCacheDir()) }; }
   // A slot bound to a project file adopts that file as known (same trust as project:openPath),
   // so the auto-save-to-file writes keep working for a project reopened from its slot.
   // Only a file that is a ClipCraft project, as for project:openPath.
@@ -880,6 +899,10 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     // when the save dialog returned that path for this export (a typed Name was never confirmed).
     const targetProblem = require('./export/exportTarget.cjs').exportTargetProblem({ file: target?.file, mediaPaths: [...(projectIn?.media || []), ...(project.media || [])].map(m => m?.path), confirmed: confirmedExportFiles.get(target?.frameDir) || null, user: !owned });
     if (targetProblem) throw Error(owned ? 'Choose an output path different from source media.' : i18n.t(targetProblem.reason === 'source' ? 'main.export_target_is_source' : 'main.export_target_exists', { name: path.basename(target.file) }));
+    // Media the timeline uses whose file is gone (moved, a disconnected drive): refused here, by name, instead
+    // of failing inside FFmpeg.
+    const missingMedia = require('./export/exportTarget.cjs').missingExportMedia(project);
+    if (missingMedia.length) throw Error(i18n.t('main.export_media_missing', { count: missingMedia.length, names: missingMedia.slice(0, 5).join(', ') + (missingMedia.length > 5 ? ', …' : '') }));
     const textFile = path.join(target.frameDir, 'text.mov');
     const withText = textFrames > 0 && frameDirs.has(target.frameDir) && fs.existsSync(textFile)
       ? { ...project, textOverlay: { file: textFile, count: textFrames } }

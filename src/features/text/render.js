@@ -2,6 +2,7 @@
 // Coordinates are project pixels (e.g. 1280x720); callers scale the context for the preview.
 import { cssFont } from "./fonts.js";
 import { INHERENT_UNIT_ANIMS, effectiveUnit, unitProgress } from './units.js';
+import { RTL_CHARS, SHAPED_CHARS, graphemes, strongDir, wordSegments } from './scripts.js';
 import { pinOffsetAt } from "../timeline/track.js";
 
 import { TEXT_DEFAULTS, resolveStyle } from './style.js';
@@ -25,7 +26,6 @@ const easeBounce = (t) => {
 const easeInOut = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
 // Overshoots and settles with decaying ripples, like a spring.
 const easeOutElastic = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : 2 ** (-10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1);
-const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
 
 export function rgba(hex, a = 1) {
   const n = parseInt((hex || '#000000').slice(1), 16);
@@ -41,37 +41,76 @@ function layout(ctx, st, text, W) {
   const maxW = Math.max(st.size * 2, st.maxWidth * W);
   const lines = [];
   let idx = 0;
+  const measure = (s) => ctx.measureText(s).width;
   for (const para of text.split('\n')) {
     const words = para.split(/\s+/).filter(Boolean);
+    // Bidi: the paragraph reads in the direction of its first strong character; each word takes its own
+    // strong direction, and a word without one (digits, punctuation, emoji) joins the run around it.
+    const paraRtl = strongDir(para) === 'rtl';
+    const own = words.map(strongDir);
+    const dirs = own.map((d, j) => {
+      if (d) return d;
+      let p = null, n = null;
+      for (let k = j - 1; k >= 0 && !p; k--) p = own[k];
+      for (let k = j + 1; k < own.length && !n; k++) n = own[k];
+      if (p === 'ltr' && /\d/.test(words[j])) return 'ltr';
+      return p && p === n ? p : paraRtl ? 'rtl' : 'ltr';
+    });
     let cur = [];
     let w = 0;
-    for (const word of words) {
-      const ww = ctx.measureText(word).width;
-      if (cur.length && w + space + ww > maxW) {
-        lines.push({ words: cur, width: w });
-        cur = [];
-        w = 0;
+    const newLine = () => { lines.push({ words: cur, width: w, rtl: paraRtl }); cur = []; w = 0; };
+    const place = (pc) => {
+      if (cur.length && w + space + pc.w > maxW) newLine();
+      w += cur.length ? space + pc.w : pc.w;
+      cur.push(pc);
+    };
+    words.forEach((word, j) => {
+      const i = idx++;
+      const rtl = dirs[j] === 'rtl';
+      const ww = measure(word);
+      if (ww <= maxW) { place({ text: word, w: ww, i, c0: 0, rtl }); return; }
+      // A word wider than the line (a caption in a script written without spaces, a long URL or hashtag):
+      // break it at word boundaries inside it, then at grapheme boundaries, into pieces that fit. Pieces
+      // keep the word's index (timing, highlight) and their first character's offset inside the word.
+      const units = [];
+      for (const seg of wordSegments(word)) {
+        if (measure(seg) <= maxW) units.push(seg);
+        else units.push(...graphemes(seg));
       }
-      w += cur.length ? space + ww : ww;
-      cur.push({ text: word, w: ww, i: idx++ });
-    }
-    lines.push({ words: cur, width: w });
+      let piece = '', c0 = 0, n = 0;
+      for (const u of units) {
+        const room = cur.length ? maxW - w - space : maxW;
+        if (measure(piece + u) <= room || (!piece && !cur.length)) { piece += u; n += graphemes(u).length; continue; }
+        if (piece) { place({ text: piece, w: measure(piece), i, c0, rtl }); c0 += n; }
+        newLine();
+        piece = u; n = graphemes(u).length;
+      }
+      if (piece) place({ text: piece, w: measure(piece), i, c0, rtl });
+    });
+    newLine();
   }
   const lineH = st.size * st.lineHeight;
   const width = Math.max(0, ...lines.map((l) => l.width));
   const height = lines.length * lineH;
-  const rtl = RTL.test(text);
+  // Visual order per line: same-direction runs keep their reading order (an RTL run is painted from its
+  // right end), and a right-to-left paragraph lays its runs out from the right.
   lines.forEach((l, li) => {
     l.y = -height / 2 + lineH * (li + 0.5);
     const x0 = st.align === 'left' ? -width / 2 : st.align === 'right' ? width / 2 - l.width : -l.width / 2;
     l.x = x0;
+    const runs = [];
+    for (const wd of l.words) {
+      if (runs.length && runs[runs.length - 1].rtl === wd.rtl) runs[runs.length - 1].words.push(wd);
+      else runs.push({ rtl: wd.rtl, words: [wd] });
+    }
     let x = x0;
-    (rtl ? [...l.words].reverse() : l.words).forEach((wd) => {
+    (l.rtl ? runs.reverse() : runs).flatMap((r) => (r.rtl ? r.words.reverse() : r.words)).forEach((wd) => {
       wd.x = x;
       x += wd.w + space;
     });
   });
-  return { lines, width, height, lineH, count: idx, rtl };
+  // Joined or shaped scripts are never split into letters for animation.
+  return { lines, width, height, lineH, count: idx, joined: RTL_CHARS.test(text) || SHAPED_CHARS.test(text) };
 }
 
 // Word timings relative to the clip: auto-caption timings when they match, otherwise an even split.
@@ -442,21 +481,23 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
   if (st.bg.on) drawBackground(ctx, st, L);
 
   const baseFill = gradientFor(ctx, st) || st.color;
-  const totalChars = allWords.reduce((n, w) => n + [...w].length, 0);
+  // Characters are grapheme clusters (an emoji sequence, a letter with its accent), never code points.
+  const wordChars = allWords.map((w) => graphemes(w).length);
+  const totalChars = wordChars.reduce((n, c) => n + c, 0);
   const nWords = allWords.length;
   let charBase = 0;
   // Characters before each word, for character-level animations.
   const charsBefore = [];
   allWords.forEach((w, i) => {
     charsBefore[i] = charBase;
-    charBase += [...w].length;
+    charBase += wordChars[i];
   });
 
   // Per-unit animation support: the effective granularity of each slot ('char' falls back to 'word'
-  // for RTL text, whose letters must stay joined), the staggered state of one unit, and accumulators
+  // for joined or shaped scripts — Arabic, Hebrew, Indic, Thai — whose letters must stay together), the staggered state of one unit, and accumulators
   // that fold an In and an Out unit state into the transforms of a single word or letter.
-  const effIn = perUnit(st.animIn) ? effectiveUnit(st.animIn.unit, L.rtl) : 'whole';
-  const effOut = perUnit(st.animOut) ? effectiveUnit(st.animOut.unit, L.rtl) : 'whole';
+  const effIn = perUnit(st.animIn) ? effectiveUnit(st.animIn.unit, L.joined) : 'whole';
+  const effOut = perUnit(st.animOut) ? effectiveUnit(st.animOut.unit, L.joined) : 'whole';
   const unitStateFor = (slot, eff, i, gi, out) => {
     const p = out ? pOut : pIn;
     const lp = eff === 'char' ? unitProgress(p, gi, totalChars, out) : unitProgress(p, i, nWords, out);
@@ -481,6 +522,7 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
   for (const line of L.lines) {
     for (const wd of line.words) {
       const i = wd.i + indexOffset;
+      const c0 = wd.c0 || 0; // a piece of a word broken across lines starts this many characters in
       let alpha = 1;
       let scale = 1;
       let dy = 0;
@@ -492,7 +534,7 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
 
       for (const u of A.units) {
         if (u.kind === 'char') {
-          const f = u.reveal * totalChars - charsBefore[i];
+          const f = u.reveal * totalChars - charsBefore[i] - c0;
           const fl = Math.floor(f + 1e-4);
           if (fl < visibleChars) { visibleChars = fl; edgeAlpha = 1; }
           if (fl === visibleChars && f - fl > 0.001 && f - fl < 1) edgeAlpha = Math.min(edgeAlpha, f - fl);
@@ -502,9 +544,10 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
           if (u.kind === 'wordpop') scale *= 0.4 + 0.6 * easeBack(local);
           else { dy += (1 - easeOut(local)) * st.size * 0.6; alpha *= local; }
         } else if (u.kind === 'charwave') {
-          charWave = { reveal: u.reveal };
+          // Once every letter has landed the word is painted whole again (kerning, ligatures).
+          if (u.reveal < 1) charWave = { reveal: u.reveal };
         } else if (u.kind === 'charslide' || u.kind === 'charfade' || u.kind === 'decode') {
-          charFx = { kind: u.kind, dir: u.dir || 1, reveal: u.reveal };
+          if (u.reveal < 1) charFx = { kind: u.kind, dir: u.dir || 1, reveal: u.reveal };
         } else if (u.kind === 'wave') {
           charWave = { t: u.t };
         }
@@ -536,6 +579,7 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
       if (wAcc.rot) ctx.rotate(wAcc.rot);
       ctx.scale(scale * wAcc.sx, scale * wAcc.sy);
       ctx.globalAlpha *= alpha;
+      ctx.direction = wd.rtl ? 'rtl' : 'ltr';
       if (wAcc.blur > 0.3) ctx.filter = unitFilter(wAcc.blur);
       const x0 = -wd.w / 2;
       if (isActive && (hl.mode === 'box' || hl.mode === 'marker')) {
@@ -552,9 +596,9 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
         ctx.restore();
       }
 
-      const chars = [...wd.text];
+      const chars = graphemes(wd.text);
       const charUnits = effIn === 'char' || effOut === 'char';
-      const perChar = !L.rtl && (charWave || charFx || visibleChars < chars.length || charUnits);
+      const perChar = !L.joined && (charWave || charFx || visibleChars < chars.length || charUnits);
       if (!perChar) {
         paintText(ctx, st, wd.text, x0, 0, fill, Math.max(A.glitch, wAcc.glitch));
       } else {
@@ -568,7 +612,7 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
           let ca = 1;
           let glyph = ch; // the decode scramble paints a substitute glyph until the char locks in
           if (charWave) {
-            const gi = charsBefore[i] + c;
+            const gi = charsBefore[i] + c0 + c;
             if (charWave.t !== undefined) cy = Math.sin(charWave.t * 6 + gi * 0.55) * st.size * 0.12;
             else {
               const local = clamp01(charWave.reveal * totalChars * 1.2 - gi);
@@ -577,7 +621,7 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
             }
           }
           if (charFx) {
-            const gi = charsBefore[i] + c;
+            const gi = charsBefore[i] + c0 + c;
             const local = clamp01(charFx.reveal * totalChars * 1.2 - gi);
             if (charFx.kind === 'charslide') {
               cy += charFx.dir * (1 - easeInOut(local)) * st.size * 0.85;
@@ -593,11 +637,11 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
               ca *= 0.3 + 0.7 * local;
             }
           }
-          // Letter-granularity unit motion, around this letter's own position (Latin text only —
-          // perChar is never entered for RTL, where 'char' already degraded to 'word').
+          // Letter-granularity unit motion, around this letter's own position (never entered for joined
+          // or shaped scripts, where 'char' already degraded to 'word').
           let cAcc = null;
           if (charUnits) {
-            const gi = charsBefore[i] + c;
+            const gi = charsBefore[i] + c0 + c;
             cAcc = newAcc();
             if (effIn === 'char') addUnit(cAcc, unitStateFor(st.animIn, effIn, i, gi, false));
             if (effOut === 'char') addUnit(cAcc, unitStateFor(st.animOut, effOut, i, gi, true));
@@ -626,7 +670,7 @@ export function drawTextClip(ctx, clip, lt, W, H, pinOff = null) {
         ctx.save();
         ctx.beginPath();
         // The color sweeps the way the word reads: from the right for Arabic and Hebrew.
-        if (L.rtl) ctx.rect(x0 + wd.w * (1 - prog), -L.lineH, wd.w * prog + st.size * 0.3, L.lineH * 2);
+        if (wd.rtl) ctx.rect(x0 + wd.w * (1 - prog), -L.lineH, wd.w * prog + st.size * 0.3, L.lineH * 2);
         else ctx.rect(x0 - st.size * 0.3, -L.lineH, st.size * 0.3 + wd.w * prog, L.lineH * 2);
         ctx.clip();
         paintText(ctx, { ...st, shadow: { ...st.shadow, on: false } }, wd.text, x0, 0, hl.color, 0);

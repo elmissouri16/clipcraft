@@ -1,4 +1,5 @@
 import { validWordTiming } from './timing.js';
+import { UNSPACED_CHARS, wordSegments } from './scripts.js';
 // SubRip (.srt) parsing — pure module, also tested in plain Node.
 //
 // Handles the files real tools produce: an optional UTF-8 BOM, CRLF or LF endings, blocks
@@ -33,22 +34,37 @@ export function parseTimingLine(line) {
   return { start, end };
 }
 
-// Full file -> [{ start, end, text }] in file order, exact timings preserved.
+// Styling markup that subtitle files carry but a burned-in caption must not show: SubRip/WebVTT tags
+// (<i>, <b>, <u>, <s>, <font ...>, <v Speaker>, <c.class>, <lang ..>, <ruby>/<rt>, inline <00:01.000>
+// timestamps) and ASS/SSA override blocks such as {\an8} or {\i1}. Plain angle brackets in text
+// ("a < b") are kept: only these tag names are removed.
+const MARKUP = /<\/?(?:i|b|u|s|font|v|c|lang|ruby|rt|span)(?:[\s.][^<>]*)?>|<\d{1,2}(?::\d{2}){1,2}[.,]\d{1,3}>|\{\\[^{}]*\}/gi;
+export const stripSubtitleMarkup = (line) => String(line || '').replace(MARKUP, '');
+
+// Full file -> [{ start, end, text }] in file order, exact timings preserved. A cue is its timing line and
+// the text lines after it, up to a blank line or the next cue — a timing line, or an index line followed
+// by one — so files that leave out the blank line between cues still split correctly.
 export function parseSRT(input) {
-  const text = String(input || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const lines = String(input || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  const isTiming = (l) => l != null && l.includes('-->') && !!parseTimingLine(l);
   const out = [];
-  for (const block of text.split(/\n\s*\n/)) {
-    const lines = block.split('\n').map((l) => l.trimEnd()).filter((l, i, a) => l.trim() !== '' || (i > 0 && i < a.length - 1));
-    if (!lines.length) continue;
-    // Timing line: the first line containing "-->", or the second when the first is an index.
-    const ti = lines.findIndex((l) => l.includes('-->'));
-    if (ti < 0 || ti > 1) continue;
-    const timing = parseTimingLine(lines[ti]);
-    if (!timing) continue;
-    const cue = lines.slice(ti + 1).join('\n').trim();
-    if (!cue) continue;
-    out.push({ start: timing.start, end: timing.end, text: cue });
+  let cur = null;
+  const flush = () => {
+    if (cur) {
+      const text = cur.lines.map((l) => stripSubtitleMarkup(l).trim()).filter(Boolean).join('\n');
+      if (text) out.push({ start: cur.start, end: cur.end, text });
+    }
+    cur = null;
+  };
+  for (let k = 0; k < lines.length; k++) {
+    const line = lines[k].trimEnd();
+    if (isTiming(line)) { flush(); cur = { ...parseTimingLine(line), lines: [] }; continue; }
+    if (!cur) continue;
+    if (!line.trim()) { flush(); continue; }
+    if (/^\d+$/.test(line.trim()) && isTiming(lines[k + 1]?.trimEnd())) { flush(); continue; }
+    cur.lines.push(line);
   }
+  flush();
   return out;
 }
 
@@ -61,16 +77,28 @@ export function srtSegments(input, makeId) {
 // split into consecutive chunks of at most n words, each chunk timed by its word share
 // of the original span (chunk i covers words [i, i+n) of the segment's [start, end]).
 // Word count and order are preserved exactly; multi-line text is re-joined with single
-// spaces. n < 1 (or unset) returns the segments untouched — the historical behaviour.
+// spaces. Text in a script written without spaces (Chinese, Japanese, Thai, ...) counts the words inside
+// it (Intl.Segmenter word boundaries) and is re-joined without adding spaces. n < 1 (or unset) returns the segments untouched — the historical behaviour.
 // Used for .srt imports and for auto captions alike (the engines' segments pass through
 // the same regroup in App's runCaptions). Chunked pieces carry no id — callers assign
 // fresh ids to the result, as both import flows already do.
+// Words of a caption in reading order; `space` says whether a space separated it from the one before.
+function captionTokens(text) {
+  const out = [];
+  for (const part of String(text || '').trim().split(/\s+/).filter(Boolean)) {
+    const pieces = UNSPACED_CHARS.test(part) ? wordSegments(part).filter((x) => x.trim()) : [part];
+    pieces.forEach((p, k) => out.push({ text: p, space: k === 0 }));
+  }
+  return out;
+}
+
 export function regroupSegments(segments, n) {
   const limit = Math.floor(Number(n) || 0);
   if (limit < 1) return segments;
   const out = [];
   for (const s of segments || []) {
-    const words = String(s.text || '').trim().split(/\s+/).filter(Boolean);
+    const tokens = captionTokens(s.text);
+    const words = tokens.map((t) => t.text);
     if (words.length <= limit) { out.push(s); continue; }
     const { id, words: originalWords, ...base } = s;
     const wordIdentity = text => String(text).normalize('NFKC').replace(/[\p{P}\p{S}]/gu, '').toLocaleLowerCase();
@@ -80,12 +108,13 @@ export function regroupSegments(segments, n) {
     const span = Math.max(0, (Number(s.end) || 0) - (Number(s.start) || 0));
     for (let i = 0; i < words.length; i += limit) {
       const chunk = words.slice(i, i + limit);
+      const chunkText = tokens.slice(i, i + limit).map((t, k) => (k && t.space ? ' ' : '') + t.text).join('');
       const timings = measured ? originalWords.slice(i, i + limit).map((word, k) => ({ ...word, text: chunk[k] })) : null;
       out.push({
         ...base,
         start: timings ? timings[0].start : (Number(s.start) || 0) + (span * i) / words.length,
         end: timings ? timings.at(-1).end : (Number(s.start) || 0) + (span * (i + chunk.length)) / words.length,
-        text: chunk.join(' '),
+        text: chunkText,
         ...(timings ? { words: timings } : { word_timing: 'estimated' }),
       });
     }
