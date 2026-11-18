@@ -1675,6 +1675,7 @@
   "close.dont_save": "Don't save",
   "close.save": "Save",
   "close.save_name_before_closing": "Save “{name}” before closing?",
+  "close.the_project_file_could_not_be_written": "The project file could not be written. If you close without saving, your latest changes are lost.",
   "close.this_project_was_never_saved_if_you_close": "This project was never saved. If you close without saving, your changes are lost.",
   "credits.copy_media_credits": "Copy media credits",
   "credits.credits_copied": "Credits copied",

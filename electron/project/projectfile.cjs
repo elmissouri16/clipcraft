@@ -15,12 +15,26 @@ function checkGenerated(projectJson, cacheDir) {
     p.media = (p.media || []).map((m) => {
       const out = { ...m };
       const usable = (file) => fs.existsSync(file) && derivedCurrent(m, file);
+      // A copy that is gone (Clear proxies, a cleaned cache) is dropped like a stale one, so it is made
+      // again instead of the player playing a file that does not exist; one moved to cacheDir is kept.
+      const found = (file) => {
+        if (usable(file)) return file;
+        const moved = cacheDir && path.join(cacheDir, path.basename(file));
+        return moved && usable(moved) ? moved : null;
+      };
       for (const field of ['poster', 'lightProxy']) {
-        if (typeof out[field] === 'string' && !derivedCurrent(m, out[field])) { delete out[field]; changed = true; }
-      }
-      if (out.proxies && typeof out.proxies === 'object' && Object.values(out.proxies).some((f) => typeof f === 'string' && !derivedCurrent(m, f))) {
-        out.proxies = Object.fromEntries(Object.entries(out.proxies).filter(([, f]) => typeof f !== 'string' || derivedCurrent(m, f)));
+        if (typeof out[field] !== 'string') continue;
+        const file = found(out[field]);
+        if (file === out[field]) continue;
+        if (file) out[field] = file; else delete out[field];
         changed = true;
+      }
+      if (out.proxies && typeof out.proxies === 'object') {
+        const entries = Object.entries(out.proxies).map(([level, f]) => [level, typeof f === 'string' ? found(f) : f]);
+        if (entries.some(([level, f]) => f !== out.proxies[level])) {
+          out.proxies = Object.fromEntries(entries.filter(([, f]) => f !== null));
+          changed = true;
+        }
       }
       for (const [key, fields] of Object.entries(GENERATED)) {
         if (!out[key] || usable(out[key])) continue;
@@ -40,6 +54,12 @@ function checkGenerated(projectJson, cacheDir) {
   } catch {
     return projectJson;
   }
+}
+
+// The same check for a project already parsed (an autosave slot): the project itself when nothing changed.
+function checkGeneratedProject(project, cacheDir) {
+  const text = JSON.stringify(project), checked = checkGenerated(text, cacheDir);
+  return checked === text ? project : JSON.parse(checked);
 }
 
 // Projects saved before the rotation fix have the stored (not turned) size of phone videos: probe those again.
@@ -72,4 +92,4 @@ function isProjectDocument(projectJson) {
   return !!p && typeof p === 'object' && !Array.isArray(p) && Array.isArray(p.media) && Array.isArray(p.videoClips);
 }
 
-module.exports = { checkGenerated, refreshSizes, isProjectDocument };
+module.exports = { checkGenerated, checkGeneratedProject, refreshSizes, isProjectDocument };

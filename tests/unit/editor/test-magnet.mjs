@@ -32,7 +32,7 @@ assert.equal(layout(st.present), 'a@0-4 c@4-8');
 // Magnet off: deleting leaves a gap, and deleting the gap closes it again.
 st = run(fresh(), { type: 'setMagnet', track: 'video', on: false }, { type: 'delete', track: 'video', id: 'b' });
 assert.equal(layout(st.present), 'a@0-4 GAP@4-8 c@8-12');
-st = run(st, { type: 'delete', track: 'video', id: 'b' });
+st = run(st, { type: 'delete', track: 'video', id: st.present.videoClips[1].id });
 assert.equal(layout(st.present), 'a@0-4 c@4-8');
 
 // Magnet off: trimming the right edge keeps later clips in place; repeated moves do not accumulate.

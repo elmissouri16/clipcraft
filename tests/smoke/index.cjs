@@ -153,7 +153,9 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'autosave') {
     // Save / auto save / close. The Save dialog is answered here instead of by a person.
     const { dialog } = require('electron');
-    const file = path.join(dir, 'saved.clipcraft.json');
+    // The project file sits in a folder of its own, which a later step makes read-only.
+    const folder = path.join(dir, 'project-folder'); fs.mkdirSync(folder, { recursive: true });
+    const file = path.join(folder, 'saved.clipcraft.json');
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
     const q = run;
     const until = async (js, ms = 10000) => { for (let t = 0; t < ms; t += 200) { if (await q(js)) return true; await wait(200); } return false; };
@@ -182,6 +184,19 @@ module.exports = async function smoke(win, app, dir) {
       await wait(2500);
       result.nameAfterAutosave = readName();
       await shot('autosave-1-saved.png');
+      // The file can no longer be written (read-only folder): closing asks instead of losing the change.
+      fs.chmodSync(folder, 0o555);
+      try {
+        await q(`window.__fve.dispatch({ type: 'setProject', patch: { name: 'Not written' } })`);
+        await wait(2500);
+        win.close();
+        result.askedOnFailedWrite = await until(`!!document.querySelector('.close-modal')`) && await q(`document.querySelector('.close-modal #close-text').textContent`);
+        await shot('autosave-2-failed-write.png');
+        await q(`[...document.querySelectorAll('.close-modal .btn')].find((b) => b.textContent.trim() === 'Cancel').click()`);
+        await wait(6000);
+        result.openAfterFailedWrite = !win.isDestroyed() && await q(`!document.querySelector('.close-modal')`);
+        result.nameAfterFailedWrite = readName();
+      } finally { fs.chmodSync(folder, 0o755); }
       // Closing right after a change still writes it, without asking.
       await q(`window.__fve.dispatch({ type: 'setProject', patch: { name: 'Written on close' } })`);
       win.once('closed', () => {

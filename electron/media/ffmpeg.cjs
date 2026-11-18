@@ -747,14 +747,14 @@ function buildExportArgs(project, outFile, opts = {}) {
     // so the trim runs from 0 in both cases.
     const idx = addInput(enhP ? ['-i', enhP] : ['-ss', num(seekTo(c.in)), '-i', mediaById[c.mediaId].path]);
     const len = (c.out - c.in) / speedOf(c); // timeline length (audio clips carry a speed, e.g. detached ones)
-    const delay = Math.round(c.start * 1000);
+    const delay = Math.round(Math.max(0, c.start) * 1000);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
     const chain = [...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[m${j}]`);
     mixLabels.push(`[m${j}]`);
   });
   overlayAudio.forEach(({ idx, c, len, start, sp, enh }, j) => {
-    const delay = Math.round(start * 1000);
+    const delay = Math.round(Math.max(0, start) * 1000);
     const up = monoUp(mediaById[c.mediaId], !!enh);
     // B1: idx always names an input seeked to c.in (or the pre-trimmed enhanced render),
     // so the trim runs from 0.
@@ -847,7 +847,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   tracks.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
     sound = true;
     const len = (c.out - c.in) / speedOf(c);
-    const delay = Math.round(c.start * 1000);
+    const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
     const chain = [...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up)];

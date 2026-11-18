@@ -111,7 +111,7 @@ export function useExtensionHost(options){
    else if(request.method==='editor.tools.list')value=current.editorTools.list();
    else if(request.method==='editor.tools.run'){
     if(agentSession)throw Error('Editor tools are not available while CraftAI runs this command; use editor.apply.');
-    value=await current.editorTools.run(request.args,async()=>{if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension callback or job stopped');});
+    value=await current.editorTools.run(request.args,async()=>{if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension callback or job stopped');},request.extensionId);
    }else if(request.method==='workspace.inspect')value=current.inspect('inspect',request.args);
    else if(request.method==='workspace.readValue')value=current.inspect('readValue',request.args);
    else if(request.method==='workspace.read')value={documentId:snapshot.documentId,name:project.name,width:project.width,height:project.height,fps:project.fps,duration_sec:projectDuration(project),export_duration_sec:exportDuration(renderable(project))};

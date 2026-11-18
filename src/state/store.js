@@ -175,6 +175,15 @@ function normalizeGaps(list, { keepTrailing = false } = {}) {
   return out;
 }
 
+// An id for a new gap on the main track that no clip of p uses: a gap that took a clip's id
+// would answer every lookup of that clip (and a second gap with the same id would too).
+function freshGapId(p, base) {
+  const used = new Set(Object.values(TRACKS).flatMap((key) => (p[key] || []).map((c) => c.id)));
+  let id = `${base}-gap`;
+  for (let n = 2; used.has(id); n++) id = `${base}-gap${n}`;
+  return id;
+}
+
 // Length of a clip on a free track (overlay / audio / text). Audio clips carry a
 // constant speed like picture clips do (a detached clip follows its video's speed).
 export const freeLen = (track, c) => (track === 'audio' ? (c.out - c.in) / (c.speed || 1) : track === 'overlay' ? (c.out - c.in) / (c.speed || 1) : c.duration);
@@ -236,8 +245,22 @@ export function layerFree(p, track, layer, start, len, exceptId) {
     && x.start < start + len - 1e-6 && start < x.start + freeLen(track, x) - 1e-6);
 }
 
+// A layer an edit may not push a clip onto: locked (it refuses edits), hidden or muted (the clip
+// would vanish from the picture or the mix without anyone asking for it).
+export const layerBlocked = (p, track, layer) => { const s = layerStateOf(p, track, layer); return s.locked || s.hidden || s.muted; };
+// The first layer from `from` up where [start, start + len) is free and that is not blocked, a
+// new layer past the last one when none is.
+export function openLayer(p, track, start, len, exceptId, from = 0) {
+  let l = from;
+  while (!layerFree(p, track, l, start, len, exceptId) || layerBlocked(p, track, l)) l++;
+  return l;
+}
+
 // Gives every clip a layer where it fits, keeps the lists in drawing order (by layer) and the layer counts.
 // Returns p itself when nothing changes. Old projects (no layers) get the rows they used to show.
+// With `previous` (the project before the edit), the clips the edit added or moved are placed last:
+// when one lands on a taken spot it is the one relocated, never an untouched neighbour, and never
+// onto a locked, hidden or muted layer (a new layer opens when needed).
 function placeLayers(p, previous) {
   let out = p;
   for (const [track, key] of Object.entries(LAYERED)) {
@@ -258,13 +281,18 @@ function placeLayers(p, previous) {
       const intervals = placed[l] || [], at = position(intervals, a);
       return ![intervals[at - 1], intervals[at]].some(r => r && r.start < b - 1e-6 && a < r.end - 1e-6);
     };
-    const order = [...list].sort((a, b) => (a.layer === undefined) - (b.layer === undefined) || a.start - b.start);
+    const oldById = old && new Map(old.map((c) => [c.id, c]));
+    const moved = new Set(oldById ? list.filter((c) => { const o = oldById.get(c.id);
+      return !o || o.layer !== c.layer || o.start !== c.start || freeLen(track, o) !== freeLen(track, c); }).map((c) => c.id) : []);
+    const byStart = (a, b) => (a.layer === undefined) - (b.layer === undefined) || a.start - b.start;
+    const order = [...list.filter((c) => !moved.has(c.id)).sort(byStart), ...list.filter((c) => moved.has(c.id)).sort(byStart)];
     const layerById = {};
     for (const c of order) {
       const a = c.start;
       const b = c.start + freeLen(track, c);
       let l = layerOf(c);
-      while (!fits(l, a, b)) l++;
+      if (moved.has(c.id) && !fits(l, a, b)) do l++; while (!fits(l, a, b) || layerBlocked(p, track, l));
+      else while (!fits(l, a, b)) l++;
       const intervals = placed[l] ||= [];
       intervals.splice(position(intervals, a), 0, { start: a, end: b });
       layerById[c.id] = l;
@@ -318,6 +346,10 @@ export function canvasFor(p, m) {
   const ratio = first && ratioFor(m.width, m.height);
   return ratio && ratio !== p.ratio ? { ratio, ...sizeFor(ratio, p.resolution) } : {};
 }
+
+// Caption sources that regenerating or removing the auto captions (setCaptions) keeps: imported
+// .srt files, translations and extension-written tracks.
+const CAPTIONS_KEPT = new Set(['srt', 'plugin-translation', 'extension']);
 
 function reduceProjectInner(p, a) {
   switch (a.type) {
@@ -450,6 +482,8 @@ function reduceProjectInner(p, a) {
           copy.start = l.start;
           copy.layer = target;
           copy.transition = null;
+          // A copy never shares its original's Detach-audio link (the sound would follow the copy).
+          delete copy.linkId; delete copy.linkOff; delete copy.linkInOff;
           return copy;
         });
         if (!copies.length) return p;
@@ -463,6 +497,7 @@ function reduceProjectInner(p, a) {
         const copy = structuredClone(c);
         copy.id = a.newIds[i++];
         copy.layer = insertAt;
+        delete copy.linkId; delete copy.linkOff; delete copy.linkInOff;
         return copy;
       });
       const shifted = p[key].map((c) => (layerOf(c) >= insertAt && !copies.some((x) => x.id === c.id) && (a.track === 'audio' || layerOf(c) !== a.layer)
@@ -570,7 +605,7 @@ function reduceProjectInner(p, a) {
         if (c.gap || p.magnet.video) return { ...p, videoClips: p.videoClips.filter((x) => x.id !== a.id) };
         // The gap covers the clip's visible span: its length less the overlap of the transition
         // into it, so every later clip keeps its position.
-        const list = p.videoClips.map((x, i) => (x.id === a.id ? newGap(x.id, clipLen(x) - transitionDur(p.videoClips, i)) : x));
+        const list = p.videoClips.map((x, i) => (x.id === a.id ? newGap(freshGapId(p, x.id), clipLen(x) - transitionDur(p.videoClips, i)) : x));
         return { ...p, videoClips: keepOverlaps(p.videoClips, normalizeGaps(list)) };
       }
       const rest = p[key].filter((x) => x.id !== a.id);
@@ -610,7 +645,7 @@ function reduceProjectInner(p, a) {
       }));
       // Imported .srt subtitles (source: 'srt') are the user's own files: regenerating the
       // auto captions must not delete them, so imported and translated caption tracks are preserved.
-      return { ...p, textClips: [...p.textClips.filter((c) => !c.caption || c.source === 'srt' || c.source === 'plugin-translation' || c.source === 'extension'), ...caps] };
+      return { ...p, textClips: [...p.textClips.filter((c) => !c.caption || CAPTIONS_KEPT.has(c.source)), ...caps] };
     }
     case 'importSrtCaptions': {
       // Subtitles parsed from an .srt file: exact file timings and text, styled with the
@@ -841,7 +876,7 @@ export function trimClip(p, { track, id, edge, delta }) {
         if (overlap > 0) shrinkTransition(idx, overlap - d);
         if (gap > 1e-9) {
           if (prev && prev.gap) list[idx - 1] = { ...prev, out: prev.out + gap };
-          else list.splice(idx, 0, newGap(`${id}-gl`, gap));
+          else list.splice(idx, 0, newGap(freshGapId(p, `${id}-l`), gap));
         }
       } else if (d < 0 && prev && prev.gap) list[idx - 1] = { ...prev, out: prev.out + d };
     } else {
@@ -856,7 +891,7 @@ export function trimClip(p, { track, id, edge, delta }) {
         if (overlap > 0) shrinkTransition(idx + 1, overlap - d);
         if (gap > 1e-9) {
           if (after && after.gap) list[idx + 1] = { ...after, out: after.out + gap };
-          else if (after) list.splice(idx + 1, 0, newGap(`${id}-gr`, gap));
+          else if (after) list.splice(idx + 1, 0, newGap(freshGapId(p, `${id}-r`), gap));
         }
       } else if (d < 0 && after && after.gap) list[idx + 1] = { ...after, out: after.out + d };
     }
@@ -1446,8 +1481,9 @@ export function actionLocked(p, a) {
     case 'removeLayer': return isLayerLocked(p, a.track, a.layer);
     case 'deleteLayer': return a.track !== 'video' && isLayerLocked(p, a.track, a.layer);
     case 'setCaptions':
-      // Replaces the auto captions wherever they sit, then adds the new ones on layer 0.
-      return isLayerLocked(p, 'text', 0) || p.textClips.some((c) => c.caption && c.source !== 'srt' && c.source !== 'plugin-translation' && clipLocked(p, 'text', c));
+      // Replaces the auto captions wherever they sit (the cues the reducer keeps aside: see
+      // CAPTIONS_KEPT), then adds the new ones on layer 0.
+      return isLayerLocked(p, 'text', 0) || p.textClips.some((c) => c.caption && !CAPTIONS_KEPT.has(c.source) && clipLocked(p, 'text', c));
     case 'importSrtCaptions': return isLayerLocked(p, 'text', 0);
     case 'addEffectClip': return isLayerLocked(p, 'effect', 0);
     case 'insertAudioClip': return isLayerLocked(p, 'audio', layerOf(a.clip || {}));
@@ -1516,6 +1552,28 @@ function picStarts(p) {
     if (!starts) { starts = new Map(); for (const l of videoLayout(p.videoClips)) starts.set(l.clip.id, l.start); }
     return starts.has(clip.id) ? starts.get(clip.id) : null;
   };
+}
+
+// An edit must never leave a free-track clip starting before 0 (the export cannot delay a sound
+// by a negative time), nor a linked sound reading outside its file: a detached sound holds only
+// the picture's window at the time of the detach, so the picture cannot be extended past it.
+// Older projects may already break this; only a newly introduced or worsened breach is refused.
+function outOfBounds(before, next) {
+  let media = null;
+  for (const key of ['overlayClips', 'audioClips', 'textClips', 'effectClips']) {
+    if (next[key] === before[key]) continue;
+    const old = new Map((before[key] || []).map((c) => [c.id, c]));
+    for (const c of next[key] || []) {
+      const o = old.get(c.id);
+      if (c.start < -1e-6 && !(o && o.start <= c.start + 1e-9)) return true;
+      if (key !== 'audioClips' || !c.linkId || (o && o.in === c.in && o.out === c.out)) continue;
+      if (c.in < -1e-6 && !(o && o.in <= c.in + 1e-9)) return true;
+      media ||= new Map(next.media.map((m) => [m.id, m]));
+      const dur = media.get(c.mediaId)?.duration;
+      if (Number.isFinite(dur) && c.out > dur + 1e-6 && !(o && o.out >= c.out - 1e-9)) return true;
+    }
+  }
+  return false;
 }
 
 function syncLinked(prev, next, preservedLinks) {
@@ -2407,7 +2465,8 @@ export function historyReducer(state,a,preview=false){
   if(!changed)historyOrigins.set(next,previous);
   else if(['mediaVisuals','projectVisuals'].includes(a.type))historyOrigins.set(next,{...previous,cacheSequence:previous.cacheSequence+1});
   else{
-   const source=plan?.source||(a.agentToken||a.type.startsWith('agent')?{kind:'agent'}:a.type.startsWith('plugin')?{kind:'extension'}:a.type==='load'?{kind:'system'}:{kind:'user'});
+   const owner=state.agentEdit&&(a.agentToken||(a.type==='undoAgentEdit'&&a.token))===state.agentEdit.token?state.agentEdit.source:null;
+   const source=plan?.source||owner||(a.agentToken||a.type.startsWith('agent')?{kind:'agent'}:a.type.startsWith('plugin')?{kind:'extension'}:a.type==='load'?{kind:'system'}:{kind:'user'});
    historyOrigins.set(next,{sequence:previous.sequence+1,cacheSequence:previous.cacheSequence,source,reason:['undo','redo'].includes(a.type)?a.type:a.type==='load'?'open':'edit'});
   }
  }
@@ -2446,7 +2505,10 @@ function reduceHistory(state, a, extensionEdit = false) {
 function reduceHistoryStep(state, a,extensionEdit=false) {
   if (a.type === 'beginAgentEdit') {
     if (typeof a.token !== 'string' || !a.token || state.agentEdit || state.gestureStart) return state;
-    return { ...state, agentInterruption: undefined, agentEdit: { token: a.token, base: state.present, steps: [], future: state.future } };
+    // An extension running the editor tools (context.editor.tools.run) opens the edit for itself:
+    // its steps are attributed to it, so it can recognise its own edits in project events.
+    const source = a.source?.kind === 'extension' && typeof a.source.extensionId === 'string' && a.source.extensionId ? { kind: 'extension', extensionId: a.source.extensionId } : null;
+    return { ...state, agentInterruption: undefined, agentEdit: { token: a.token, base: state.present, steps: [], future: state.future, ...(source ? { source } : {}) } };
   }
   if (a.type === 'endAgentEdit') return state.agentEdit?.token === a.token ? finishAgentEdit(state) : state;
   // An agent tool call starts: note how many steps the request has, so its undo can revert the whole
@@ -2641,6 +2703,7 @@ function reduceHistoryStep(state, a,extensionEdit=false) {
         const was = drift(presentStart, prior.get(id));
         if (drift(nextStart, pair).some((value, i) => value > 1e-6 && value > was[i] + 1e-6)) return state;
       }
+      if (outOfBounds(state.present, next)) return state;
     }
   }
   if (next === state.present) return state;
@@ -2739,8 +2802,13 @@ export function zoomTransform(view) {
   return `translate(${Math.round(view.x || 0)}px, ${Math.round(view.y || 0)}px) scale(${view.z})`;
 }
 
-export function toFileUrl(p) {
-  const parts = p.replace(/\\/g, '/').split('/');
+// The platform the paths come from: the renderer's (the preload exposes it), else the process's own
+// (plain Node: tests and tools).
+const hostPlatform = () => (typeof window !== 'undefined' && window.api?.platform) || (typeof process !== 'undefined' && process.platform) || '';
+// A file:// URL for a local path. Only on Windows is a backslash a separator: on macOS and Linux it is
+// an ordinary file-name character, encoded with the rest of the name.
+export function toFileUrl(p, platform = hostPlatform()) {
+  const parts = (platform === 'win32' ? p.replace(/\\/g, '/') : p).split('/');
   return 'file:///' + parts.map((s, i) => (i === 0 && /^[a-zA-Z]:$/.test(s) ? s : encodeURIComponent(s))).join('/');
 }
 

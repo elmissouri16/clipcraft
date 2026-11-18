@@ -80,6 +80,26 @@ module.exports = async (win, app, dir) => {
     await q('window.__fve.seek(4)'); await q('document.activeElement?.blur()'); await wait(150); // away from the 2 s cut
     await press('S');
     check('the default S splits again', await q('window.__fve.rawProject().videoClips.length===3'));
+
+    // Any modal holds the editor's keys, an alert dialog included (its role is not "dialog").
+    await q('(()=>{const d=document.createElement("div");d.id="smoke-alert";d.setAttribute("role","alertdialog");d.setAttribute("aria-modal","true");document.body.appendChild(d);})()');
+    await q('window.__fve.seek(5)'); await q('document.activeElement?.blur()'); await wait(150);
+    const steps = await q('window.__fve.history().past.length');
+    await press('S'); await wait(200);
+    check('behind an alert dialog S does not split', await q('window.__fve.rawProject().videoClips.length===3'));
+    await press('Z', ['control']); await wait(200);
+    check('behind an alert dialog Ctrl+Z does not undo', await q(`window.__fve.rawProject().videoClips.length===3&&window.__fve.history().past.length===${steps}`));
+    await q('document.getElementById("smoke-alert").remove()');
+    // On the Home screen the project kept behind it is never edited by the editor's keys.
+    const kept = await q('JSON.stringify(window.__fve.rawProject().videoClips)');
+    await q('document.querySelector(".project-menu-btn").click()'); await until('[...document.querySelectorAll(".ctx-menu [role=menuitem]")].some(b=>b.textContent.includes("Projects"))');
+    await q('[...document.querySelectorAll(".ctx-menu [role=menuitem]")].find(b=>b.textContent.includes("Projects")).click()');
+    await until('!document.querySelector(".topbar")&&!!document.querySelector(".home")');
+    await q('document.activeElement?.blur()'); await wait(150);
+    for (const [name, key, mods] of [['S', 'S', []], ['Ctrl+Z', 'Z', ['control']]]) {
+      await press(key, mods); await wait(200);
+      check(`on the Home screen ${name} leaves the project alone`, await q(`JSON.stringify(window.__fve.rawProject().videoClips)===${JSON.stringify(kept)}`));
+    }
     check('no renderer exceptions', !result.errors.length);
   } catch (error) { result.error = error.stack; try { fs.writeFileSync(path.join(dir, 'failure.png'), (await win.capturePage()).toPNG()); } catch {} }
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2)); app.exit(result.error ? 1 : 0);

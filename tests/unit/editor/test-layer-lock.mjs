@@ -100,16 +100,16 @@ const state = (p) => ({ past: [], present: p, future: [] });
 }
 
 // Placement check: an overlay drop whose target layer is full gets bumped by placeLayers —
-// when the bump lands it on a LOCKED layer, the add is refused as a whole.
+// never onto a LOCKED layer: the bump skips it and opens a new layer instead.
 {
   const p = base();
   p.overlayClips = [{ id: 'o9', mediaId: 'm1', start: 0, in: 0, out: 6, speed: 1, volume: 1, muted: false, filter: 'none', adjust: {}, effects: [], layer: 0 }];
   p.layers = { overlay: 2, audio: 2 };
   let s = run(state(p), [lock('overlay', 1)]);
-  const before = s.present;
   // Layer 0 is occupied 0..6, so a clip dropped at t=1 on layer 0 can only fit on layer 1.
-  s = run(s, [{ type: 'addOverlayClip', mediaId: 'm1', clipId: 'oNew', at: 1, layer: 0 }]);
-  ok(s.present === before, 'add bumped onto a locked layer was refused entirely');
+  const bumped = run(s, [{ type: 'addOverlayClip', mediaId: 'm1', clipId: 'oNew', at: 1, layer: 0 }]);
+  ok(bumped.present.overlayClips.some((c) => c.id === 'oNew' && c.layer === 2) && !bumped.present.overlayClips.some((c) => c.layer === 1),
+    'add bumped past the locked layer lands on a new layer');
   s = run(s, [{ type: 'setLayerState', track: 'overlay', layer: 1, patch: { locked: false } },
     { type: 'addOverlayClip', mediaId: 'm1', clipId: 'oNew', at: 1, layer: 0 }]);
   ok(s.present.overlayClips.some((c) => c.id === 'oNew' && c.layer === 1), 'the same add lands on layer 1 once unlocked');

@@ -670,7 +670,10 @@ ipcMain.handle('slots:read', (_e, id) => {
   if (slot?.error) return slot;
   // The bound file changed after the slot was written: the renderer opens the file instead, and the
   // stale slot never becomes a known target, so no auto save can write it over the newer file.
-  if (autosaveStore.fileChangedSince(slot)) return { ...slot, fileChanged: true };
+  if (autosaveStore.fileChangedSince(slot, autosaveDir())) return { ...slot, fileChanged: true };
+  // Generated copies the slot records may be gone since (Clear proxies, a cleaned cache): the same
+  // check as a file open drops them so they are made again.
+  if (slot?.project) slot = { ...slot, project: require('./project/projectfile.cjs').checkGeneratedProject(slot.project, mediaCacheDir()) };
   // A slot bound to a project file adopts that file as known (same trust as project:openPath),
   // so the auto-save-to-file writes keep working for a project reopened from its slot.
   // Only a file that is a ClipCraft project, as for project:openPath.

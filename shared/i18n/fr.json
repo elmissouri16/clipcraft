@@ -1675,6 +1675,7 @@
   "close.dont_save": "Ne pas enregistrer",
   "close.save": "Enregistrer",
   "close.save_name_before_closing": "Enregistrer « {name} » avant de fermer ?",
+  "close.the_project_file_could_not_be_written": "Le fichier du projet n’a pas pu être écrit. Si vous fermez sans enregistrer, vos dernières modifications seront perdues.",
   "close.this_project_was_never_saved_if_you_close": "Ce projet n’a jamais été enregistré. Si vous fermez sans enregistrer, vos modifications seront perdues.",
   "credits.copy_media_credits": "Copier les crédits des médias",
   "credits.credits_copied": "Crédits copiés",

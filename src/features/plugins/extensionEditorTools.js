@@ -22,7 +22,7 @@ export function createExtensionEditorTools(app) {
   const declarations = () => externalTools('').tools.filter((tool) => !EXCLUDED.has(tool.name) && !tool.name.startsWith('mcp_'));
   const list = () => declarations().map(({ name, description, parameters }) => ({ name, description, parameters }));
 
-  async function execute(input, check) {
+  async function execute(input, check, extensionId) {
     const host = app();
     if (!input || typeof input !== 'object' || !Array.isArray(input.calls) || !input.calls.length || input.calls.length > EDITOR_TOOL_LIMITS.calls) throw new Error(`Run 1 to ${EDITOR_TOOL_LIMITS.calls} editor tool calls at a time.`);
     const tools = declarations(), atomic = input.atomic !== false;
@@ -38,7 +38,8 @@ export function createExtensionEditorTools(app) {
     if (host.craftBusy() || host.pilotApp.getAgentEdit?.()) throw new Error(BUSY);
     await check?.();
     const token = crypto.randomUUID(), before = host.project(), loadVersion = host.loadVersion();
-    host.dispatch({ type: 'beginAgentEdit', token });
+    // The run's steps are the calling extension's edits in history and project events.
+    host.dispatch({ type: 'beginAgentEdit', token, ...(typeof extensionId === 'string' && extensionId ? { source: { kind: 'extension', extensionId } } : {}) });
     await host.settle();
     if (host.pilotApp.getAgentEdit?.()?.token !== token) throw new Error(BUSY);
     let stopped = false, failure = null;
@@ -71,6 +72,6 @@ export function createExtensionEditorTools(app) {
   return {
     list,
     // One run at a time: edit boundaries never interleave.
-    run(input, check) { const task = queue.then(() => execute(input, check)); queue = task.catch(() => {}); return task; },
+    run(input, check, extensionId) { const task = queue.then(() => execute(input, check, extensionId)); queue = task.catch(() => {}); return task; },
   };
 }

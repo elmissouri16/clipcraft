@@ -55,6 +55,15 @@ export function comboFromEvent(e) {
     key = /^Key[A-Z]$/.test(code) ? code.slice(3) : /^Digit\d$/.test(code) ? code.slice(5) : code;
   }
   if (!key) return null;
+  // A character outside A–Z / 0–9 typed on a letter or digit key (a Cyrillic, Arabic, Greek or Hebrew
+  // layout, AZERTY's digit row, macOS Option+S giving "ß") names the physical key, so the shortcuts
+  // work on every layout. Latin layouts keep their letters (AZERTY's A is A). AltGr keeps its
+  // character: it types text (Polish AltGr+S is "ś", not Ctrl+Alt+S).
+  if ([...key].length === 1 && !/^[a-z0-9]$/i.test(key) && !e.getModifierState?.('AltGraph')) {
+    const code = e.code || '';
+    if (/^Key[A-Z]$/.test(code)) key = code.slice(3);
+    else if (/^Digit\d$/.test(code)) key = code.slice(5);
+  }
   if (key.length === 1) key = key.toUpperCase();
   const ctrl = e.ctrlKey || (isMac() && e.metaKey);
   return [ctrl && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', key].filter(Boolean).join('+');

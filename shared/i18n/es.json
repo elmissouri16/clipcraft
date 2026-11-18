@@ -1675,6 +1675,7 @@
   "close.dont_save": "No guardar",
   "close.save": "Guardar",
   "close.save_name_before_closing": "¿Guardar «{name}» antes de cerrar?",
+  "close.the_project_file_could_not_be_written": "No se pudo escribir el archivo del proyecto. Si cierras sin guardar, perderás los últimos cambios.",
   "close.this_project_was_never_saved_if_you_close": "Este proyecto nunca se guardó. Si cierras sin guardar, perderás los cambios.",
   "credits.copy_media_credits": "Copiar créditos de los medios",
   "credits.credits_copied": "Créditos copiados",

@@ -475,6 +475,17 @@ export function createToolRunner(ctx) {
     await ctx.settle();
     return { ok: true, duration_sec: r2(exportDuration(project())), timeline_extent_sec: r2(projectDuration(project())), revision: projectRevision(project()), ...extra };
   };
+  // The audio clip that plays a picture clip's sound: its Detach-audio partner, or an extracted copy
+  // (same media, its source window and timeline span overlapping the picture's). null when none.
+  const soundCarrier = (f) => {
+    const p = project(), c = f.clip;
+    const linked = c.linkId && p.audioClips.find((x) => x.linkId === c.linkId);
+    if (linked) return linked;
+    const start = f.track === 'video' ? videoLayout(p.videoClips).find((l) => l.clip.id === c.id)?.start ?? 0 : c.start;
+    const end = start + clipLen(c);
+    return p.audioClips.find((x) => !x.linkId && x.mediaId === c.mediaId && x.in < c.out && c.in < x.out
+      && x.start < end && start < x.start + (x.out - x.in) / (x.speed || 1)) || null;
+  };
   const findClip = (id) => {
     const p = project();
     for (const [track, key] of [['video', 'videoClips'], ['overlay', 'overlayClips'], ['audio', 'audioClips'], ['text', 'textClips'], ['effect', 'effectClips']]) {
@@ -1079,10 +1090,16 @@ export function createToolRunner(ctx) {
       const media = f && project().media.find(m => m.id === f.clip.mediaId);
       if (!f || !['video', 'overlay', 'audio'].includes(f.track) || f.clip.gap || (f.track !== 'audio' && media?.type === 'image')) return { error: `Clip "${clip_id}" has no editable audio.` };
       const patch = {};
+      let carrier = null;
       if (volume !== undefined) {
         const v = Number(volume);
         if (!(v >= 0 && v <= 2)) return { error: 'volume must be between 0 and 2.' };
-        Object.assign(patch, { volume: v, muted: v === 0 });
+        patch.volume = v;
+        // Volume 0 mutes. A higher volume unmutes, except a picture whose sound was detached or
+        // extracted to an audio clip: that clip carries the sound, unmuting would play it twice.
+        carrier = v > 0 && f.clip.muted && f.track !== 'audio' ? soundCarrier(f) : null;
+        if (v === 0) patch.muted = true;
+        else if (f.clip.muted && !carrier) patch.muted = false;
       }
       if (fade_in_sec !== undefined || fade_out_sec !== undefined) {
         if (fade_in_sec !== undefined) patch.fadeIn = clamp(fade_in_sec, 0, 30, 0);
@@ -1090,7 +1107,8 @@ export function createToolRunner(ctx) {
       }
       if (!Object.keys(patch).length) return { error: 'Give volume and / or fades.' };
       dispatch({ type: 'update', track: f.track, id: clip_id, patch });
-      return after();
+      return after(carrier ? { muted: true, sound_clip_id: carrier.id,
+        note: `Clip "${clip_id}" stays muted: its sound plays from audio clip "${carrier.id}". Set that clip's volume instead.` } : {});
     },
 
     async set_filter({ clip_id, filter_id }) {

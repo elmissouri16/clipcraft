@@ -13,7 +13,7 @@ import {refreshPluginEffects,subscribePluginEffects,pluginEffectsRevision,assert
 import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
+import { LAYERED, openLayer, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
 import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
 import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
 import { useExternalAgent } from './useExternalAgent.js';
@@ -314,7 +314,9 @@ export default function App() {
     try {
       a.slotWriting = (a.slotWriting || Promise.resolve()).catch(() => {}).then(async () => {
         const rec = await slotRecord(p, file);if (!rec) return;
-        await window.api.slotWrite(rec);refreshSlots();
+        // A failed write marks nothing as written: the next change writes the whole slot again.
+        if (!await window.api.slotWrite(rec)) { a.slotDocDirty = true; return; }
+        refreshSlots();
         a.slotDocId = p.id;
         if (rec.chatJson !== undefined && a.project.craftAI === p.craftAI) a.slotChat = p.craftAI;
       });
@@ -330,8 +332,8 @@ export default function App() {
     if (a.slotChat === p.craftAI || !p.id || isTourId(p.id)) return;
     try {
       a.slotWriting = (a.slotWriting || Promise.resolve()).catch(() => {}).then(async () => {
-        await window.api.slotWriteChat?.(p.id, await chatText(p));
-        if (a.project.craftAI === p.craftAI) a.slotChat = p.craftAI;
+        const written = await window.api.slotWriteChat?.(p.id, await chatText(p));
+        if (written && a.project.craftAI === p.craftAI) a.slotChat = p.craftAI;
       });
       await a.slotWriting;
     } catch { /* the next change retries */ }
@@ -345,9 +347,11 @@ export default function App() {
   };
   // Force-write everything pending for the CURRENT project (its file, then its slot) —
   // awaited before any switch (Home, new, open) so no edit hides inside a debounce window.
+  // Resolves false when the project's file could not be written (its slot is still written).
   const flushAutosave = async () => {
-    await writeFile();
+    const written = await writeFile();
     await writeSlotNow();
+    return written;
   };
   // Opening a project FILE adopts the id of the slot bound to that file (if any), so the
   // file and its slot stay one identity; the caller then rewrites the slot from the file's
@@ -1094,15 +1098,23 @@ export default function App() {
       : c.start;
     const linkId = uid();
     const audioId = uid();
-    let media = projectRef.current.media.find((x) => x.path === res.path);
-    dispatch({ type: 'beginGesture', group: true });
-    if (!media) { media = { ...res, id: uid(), origin: 'detach' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
-    dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { muted: true, linkId } });
-    dispatch({ type: 'insertAudioClip', clip: {
-      id: audioId, mediaId: media.id, start, in: 0, out: Math.min(c.out - c.in, res.duration || (c.out - c.in)),
-      speed: c.speed || 1, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0,
+    const now = projectRef.current;
+    let media = now.media.find((x) => x.path === res.path);
+    const actions = [];
+    if (!media) { media = { ...res, id: uid(), origin: 'detach' }; actions.push({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
+    const out = Math.min(c.out - c.in, res.duration || (c.out - c.in)), speed = c.speed || 1;
+    actions.push({ type: 'update', track: sel.track, id: sel.id, patch: { muted: true, linkId } });
+    // The sound goes on the first audio layer with room that is not locked, hidden or muted.
+    actions.push({ type: 'insertAudioClip', clip: {
+      id: audioId, mediaId: media.id, start, in: 0, out, layer: openLayer(now, 'audio', start, out / speed),
+      speed, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0,
       linkId, linkOff: 0, linkInOff: -(c.in || 0),
     } });
+    // All or nothing: one step that mutes the picture only together with the sound's insert.
+    const batch = { type: 'batch', actions };
+    if (historyReducer(historyRef.current, batch) === historyRef.current) return;
+    dispatch({ type: 'beginGesture', group: true });
+    dispatch(batch);
     dispatch({ type: 'endGesture', group: true });
     select({ track: 'audio', id: audioId });
   }, [selection, select]);
@@ -1854,12 +1866,14 @@ export default function App() {
   // Closing the window: write the project's file, or ask about a project that never had one.
   useEffect(() => window.api.onCloseRequest(async () => {
     const a = autosave.current;
-    if (a.file) {
-      await flushAutosave(); // Home restores the slot too, including the latest chat.
+    // The file could not be written: closing now would lose the changes since its last write,
+    // so the close waits for the save question like a project that never had a file.
+    const failed = !!a.file && !(await flushAutosave()); // Home restores the slot too, including the latest chat.
+    if (a.file && !failed) {
       await keepRecovery(false);
       return window.api.closeNow();
     }
-    if (!hasContent(a.project)) {
+    if (!failed && !hasContent(a.project)) {
       await keepRecovery(false);
       return window.api.closeNow();
     }
@@ -1867,7 +1881,7 @@ export default function App() {
     // since it was loaded closes without asking: there is nothing to save or to throw away.
     const created = a.origin?.created !== false, base = a.loadedProject;
     const unchanged = !created && !!base && (sameDoc(base, a.project) || JSON.stringify(projectDoc(base)) === JSON.stringify(projectDoc(a.project)));
-    if (unchanged) {
+    if (!failed && unchanged) {
       await flushAutosave();
       await keepRecovery(false);
       return window.api.closeNow();
@@ -1875,7 +1889,7 @@ export default function App() {
     window.api.closeCancel(); // the window waits for the answer
     if (a.asking) return; // already asking (the close button was clicked again)
     a.asking = true;
-    const choice = await new Promise((resolve) => setCloseAsk({ name: a.project.name, resolve }));
+    const choice = await new Promise((resolve) => setCloseAsk({ name: a.project.name, failed, resolve }));
     a.asking = false;
     setCloseAsk(null);
     if (choice === 'save') {
@@ -1884,6 +1898,8 @@ export default function App() {
     }
     if (choice === 'discard') {
       await keepRecovery(false);
+      // A project with a file keeps its file as last written and its slot as it is.
+      if (failed) return window.api.closeNow();
       // No pending slot write may land after the answer.
       clearTimeout(a.slotTimer);a.slotTimer = null;
       try { await a.slotWriting; } catch { /* the slot is replaced below */ }
@@ -2311,12 +2327,16 @@ export default function App() {
   useEffect(() => {
     // Keys come from the user's keymap (Settings > Keyboard shortcuts).
     const onKey = (e) => {
-      if (e.defaultPrevented || e.isComposing || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      // Any modal (a dialog or an alert dialog) holds the keyboard.
+      if (e.defaultPrevented || e.isComposing || document.querySelector('[aria-modal="true"]')) return;
       const k = keys.current, action = actionFor(e);
       if (!action) return;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
       if (typing && !WORKS_IN_FIELDS.has(action)) return;
       if(action.startsWith('extension:')){if(!e.repeat&&k.extensionShortcut(action))e.preventDefault();return;}
+      // Editor keys act only on the visible editor, never on the project kept behind the Home screen
+      // (extension shortcuts above answer to their own scope).
+      if (screenRef.current !== 'editor') return;
       // Space on a focused button presses that button rather than playing.
       if (action === 'togglePlay' && e.code === 'Space' && e.target.closest('button')) return;
       const run = {
@@ -2363,7 +2383,7 @@ export default function App() {
         {externalApproval}
         <ExtensionMessages hideJobs={!!settingsOpen||!!exporting||!!agentRun} onManage={()=>setSettingsOpen('plugins')}/><ExtensionPreparation value={extensionHost.preparing} onCancel={extensionHost.cancelBefore}/>
 
-        {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
+        {closeAsk && <CloseDialog name={closeAsk.name} failed={closeAsk.failed} onChoice={closeAsk.resolve} />}
         {extensionHost.preview&&<ExtensionMediaPreview preview={extensionHost.preview} onClose={extensionHost.closePreview} onInsert={extensionHost.insertPreview}/>}
       {settingsOpen && <SettingsDialog onAuthorExport={startAuthorExport} project={project} onReplaceDependency={replacePackDependency} onApplyPack={screen==='editor'?applyPackContent:undefined} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
           onAbout={() => setAboutOpen('settings')} />}
@@ -2461,7 +2481,7 @@ export default function App() {
         </div>
       )}
       {aboutOpen && <AboutDialog onClose={() => { setAboutOpen(false); if (aboutOpen === 'settings') setSettingsOpen(true); }} />}
-      {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
+      {closeAsk && <CloseDialog name={closeAsk.name} failed={closeAsk.failed} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
       {extensionHost.preview&&<ExtensionMediaPreview preview={extensionHost.preview} onClose={extensionHost.closePreview} onInsert={extensionHost.insertPreview}/>}

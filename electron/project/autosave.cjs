@@ -3,7 +3,7 @@
 // previous one (the old design kept a single shared crash-recovery snapshot that any
 // other project overwrote). A slot is one JSON file per project id:
 //
-//   <root>/<id>.json       { id, title, file, fileStamp, ratio, thumb, updatedAt, project }
+//   <root>/<id>.json       { id, title, file, fileStamp, chatStamp, ratio, thumb, updatedAt, project }
 //   <root>/chat/<id>.json  the project's CraftAI conversations (project.craftAI), kept apart so a
 //                          chat change never rewrites the document (sidecar.cjs); merged on read
 //   <root>/index.json      [{ id, title, file, ratio, thumb, updatedAt }] — newest first
@@ -96,17 +96,27 @@ function prune(root, entries, keepId) {
 function fileStamp(file) {
   try { const st = fs.statSync(file); return st.isFile() ? { mtimeMs: st.mtimeMs, size: st.size } : null; } catch { return null; }
 }
+const sameStamp = (a, b) => (!a && !b) || (!!a && !!b && a.mtimeMs === b.mtimeMs && a.size === b.size);
+const readText = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
 
 // True when a slot's bound file exists and is not the file the slot last saw: its identity differs from
 // the recorded stamp, or (a slot written before stamps were kept) the file was modified after the slot.
-// Such a slot must not be opened over the file: the file has work the slot never had.
-function fileChangedSince(slot) {
+// Such a slot must not be opened over the file: the file has work the slot never had. The file's chat
+// sidecar counts too (a chat-only change elsewhere rewrites only the sidecar): when its identity is
+// not the one recorded (slot.chatStamp), it is a change unless it holds the slot's own chat (root:
+// the store, to read that chat; without it any other sidecar is a change).
+function fileChangedSince(slot, root) {
   if (!slot || !slot.file) return false;
   const now = fileStamp(slot.file);
   if (!now) return false; // the file is gone: the slot is the only copy left
   const was = slot.fileStamp;
-  if (was && typeof was === 'object') return now.mtimeMs !== was.mtimeMs || now.size !== was.size;
-  return now.mtimeMs > (Number(slot.updatedAt) || 0);
+  if (!(was && typeof was === 'object')) return now.mtimeMs > (Number(slot.updatedAt) || 0);
+  if (now.mtimeMs !== was.mtimeMs || now.size !== was.size) return true;
+  if (!Object.hasOwn(slot, 'chatStamp')) return false; // a slot written before the sidecar was stamped
+  const sidecarFile = require('./sidecar.cjs').chatPath(slot.file);
+  if (sameStamp(fileStamp(sidecarFile), slot.chatStamp)) return false;
+  const own = root && chatPath(root, slot.id);
+  return !own || readText(sidecarFile) !== readText(own);
 }
 
 // record: { id, title, file, ratio, thumb, updatedAt, projectJson, chatJson? } — projectJson is the
@@ -130,7 +140,7 @@ function writeSlot(root, record) {
       updatedAt: Number(record.updatedAt) || Date.now(),
       project,
     };
-    if (slot.file) slot.fileStamp = fileStamp(slot.file);
+    if (slot.file) { slot.fileStamp = fileStamp(slot.file); slot.chatStamp = fileStamp(require('./sidecar.cjs').chatPath(slot.file)); }
     writeJsonAtomic(file, slot);
     if (record.chatJson !== undefined) writeSlotChat(root, slot.id, record.chatJson);
     const entry = { id: slot.id, title: slot.title, file: slot.file, ratio: slot.ratio, thumb: slot.thumb, updatedAt: slot.updatedAt };

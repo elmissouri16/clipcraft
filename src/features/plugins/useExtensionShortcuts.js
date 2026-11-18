@@ -3,7 +3,7 @@ import {activeKeymap,extensionShortcut,setExtensionShortcuts} from '../../app/ke
 export function useExtensionShortcuts(options){
  const latest=useRef(options);latest.current=options;
  const run=useCallback(id=>{
-  const action=extensionShortcut(id);if(!action||action.scope==='editor'&&!latest.current.hasProject||document.querySelector('[role="dialog"][aria-modal="true"],.settings2,.ctx-menu,[role="menu"],.dropdown-list'))return false;
+  const action=extensionShortcut(id);if(!action||action.scope==='editor'&&!latest.current.hasProject||document.querySelector('[aria-modal="true"],.settings2,.ctx-menu,[role="menu"],.dropdown-list'))return false;
   window.api.pluginsExtensionShortcutExecute(id).catch(error=>latest.current.onError(error));return true;
  },[]);
  useEffect(()=>{
