@@ -3,3 +3,6 @@
 # (CRLF) and `base64 -d` fails with "invalid input" (proven locally).
 ci-assets/** -text
 ci-assets.sha256 -text
+# Historical plugin fixtures carry recorded fingerprints of their exact bytes;
+# a CRLF checkout on Windows changes the bytes and so the fingerprint.
+tests/fixtures/plugins/legacy/** -text

@@ -93,14 +93,20 @@ async function readArchive(source) {
     const { MANIFEST_LIMIT } = await contract;
     const files = new Map(); let invalid = false, entries = 0, total = 0;
     await new Promise((resolve, reject) => {
+        // On Windows the tar reader rewrites "\" to "/" in entry names before they arrive here, which
+        // would admit a name that every other platform refuses. Judge the names as the archive wrote them.
         const parser = tar.t({
             strict: true, brotli:false, zstd:false, maxMetaEntrySize: MANIFEST_LIMIT, onReadEntry: entry => {
                 entries++; const limit = fileLimit(entry.path, MANIFEST_LIMIT, COMMAND_CODE_LIMIT);
                 total+=entry.size;
+                if (String(entry.header?.path).includes('\\')) { invalid = true; return; }
                 if (entries > EXTENSION_LIMITS.files || total>CONTENT_LIMITS.total || !(allowed.includes(entry.path)||assetName(entry.path)||extensionPath(entry.path)) || files.has(entry.path) || entry.type !== 'File' || entry.size > limit) { invalid = true; return; }
                 const chunks = []; files.set(entry.path, chunks); entry.on('data', chunk => chunks.push(chunk));
             }
-        }); parser.on('ignoredEntry',()=>{invalid=true;});parser.on('error', reject); parser.on('end', resolve); parser.end(bytes);
+        }); parser.on('ignoredEntry',()=>{invalid=true;});
+        // Long names arrive as PAX records ("<length> path=<name>") or as a bare GNU long name.
+        parser.on('meta', meta => { if (/^\d+ [^=\n]+=/.test(meta) ? /(?:^|\n)\d+ (?:path|linkpath)=[^\n]*\\/.test(meta) : meta.includes('\\')) invalid = true; });
+        parser.on('error', reject); parser.on('end', resolve); parser.end(bytes);
     });
     if (invalid || bytes.length-total>overhead || !files.has('plugin.json')) throw Error('Package must contain only one regular plugin.json and its declared command/panel/content assets within size limits.');
     return new Map([...files].map(([name, chunks]) => [name, Buffer.concat(chunks)]));

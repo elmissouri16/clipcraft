@@ -7,6 +7,7 @@ const manifest=Buffer.from(JSON.stringify({id:'test.portable',name:'Portable fix
 const main=Buffer.from('throw Error("Validation and installation must not execute code");');
 const files=extra=>new Map([['plugin.json',manifest],['dist/extension.cjs',main],...extra]);
 const {archive}=require('../../fixtures/pluginArchive.cjs');
+const pax=(key,value)=>{let record='',length=0;do{length=Buffer.byteLength(record);record=`${length} ${key}=${value}\n`;}while(Buffer.byteLength(record)!==length);return Buffer.from(record);};
 (async()=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-extension-paths-')),checks=[];
  const check=name=>{checks.push(name);console.log('PASS',name);};
@@ -48,12 +49,20 @@ const {archive}=require('../../fixtures/pluginArchive.cjs');
   {name:'assets/linked.txt',bytes:Buffer.alloc(0),type:'2',link:'../../outside.txt'},
   {name:'assets/hard.txt',bytes:Buffer.alloc(0),type:'1',link:'dist/extension.cjs'},
   {name:'assets/CON.txt'}, {name:'assets/trailing./child.txt'},
+  // The same nonportable separator carried by a PAX record and by a GNU long name.
+  [{name:'PaxHeader/outside',type:'x',bytes:pax('path','dist\\outside.js')},{name:'dist/placeholder.js'}],
+  [{name:'././@LongLink',type:'L',bytes:Buffer.from('dist\\outside.js\0')},{name:'dist/placeholder.js'}],
  ];
  for(let i=0;i<badEntries.length;i++){
-  const target=path.join(directory,'malformed-'+i+'.tgz');await fs.writeFile(target,archive([{name:'plugin.json',bytes:manifest},{name:'dist/extension.cjs',bytes:main},badEntries[i]]));
+  const target=path.join(directory,'malformed-'+i+'.tgz');await fs.writeFile(target,archive([{name:'plugin.json',bytes:manifest},{name:'dist/extension.cjs',bytes:main},...[badEntries[i]].flat()]));
   await assert.rejects(readArchive(target),/Package must contain/);
   await assert.rejects(manager.install(target));assert.deepEqual(await fs.readFile(path.join(manager.root,'inventory.json')),inventory);
  }
+ // The tar reader rewrites "\\" to "/" on Windows. Run the same archives through a reader that
+ // believes it is on Windows, so every platform's run proves the refusal does not depend on that.
+ const windows=require('node:child_process').spawnSync(process.execPath,['-e',`const {readArchive}=require(${JSON.stringify(path.resolve(__dirname,'../../../electron/plugins/package.cjs'))});(async()=>{for(let i=0;i<${badEntries.length};i++){let accepted=true;try{await readArchive(require('node:path').join(${JSON.stringify(directory)},'malformed-'+i+'.tgz'));}catch(error){accepted=!/Package must contain/.test(error.message);}if(accepted){console.error('malformed-'+i+' accepted');process.exitCode=1;}}})()`],{env:{...process.env,TESTING_TAR_FAKE_PLATFORM:'win32'},encoding:'utf8'});
+ assert.equal(windows.status,0,windows.stderr);
+ check('archive names are judged as written, so Windows path rewriting cannot admit a nonportable separator');
  assert.deepEqual((await fs.readdir(manager.root)).filter(name=>!['inventory.json',installed.key].includes(name)),[]);
  await assert.rejects(fs.stat(path.join(directory,'outside.txt')),{code:'ENOENT'});
  check('traversal, absolute paths, duplicate entries and links cannot escape or leave install staging');
