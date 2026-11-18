@@ -93,7 +93,15 @@ function parseMyinstants(html) {
       providerName: 'MyInstants',
     });
   }
-  return { results, hasNext: /rel="next"/.test(html) };
+  const nextLink = [...html.matchAll(/<(?:a|link)\b[^>]*>/gi)].some(([tag]) => {
+    const rel = /\brel\s*=\s*(['"])([^'"]*)\1/i.exec(tag);
+    return rel?.[2].toLowerCase().split(/\s+/).includes('next');
+  });
+  // Current pages use a loading sentinel and request the next page until 404,
+  // without rel=next. Do not advertise more pages for an empty result container.
+  const infiniteScroll = /<div\b[^>]*\bid\s*=\s*(['"])loading\1/i.test(html)
+    && /<div\b[^>]*\bid\s*=\s*(['"])instants_container\1/i.test(html);
+  return { results, hasNext: results.length > 0 && (nextLink || infiniteScroll) };
 }
 
 // category: 'trending' | 'best' when there are no words. Returns { results, total, page, pages }.
@@ -112,7 +120,7 @@ async function searchMyinstants(fetchImpl, { q, category, page = 1 }) {
   if (res.status === 429) throw new Error('MyInstants is busy right now. Try again in a minute.');
   if (!res.ok) throw new Error(`MyInstants answered ${res.status}.`);
   const { results, hasNext } = parseMyinstants(await res.text());
-  return { results, total: results.length, page: n, pages: hasNext ? n + 1 : n };
+  return { results, total: results.length, page: n, pages: hasNext && n < 50 ? n + 1 : n };
 }
 
 // Sound effects from both online sources in one list: SFXMint (category, or the words) on the first page, mixed

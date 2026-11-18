@@ -88,6 +88,25 @@ module.exports=async(win,app,dir)=>{
     check('Installed SFX stay separate from online categories',true);
     await click('Online');await until('!!document.querySelector(\'input[aria-label="Search the library"]\')');
     check('Online search survives a visit to the local library',await q('document.querySelector(\'input[aria-label="Search the library"]\').value==="onlycredited"'));
+    // Exercise real native parsing and UI pagination with original page records.
+    // Only this source's network edge is replaced; IPC, parser and UI stay real.
+    const {net}=require('electron'),nativeFetch=net.fetch,memeRequests=[];
+    net.fetch=(input,...options)=>{
+      const url=new URL(String(input));if(url.hostname!=='www.myinstants.com')return nativeFetch(input,...options);
+      memeRequests.push(url.href);const page=Number(url.searchParams.get('page')||1),id=page===2?'22':'11';
+      const html=`<div id="instants_container"><button onclick="play('/media/sounds/fixture-${id}.mp3', 'loader-${id}', 'fixture-${id}')"></button><a class="instant-link">Original page ${page}</a></div><div id="loading"></div>`;
+      return Promise.resolve(new Response(page>=3?'':html,{status:page>=3?404:200,headers:{'content-type':'text/html'}}));
+    };
+    try{
+      await click('Memes');await until('document.querySelector(".browser-summary")?.textContent.startsWith("MyInstants")&&!!document.querySelector(".lib-more")');
+      await search('original pagination');await until('document.querySelectorAll(".lib-row").length===1&&!!document.querySelector(".lib-more")');
+      await q('document.querySelector(".lib-more").click()');await until('document.querySelectorAll(".lib-row").length===2&&!!document.querySelector(".lib-more")');
+      check('Meme Load more appends distinct parsed infinite-scroll pages',await q('document.querySelector(".lib-list").textContent.includes("Original page 1")&&document.querySelector(".lib-list").textContent.includes("Original page 2")&&document.querySelector(".browser-summary").textContent.includes("Licence unknown")'));
+      await q('document.querySelector(".lib-more").click()');await until('!document.querySelector(".lib-more")&&!document.querySelector(".lib-loading")');
+      check('Terminal meme page retains results and removes Load more',await q('document.querySelectorAll(".lib-row").length===2&&!document.querySelector(".lib-error")'));
+      check('Meme pagination retains the submitted query at every page',[1,2,3].every(page=>memeRequests.some(value=>{const url=new URL(value);return url.searchParams.get('name')==='original pagination'&&url.searchParams.get('page')===String(page);})));result.memeRequests=memeRequests;
+      await click('Sound effects');await until('document.querySelector(".browser-summary")?.textContent.startsWith("Openverse")&&document.querySelectorAll(".lib-row").length===1');
+    }finally{net.fetch=nativeFetch;}
     await click('Text to speech');await until('!!document.querySelector(".tts")');check('Speech generation stays reachable',true);
     await click('Credits');
     await until('!!document.querySelector(".lib-credits pre")');

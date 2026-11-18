@@ -23,6 +23,19 @@ const response = body => ({ ok: true, status: 200, json: async () => body });
   await lib.search(search, { kind: 'sfx', q: 'whoosh' });
   assert.equal(calls.at(-1).pathname, '/v1/audio/'); assert.equal(calls.at(-1).searchParams.get('source'), 'freesound');
   assert.equal(calls.at(-1).searchParams.get('license'), 'cc0');
+  const musicCalls = [], musicSearch = async url => {
+    const query = new URL(url); musicCalls.push(query);
+    return response({ result_count: 1, page_count: 1, results: query.searchParams.get('license') === 'cc0' ? [] : [
+      { ...record, source: 'jamendo', url: 'https://prod-1.storage.jamendo.com/track.mp3', license: 'by', license_url: 'https://creativecommons.org/licenses/by/4.0/' },
+      { ...record, license: 'by-nc' }] });
+  };
+  assert.equal((await lib.search(musicSearch, { kind: 'music', q: 'music-license-policy' })).results.length, 0);
+  assert.equal(musicCalls.length, 1, 'empty CC0 music never triggers a broader fallback');
+  assert.equal(musicCalls[0].searchParams.get('source'), 'jamendo'); assert.equal(musicCalls[0].searchParams.get('category'), 'music');
+  assert.equal(musicCalls[0].searchParams.get('license'), 'cc0');
+  const creditedMusic = await lib.search(musicSearch, { kind: 'music', q: 'music-license-policy', licenses: 'attribution' });
+  assert.deepEqual(creditedMusic.results.map(r => r.license), ['by']); assert.equal(musicCalls.length, 2);
+  assert.equal(musicCalls[1].searchParams.get('license'), 'cc0,by');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-openverse-unit-'));
   try {
     let downloads = 0;

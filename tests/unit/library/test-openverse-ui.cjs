@@ -1,4 +1,5 @@
 // Real Electron UI with a local Openverse fixture; no provider keys or user's project changes.
+// Native clipboard acceptance requires an activatable app, even in an otherwise quiet battery.
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http'), net = require('node:net');
 const { spawn, execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
@@ -42,7 +43,7 @@ const assert = require('node:assert/strict');
   let electron;
   try {
     for(let i=0;i<100;i++){try{if((await fetch(url)).ok)break;}catch{}await new Promise(r=>setTimeout(r,80));}
-    electron=spawn(require('electron'),['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'openverse',CLIPCRAFT_ASSETS_DIR:pack,CLIPCRAFT_BUNDLED_PACK_DIR:path.join(dir,'no-bundle'),FVE_OPENVERSE_API:`${origin}/v1/`,FVE_SFXMINT_API:`${origin}/sfxmint`,VITE_DEV_SERVER_URL:url}});
+    electron=spawn(require('electron'),['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_QUIET:'0',FVE_SMOKE_MODE:'openverse',CLIPCRAFT_ASSETS_DIR:pack,CLIPCRAFT_BUNDLED_PACK_DIR:path.join(dir,'no-bundle'),FVE_OPENVERSE_API:`${origin}/v1/`,FVE_SFXMINT_API:`${origin}/sfxmint`,VITE_DEV_SERVER_URL:url}});
     const code=await new Promise(resolve=>{const t=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},120000);electron.once('exit',c=>{clearTimeout(t);resolve(c);});});
     fs.writeFileSync(path.join(dir,'requests.json'),JSON.stringify(requests,null,2));
     const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json'))); assert.equal(code,0,result.error);assert.ok(!result.error,result.error);

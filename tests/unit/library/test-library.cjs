@@ -10,6 +10,7 @@ const lib = require("../../../electron/library/library.cjs");
 
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-lib-'));
+  let searchEvidence;
 
   if (!lib.hostOk('https://prod-1.storage.jamendo.com/?trackid=1') || lib.hostOk('https://evil.example/jamendo.com') || lib.hostOk('http://cdn.freesound.org/x')) {
     throw new Error('host allowlist');
@@ -18,10 +19,17 @@ const lib = require("../../../electron/library/library.cjs");
 
   if (!process.argv.includes('--offline')) {
     const sfx = await lib.search(fetch, { kind: 'sfx', q: 'whoosh' });
-    const music = await lib.search(fetch, { kind: 'music', q: 'happy' });
-    console.log(`search: ${sfx.results.length} effects, ${music.results.length} music`);
+    const defaultMusic = await lib.search(fetch, { kind: 'music', q: 'happy' });
+    // A valid CC0 query can have no matches. Exercise the explicit credit-required
+    // option for positive music acceptance, without silently widening the default.
+    const music = await lib.search(fetch, { kind: 'music', q: 'happy', licenses: 'attribution' });
+    searchEvidence = { query: 'happy', defaultMusic: { licenses: 'cc0', total: defaultMusic.total, items: defaultMusic.results.map(({ id, license }) => ({ id, license })) },
+      explicitMusic: { licenses: 'attribution', total: music.total, items: music.results.map(({ id, license, licenseUrl }) => ({ id, license, licenseUrl })) } };
+    fs.writeFileSync(path.join(dir, 'search-result.json'), JSON.stringify(searchEvidence, null, 2));
+    console.log(`search: ${sfx.results.length} effects, ${defaultMusic.results.length} CC0 music, ${music.results.length} music with explicit attribution`);
+    console.log('Library search evidence: ' + dir);
     if (!sfx.results.length || !music.results.length) throw new Error('empty search');
-    if ([...sfx.results, ...music.results].some((r) => !['cc0', 'pdm', 'by'].includes(r.license))) throw new Error('license filter');
+    if ([...sfx.results, ...defaultMusic.results].some((r) => r.license !== 'cc0') || music.results.some((r) => !['cc0', 'by'].includes(r.license))) throw new Error('license filter');
     // SFXMint: words and categories, CC0 only, downloads keep the file.
     const mintQ = await lib.search(fetch, { kind: 'sfxmint', q: 'whoosh' });
     const mintC = await lib.search(fetch, { kind: 'sfxmint', category: 'ui' });
@@ -54,7 +62,9 @@ const lib = require("../../../electron/library/library.cjs");
     console.log(`downloaded "${pick.title}" ${info.duration.toFixed(2)}s · ${lib.creditLine(pick)}`);
     if (info.type !== 'audio') throw new Error('download is not audio');
   }
-  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(path.join(dir, 'online'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ ok: true, offline: process.argv.includes('--offline'), searchEvidence }, null, 2));
+  console.log('Library evidence: ' + dir);
   console.log('LIBRARY OK');
 })().catch((e) => {
   console.error(e.stack || e.message);
