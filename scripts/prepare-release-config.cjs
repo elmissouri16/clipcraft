@@ -14,13 +14,11 @@ delete cfg.extraResources;
 // Deterministic installer names (the download links and release notes depend on them).
 // The .deb keeps electron-builder's Debian-policy default (clipcraft_<version>_amd64.deb).
 if (cfg.win) cfg.win.artifactName = 'ClipCraft-Setup-${version}.${ext}';
-if (cfg.mac) cfg.mac.artifactName = 'ClipCraft-${version}.${ext}';
-// Universal merge rule: the unpacked native binaries (ffmpeg / ffprobe) are byte-identical in the x64 and arm64 trees — one installed
-// copy serves both — so the merger must be told to take them from the x64
-// tree instead of failing on the undeclared duplicate. electron-builder
-// 26.18.0's schema takes this as ONE Minimatch string, not an array — an
-// array fails config validation on every platform (run #2's failure).
-if (cfg.mac) cfg.mac.x64ArchFiles = '**/app.asar.unpacked/node_modules/**';
+// macOS ships one DMG per architecture (arm64 and x64), named for it. A universal build is not
+// supported by this payload: the bundled ffmpeg is downloaded for the build machine's architecture
+// only, and the per-architecture ffprobe files make the universal merge fail (packaged-app run
+// 44223811766, 2026-11-18: "the number of mach-o files is not the same").
+if (cfg.mac) cfg.mac.artifactName = 'ClipCraft-${version}-${arch}.${ext}';
 // Never publish from the per-platform build jobs: electron-builder 26
 // implicitly publishes when it detects CI, which fails without GH_TOKEN
 // (run #1's ubuntu failure — the .deb built, then publishing died).

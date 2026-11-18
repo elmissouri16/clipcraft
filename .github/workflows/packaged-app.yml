@@ -2,14 +2,22 @@ name: Packaged app acceptance
 
 # Builds the release-configuration installer on each supported platform, installs it on the
 # runner and drives the installed application (scripts/verify-packaged-app.cjs). Nothing is
-# published and installers are not retained: only the receipt, log, screenshot and export are.
+# published. Installers are retained only when the release workflow calls this one, so that the
+# files attached to a draft release are the exact files that were installed and verified here.
 
 on:
   pull_request:
   push:
-    # The feature branch is listed while the plugin system is validated before its merge.
-    branches: [main, 'release/**', 'feat/plugin-system-foundation']
+    # Release branches run this through release.yml. The feature branch is listed while the
+    # plugin system is validated before its merge.
+    branches: [main, 'feat/plugin-system-foundation']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      retain_installers:
+        description: Keep the verified installers as artifacts for the calling release job.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,8 +39,11 @@ jobs:
             target: --linux deb --x64
           - os: windows-latest
             target: --win nsis --x64
+          # One DMG per architecture: each carries media tools native to that architecture.
           - os: macos-latest
-            target: --mac dmg --universal
+            target: --mac dmg --arm64
+          - os: macos-15-intel
+            target: --mac dmg --x64
     env:
       EVIDENCE: ${{ github.workspace }}/packaged-evidence
     steps:
@@ -91,4 +102,15 @@ jobs:
             packaged-evidence/editor.png
             packaged-evidence/export.mp4
           if-no-files-found: warn
+          retention-days: 14
+      - name: Retain the verified installer for the release draft
+        if: ${{ inputs.retain_installers && success() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            release/*.deb
+            release/*.exe
+            release/*.dmg
+          if-no-files-found: error
           retention-days: 14

@@ -1,0 +1,72 @@
+name: Release
+
+# A push to release/vX.Y.Z runs the SDK validation matrix and the installed-app acceptance on
+# every platform. Only when all of them pass does this workflow create a DRAFT release holding
+# the exact installers that were installed and verified. Publishing the draft stays a manual
+# maintainer action, taken after the hardware, performance and manual acceptance are recorded.
+# The SDK package is not published here.
+
+on:
+  push:
+    branches: ['release/v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sdk:
+    uses: ./.github/workflows/plugin-sdk-validation.yml
+  packaged:
+    uses: ./.github/workflows/packaged-app.yml
+    with:
+      retain_installers: true
+  draft:
+    name: Draft release from verified installers
+    needs: [sdk, packaged]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+      - name: Match the branch, the version and the verified installer hashes
+        id: verified
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "release/v$version" ]; then
+            echo "Branch $GITHUB_REF_NAME does not match package version $version." >&2
+            exit 1
+          fi
+          mkdir upload
+          for receipt in artifacts/packaged-app-*/receipt.json; do
+            os=$(basename "$(dirname "$receipt")" | sed 's/^packaged-app-//')
+            name=$(node -p "require('./$receipt').installer.name")
+            expected=$(node -p "const r=require('./$receipt'); if(!r.ok||r.expectedVersion!=='$version')throw Error('receipt is not a passing $version run'); r.installer.sha256")
+            actual=$(sha256sum "artifacts/installer-$os/$name" | cut -d' ' -f1)
+            if [ "$expected" != "$actual" ]; then
+              echo "$name differs from the installer that was verified on $os." >&2
+              exit 1
+            fi
+            cp "artifacts/installer-$os/$name" upload/
+            cp "$receipt" "upload/acceptance-$os.json"
+          done
+          # Linux deb, Windows installer and one macOS DMG per architecture.
+          test "$(ls upload | grep -c -v '^acceptance-')" -eq 4
+          (cd upload && sha256sum * > SHA256SUMS.txt)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.verified.outputs.version }}
+        run: |
+          gh release create "v$VERSION" upload/* --draft --title "ClipCraft $VERSION" --target "$GITHUB_SHA" \
+            --notes "Draft created by the release workflow after the SDK validation matrix and the installed-app acceptance passed on Linux, Windows and both macOS architectures. Publish only after the hardware, performance and manual acceptance are recorded."
