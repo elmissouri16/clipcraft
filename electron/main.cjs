@@ -2094,6 +2094,10 @@ ipcMain.on('dialog:messageSync', (event, req = {}) => {
 });
 
 app.whenReady().then(() => {
+  // The development Electron bundle keeps its own Dock icon unless set explicitly.
+  if (process.platform === 'darwin' && !app.isPackaged && !process.env.FVE_SMOKE) {
+    app.dock.setIcon(path.join(__dirname, '..', 'assets', 'icon.png'));
+  }
   i18n.setLanguage(settings.getLanguagePreference(), app.getLocale());
   installMenu();
   createWindow();

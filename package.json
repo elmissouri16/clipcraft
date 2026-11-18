@@ -157,7 +157,7 @@
       "category": "AudioVideo",
       "maintainer": "Hamza Abika",
       "description": "ClipCraft - free desktop video editor by Hamza Abika",
-      "icon": "build/icon.png",
+      "icon": "assets/icon.png",
       "syncDesktopName": true,
       "files": [
         "@(dist|electron|shared|assets)/**/*",
@@ -172,7 +172,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.png",
+      "icon": "assets/icon.ico",
       "files": [
         "@(dist|electron|shared|assets)/**/*",
         "package.json",
@@ -186,7 +186,7 @@
       "target": [
         "dmg"
       ],
-      "icon": "build/icon.png",
+      "icon": "assets/icon.png",
       "category": "public.app-category.video",
       "extendInfo": {
         "NSAudioCaptureUsageDescription": "ClipCraft records the computer's sound when you include it in a screen recording."

@@ -745,7 +745,7 @@ export default function Preview({
           })()}
           {!project.videoClips.length && (
             <div className="stage-empty">
-              <img src="./logo.png" alt="" draggable={false} />
+              <img src="./logo.svg" alt="" draggable={false} />
               <span>{t('preview.drop_a_video_or_photo_here_or_on_the_timel')}</span>
             </div>
           )}

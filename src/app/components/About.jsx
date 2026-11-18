@@ -20,7 +20,7 @@ export function AboutDialog({ onClose }) {
       <div className="modal about about2">
         <button className="icon-btn about-close" aria-label={t('app.close')} onClick={onClose}><X size={16} /></button>
         <div className="about-hero">
-          <div className="about-halo"><img src="./logo.png" alt="" draggable={false} /></div>
+          <div className="about-halo"><img src="./logo.svg" alt="" draggable={false} /></div>
           <h3 id="about-title">Clip<span className="grad">Craft</span></h3>
           <span className="about-vpill">{version ? t('home.version', { version }) : 'ClipCraft'}</span>
           <p className="about-tag">{t('about.cut_it_your_way_a_free_video_editor_that_w')}</p>

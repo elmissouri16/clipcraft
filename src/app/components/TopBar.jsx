@@ -29,7 +29,7 @@ export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWo
     <>
     <header className="topbar">
       <div className="brand">
-        <img src="./logo.png" alt="" className="brand-logo" draggable={false} />
+        <img src="./logo.svg" alt="" className="brand-logo" draggable={false} />
         <span className="brand-name">Clip<b>Craft</b></span>
       </div>
 

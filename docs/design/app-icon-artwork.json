@@ -1,0 +1,68 @@
+{
+  "source": "assets/icon.svg",
+  "design": "Original ClipCraft C/play/three-perforation identity, redrawn as precise vector geometry with violet fills, pearl tile and clean alpha.",
+  "generation": {
+    "mode": "GPT Image built-in for concept exploration; final artwork authored as SVG for exact geometry.",
+    "conceptMaster": "/Users/el/.codex/generated_images/01a1dcbf-8749-7b32-9c20-64152d814cd6/exec-fedbc92d-75ac-4438-b51f-6284fad32c75.png",
+    "prompt": "Use case: logo-brand. Create the final premium original ClipCraft app icon as an impeccable clean flat graphic. Existing image is identity reference only: keep the recognizable angular C encircling a right-facing play triangle, with exactly three small rounded square film perforations vertically aligned at right. Completely redraw it with strict geometric precision: equal stroke weights, perfectly straight diagonals, identical holes, generous clear negative space, balanced centered proportions. The C and three holes are rich violet, play triangle slightly brighter violet. One smooth ivory-white rounded-square tile. Tile occupies exactly 80 percent of the square canvas width and height, perfectly centered with equal 10 percent transparent margins on ALL four sides. Mark occupies only 66 percent of tile width, centered with generous breathing space; elegant compact mark, not oversized. Minimal professional macOS app icon, very restrained gentle color shading allowed, no dimensional extrusion. Crisp mathematically smooth clean edges, no irregular contours or hand-drawn shapes. Truly transparent outside tile, no dust, no fringe, no checkerboard texture, no shadow or glow, no black background. No text or wordmark. Front view, single isolated finished production icon, not a mockup. Output square PNG with true alpha.",
+    "previousConceptMasters": [
+      "/Users/el/.codex/generated_images/01a1dcbf-8749-7b32-9c20-64152d814cd6/exec-819a784c-9cbd-4e20-a882-1fc0c0778189.png",
+      "/Users/el/.codex/generated_images/01a1dcbf-8749-7b32-9c20-64152d814cd6/exec-e6066072-3e88-41cf-9fcd-60701df1d282.png"
+    ]
+  },
+  "reproduce": "node scripts/generate-app-icons.cjs",
+  "outputs": {
+    "assets/icon.png": {
+      "sha256": "b86894bfd629df44605aaa77c10264f9899766e71692f0dab943cfe12b52d68a"
+    },
+    "assets/icon.ico": {
+      "sha256": "ba90356ba49f164a111b347f9e3593089f4bf4e611594e14d51372e9be9f6242"
+    },
+    "public/logo.svg": {
+      "sha256": "3221bdb2d3ead170268cc69813aae161918e3f447cb9a4bec59a6b3d74490ae3"
+    },
+    "public/logo.png": {
+      "sha256": "9e7583f29b29b0c42ccf2711cb2ce0c18f718f6519b1c8cbd7580fe8ffa52ee4"
+    },
+    "public/favicon.png": {
+      "sha256": "a6af66b82d3b1b542903e3b4c0a3a00620efde8962d59fdd44384a2c8febfc64"
+    }
+  },
+  "surfaces": [
+    "macOS development Dock and packaged app",
+    "Linux window and packaged app",
+    "Windows window/taskbar and packaged app",
+    "Home",
+    "editor header",
+    "About",
+    "empty preview",
+    "favicon"
+  ],
+  "verification": {
+    "rendererBuild": "passed; existing mixed-import and bundle-size warnings",
+    "structure": "passed",
+    "realApp": "Observed new Home, editor header and About artwork in the actual restarted Electron app; original project restored and Saved.",
+    "platformLimit": "Windows and Linux configurations checked on disk; platform runtimes and installers not run.",
+    "nativeAlpha": {
+      "size": 1024,
+      "visibleBounds": {
+        "minX": 100,
+        "minY": 100,
+        "maxX": 923,
+        "maxY": 923
+      },
+      "transparentPixels": 398152
+    },
+    "windowsIcoSizes": [
+      16,
+      24,
+      32,
+      48,
+      64,
+      128,
+      256
+    ],
+    "packagingPathsExist": true,
+    "dock": "Runtime points to the verified PNG; Dock itself not captured."
+  }
+}

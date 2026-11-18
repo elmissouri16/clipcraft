@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>ClipCraft</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0.8" y2="1">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#eee9fc"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#7545e6"/>
+      <stop offset="1" stop-color="#5128b8"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#tile)"/>
+  <path d="M586 374 468 302 322 392Q300 405 300 432V592Q300 619 322 632L468 722 586 650"
+    fill="none" stroke="url(#violet)" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M458 432 572 500Q592 512 572 524L458 592Q440 602 440 580V444Q440 422 458 432Z" fill="#8951ed"/>
+  <g fill="#6734cf">
+    <rect x="682" y="384" width="64" height="64" rx="14"/>
+    <rect x="682" y="480" width="64" height="64" rx="14"/>
+    <rect x="682" y="576" width="64" height="64" rx="14"/>
+  </g>
+</svg>

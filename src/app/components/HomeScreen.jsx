@@ -121,7 +121,7 @@ export default function HomeScreen({ recents, onNew, onOpen, onOpenRecent, onRem
     <div className="home">
       <header className="home-top">
         <div className="home-brand">
-          <img src="./logo.png" alt="" className="home-logo" draggable={false} />
+          <img src="./logo.svg" alt="" className="home-logo" draggable={false} />
           <span className="home-name">ClipCraft</span>
           <span className="home-ver">{version ? t('home.version', { version }) : 'ClipCraft'}</span>
         </div>
