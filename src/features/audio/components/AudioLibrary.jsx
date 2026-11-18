@@ -119,8 +119,7 @@ function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, onSectionC
   const chip = tags.find(([label]) => label === tag);
   const query = [term.trim(), chip?.[1] || ''].filter(Boolean).join(' ') || (kind === 'music' ? 'background music' : kind === 'trolls' ? '' : 'sound effect');
   const [res, setRes] = useState({ results: [], page: 0, pages: 0, loading: false, error: '' });
-  const source = kind === 'music' ? 'Openverse' : kind === 'trolls' ? 'MyInstants' : 'Openverse + SFXMint';
-  const section = kind === 'sfxall' ? 'sfx' : kind;
+  const source = kind === 'trolls' ? 'MyInstants' : 'Openverse';
   const load = async page => {
     const seq = ++request.current;
     setRes(r => ({ ...r, loading: true, error: '', ...(page === 1 ? { results: [] } : {}) }));
@@ -139,9 +138,9 @@ function OnlineSearch({ kind, tags, preview, onAdd, adding, fixedTag, onSectionC
     <BrowserControls query={q} onQuery={q => patch({ q, ...(!q ? { term: '' } : {}) })} onSearch={() => q === term ? load(1) : patch({ term: q })}
       placeholder={kind === 'music' ? t('audio.search_online_music') : kind === 'trolls' ? t('audio.search_meme_sounds') : t('audio.search_sound_effects')} ariaLabel={t('audio.search_the_library')} navigation={navigation}
       summary={<>{source}{` · ${openverse ? creditSummary(licenses) : t('audio.licence_unknown')}`}{chip && ` · ${tagLabel(tag)}`}</>}
-      onReset={() => { patch({ licenses: 'cc0' }); onSectionChange(`${section}:All`); }}>
+      onReset={() => { patch({ licenses: 'cc0' }); onSectionChange(`${kind}:All`); }}>
       {providerControl}
-      <BrowserField label={kind === 'music' ? t('audio.genre') : t('audio.category')} ariaLabel={t('audio.audio_category')} value={tag} onChange={value => onSectionChange(`${section}:${value}`)} options={[{ value: 'All', label: tagLabel('All') }, ...tags.map(([value]) => ({ value, label: tagLabel(value) }))]} />
+      <BrowserField label={kind === 'music' ? t('audio.genre') : t('audio.category')} ariaLabel={t('audio.audio_category')} value={tag} onChange={value => onSectionChange(`${kind}:${value}`)} options={[{ value: 'All', label: tagLabel('All') }, ...tags.map(([value]) => ({ value, label: tagLabel(value) }))]} />
       {openverse && <BrowserField label={t('audio.copyright_attribution')} ariaLabel={t('audio.audio_licences')} value={licenses} onChange={licenses => patch({ licenses })} options={CREDIT_OPTIONS} />}
       {openverse && <p className="browser-filter-help">{t('audio.cc_by_includes_cc0_results_and_media_that')}</p>}
     </BrowserControls>
@@ -236,7 +235,7 @@ export default function AudioLibrary({ media, project, onImport, onAddMedia, onL
 
       {(view === 'music' || view === 'sfx') && (sub.startsWith('pack:') ? (
         <PackMusic key={`${view}:${sub}`} group={view === 'music' ? 'Music' : 'Sound FX'} collection={sub.slice(5)} onAddFile={onAddFile} navigation={navigation} browserMemory={browserMemory} />
-      ) : <OnlineSearch key={view} kind={view === 'music' ? 'music' : 'sfxall'} tags={view === 'music' ? MUSIC_TAGS : SFX_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} onSectionChange={onSectionChange} navigation={navigation} providerControl={providerControl} browserMemory={browserMemory} />)}
+      ) : <OnlineSearch key={view} kind={view === 'music' ? 'music' : 'sfx'} tags={view === 'music' ? MUSIC_TAGS : SFX_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} onSectionChange={onSectionChange} navigation={navigation} providerControl={providerControl} browserMemory={browserMemory} />)}
       {view === 'soundza' && <SoundzaSearch fixedTag={sub} preview={preview} onAdd={add} adding={adding} onOpenSettings={onOpenSettings} onSectionChange={onSectionChange} navigation={navigation} providerControl={providerControl} browserMemory={browserMemory} settingsVersion={settingsVersion} />}
       {view === 'trolls' && <OnlineSearch key="trolls" kind="trolls" tags={TROLL_TAGS} fixedTag={sub} preview={preview} onAdd={add} adding={adding} onSectionChange={onSectionChange} navigation={navigation} browserMemory={browserMemory} />}
 

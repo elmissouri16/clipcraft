@@ -7,7 +7,7 @@ module.exports=async(win,app,dir)=>{
   const check=(name,ok)=>{assert.ok(ok,name);result.checks.push(name);};
   const click=text=>q(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent.trim()===${JSON.stringify(text)});if(!e)throw Error('Missing button '+${JSON.stringify(text)});e.click();})()`);
   const select=async(label,value)=>{
-    const labels={ 'Audio source':{library:'Library',online:'Online'},'Audio content type':{music:'Music',sfx:'Sound effects',trolls:'Memes'}, 'Photo provider':{openverse:'Openverse · no key needed',pixabay:'Pixabay'},'Photo licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio provider':{sfx:'Openverse + SFXMint',soundza:'Soundza'}};
+    const labels={ 'Audio source':{library:'Library',online:'Online'},'Audio content type':{music:'Music',sfx:'Sound effects',trolls:'Memes'}, 'Photo provider':{openverse:'Openverse · no key needed',pixabay:'Pixabay'},'Photo licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio provider':{sfx:'Openverse',soundza:'Soundza'}};
     if(!await q(`!!document.querySelector('button[aria-label="${label}"]')`)){await q('document.querySelector(".browser-filter-toggle").click()');await until(`!!document.querySelector('button[aria-label="${label}"]')`);}
     await q(`document.querySelector('button[aria-label="${label}"]').click()`);
     await until('!!document.querySelector(".dropdown.open [role=option]")');

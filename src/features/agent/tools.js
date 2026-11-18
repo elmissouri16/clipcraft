@@ -1264,7 +1264,7 @@ export function createToolRunner(ctx) {
     },
 
     async search_sounds({ kind, query, licenses = 'cc0' }) {
-      const lib = { music: 'music', sfx: 'sfxall', meme: 'trolls', memes: 'trolls', troll: 'trolls', trolls: 'trolls' }[String(kind || '').toLowerCase()];
+      const lib = { music: 'music', sfx: 'sfx', meme: 'trolls', memes: 'trolls', troll: 'trolls', trolls: 'trolls' }[String(kind || '').toLowerCase()];
       if (!lib) return { error: 'kind must be "music", "sfx" or "meme".' };
       const res = await api.librarySearch({ requestId: ctx.requestId, kind: lib, licenses, q: String(query || ''), category: '', page: 1 });
       if (res.error) return { error: res.error };

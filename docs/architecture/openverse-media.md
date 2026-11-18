@@ -4,7 +4,8 @@ Stock Photos defaults to Openverse, with Pixabay available under Filters > Provi
 Videos continue to use Pixabay. Audio separates installed Library collections
 from Online music, effects and memes; provider and copyright options are under
 Filters. Queries and filter choices are retained during the mounted editor session. Music and Sound FX use the same Openverse service
-as photos; Sound FX also keeps its existing SFXMint results.
+as photos. SFXMint results were withdrawn on 2026-11-18 after that service ended keyless
+downloads; sounds already kept on disk stay usable.
 
 Openverse searches default to No credit required (CC0). The explicit
 Include credit-required media option (`licenses: attribution`) adds

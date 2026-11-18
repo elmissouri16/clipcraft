@@ -107,6 +107,6 @@ export default function ServiceConnections({ saved, onSaved, providers, target, 
       </section>;
     })}
     {!shown.length && <p className="empty-note">{t('services.no_services_match_query', { query: search })}</p>}
-    <SettingsGroup label={t('services.no_api_key_needed')} hint={t('services.openverse_and_sfxmint_work_without_a_key')} />
+    <SettingsGroup label={t('services.no_api_key_needed')} hint={t('services.openverse_works_without_a_key')} />
   </div>;
 }

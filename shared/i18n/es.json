@@ -2743,7 +2743,7 @@
   "services.no_key_saved": "Ninguna clave guardada",
   "services.no_services_match_query": "Ningún servicio coincide con «{query}».",
   "services.not_set_up": "Sin configurar",
-  "services.openverse_and_sfxmint_work_without_a_key": "Openverse y SFXMint funcionan sin clave. VoiceStudio se ejecuta en este equipo y se activa en Voz. Ollama y los agentes nativos se configuran en Asistente; los agentes nativos usan su propio inicio de sesión.",
+  "services.openverse_works_without_a_key": "Openverse funciona sin clave. VoiceStudio se ejecuta en este equipo y se activa en Voz. Ollama y los agentes nativos se configuran en Asistente; los agentes nativos usan su propio inicio de sesión.",
   "services.paste_a_replacement_key": "Pega una clave de sustitución",
   "services.paste_your_api_key": "Pega tu clave de API",
   "services.pixabay_api_key": "Clave de API de Pixabay",

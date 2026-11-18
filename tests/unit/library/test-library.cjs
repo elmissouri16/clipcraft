@@ -1,5 +1,5 @@
 // Audio library: host allowlist and download guard, then (unless --offline) searches Openverse /
-// SFXMint / MyInstants and downloads one sound. Usage: node tests/unit/library/test-library.cjs [--offline]
+// MyInstants and downloads one sound. Usage: node tests/unit/library/test-library.cjs [--offline]
 // (The old first block rendered every built-in synthesized effect; the built-ins were removed
 // from the app on Hamza's call — poor quality, sounded AI-generated — so there is nothing to render.)
 const fs = require('fs');
@@ -16,6 +16,15 @@ const lib = require("../../../electron/library/library.cjs");
     throw new Error('host allowlist');
   }
   await lib.download(fetch, dir, { id: '../../etc', url: 'https://cdn.freesound.org/x.mp3' }).then(() => { throw new Error('bad id accepted'); }, () => {});
+  // SFXMint was withdrawn (keyless downloads ended upstream on 2026-11-17): its host is refused and its
+  // kinds no longer search it, but a sound kept earlier is still served from disk without a request.
+  const noFetch = () => { throw new Error('unexpected request'); };
+  if (lib.hostOk('https://sfxmint.com/dl/ui-click-30.mp3')) throw new Error('withdrawn host allowed');
+  await lib.download(noFetch, dir, { id: 'sfxmint-ui-click-30', url: 'https://sfxmint.com/dl/ui-click-30.mp3' }).then(() => { throw new Error('withdrawn source downloaded'); }, (e) => { if (!/cannot be downloaded/.test(e.message)) throw e; });
+  fs.mkdirSync(path.join(dir, 'online'), { recursive: true });
+  const kept = path.join(dir, 'online', 'sfxmint-kept-sound-01.mp3');
+  fs.writeFileSync(kept, 'kept');
+  if (await lib.download(noFetch, dir, { id: 'sfxmint-kept-sound-01', url: 'https://sfxmint.com/dl/kept-sound-01.mp3' }) !== kept) throw new Error('kept sound not reused');
 
   if (!process.argv.includes('--offline')) {
     const sfx = await lib.search(fetch, { kind: 'sfx', q: 'whoosh' });
@@ -30,13 +39,6 @@ const lib = require("../../../electron/library/library.cjs");
     console.log('Library search evidence: ' + dir);
     if (!sfx.results.length || !music.results.length) throw new Error('empty search');
     if ([...sfx.results, ...defaultMusic.results].some((r) => r.license !== 'cc0') || music.results.some((r) => !['cc0', 'by'].includes(r.license))) throw new Error('license filter');
-    // SFXMint: words and categories, CC0 only, downloads keep the file.
-    const mintQ = await lib.search(fetch, { kind: 'sfxmint', q: 'whoosh' });
-    const mintC = await lib.search(fetch, { kind: 'sfxmint', category: 'ui' });
-    console.log(`sfxmint: ${mintQ.results.length} for whoosh, ${mintC.results.length} in ui`);
-    if (!mintQ.results.length || !mintC.results.length || [...mintQ.results, ...mintC.results].some((r) => r.license !== 'cc0')) throw new Error('sfxmint search');
-    const mintFile = await lib.download(fetch, dir, mintC.results[0]);
-    if ((await probe(mintFile)).type !== 'audio') throw new Error('sfxmint download is not audio');
     // Trolls (MyInstants): trending, best and words, every sound marked license unknown; pages go on.
     const trend = await lib.search(fetch, { kind: 'trolls', category: 'trending' });
     const best = await lib.search(fetch, { kind: 'trolls', category: 'best' });
@@ -48,14 +50,7 @@ const lib = require("../../../electron/library/library.cjs");
     if (trolls.some((r) => r.license !== 'unknown' || !lib.hostOk(r.url))) throw new Error('trolls must be marked license unknown');
     if (bruh2.results[0]?.id === bruh.results[0].id) throw new Error('trolls page 2 repeats page 1');
     if ((await probe(await lib.download(fetch, dir, bruh.results[0]))).type !== 'audio') throw new Error('trolls download is not audio');
-    // Both sources in one list (category for one, words for the other).
-    const all = await lib.search(fetch, { kind: 'sfxall', q: 'transition', category: 'transition' });
-    const srcs = new Set(all.results.map((r) => r.provider));
-    console.log(`sfxall: ${all.results.length} results from ${[...srcs].join(', ')}, ${all.pages} pages`);
-    if (!srcs.has('sfxmint') || !srcs.has('freesound')) throw new Error('sfxall should mix both sources');
-    const more = await lib.search(fetch, { kind: 'sfxall', q: 'transition', category: 'transition', page: 2 });
-    if (more.results.some((r) => r.provider === 'sfxmint')) throw new Error('sfxall page 2 repeats the first source');
-    if (/SFXMint|Freesound|Jamendo/.test(lib.creditLine(all.results.find((r) => r.provider === 'freesound')))) throw new Error('credit line names the source');
+    if (/Freesound|Jamendo/.test(lib.creditLine(sfx.results[0]))) throw new Error('credit line names the source');
     const pick = sfx.results.find((r) => r.duration < 5) || sfx.results[0];
     const file = await lib.download(fetch, dir, pick);
     const info = await probe(file);

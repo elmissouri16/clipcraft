@@ -456,7 +456,7 @@ ipcMain.handle('favorites:toggle', (_e, entry) => {
   }
 });
 
-// ---- Audio library (Openverse / SFXMint / MyInstants + Soundza). Files live in <userData>/library. ----
+// ---- Audio library (Openverse / MyInstants + Soundza). Files live in <userData>/library. ----
 const library = require("./library/library.cjs");
 const openverse = require("./library/openverse.cjs");
 const soundza = require("./library/soundza.cjs");

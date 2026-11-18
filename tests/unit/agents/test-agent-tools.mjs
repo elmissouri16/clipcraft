@@ -76,7 +76,7 @@ for (const n of names) assert.ok(!/Unknown tool/.test((await probe.run(n, {}))?.
 // Sounds: search, then add with volume, fades and a length.
 let r = await run('search_sounds', { kind: 'sfx', query: 'whoosh' });
 ok(r, 'search_sounds');
-assert.equal(calls.at(-1)[1].kind, 'sfxall');
+assert.equal(calls.at(-1)[1].kind, 'sfx');
 assert.equal(r.sounds[0].sound_id, 's1');
 assert.ok(r.sounds[1].needs_credit, 'CC BY sounds are flagged');
 err(await run('search_sounds', { kind: 'podcast', query: 'x' }), /kind/, 'unknown kind');
