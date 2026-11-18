@@ -17,6 +17,8 @@
 // clip's audio source, so both hear exactly the same thing. If the clip is re-trimmed, the
 // stored from/to no longer match and the enhancement is inert until re-run (the UI says so).
 const crypto = require('crypto');
+// Temporary names carry this process's tag: two running instances never write the same partial file.
+const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -130,7 +132,7 @@ async function enhance(item, { from = 0, to, strength = 'standard', cacheDir, ff
   const noiseDb = await measureNoise(ffmpegPath, item, a, b, isCanceled);
   const out = outFile(item, a, b, strength, noiseDb, cacheDir);
   if (fs.existsSync(out)) { onProgress(1); return { path: out, noiseDb }; }
-  const part = `${path.basename(out, '.wav')}.part.wav`;
+  const part = `${path.basename(out, '.wav')}.${PART_TAG}.part.wav`;
   // A mono source rendered to stereo with -ac 2 alone would take swresample's upmix,
   // which costs 3.01 dB per channel; pan to dual-mono at unity first so the enhanced
   // render carries the source's true level (the same rule the export chains apply —

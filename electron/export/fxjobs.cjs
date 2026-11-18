@@ -7,12 +7,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { ffmpegPath, buildExportArgs, fitSize, graphFile, narrowClip, stillInput, toSdr, effectiveExport } = require("../media/ffmpeg.cjs");
+const { ffmpegPath, buildExportArgs, fitSize, graphFile, narrowClip, stillInput, toSdr, effectiveExport, speedOf, positive } = require("../media/ffmpeg.cjs");
 const { shiftCurves } = require('./layers.cjs');
 const { RenderCache } = require('./renderCache.cjs');
 const { spawnDecoder, fifoWriter, makeFifo } = require('./framePipes.cjs');
 
-const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
+const clipLen = (c) => (c.out - c.in) / speedOf(c);
 function transitionDur(clips, i) {
   const t = clips[i] && clips[i].transition;
   if (!t || i === 0 || t.type === 'none') return 0;
@@ -217,7 +217,7 @@ class FxJobs {
       project = { ...project, decoFiles };
     }
     const eff = effectiveExport(project), W = eff.outW, H = eff.outH;
-    const fps = Math.min(project.fps || 30, eff.outFps);
+    const fps = Math.min(positive(project.fps, 30), eff.outFps);
     const mediaById = Object.fromEntries(project.media.map((m) => [m.id, m]));
     const id = `fx${++this.n}`;
     const out = path.join(this.tmp(), `${id}.mkv`);
@@ -241,10 +241,10 @@ class FxJobs {
       }
       const input = m.type === 'image'
         ? stillInput(m.path, fps, len)
-        : ['-ss', num(clip.in + from * (clip.speed || 1)), '-i', m.path];
+        : ['-ss', num(clip.in + from * speedOf(clip)), '-i', m.path];
       const pre = m.type === 'image'
         ? `trim=duration=${num(len)},setpts=PTS-STARTPTS`
-        : `trim=duration=${num(len * (clip.speed || 1))},setpts=(PTS-STARTPTS)/${clip.speed || 1}${toSdr(m)}`;
+        : `trim=duration=${num(len * speedOf(clip))},setpts=(PTS-STARTPTS)/${speedOf(clip)}${toSdr(m)}`;
       const dec = decoder(['-hide_banner', '-loglevel', 'error', ...input, '-filter_complex',
         `[0:v]${pre},fps=${fps},tpad=stop_mode=clone:stop_duration=1,scale=${fw}:${fh},setsar=1,format=rgba[o]`, '-map', '[o]', '-frames:v', String(frames),
         '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1']);

@@ -60,7 +60,9 @@ async function subtitlePath(value) {
   if (path.extname(file).toLowerCase() !== '.srt') throw Error('Subtitle files must have the .srt extension.');
   return file;
 }
-async function runEditorFileJob(req, { signal, probeAll, choosePaths, outputDir }) {
+// mayReplace(file) / wrote(file): the subtitle files this app wrote for the same owner in this session.
+// Only such a file (unchanged since) may be replaced when the model asks; without them none is.
+async function runEditorFileJob(req, { signal, probeAll, choosePaths, outputDir, mayReplace, wrote }) {
   stop(signal);
   if (req.action === 'list' || req.action === 'import') {
     let roots = req.paths;
@@ -107,15 +109,19 @@ async function runEditorFileJob(req, { signal, probeAll, choosePaths, outputDir 
     try {
       await fs.promises.writeFile(temporary, req.text, { encoding: 'utf8', flag: 'wx', signal });
       stop(signal);
+      const ours = () => !!mayReplace?.(file);
+      const foreign = 'That subtitle file already exists and this assistant did not create it. Choose a new file name.';
+      if (req.overwrite === true && fs.existsSync(file) && !ours()) throw Error(foreign);
       if (req.overwrite === true) await fs.promises.rename(temporary, file);
       else {
         try { await fs.promises.link(temporary, file); }
         catch (error) {
-          if (error.code === 'EEXIST') throw Error('That subtitle file already exists. Use another path, or overwrite only when the user requests it.');
+          if (error.code === 'EEXIST') throw Error(ours() ? 'That subtitle file already exists. Use another path, or overwrite only when the user requests it.' : foreign);
           if (['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'].includes(error.code)) await fs.promises.copyFile(temporary, file, fs.constants.COPYFILE_EXCL);
           else throw error;
         }
       }
+      wrote?.(file);
       return { path: file, name: path.basename(file), bytes: Buffer.byteLength(req.text), mime_type: 'application/x-subrip' };
     } finally { await fs.promises.rm(temporary, { force: true }); }
   }

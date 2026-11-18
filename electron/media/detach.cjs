@@ -4,6 +4,8 @@
 // in sync). Extraction is a plain stream render — no memory-hungry filters — so there is
 // no length cap like Reverse has. Results are cached by file + range, like reverse.cjs.
 const crypto = require('crypto');
+// Temporary names carry this process's tag: two running instances never write the same partial file.
+const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -50,7 +52,7 @@ async function detach(item, { from = 0, to, cacheDir, ffmpegPath, onProgress = (
   fs.mkdirSync(cacheDir, { recursive: true });
   const out = outFile(item, a, b, cacheDir);
   if (fs.existsSync(out)) return out;
-  const part = `${path.basename(out, '.wav')}.part.wav`;
+  const part = `${path.basename(out, '.wav')}.${PART_TAG}.part.wav`;
   const args = ['-ss', num(a), '-t', num(len), '-i', item.path,
     '-map', '0:a:0', '-vn', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-y', part];
   try {

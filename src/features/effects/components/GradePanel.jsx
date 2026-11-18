@@ -42,7 +42,7 @@ function LutSection({ lut, onChange, dispatch }) {
   const pick = async (ref, name) => {
     setError('');
     if (!ref) return onChange(null);
-    const res = await loadLut(ref);
+    const res = await loadLut(ref, { reread: true }); // picked or imported again: read the file as it is now
     if (res.error) return setError(res.error);
     const packed=creative.luts.find(l=>l.digest===ref.pluginDigest&&l.id===ref.assetId);
     onChange({ ref, name, intensity: lut?.intensity ?? 100,...(packed?{dependency:{pluginId:packed.pluginId,digest:packed.digest,version:packed.version,id:packed.id,name:packed.name}}:{}) });

@@ -34,9 +34,9 @@ export default function Slider({ label, value, onChange, dispatch, min = 0, max 
     if (!Number.isFinite(n)) return;
     const v = snapClamp(n / scale);
     if (v === value) return;
-    dispatch?.({ type: 'beginGesture' });
+    dispatch?.({ type: 'beginGesture', group: true });
     onChange(v);
-    dispatch?.({ type: 'endGesture' });
+    dispatch?.({ type: 'endGesture', group: true });
   };
   const settle = (commitIt) => {
     if (commitIt) commit(edit);

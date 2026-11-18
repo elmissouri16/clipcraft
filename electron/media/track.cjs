@@ -6,6 +6,8 @@
 // A frame whose best match is weak does not teleport the path: the search widens once, and if it is still weak
 // the point holds the last position and is marked with its low score, so occlusions bend the path, not break it.
 const crypto = require('crypto');
+// Temporary names carry this process's tag: two running instances never write the same partial file.
+const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -273,7 +275,7 @@ async function trackMotion(item, { from = 0, to, pick, box = { w: 0.055, h: 0.09
   });
   if (!points.length) throw new Error('Tracking produced no frames (is the clip range empty?).');
   const result = { points: simplifyPoints(points), raw: points.length, fps: TRACK_FPS, width: mw, height: mh };
-  const part = `${out}.part`;
+  const part = `${out}.${PART_TAG}.part`;
   fs.writeFileSync(part, JSON.stringify(result));
   fs.renameSync(part, out);
   onProgress(1);

@@ -193,9 +193,9 @@ function TransitionPanel({ project, selection, dispatch }) {
   const max = Math.max(0.05, Math.min(clipLen(clip), clipLen(clips[i - 1]||clip)) / 2);
   const others = clips.filter((c, k) => k > 0 && !c.gap && !clips[k - 1].gap);
   const applyAll = () => {
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     for (const c of others) dispatch({ type: 'update', track: 'video', id: c.id, patch: { transition: { ...tr } } });
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
   };
   return (
     <div className="fields">
@@ -389,11 +389,13 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
       <b>{tn('inspector.n_clips_selected', selection.items.length)}</b> {t('inspector.delete_removes_them_all_drag_one_off_the_m')}
     </div>
   );
+  // The transition and effect panels, like every clip panel below, are keyed by the selection: a value
+  // being typed for one clip is dropped, not committed onto the clip selected next.
   if (selection?.track === 'transition') {
     return (
       <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
         <InspectorHeader Icon={Blend} title={t('inspector.transition')} onCollapse={onCollapse} />
-        <div className="inspector-body" ref={bodyRef}>{multi}<TransitionPanel project={project} selection={selection} dispatch={dispatch} /></div>
+        <div className="inspector-body" ref={bodyRef}>{multi}<TransitionPanel key={selection.id} project={project} selection={selection} dispatch={dispatch} /></div>
       </aside>
     );
   }
@@ -401,7 +403,7 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
     return (
       <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
         <InspectorHeader Icon={Sparkles} title={t('inspector.effect')} onCollapse={onCollapse} />
-        <div className="inspector-body" ref={bodyRef}>{multi}{!collapsed&&<ExtensionActions location="inspector"/>}<EffectPanel onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
+        <div className="inspector-body" ref={bodyRef}>{multi}{!collapsed&&<ExtensionActions location="inspector"/>}<EffectPanel key={selection.id} onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
       </aside>
     );
   }
@@ -435,8 +437,10 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
 
       {clip && track === 'text' && <TextInspector key={clip.id} clip={clip} dispatch={dispatch} project={project} />}
 
+      {/* The gap and audio panels are keyed by the clip, like TextInspector and ClipInspector: a number
+          being typed for one clip is dropped, not committed onto the clip selected next. */}
       {clip && track === 'video' && clip.gap && (
-        <div className="fields">
+        <div className="fields" key={clip.id}>
           <div className="insp-card">
             <div className="insp-card-title">{t('inspector.gap')}</div>
           <div className="info">{t('inspector.empty_space_on_the_main_track_it_plays_the')}</div>
@@ -454,7 +458,7 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
       )}
 
       {clip && track === 'audio' && (
-        <div className="fields audio-insp">
+        <div className="fields audio-insp" key={clip.id}>
           <div className="insp-card">
             <div className="insp-card-title">{t('inspector.clip_audio')}</div>
             <div className="info">{media?.name}</div>

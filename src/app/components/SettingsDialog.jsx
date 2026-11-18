@@ -10,6 +10,7 @@ import ShortcutSettings from './ShortcutSettings.jsx';
 import { defaultSpeech, engineVoices, voiceEngineName, voiceEngines, usableEngines } from '../../features/audio/voiceDefault.js';
 import { ExtensionSettings } from '../../features/plugins/components/ExtensionNativeUi.jsx';
 import { SUBAGENT_LIMITS } from '../../../shared/subagents.mjs';
+import { previewPathFor } from '../../state/store.js';
 
 // Providers come from the preset table (shared/providers.json): name, key page, hint, default address.
 
@@ -51,7 +52,7 @@ function GraphicsCache({ mb }) {
   );
 }
 
-function ProxySettings({ onCleared }) {
+function ProxySettings({ onCleared, project }) {
   const [st, setSt] = useState(null);
   const [mode, setMode] = useState(null);
   useEffect(() => { window.api.proxyStatus().then(setSt).catch(() => {}); }, []);
@@ -59,7 +60,8 @@ function ProxySettings({ onCleared }) {
   if (!st) return null;
   const mb = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : `${Math.max(0, Math.round(b / 1048576))} MB`);
   const clear = async () => {
-    const res = await window.api.proxyClear();
+    // The copies the player plays at Full (compatibility proxies) stay: only the scaled copies go.
+    const res = await window.api.proxyClear((project?.media || []).map((m) => previewPathFor(m, 'full')).filter((f) => typeof f === 'string'));
     setSt(res);
     onCleared?.(res.deleted || []);
   };
@@ -500,7 +502,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
           </SettingsPage>
         )}
         {section === 'language' && <SettingsPage title={page.title} description={page.description}><LanguageSettings saved={saved} onSaved={setSaved} /></SettingsPage>}
-        {section === 'quality' && <SettingsPage title={page.title} description={page.description}><ProxySettings onCleared={onProxiesCleared} /></SettingsPage>}
+        {section === 'quality' && <SettingsPage title={page.title} description={page.description}><ProxySettings onCleared={onProxiesCleared} project={project} /></SettingsPage>}
         {section === 'shortcuts' && <SettingsPage title={page.title} description={page.description}><ShortcutSettings saved={saved} onSaved={setSaved} /></SettingsPage>}
         {section === 'services' && <SettingsPage title={page.title} description={page.description}><ServiceConnections saved={saved} onSaved={setSaved} providers={PROVIDERS} target={serviceTarget} onNavigate={(nextSection, nextProvider) => { if (nextProvider && nextProvider !== provider) switchProvider(nextProvider); setSection(nextSection); }} /></SettingsPage>}
           </div>

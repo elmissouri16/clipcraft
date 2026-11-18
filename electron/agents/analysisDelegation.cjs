@@ -62,9 +62,11 @@ function createAnalysisDelegation({ localAgents, agentFrames, agentRequests, sou
       controller.signal.addEventListener('abort', cancelJobs, { once: true });
       if (job.controller.signal.aborted) controller.abort();
       try {
-        timer = setTimeout(() => { timedOut = true;controller.abort(); }, policy.timeoutMs);
         releaseBatch = await batchSlots.acquire(controller.signal);
         release = await slots.acquire(controller.signal);checkAbort(controller.signal);
+        // The child's time limit covers its own work: it starts once its slots are held, not while it
+        // waits behind other children (the request's stop still ends the wait).
+        timer = setTimeout(() => { timedOut = true;controller.abort(); }, policy.timeoutMs);
         agentFrames.openScope(owner, requestId);frameScope = true;
         progress('running');
         const verifySource = () => { checkAbort(controller.signal);checkAbort(job.controller.signal);if (fileFingerprint(media.path) !== index.fingerprint) throw Error('The source changed during delegated analysis.'); };

@@ -1,20 +1,31 @@
 const fs = require('fs');
 const path = require('path');
+const { derivedCurrent } = require('../media/quality.cjs');
 
 // Generated files (thumbnails, waveform, preview proxy) recorded in a saved project may be gone (cache cleaned,
 // another PC): drop them so they are made again, instead of the player showing black without sound.
 const GENERATED = { thumb: ['thumb', 'thumbCount', 'thumbInterval', 'thumbW', 'thumbH'], wave: ['wave'], proxy: ['proxy'] };
 // cacheDir: where generated files live now; a file moved there (older versions used another folder) is found again.
+// A generated file made from an earlier version of the source (replaced at the same path) counts as gone:
+// its name no longer matches the source's key (electron/media/quality.cjs derivedCurrent).
 function checkGenerated(projectJson, cacheDir) {
   try {
     const p = JSON.parse(projectJson);
     let changed = false;
     p.media = (p.media || []).map((m) => {
       const out = { ...m };
+      const usable = (file) => fs.existsSync(file) && derivedCurrent(m, file);
+      for (const field of ['poster', 'lightProxy']) {
+        if (typeof out[field] === 'string' && !derivedCurrent(m, out[field])) { delete out[field]; changed = true; }
+      }
+      if (out.proxies && typeof out.proxies === 'object' && Object.values(out.proxies).some((f) => typeof f === 'string' && !derivedCurrent(m, f))) {
+        out.proxies = Object.fromEntries(Object.entries(out.proxies).filter(([, f]) => typeof f !== 'string' || derivedCurrent(m, f)));
+        changed = true;
+      }
       for (const [key, fields] of Object.entries(GENERATED)) {
-        if (!out[key] || fs.existsSync(out[key])) continue;
+        if (!out[key] || usable(out[key])) continue;
         const moved = cacheDir && path.join(cacheDir, path.basename(out[key]));
-        if (moved && fs.existsSync(moved)) {
+        if (moved && usable(moved)) {
           out[key] = moved;
           changed = true;
         } else {
@@ -52,4 +63,13 @@ async function refreshSizes(projectJson, probe) {
   }
 }
 
-module.exports = { checkGenerated, refreshSizes };
+// A ClipCraft project file, not merely JSON: an object with the media and main-track lists every
+// saved project carries. Only such a file may become an auto save target (another JSON file opened
+// by mistake, or by an outside agent, would be rewritten as a project).
+function isProjectDocument(projectJson) {
+  let p;
+  try { p = JSON.parse(projectJson); } catch { return false; }
+  return !!p && typeof p === 'object' && !Array.isArray(p) && Array.isArray(p.media) && Array.isArray(p.videoClips);
+}
+
+module.exports = { checkGenerated, refreshSizes, isProjectDocument };

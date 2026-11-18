@@ -118,8 +118,10 @@ function buildLayer(o, h) {
   const chain = [...(cropFilter ? [cropFilter] : []), `scale=${fw}:${fh}`, 'setsar=1', ...h.lookFilters(clip, fw, fh)];
   if (chroma.on) {
     const p = chromaParams(chroma);
-    chain.push('format=yuva420p', `chromakey=color=${h.hex(chroma.color)}:similarity=${h.num(p.similarity)}:blend=${h.num(p.blend)}`);
-    const n = parseInt(chroma.color.slice(1), 16);
+    // h.hex admits only a hex colour (a project file is not trusted to name a filter value).
+    const color = h.hex(chroma.color, DEFAULT_CHROMA.color);
+    chain.push('format=yuva420p', `chromakey=color=${color}:similarity=${h.num(p.similarity)}:blend=${h.num(p.blend)}`);
+    const n = parseInt(color.slice(2, 8), 16);
     const r = (n >> 16) & 255;
     const g = (n >> 8) & 255;
     const b = n & 255;
@@ -265,7 +267,7 @@ function subpixelZoom(mo, transform) {
 // back to RGB and otherwise assumes BT.601, compounding the error per layer.
 const TO_YUV709 = 'scale=in_range=pc:out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=colorspace=bt709:range=limited';
 function composite({ base, layer, blend, tag, out, rgb = false, active }) {
-  const mode = BLEND_FF[blend];
+  const mode = typeof blend === 'string' && Object.hasOwn(BLEND_FF, blend) ? BLEND_FF[blend] : undefined;
   // Keep the overlay stack in RGB: even correctly tagged 8-bit round trips
   // quantize and crush shadows when a project has many transparent layers.
   const finish = rgb ? 'format=rgba,setparams=colorspace=gbr:range=full' : TO_YUV709;

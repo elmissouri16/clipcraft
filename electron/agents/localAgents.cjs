@@ -363,8 +363,9 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
         return dest;
       });
       const codex = new session.sdk.Codex({ codexPathOverride: session.executablePath, env: session.env,
-        config: { features: { image_generation: true, code_mode_host: true, shell_tool: false, unified_exec: false, apps: false, plugins: false,
-          multi_agent: false, memories: false, skip_host_skill_discovery: true },
+        // Every built-in tool off (as in every other Codex session), then only what image generation uses:
+        // references arrive as local_image inputs, so view_image and the rest stay off.
+        config: { features: { ...require('./codexNative.cjs').CODEX_FEATURES_OFF, image_generation: true, code_mode_host: true, skip_host_skill_discovery: true },
           skills: { include_instructions: false }, mcp_servers: {},
         },
       });

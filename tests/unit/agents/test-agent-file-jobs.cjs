@@ -6,6 +6,8 @@ for (const file of ['clip10.mp4', 'clip2.mp4', 'ignore.txt', 'nested/speech.wav'
 fs.symlinkSync(media, path.join(media, 'nested', 'loop'));
 const options = { signal: new AbortController().signal, outputDir: path.join(dir, 'downloads'),
   probeAll: async files => files.map(file => ({ path: file, name: path.basename(file), type: file.endsWith('.wav') ? 'audio' : 'video', duration: 4 })),
+  // The session record main.cjs keeps: only subtitle files written here may be replaced on request.
+  ...(() => { const written = new Set(); return { mayReplace: file => written.has(file), wrote: file => written.add(file) }; })(),
 };
 (async () => {
   let found = await collectMedia([media], false, options.signal);

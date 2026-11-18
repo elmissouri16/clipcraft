@@ -33,26 +33,41 @@ export function getLut(ref) {
   return v && v.data ? v : null;
 }
 
-// Loads (once) and returns the LUT, or { error }.
-export function loadLut(ref) {
+// A user's own .cube (a path reference) can change or appear on disk while the app runs: its read
+// error is never kept (the next load tries again), and its data is kept with the file's size and time
+// (stamp, from the main process) so a check can tell a re-exported file from the one already loaded.
+const byPath = (ref) => !!ref?.path && !ref?.bundled && !ref?.pluginDigest;
+
+// Loads (once) and returns the LUT, or { error }. reread: read a path LUT again (the user picked or
+// imported it again); check: read it again if its file changed since it was loaded (before an export).
+export async function loadLut(ref, { reread = false, check = false } = {}) {
+  const key = lutKey(ref);
+  if (key && byPath(ref) && (reread || check)) {
+    const v = cache.get(key);
+    if (v && !v.then && (reread || !v.stamp || (await window.api.lutStamp?.(ref)) !== v.stamp) && cache.get(key) === v) cache.delete(key);
+  }
+  return loadCached(ref);
+}
+function loadCached(ref) {
   if(ref?.pluginDigest){watchPacks();packRefs.set(lutKey(ref),ref);}
   const generation=packGeneration;
   const key = lutKey(ref);
   if (!key) return Promise.resolve({ error: 'No LUT' });
   const v = cache.get(key);
   if (v) return v.then ? v : Promise.resolve(v);
+  const keep = (out) => { if (byPath(ref) && out.error) cache.delete(key); else cache.set(key, out); };
   const p = window.api.readLut(ref).then((res) => {
     let out;
     try {
-      out = res.error ? { error: res.error } : parseCube(res.text);
+      out = res.error ? { error: res.error } : { ...parseCube(res.text), ...(byPath(ref) && res.stamp ? { stamp: res.stamp } : {}) };
     } catch (e) {
       out = { error: e.message };
     }
     if(ref?.pluginDigest&&generation!==packGeneration)return {error:'LUT pack changed while loading.'};
-    cache.set(key, out);
+    if (cache.get(key) === p) keep(out);
     listeners.forEach((fn) => fn(key));
     return out;
-  }).catch(error=>{const out={error:error.message};if(!ref?.pluginDigest||generation===packGeneration){cache.set(key,out);listeners.forEach(fn=>fn(key));}return out;});
+  }).catch(error=>{const out={error:error.message};if(!ref?.pluginDigest||generation===packGeneration){if(cache.get(key)===p)keep(out);listeners.forEach(fn=>fn(key));}return out;});
   cache.set(key, p);
   return p;
 }
@@ -66,5 +81,5 @@ export async function loadProjectLuts(project,{strict=false}={}) {
     ...(project.effectClips||[]).filter(c=>!c.disabled&&c.strength!==0&&typeof c.fx==='string'&&c.fx.startsWith('filter:')).map(c=>packFilterLutRef(c.fx.slice(7))||(c.fx.startsWith('filter:lut:')?{bundled:c.fx.slice(11)}:null)).filter(Boolean),
   ];
   if(strict)for(const ref of refs)if(ref?.pluginDigest)cache.delete(lutKey(ref));
-  const values=await Promise.all(refs.map(loadLut));if(strict&&values.some(v=>v.error))throw Error('LUTs need attention before export: '+values.filter(v=>v.error).map(v=>v.error).join('; '));return values;
+  const values=await Promise.all(refs.map(ref=>loadLut(ref,{check:strict})));if(strict&&values.some(v=>v.error))throw Error('LUTs need attention before export: '+values.filter(v=>v.error).map(v=>v.error).join('; '));return values;
 }

@@ -39,4 +39,20 @@ function qualityScaleFilter(quality) {
   return `scale=w='if(gt(iw,ih),${max},-2)':h='if(gt(iw,ih),-2,${max})':flags=fast_bilinear`;
 }
 
-module.exports = { QUALITIES, QUALITY_MAX_SIDE, isQuality, qualityFromStored, qualityTargetSize, qualityScaleFilter };
+// Derived preview files (the quality copies, which include the compatibility proxy, and the timeline
+// visuals) are named after a key of the source's path, size and modification time, so a file
+// replaced at the same path gets new ones (ffmpeg.cjs makeQualityProxy / makeVisuals use these).
+// derivedCurrent: whether a saved derived path still belongs to the source as it is now. A name this
+// scheme does not produce, or a source that cannot be read, is not judged here (true).
+const sourceKey = (item, st, suffix) => require('crypto').createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|${suffix}`).digest('hex').slice(0, 16);
+const proxySuffix = (item, quality) => `q${quality}1${item.hdr ? '-sdr' : ''}`;
+const VISUALS_SUFFIX = 'v3';
+function derivedCurrent(item, file) {
+  const m = /^([0-9a-f]{16})-(?:q(high|medium|low)\.mp4|sprite(?:-fast)?\.jpg|poster\.jpg|wave\.png|visuals\.json)$/.exec(require('path').basename(String(file || '')));
+  if (!m || !item || typeof item.path !== 'string') return true;
+  let st;
+  try { st = require('fs').statSync(item.path); } catch { return true; }
+  return m[1] === sourceKey(item, st, m[2] ? proxySuffix(item, m[2]) : VISUALS_SUFFIX);
+}
+
+module.exports = { QUALITIES, QUALITY_MAX_SIDE, isQuality, qualityFromStored, qualityTargetSize, qualityScaleFilter, sourceKey, proxySuffix, VISUALS_SUFFIX, derivedCurrent };

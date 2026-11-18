@@ -4,6 +4,8 @@
 // clip's range only, full quality), cached by file, range and level, that the clip then plays; the original
 // stays untouched, so turning stabilization off gives the clip its original back.
 const crypto = require('crypto');
+// Temporary names carry this process's tag: two running instances never write the same partial file.
+const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -75,8 +77,8 @@ async function stabilize(item, { from = 0, to, level = 'recommended', cacheDir, 
   if (fs.existsSync(out)) return out;
   // vid.stab's file options take plain names (a Windows path with "C:" would need filter escaping): FFmpeg runs in
   // the cache folder and the motion file has a simple name there.
-  const trf = `${path.basename(out, '.mp4')}.trf`;
-  const part = `${path.basename(out, '.mp4')}.part.mp4`;
+  const trf = `${path.basename(out, '.mp4')}.${PART_TAG}.trf`;
+  const part = `${path.basename(out, '.mp4')}.${PART_TAG}.part.mp4`;
   const sdr = toSdr(item);
   const input = ['-ss', num(a), '-t', num(len), '-i', item.path];
   try {

@@ -443,7 +443,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
         : changed ? t('pilot.changes_kept_agent_moved_on') : t('pilot.done');
       messages = messages.map((m, i) => i !== messages.length - 1 ? m : { ...m, pending: false, text,
         steps: m.steps.map((s) => s.status === 'running' ? { ...s, status: 'error', detail: t('pilot.interrupted') } : s),
-        changed, undoRevision: changed ? projectRevision(getProject()) : null });
+        changed, undoRevision: changed && event.undoable ? projectRevision(getProject()) : null });
     } else return;
     sessions = sessions.map((s) => s.id === target.id ? { ...s, messages } : s);
     // Show the agent's session when it starts work, unless the user is writing in another chat.

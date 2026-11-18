@@ -66,8 +66,12 @@ export function createExternalHost(app) {
     if (!state) return;
     edit = null;
     const changed = (() => { try { return state.isCurrent() && state.host.changed(); } catch { return false; } })();
+    // Its changes are the top Undo step only while the edit still owns the agent transaction: a manual
+    // edit in the meantime committed them and took the top of the history, so an Undo offered for the
+    // edit would revert the user's own change instead (undoable: false).
+    const owns = (() => { try { return app.pilotApp.getAgentEdit?.()?.token === state.token; } catch { return false; } })();
     app.dispatch({ type: 'endAgentEdit', token: state.token });
-    activity({ type: 'edit-end', editId: state.token, client: state.client, reason, changed, validated: reason === 'validated' });
+    activity({ type: 'edit-end', editId: state.token, client: state.client, reason, changed, undoable: changed && owns, validated: reason === 'validated' });
   };
 
   const status = () => {

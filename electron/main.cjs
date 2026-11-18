@@ -5,6 +5,20 @@ protocol.registerSchemesAsPrivileged([require('./plugins/extensionViewProtocol.c
 
 const { scopedFetch, checkAbort, activityTimeout } = require("./system/cancel.cjs");
 app.setName('ClipCraft');
+// One ClipCraft at a time: a second launch would share the user-data folder and the media cache, and
+// its autosaves and partial files would overwrite the first one's. It brings the running window
+// forward instead. The UI test harness (FVE_SMOKE) runs several instances on purpose, each with its
+// own folders.
+if (!process.env.FVE_SMOKE && !app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+app.on('second-instance', () => {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
 const quietSmoke=!!process.env.FVE_SMOKE&&process.env.FVE_SMOKE_QUIET==='1';
 if(quietSmoke&&process.platform==='darwin')app.setActivationPolicy('accessory');
 // Keep the Windows driver workaround; macOS/Linux use Chromium's normal decode
@@ -351,10 +365,14 @@ ipcMain.handle('perf:setMode', (_e, mode) => {
   pumpVisuals(); // a wider or narrower gate applies to the queue right away
   return { mode: m, ...proxyStatus() };
 });
-ipcMain.handle('proxy:clear', () => {
+// keep: the copies the open project's player plays at Full quality (the compatibility proxies of HEVC,
+// ProRes, 10-bit or very large sources share the High copy's file): those stay. A project opened
+// later finds its deleted copies missing and makes them again (projectfile.cjs checkGenerated).
+ipcMain.handle('proxy:clear', (_e, keep) => {
   if (settings.getQuality() !== 'full') return { ...proxyStatus(), deleted: [] };
-  const deleted = [];
+  const deleted = [], kept = new Set((Array.isArray(keep) ? keep : []).filter(f => typeof f === 'string').map(f => path.resolve(f)));
   for (const f of proxyFiles()) {
+    if (kept.has(path.resolve(f))) continue;
     try {
       fs.rmSync(f);
       deleted.push(f);
@@ -615,8 +633,9 @@ ipcMain.handle('project:open', async () => {
   if (res.canceled) return null;
   const pf = require("./project/projectfile.cjs");
   const file = sidecar.documentFor(res.filePaths[0]); // a picked chat sidecar opens its document
-  projectFiles.add(file);
   const text = fs.readFileSync(file, 'utf8');
+  if (!pf.isProjectDocument(text)) return { error: i18n.t('main.not_a_project_file', { name: path.basename(file) }) };
+  projectFiles.add(file);
   return { file, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
 });
 
@@ -628,6 +647,8 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { return null; }
   const pf = require("./project/projectfile.cjs");
+  // Any other JSON file stays as it is: it never becomes an auto save target.
+  if (!pf.isProjectDocument(text)) return { error: i18n.t('main.not_a_project_file', { name: path.basename(file) }) };
   // A held chat file throws past here on purpose: the renderer shows it instead of opening with an empty chat.
   const result = { file, json: await pf.refreshSizes(pf.checkGenerated(text, mediaCacheDir()), probe), chat: sidecar.readChat(file, text) };
   projectFiles.add(file);
@@ -652,7 +673,8 @@ ipcMain.handle('slots:read', (_e, id) => {
   if (autosaveStore.fileChangedSince(slot)) return { ...slot, fileChanged: true };
   // A slot bound to a project file adopts that file as known (same trust as project:openPath),
   // so the auto-save-to-file writes keep working for a project reopened from its slot.
-  if (slot?.file && fs.existsSync(slot.file)) projectFiles.add(slot.file);
+  // Only a file that is a ClipCraft project, as for project:openPath.
+  if (slot?.file && fs.existsSync(slot.file) && require('./project/projectfile.cjs').isProjectDocument((() => { try { return fs.readFileSync(slot.file, 'utf8'); } catch { return ''; } })())) projectFiles.add(slot.file);
   return slot;
 });
 ipcMain.handle('slots:delete', (_e, id) => autosaveStore.deleteSlot(autosaveDir(), id));
@@ -691,6 +713,14 @@ pluginManager.extensionExports.configure({
   async release(record){if(record.target.frameDir===currentExportFrameDir&&currentExport)await currentExport.promise.catch(()=>{});dropFrames(record.target.frameDir);},
 });
 const agentExportOutputs = new Map();
+// Subtitle files the assistant wrote in this session, by path: { owner, fingerprint }.
+const agentSubtitleOutputs = new Map();
+// An assistant (in-app or outside agent) replaces an existing file only when this app wrote it for the
+// same owner in this session and it is unchanged since; never another file, whatever the model asks.
+const agentMayReplace = (owner, file) => {
+  const output = agentExportOutputs.get(file) || agentSubtitleOutputs.get(file);
+  try { return !!output && output.owner === owner && output.fingerprint === fileFingerprint(file); } catch { return false; }
+};
 
 ipcMain.handle('agent:exportBegin', (event, req = {}) => {
   try {
@@ -699,6 +729,7 @@ ipcMain.handle('agent:exportBegin', (event, req = {}) => {
     if (agentRequests.has(key)) throw Error('This assistant request is already running.');
     const target = require('./agents/editorExport.cjs').createEditorExportTarget(req, {
       outputDir: process.env.FVE_SMOKE || app.getPath('downloads'), cacheDir: path.join(mediaCacheDir(), 'agent-reviews'),
+      mayReplace: file => agentMayReplace(event.sender.id, file),
     });
     const controller = new AbortController(), destroyed = () => { controller.abort();dropFrames(target.frameDir); };
     controller.signal.addEventListener('abort', () => stopExportWork(), { once: true });
@@ -832,7 +863,8 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
       : project;
     // Low-End mode: the export yields CPU to the rest of the PC (nice +10). Other modes
     // run at normal priority. Priority never changes the encoder settings or output.
-    exportJob = runExport(withText, target.file, (p,detail) => {if(!win.isDestroyed())win.webContents.send('export:progress',p,detail);}, { nice: settings.getPerfMode() === 'low-end' ? 10 : 0, noOverwrite: !!owned?.noOverwrite, beforePublish:()=>{if(author)pluginManager.authoring.verify(target.authorToken,event.sender);if(extensionOwned)pluginManager.extensionExports.assert(extensionOwned.record);} });
+    exportJob = runExport(withText, target.file, (p,detail) => {if(!win.isDestroyed())win.webContents.send('export:progress',p,detail);}, { nice: settings.getPerfMode() === 'low-end' ? 10 : 0, noOverwrite: !!owned?.noOverwrite, beforePublish:()=>{if(author)pluginManager.authoring.verify(target.authorToken,event.sender);if(extensionOwned)pluginManager.extensionExports.assert(extensionOwned.record);
+      if(owned&&!extensionOwned&&!owned.noOverwrite&&fs.existsSync(target.file)&&!agentMayReplace(event.sender.id,target.file))throw Error('The export destination already exists and this assistant did not create it. Choose a new file name.');} });
     const stopAuthor=()=>exportJob.cancel();
     author?.controller.signal.addEventListener('abort',stopAuthor,{once:true});
     exportJob.promise.finally(()=>author?.controller.signal.removeEventListener('abort',stopAuthor)).catch(()=>{});
@@ -1446,11 +1478,15 @@ ipcMain.handle('lut:read', async (_e, ref) => {
     } else return { error: 'No LUT' };
     if (!fs.existsSync(file)) return { error: `LUT file not found: ${path.basename(file)}` };
     if (fs.statSync(file).size > 60 * 1024 * 1024) return { error: 'This LUT file is too big.' };
-    return { text: fs.readFileSync(file, 'utf8') };
+    const stamp = lutStamp(file), text = fs.readFileSync(file, 'utf8');
+    return { text, ...(ref.path ? { stamp } : {}) };
   } catch (e) {
     return { error: e.message };
   }
 });
+// A user LUT file's size and time: the renderer reads the file again when they changed (lut.js).
+const lutStamp = (file) => { try { const st = fs.statSync(file); return `${st.size}:${st.mtimeMs}`; } catch { return null; } };
+ipcMain.handle('lut:stamp', (_e, ref) => (ref && typeof ref.path === 'string' && /\.cube$/i.test(ref.path) ? lutStamp(ref.path) : null));
 ipcMain.handle('lut:import', async () => {
   const res = await dialog.showOpenDialog(win, { title: i18n.t('main.import_a_lut'), properties: ['openFile'], filters: [{ name: i18n.t('main.filter_3d_lut'), extensions: ['cube'] }] });
   if (res.canceled || !res.filePaths[0]) return null;
@@ -1903,6 +1939,8 @@ ipcMain.handle('agent:mediaJob', (event, req = {}) => withAgentJob(event, req.re
 }));
 ipcMain.handle('agent:fileJob', (event, req = {}) => withAgentJob(event, req.requestId, signal =>
   require('./agents/editorFiles.cjs').runEditorFileJob(req, { signal, probeAll, outputDir: app.getPath('downloads'),
+    mayReplace: file => agentMayReplace(event.sender.id, file),
+    wrote: file => { try { agentSubtitleOutputs.set(file, { owner: event.sender.id, fingerprint: fileFingerprint(file) }); } catch { /* gone again */ } while (agentSubtitleOutputs.size > 64) agentSubtitleOutputs.delete(agentSubtitleOutputs.keys().next().value); },
     choosePaths: async pick => {
       const result = await dialog.showOpenDialog(win, { title: pick === 'folder' ? i18n.t('main.choose_media_folder_for_craftai') : i18n.t('main.choose_media_for_craftai'),
         properties: pick === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],

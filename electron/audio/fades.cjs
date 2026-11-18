@@ -20,7 +20,7 @@ function audioAutomationFilters(clip) {
   if (!Array.isArray(keys) || !keys.length) return [];
   if (keys.length > 512 || keys.some((k, i) => !k || !Number.isFinite(k.t) || k.t < 0 || !Number.isFinite(k.v) || k.v < 0 || k.v > 2 || i && k.t <= keys[i - 1].t)) throw Error('Invalid audio volume automation.');
   const n = value => String(Number(value.toFixed(9)));
-  const clock = `(${n(clip.in || 0)}+if(isnan(t),0,t)*${n(clip.speed || 1)})`;
+  const clock = `(${n(Number(clip.in) || 0)}+if(isnan(t),0,t)*${n(Number(clip.speed) || 1)})`;
   const terms = [n(keys[0].v)];
   for (let i = 1; i < keys.length; i++) {
     const a = keys[i - 1], b = keys[i];

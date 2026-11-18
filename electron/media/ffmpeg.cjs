@@ -5,6 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, execFile, execFileSync } = require('child_process');
+// Temporary names in the media cache carry this process's tag: two running instances never write the same partial file.
+const PART_TAG = `${process.pid}-${require('crypto').randomBytes(4).toString('hex')}`;
 
 const {unpackedBinaryPath}=require('./nativePaths.cjs');
 const ffmpegPath = unpackedBinaryPath(require('ffmpeg-static'));
@@ -22,7 +24,24 @@ const t = (key, params) => require('../system/i18n.cjs').t(key, params);
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 const num = (n) => Number(n).toFixed(3);
-const hex = (c, def = '#ffffff') => (c || def).replace('#', '0x');
+// Project values reach the filter graphs only as a finite number, a strict hex colour or a name
+// from a fixed set: any other text (a crafted project file) could add filters of its own, which
+// read and write files. These helpers are the only way such a value enters a graph string.
+const finite = (v, def) => (typeof v === 'number' && Number.isFinite(v) ? v : def);
+const positive = (v, def) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : def);
+function hex(c, def = '#ffffff') {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(typeof c === 'string' ? c.trim() : '') || /^#([0-9a-f]{6})$/i.exec(def) || ['', 'ffffff'];
+  return `0x${m[1].length === 3 ? [...m[1]].map((d) => d + d).join('') : m[1]}`;
+}
+const speedOf = (c) => positive(c && c.speed, 1);
+const gainOf = (c) => Math.max(0, finite(c && c.volume, 1));
+// The transitions FFmpeg's xfade draws itself; the others (animated, extension) arrive pre-rendered
+// as fxSegments. An unknown name crossfades, as the player shows it.
+const XFADE = new Set(['fade', 'wipeleft', 'wiperight', 'wipeup', 'wipedown', 'slideleft', 'slideright', 'slideup', 'slidedown', 'circlecrop', 'rectcrop', 'distance',
+  'fadeblack', 'fadewhite', 'radial', 'smoothleft', 'smoothright', 'smoothup', 'smoothdown', 'circleopen', 'circleclose', 'vertopen', 'vertclose', 'horzopen', 'horzclose',
+  'dissolve', 'pixelize', 'diagtl', 'diagtr', 'diagbl', 'diagbr', 'hlslice', 'hrslice', 'vuslice', 'vdslice', 'hblur', 'fadegrays', 'wipetl', 'wipetr', 'wipebl', 'wipebr',
+  'squeezeh', 'squeezev', 'zoomin', 'fadefast', 'fadeslow']);
+const xfadeName = (type) => (typeof type === 'string' && XFADE.has(type) ? type : 'fade');
 
 // Shortest clip length the filter graphs can express: num() prints 3 decimals, and FFmpeg reads
 // trim/atrim duration=0 (and apad whole_dur=0) as "no limit", so a shorter clip would play its whole
@@ -116,7 +135,7 @@ function probe(file) {
   });
 }
 
-const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
+const clipLen = (c) => (c.out - c.in) / speedOf(c);
 // A clip the filter graphs can express (MIN_CLIP_LEN of source and of timeline). Shorter clips
 // (a media item probed before its length could be read, a range cut to nothing) occupy no
 // time on the timeline, so leaving them out changes nothing but the graph.
@@ -247,8 +266,8 @@ function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false) {
       ? [`[${idx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
       : [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS'];
   const up = monoUp(m, enhIdx >= 0);
-  return [...src, ...(up ? [up] : []), ...atempo(clip.speed || 1),
-    `volume=${clip.volume ?? 1}`, ...audioFadeFilters(clip, len, num), 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
+  return [...src, ...(up ? [up] : []), ...atempo(speedOf(clip)),
+    `volume=${gainOf(clip)}`, ...audioFadeFilters(clip, len, num), 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
     ...audioFxFilters(clip.audioFx), ...audioAutomationFilters(clip),
     `apad=whole_dur=${num(len)}`, `atrim=duration=${num(len)}`].join(',') + `[a${i}]`;
 }
@@ -270,7 +289,7 @@ function analysisAudioPlan(project, selection = 'all') {
     const state = states[`${track}:${track === 'video' ? 0 : c.layer || 0}`] || {};
     const m = media.get(c.mediaId);
     return !c.gap && !c.disabled && !c.muted && !state.hidden && !state.muted && (!solo || state.solo)
-      && (!selected || selected.has(c.id)) && (c.volume ?? 1) > 0 && m && m.type !== 'image' && (m.hasAudio || m.type === 'audio');
+      && (!selected || selected.has(c.id)) && gainOf(c) > 0 && m && m.type !== 'image' && (m.hasAudio || m.type === 'audio');
   };
   const main = (source === 'all' || source === 'video') ? timedMain(lists.video).map(c => ({ ...c, muted: !audible(c, 'video') })) : [];
   const extras = [];
@@ -303,7 +322,7 @@ function audioAnalysisKey(project, selection = 'all') {
     const st = fs.statSync(file);
     return { path: file, size: st.size, mtime: st.mtimeMs, ctime: st.ctimeMs, ino: st.ino };
   };
-  const shape = (c, m) => ({ in: c.in, out: c.out, speed: c.speed || 1, start: c.start || 0, muted: !!c.muted,
+  const shape = (c, m) => ({ in: c.in, out: c.out, speed: speedOf(c), start: c.start || 0, muted: !!c.muted,
     volume: c.volume ?? 1, transition: c.transition, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0, fadeInOffset: c.fadeInOffset || 0, fadeOutOffset: c.fadeOutOffset || 0,
     audioFx: c.audioFx, volumeKeys: c.volumeKeys, media: c.muted ? undefined : { file: fileInfo(m.path), channels: m.channels,
       enhanced: enhancePathOf(c) ? fileInfo(enhancePathOf(c)) : undefined } });
@@ -341,7 +360,7 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
   plan.extras.forEach(({ clip: c, media: m }, j) => {
     const { index, enhanced } = input(c, m), len = clipLen(c);
     const up = monoUp(m, !!enhanced);
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`];
     chain.push(...audioFadeFilters(c, len, num));
     chain.push(...audioFxFilters(c.audioFx), ...audioAutomationFilters(c), 'aresample=16000', 'aformat=sample_fmts=fltp:channel_layouts=mono', `adelay=${Math.round(Math.max(0, c.start || 0) * 1000)}:all=1`);
     filters.push(`[${index}:a]${chain.join(',')}[x${j}]`);
@@ -427,10 +446,10 @@ function stillInput(file, fps, len) {
 function narrowClip(clip, m, from, to) {
   const c = { ...clip, transition: null };
   if (clip.gap) return { ...c, in: 0, out: to - from, speed: 1 };
-  if (clip.videoOverride) return { ...c, in: clip.in + from * (clip.speed || 1), out: clip.in + to * (clip.speed || 1),
+  if (clip.videoOverride) return { ...c, in: clip.in + from * speedOf(clip), out: clip.in + to * speedOf(clip),
     videoOverride: { ...clip.videoOverride, start: clip.videoOverride.start + from, end: clip.videoOverride.start + to } };
   if (m.type === 'image') return { ...c, in: 0, out: to - from, speed: 1 };
-  const sp = clip.speed || 1;
+  const sp = speedOf(clip);
   return { ...c, in: clip.in + from * sp, out: clip.in + to * sp };
 }
 
@@ -460,7 +479,7 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
       spans.forEach((span, i) => {
         const frames = Math.ceil((span.to - start) * fps - 1e-7) - Math.ceil((span.from - start) * fps - 1e-7);
         if (frames <= 0) return;
-        const duration = span.to - span.from, speed = o.sourceSpeed || clip.speed || 1;
+        const duration = span.to - span.from, speed = positive(o.sourceSpeed, speedOf(clip));
         const idx = span.file ? addInput(['-ss', num(span.fileStart || 0), '-i', span.file])
           : m.type === 'image' ? addInput(stillInput(m.path, fps, duration))
           : addInput(['-ss', num((o.sourceIn ?? clip.in - start * speed) + span.from * speed), '-i', m.path]);
@@ -485,14 +504,17 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
     return { idx, chain: `[${idx}:v]trim=duration=${num(len)},setpts=PTS-STARTPTS${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: false };
   }
   const idx = addInput(['-ss', num(clip.in), '-i', m.path]);
-  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${clip.speed || 1}${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
+  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${speedOf(clip)}${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
 }
 
 // A colour-only look baked into a 3D LUT (electron/export/fxjobs.cjs lut): applied where the
 // effects pass would have shaded the frames (fitted, straight RGBA), so what follows sees the
 // same picture as with a pre-rendered file. Measured identical to the GPU path on both picture
 // paths; the plain one stays plain (layering it cost 15% export time for nothing).
-const escapeFilterPath = file => String(file).replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+// A path as a quoted option value. The graph parser keeps everything between quotes (a backslash
+// there is literal) and the option parser then unescapes \: and \'; so a quote in the path closes
+// the quoting, is escaped for both parsers, and reopens it. A bare \' would end the quoting.
+const escapeFilterPath = file => String(file).replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'\\''");
 function colorLutFilter(clip, m, W, H) {
   if (!clip.colorLut?.file || W == null) return '';
   const { fw, fh } = fitSize(m, W, H);
@@ -506,7 +528,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     if(typeof clip.transition?.type==='string'&&clip.transition.type.startsWith('plugin-transition:')&&transitionDur(project.videoClips,i)>0&&!project.fxSegments?.[clip.id])throw Error('Plugin transitions must be rendered by the effects pass before encoding.');
   }
   const eff = effectiveExport(project), W = eff.outW, H = eff.outH;
-  const fps = Math.min(project.fps || 30, eff.outFps);
+  const fps = Math.min(positive(project.fps, 30), eff.outFps);
   const bg = project.background || '#000000';
   const mediaById = Object.fromEntries(project.media.map((m) => [m.id, m]));
   const inputs = [];
@@ -583,7 +605,7 @@ function buildExportArgs(project, outFile, opts = {}) {
       // xfade needs both inputs on the same time base (after an animated transition the video so far has another one).
       filters.push(
         `[${cv}]settb=1/${fps}[xa${i}]`, `[v${i}]settb=1/${fps}[xb${i}]`,
-        `[xa${i}][xb${i}]xfade=transition=${clips[i].transition.type}:duration=${num(td)}:offset=${num(start)}[jv${i}]`,
+        `[xa${i}][xb${i}]xfade=transition=${xfadeName(clips[i].transition.type)}:duration=${num(td)}:offset=${num(start)}[jv${i}]`,
       );
       filters.push(`[${ca}][a${i}]acrossfade=d=${num(td)}[ja${i}]`);
     } else {
@@ -610,7 +632,7 @@ function buildExportArgs(project, outFile, opts = {}) {
   // 3) Overlay clips (picture in picture): layered like main clips, padded in time to the whole video, composited in order.
   (project.overlayClips || []).filter((c) => timed(c) && mediaById[c.mediaId] && mediaById[c.mediaId].type !== 'audio').forEach((c, j) => {
     const m = mediaById[c.mediaId];
-    const sp = c.speed || 1;
+    const sp = speedOf(c);
     const len = (c.out - c.in) / sp;
     const start = Math.max(0, c.start);
     if (start >= total - 0.01) return;
@@ -659,10 +681,10 @@ function buildExportArgs(project, outFile, opts = {}) {
     // B1: the media input is input-seeked to c.in (the enhanced render is pre-trimmed),
     // so the trim runs from 0 in both cases.
     const idx = addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', mediaById[c.mediaId].path]);
-    const len = (c.out - c.in) / (c.speed || 1); // timeline length (audio clips carry a speed, e.g. detached ones)
+    const len = (c.out - c.in) / speedOf(c); // timeline length (audio clips carry a speed, e.g. detached ones)
     const delay = Math.round(c.start * 1000);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`];
     chain.push(...audioFadeFilters(c, len, num));
     chain.push(...audioFxFilters(c.audioFx), ...audioAutomationFilters(c));
     chain.push('aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', `adelay=${delay}|${delay}`);
@@ -674,7 +696,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     const up = monoUp(mediaById[c.mediaId], !!enh);
     // B1: idx always names an input seeked to c.in (or the pre-trimmed enhanced render),
     // so the trim runs from 0.
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(sp), `volume=${c.volume ?? 1}`, ...audioFadeFilters(c, len, num),
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(sp), `volume=${gainOf(c)}`, ...audioFadeFilters(c, len, num),
       'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[oa${j}]`);
     mixLabels.push(`[oa${j}]`);
@@ -759,16 +781,16 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
     const upO = monoUp(m, !!enhP);
-    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', m.path])}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFadeFilters(c, clipLen(c), num), ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
+    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', m.path])}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`, ...audioFadeFilters(c, clipLen(c), num), ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
   tracks.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
     sound = true;
-    const len = (c.out - c.in) / (c.speed || 1);
+    const len = (c.out - c.in) / speedOf(c);
     const delay = Math.round(c.start * 1000);
     const enhP = enhancePathOf(c);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`];
+    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`];
     chain.push(...audioFadeFilters(c, len, num));
     chain.push(...audioFxFilters(c.audioFx), ...audioAutomationFilters(c));
     filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', mediaById[c.mediaId].path])}:a]${chain.join(',')},${fmt},adelay=${delay}|${delay}[m${j}]`);
@@ -819,11 +841,11 @@ function graphFile(args, dir = os.tmpdir()) {
 const X264_PRESETS = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
 function effectiveExport(project) {
   const e = project.export;
-  const W = project.width || 1280;
-  const H = project.height || 720;
-  const fps = project.fps || 30;
+  const W = Math.round(positive(project.width, 1280));
+  const H = Math.round(positive(project.height, 720));
+  const fps = positive(project.fps, 30);
   if (!e || typeof e !== 'object') {
-    return { codecFamily: 'h264', mode: 'crf', crf: project.crf || 20, bitrateMbps: null, encoderPreset: 'veryfast', audioKbps: 192, outW: W, outH: H, outFps: fps };
+    return { codecFamily: 'h264', mode: 'crf', crf: Math.min(51, Math.max(0, positive(project.crf, 20))), bitrateMbps: null, encoderPreset: 'veryfast', audioKbps: 192, outW: W, outH: H, outFps: fps };
   }
   const clampN = (v, lo, hi, dflt) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : dflt);
   return {
@@ -834,8 +856,8 @@ function effectiveExport(project) {
     encoderPreset: X264_PRESETS.includes(e.encoderPreset) ? e.encoderPreset : 'veryfast',
     audioKbps: clampN(e.audioKbps, 32, 512, 192),
     // Never upscale, whatever a stamp claims: the cap can only shrink the project frame.
-    outW: Math.max(2, Math.min(W, Math.round(e.outW || W))),
-    outH: Math.max(2, Math.min(H, Math.round(e.outH || H))),
+    outW: Math.max(2, Math.min(W, Math.round(positive(e.outW, W)))),
+    outH: Math.max(2, Math.min(H, Math.round(positive(e.outH, H)))),
     outFps: clampN(e.outFps, 1, 240, fps),
   };
 }
@@ -1073,7 +1095,7 @@ async function makeVisuals(item, cacheDir, onUpdate = () => {}) {
   const st = fs.statSync(item.path);
   // v3 (W4, 2026-11-01): visuals now include a dedicated full-frame poster (below) — the
   // version bump makes media cached under v2 regenerate once so posters appear everywhere.
-  const key = require('crypto').createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|v3`).digest('hex').slice(0, 16);
+  const key = require('./quality.cjs').sourceKey(item, st, require('./quality.cjs').VISUALS_SUFFIX);
   fs.mkdirSync(cacheDir, { recursive: true });
   const metaFile = path.join(cacheDir, `${key}-visuals.json`);
   if (fs.existsSync(metaFile)) {
@@ -1162,8 +1184,8 @@ async function makeScene({ color, color2, direction = 'diagonal', width, height 
     const lerp = (i) => `${ch(c0, i)}+(${ch(c1, i) - ch(c0, i)})*${t}`;
     vf = `color=c=black:s=${w}x${h},format=rgb24,geq=r='${lerp(0)}':g='${lerp(1)}':b='${lerp(2)}'`;
   }
-  await runFfmpeg(['-f', 'lavfi', '-i', vf, '-frames:v', '1', `${out}.part.png`]);
-  fs.renameSync(`${out}.part.png`, out);
+  await runFfmpeg(['-f', 'lavfi', '-i', vf, '-frames:v', '1', `${out}.${PART_TAG}.part.png`]);
+  fs.renameSync(`${out}.${PART_TAG}.part.png`, out);
   return out;
 }
 
@@ -1178,19 +1200,19 @@ async function makeProxy(item, cacheDir) {
 // returns null and the player keeps the full-quality chain. Same recipe family as the light proxy
 // (fast seeking keyframes, fastdecode); higher levels keep more bitrate. Only the player uses these
 // ("-q<level>.mp4" in the cache); the export always reads the original.
-const { qualityTargetSize, qualityScaleFilter } = require('./quality.cjs');
+const { qualityTargetSize, qualityScaleFilter, sourceKey, proxySuffix } = require('./quality.cjs');
 const proxyJobs = new Map();
 async function makeQualityProxy(item, cacheDir, quality, { force = false } = {}) {
   const size = qualityTargetSize(item.width, item.height, quality);
   if (!size && !force) return null;
   const st = fs.statSync(item.path);
-  const key = require('crypto').createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|q${quality}1${item.hdr ? '-sdr' : ''}`).digest('hex').slice(0, 16);
+  const key = sourceKey(item, st, proxySuffix(item, quality));
   fs.mkdirSync(cacheDir, { recursive: true });
   const out = path.join(cacheDir, `${key}-q${quality}.mp4`);
   if (fs.existsSync(out)) return out;
   if (proxyJobs.has(out)) return proxyJobs.get(out);
   const job = (async () => {
-  const part = path.join(cacheDir, `${key}-q${quality}.part.mp4`);
+  const part = path.join(cacheDir, `${key}-q${quality}.${PART_TAG}.part.mp4`);
   const crf = { high: 23, medium: 26, low: 28 }[quality] || 26;
   await runBackground('proxy', ['-i', item.path, '-map', '0:v:0', '-map', '0:a:0?',
     '-vf', `${size ? qualityScaleFilter(quality) : `scale=${Math.max(2, Math.round(item.width / 2) * 2)}:${Math.max(2, Math.round(item.height / 2) * 2)}`}${item.hdr ? `,${TONEMAP}` : ''},format=yuv420p`,
@@ -1237,5 +1259,5 @@ async function sampleFrames(item, from, to, count = 8) {
 }
 
 module.exports = {
-  sampleFrames, analysisAudioPlan, audioAnalysisKey, buildTimelineAudioArgs,
+  sampleFrames, analysisAudioPlan, speedOf, positive, hex, xfadeName, escapeFilterPath, audioAnalysisKey, buildTimelineAudioArgs,
   toSdr, stillInput, graphFile, pickEncoder, warmEncoders, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };

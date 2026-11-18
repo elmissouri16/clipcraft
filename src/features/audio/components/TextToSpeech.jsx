@@ -16,7 +16,7 @@ export function voiceWord(word) {
 }
 
 // Audio > Text to speech. Online engines use keys stored in Settings.
-export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, settingsVersion }) {
+export default function TextToSpeech({ onAdd, onBegin, selectedText, onOpenSettings, settingsVersion }) {
   const [engine, setEngine] = useState('gemini');
   const [status, setStatus] = useState(null); // Native keys and installed service integrations.
   const [eleven, setEleven] = useState({ voices: [], loading: false, error: '' });
@@ -65,6 +65,7 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
   const voiceName = engine === 'eleven' ? eleven.voices.find((v) => v.id === voiceId)?.name
     : engine === 'gemini' ? voiceId : engineVoices(status, engine).find((v) => v.id === voiceId)?.name;
   const speak = async (mode) => {
+    const still = onBegin?.(); // the project the voice is made for (onAdd drops it if another opened meanwhile)
     setError('');
     setBusy(mode);
     setProgress(null);
@@ -82,7 +83,7 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
       audio.current.src = toFileUrl(res.path);
       audio.current.play().catch(() => {});
       setPlaying(true);
-    } else onAdd(res, !!selectedText && text.trim() === selectedText.text.trim());
+    } else onAdd(res, !!selectedText && text.trim() === selectedText.text.trim(), still);
   };
 
   const installed = extensionEngine(status, engine);

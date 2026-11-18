@@ -6,6 +6,8 @@
 // The reverse filter holds the whole segment in memory frame by frame, so the range is capped
 // at 20 seconds — longer ranges fail with that explanation rather than exhausting RAM.
 const crypto = require('crypto');
+// Temporary names carry this process's tag: two running instances never write the same partial file.
+const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -55,7 +57,7 @@ async function reverse(item, { from = 0, to, hasVideo = true, cacheDir, ffmpegPa
   fs.mkdirSync(cacheDir, { recursive: true });
   const out = outFile(item, a, b, cacheDir);
   if (fs.existsSync(out)) return out;
-  const part = `${path.basename(out, '.mp4')}.part.mp4`;
+  const part = `${path.basename(out, '.mp4')}.${PART_TAG}.part.mp4`;
   const sdr = toSdr(item);
   const args = ['-ss', num(a), '-t', num(len), '-i', item.path];
   if (hasVideo) {

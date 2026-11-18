@@ -1,5 +1,5 @@
 const fs = require('node:fs');
-const { qualityTargetSize } = require('./quality.cjs');
+const { qualityTargetSize, derivedCurrent } = require('./quality.cjs');
 
 // Prepare the copy the user will actually play before thumbnails/waveforms.
 // High and the compatibility proxy share one file/encode. Lower copies defer
@@ -10,7 +10,9 @@ async function preparePreview(item, quality, cache, emit, services) {
     if (patch.proxies) patch = { ...patch, proxies: { ...(current.proxies || {}), ...patch.proxies } };
     current = { ...current, ...patch };emit(patch);
   };
-  const exists = services.exists || fs.existsSync;
+  // A saved copy is reused only while it still belongs to the source as it is now: a file replaced at
+  // the same path (new size or time) gets new copies instead of showing the old picture.
+  const exists = (file) => (services.exists || fs.existsSync)(file) && (services.current || derivedCurrent)(item, file);
   try {
     const info = item.pixFmt === undefined || item.hdr === undefined ? { ...item, ...(await services.probe(item.path)) } : item;
     const required = services.needsProxy(info);

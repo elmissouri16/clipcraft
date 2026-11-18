@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('api', {
   importMedia: () => ipcRenderer.invoke('media:import'),
   wasRecovered: () => ipcRenderer.invoke('app:recovered'),
   readLut: (ref) => ipcRenderer.invoke('lut:read', ref),
+  lutStamp: (ref) => ipcRenderer.invoke('lut:stamp', ref),
   importLut: () => ipcRenderer.invoke('lut:import'),
   openCrashLog: () => ipcRenderer.invoke('app:openCrashLog'),
   probePaths: (paths) => ipcRenderer.invoke('media:probe', paths),
@@ -180,7 +181,7 @@ contextBridge.exposeInMainWorld('api', {
   qualitySet: (q) => ipcRenderer.invoke('proxy:setQuality', q),
   perfGetMode: () => ipcRenderer.invoke('perf:getMode'),
   perfSetMode: (m) => ipcRenderer.invoke('perf:setMode', m),
-  proxyClear: () => ipcRenderer.invoke('proxy:clear'),
+  proxyClear: (keep) => ipcRenderer.invoke('proxy:clear', keep),
   onMediaVisuals: (cb) => {
     const handler = (_e, v) => cb(v);
     ipcRenderer.on('media:visuals', handler);

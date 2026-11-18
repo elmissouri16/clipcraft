@@ -63,6 +63,32 @@ export function emptyProject() {
   };
 }
 
+// Clip values the export writes into FFmpeg filter graphs (electron/media/ffmpeg.cjs) must be
+// numbers, hex colours or plain names in a project file: free text there could name filters of its
+// own (a shared project is not trusted). null stands for the default, as the reducer reads it.
+const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+// Transition ids: built-in names, fx_ ids and the extension forms (plugin-transition:<id>@<digest>,
+// older plugin:<id>); never spaces, commas, semicolons, brackets, quotes or equals signs.
+const TRANSITION_TYPE = /^[\w.:/@+-]{1,300}$/;
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const numbersIn = (o, fields) => fields.every((f) => o[f] == null || isNum(o[f]));
+function validateRenderFields(item, key, invalid) {
+  const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  for (const field of ['volume', 'opacity', 'fadeIn', 'fadeOut', 'fadeInOffset', 'fadeOutOffset']) if (!numbersIn(item, [field])) invalid(`${key}.${field}`);
+  const tr = item.transition;
+  if (tr != null && (!record(tr) || (tr.type != null && !(typeof tr.type === 'string' && TRANSITION_TYPE.test(tr.type))) || !numbersIn(tr, ['duration', 'timelineOverlap']))) invalid(`${key}.transition`);
+  if (item.blend != null && !(typeof item.blend === 'string' && /^[a-z-]{1,32}$/.test(item.blend))) invalid(`${key}.blend`);
+  const ch = item.chroma;
+  if (ch != null && (!record(ch) || (ch.color != null && !(typeof ch.color === 'string' && HEX_COLOR.test(ch.color))) || !numbersIn(ch, ['intensity', 'feather', 'spill']))) invalid(`${key}.chroma`);
+  const fx = item.audioFx;
+  if (fx != null && (!record(fx) || !numbersIn(fx, ['highpass', 'lowpass', 'pitch'])
+    || (fx.eq != null && (!record(fx.eq) || !numbersIn(fx.eq, ['low', 'mid', 'high'])))
+    || (fx.echo != null && fx.echo !== false && (!record(fx.echo) || !numbersIn(fx.echo, ['delay', 'decay']))))) invalid(`${key}.audioFx`);
+  if (item.volumeKeys != null && (!Array.isArray(item.volumeKeys) || !item.volumeKeys.every((k) => record(k) && numbersIn(k, ['t', 'v'])))) invalid(`${key}.volumeKeys`);
+  const kf = item.keyframes;
+  if (kf != null && (!record(kf) || !['scale', 'x', 'y', 'rot', 'opacity'].every((p) => kf[p] == null || (Array.isArray(kf[p]) && kf[p].every((k) => record(k) && numbersIn(k, ['t', 'v'])))))) invalid(`${key}.keyframes`);
+}
+
 // Validate containers before the project reaches the reducer or render tree. Missing
 // fields remain legal for older files; unknown fields survive normalization.
 export function validateProject(p) {
@@ -86,11 +112,13 @@ export function validateProject(p) {
       for (const field of ['path', 'text']) {
         if (item[field] !== undefined && typeof item[field] !== 'string') invalid(`${key}.${field}`);
       }
+      validateRenderFields(item, key, invalid);
     }
   }
   for (const key of ['name', 'id', 'ratio', 'background']) {
     if (p[key] !== undefined && typeof p[key] !== 'string') invalid(key);
   }
+  if (p.background !== undefined && !HEX_COLOR.test(p.background)) invalid('background');
   for (const key of ['width', 'height', 'fps', 'resolution']) {
     if (p[key] !== undefined && (typeof p[key] !== 'number' || !Number.isFinite(p[key]) || p[key] <= 0)) invalid(key);
   }
@@ -691,14 +719,27 @@ function reduceProjectInner(p, a) {
       if (!key || !a.clip) return p;
       // The copy is independent: a pasted clip never shares its source's audio link
       // (two clips with one linkId would fight over the partner).
-      const { linkId, linkOff, linkInOff, ...clip } = a.clip;
+      let { linkId, linkOff, linkInOff, ...clip } = a.clip;
+      // A clip copied in another project (the clipboard outlives a project load) brings its media item
+      // (a.media): this project's item for the same file is used, or the item is added. Without it a
+      // clip whose media is not here is not pasted: the timeline would show a block the export drops.
+      let media = p.media;
+      if (clip.mediaId && !p.media.some((m) => m.id === clip.mediaId && (!a.media || m.path === a.media.path))) {
+        const same = a.media?.path && p.media.find((m) => m.path === a.media.path);
+        if (same) clip = { ...clip, mediaId: same.id };
+        else if (a.media?.id === clip.mediaId && typeof a.media.path === 'string') {
+          const id = p.media.some((m) => m.id === a.media.id) ? a.mediaId || `${a.newId}-media` : a.media.id;
+          media = [...p.media, { ...a.media, id }];
+          clip = { ...clip, mediaId: id };
+        } else return p;
+      }
       if (a.track === 'video') {
         const list = [...p.videoClips];
         const index = videoLayout(list).filter((l) => (l.start + l.end) / 2 < a.at).length;
         list.splice(index, 0, { ...clip, id: a.newId, transition: null });
-        return { ...p, videoClips: list };
+        return { ...p, media, videoClips: list };
       }
-      return { ...p, [key]: [...p[key], { ...clip, id: a.newId, start: Math.max(0, a.at) }] };
+      return { ...p, media, [key]: [...p[key], { ...clip, id: a.newId, start: Math.max(0, a.at) }] };
     }
     case 'cutRanges':
       return cutRanges(p, a.ranges, { ripple: a.ripple === true });
@@ -2344,7 +2385,14 @@ function reduceHistoryAction(state, a, preview = false) {
   return next;
 }
 
-function reduceHistory(state, a,extensionEdit=false) {
+function reduceHistory(state, a, extensionEdit = false) {
+  const next = reduceHistoryStep(state, a, extensionEdit);
+  // An edit of a group nested in a held drag is applied to the drag's start too, so the drag's next
+  // update (computed from that start) keeps it instead of reverting it.
+  if (!state.gestureNest || !next.gestureNest || next.present === state.present || next.gestureStart !== state.gestureStart) return next;
+  return { ...next, gestureStart: reduceHistoryStep({ past: [], present: state.gestureStart, future: [] }, a, extensionEdit).present };
+}
+function reduceHistoryStep(state, a,extensionEdit=false) {
   if (a.type === 'beginAgentEdit') {
     if (typeof a.token !== 'string' || !a.token || state.agentEdit || state.gestureStart) return state;
     return { ...state, agentInterruption: undefined, agentEdit: { token: a.token, base: state.present, steps: [], future: state.future } };
@@ -2427,6 +2475,9 @@ function reduceHistory(state, a,extensionEdit=false) {
   // is pressing on a clip: the timeline begins a gesture on every press before
   // it knows whether this is a drag or a selection. A gesture interrupts the
   // request at its first real change (below), never by starting.
+  // A held gesture (a drag) keeps sending updates computed from its start: an Undo / Redo now
+  // would be re-applied by the next update and end the gesture early. They wait for the release.
+  if (state.gestureStart && ['undo', 'redo'].includes(a.type)) return state;
   if (state.agentEdit && !a.agentToken && ['undo', 'redo', 'load'].includes(a.type)) return historyReducer(finishAgentEdit(state, a), a);
   if (a.type === 'undo') {
     if (!state.past.length) return state;
@@ -2444,13 +2495,27 @@ function reduceHistory(state, a,extensionEdit=false) {
     if (state.past.length <= a.from) return state;
     return { ...state, past: state.past.slice(0, a.from + 1) };
   }
-  if (a.type === 'beginGesture') return { ...state, gestureStart: state.present };
+  // A group (group: true — a clip job's result, a shortcut's several edits) that lands while a drag
+  // holds the gesture nests inside it: the drag's start is kept, the group's edits are applied to that
+  // start as well (reduceHistory), and the group becomes its own Undo step when it ends.
+  if (a.type === 'beginGesture') {
+    if (a.group && state.gestureStart) return { ...state, gestureNest: (state.gestureNest || 0) + 1, ...(state.gestureNest ? {} : { gestureNestBase: state.gestureStart }) };
+    const { gestureNest, gestureNestBase, ...rest } = state;
+    return { ...rest, gestureStart: state.present };
+  }
+  if (a.type === 'endGesture' && a.group && state.gestureNest) {
+    const { gestureNestBase: before, ...rest } = state;
+    if (state.gestureNest > 1) return { ...rest, gestureNestBase: before, gestureNest: state.gestureNest - 1 };
+    delete rest.gestureNest;
+    if (state.agentEdit || before === state.gestureStart) return rest;
+    return { ...rest, past: [...state.past, before].slice(-100), future: [] };
+  }
   if (a.type === 'endGesture') {
-    const start = state.gestureStart;
+    const { gestureNest, gestureNestBase, ...rest } = state, start = state.gestureStart;
     // Still owned by the request: the gesture changed nothing itself (its first change would have
     // ended the request), so any difference is the agent's and belongs to the agent's Undo step.
-    if (state.agentEdit) return { ...state, gestureStart: null };
-    if (!start || start === state.present) return { ...state, gestureStart: null };
+    if (state.agentEdit) return { ...rest, gestureStart: null };
+    if (!start || start === state.present) return { ...rest, gestureStart: null };
     return { past: [...state.past, start].slice(-100), present: state.present, future: [], gestureStart: null };
   }
   // Locked layers refuse edits before anything is computed (undo / redo returned above,

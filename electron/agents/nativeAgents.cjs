@@ -43,16 +43,23 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
       sessions.set(sessionKey, state);
     }
     // Every call goes through the same budget and timeout, whichever agent made it.
-    let calls = 0;
+    let calls = 0, lane = Promise.resolve();
     const limited = (name, args) => {
       // complete_edit is the way out, so it is never refused for budget.
       if (name !== 'complete_edit' && ++calls > LIMITS.toolCallsPerRequest) return hostError(`This request reached its limit of ${LIMITS.toolCallsPerRequest} tool calls. Finish with what is done: call complete_edit if edits were made, then answer.`);
-      let timer;
-      const timeout = new Promise((resolve) => { timer = setTimeout(() => {
-        try { options.onToolTimeout?.(name); } catch { /* timeout still resolves if cleanup itself failed */ }
-        finally { resolve(hostError(`${name} did not finish within ${LIMITS.toolCallTimeoutMs / 60000} minutes.`)); }
-      }, LIMITS.toolCallTimeoutMs); });
-      return Promise.race([Promise.resolve().then(() => onTool(name, args)), timeout]).finally(() => clearTimeout(timer));
+      // The editor runs one call at a time (src/features/agent/toolHost.js), so calls the agent issues
+      // together wait their turn here and each call's time limit starts when it begins to run: a call
+      // queued behind slow ones is never timed out (stopping the whole request) before it ran.
+      const turn = lane.then(() => {
+        let timer;
+        const timeout = new Promise((resolve) => { timer = setTimeout(() => {
+          try { options.onToolTimeout?.(name); } catch { /* timeout still resolves if cleanup itself failed */ }
+          finally { resolve(hostError(`${name} did not finish within ${LIMITS.toolCallTimeoutMs / 60000} minutes.`)); }
+        }, LIMITS.toolCallTimeoutMs); });
+        return Promise.race([Promise.resolve().then(() => onTool(name, args)), timeout]).finally(() => clearTimeout(timer));
+      });
+      lane = turn.catch(() => {});
+      return turn;
     };
     // An agent may replay a callback (same turn, name and call id): the edit runs once.
     const replay = new Map();

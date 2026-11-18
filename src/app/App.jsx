@@ -661,10 +661,19 @@ export default function App() {
     if (v) applyToClip(v.clip.id, payload);
   };
 
+  // The open project at the start of a slow add (download, synthesis, probe, recording), like clipJob:
+  // its result lands only in that project. Opened another meanwhile: the result is dropped (any
+  // downloaded or recorded file stays on disk).
+  const projectStamp = () => {
+    const pid = projectRef.current.id, version = loadVersionRef.current;
+    return () => projectRef.current.id === pid && loadVersionRef.current === version;
+  };
   // A sound from the audio library: one media item per file (reused), clip on the Audio track at the playhead.
   const libraryAdd = async (item) => {
+    const still = projectStamp();
     const res = await window.api.libraryAdd(item);
     if (res.error) return res;
+    if (!still()) return { canceled: true };
     let m = projectRef.current.media.find((x) => x.path === res.path);
     if (!m) [m] = addItems([res]);
     if (!m) return { error: t('app.could_not_add_the_sound') };
@@ -676,7 +685,8 @@ export default function App() {
 
   // Text to speech: the voice goes on the Audio track where the selected text starts, or at the playhead.
   const selectedText = selection?.track === 'text' ? project.textClips.find((c) => c.id === selection.id) : null;
-  const ttsAdd = (res, atText) => {
+  const ttsAdd = (res, atText, still) => {
+    if (still && !still()) return; // the voice was made for a project that is no longer open
     let m = projectRef.current.media.find((x) => x.path === res.path);
     if (!m) [m] = addItems([{ ...res, origin: 'tts' }]); // Media tree: Generated ▸ Speech
     if (!m) return;
@@ -692,8 +702,10 @@ export default function App() {
     window.api.proxyStatus?.().then((st) => { setPlaybackQuality(st.quality); setQuality(st.quality); }).catch(() => {});
   }, [settingsVersion]);
   const stockAdd = async (item, where) => {
+    const still = projectStamp();
     const res = await window.api.stockAdd(item);
     if (res.error) return res;
+    if (!still()) return { canceled: true };
     let m = projectRef.current.media.find((x) => x.path === res.path);
     if (!m) [m] = addItems([res]);
     if (!m) return { error: t('app.could_not_add_the_file') };
@@ -715,8 +727,10 @@ export default function App() {
   const addFile = async (filePath, where = 'main', packMetadata) => {
     let m = projectRef.current.media.find((x) => x.path === filePath);
     if (!m) {
+      const still = projectStamp();
       const [res] = await window.api.probePaths([filePath]);
       if (!res || res.error) return { error: res ? t('app.name_and_error', { name: res.name, error: res.error }) : t('app.the_file_was_not_found') };
+      if (!still()) return { canceled: true };
       [m] = addItems([{...res,...(packMetadata?{name:packMetadata.name,credit:packMetadata.credit,origin:'plugin-pack'}:{})}]);
     }
     const clipId = uid();
@@ -781,7 +795,9 @@ export default function App() {
   };
 
   // Voice-over: the clip goes where the recording started.
+  const recordStamp = useRef(null); // the project the voice-over was started in
   const recorder = useRecorder((item, at) => {
+    if (recordStamp.current && !recordStamp.current()) return; // recorded for a project no longer open (the file is kept)
     const m = { ...item, id: uid() };
     const clipId = uid();
     dispatch({ type: 'addMedia', items: [m] });
@@ -800,7 +816,8 @@ export default function App() {
     dispatch({ type: 'removeMedia', id });
   };
 
-  const toggleRecording = () => (recorder.recording ? recorder.stop() : recorder.start(readTime()));
+  const startVoiceOver = () => { recordStamp.current = projectStamp(); return recorder.start(readTime()); };
+  const toggleRecording = () => (recorder.recording ? recorder.stop() : startVoiceOver());
 
   // Screen recording: the video goes on the main track at the playhead. The camera, recorded as its own clip,
   // goes on the overlay track at the same time, cut round or square and placed where its bubble was on the screen
@@ -945,14 +962,14 @@ export default function App() {
       // Several clips: every selected clip under the playhead is cut, one undo step for all of
       // them (a linked partner is cut by its pair, so the second half of a pair is skipped).
       const p = projectRef.current, seen = new Set();
-      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'beginGesture', group: true });
       for (const it of selection.items) {
         if (seen.has(`${it.track}:${it.id}`)) continue;
         const partner = findLinkPartner(p, findClipIn(p, it.track, it.id));
         if (partner) seen.add(`${partner.track}:${partner.clip.id}`);
         dispatch({ type: 'split', track: it.track, id: it.id, t: at, newId: uid() });
       }
-      dispatch({ type: 'endGesture' });
+      dispatch({ type: 'endGesture', group: true });
       return;
     }
     let tgt = selection;
@@ -975,9 +992,9 @@ export default function App() {
       const actions = trimActions(project, { track: tgt.track, id: tgt.id, t: readTime(), side, newId });
       if (!actions.length) continue;
       // Split + delete land as ONE undo step.
-      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'beginGesture', group: true });
       actions.forEach((a) => dispatch(a));
-      dispatch({ type: 'endGesture' });
+      dispatch({ type: 'endGesture', group: true });
       setSelection(side === 'right' ? { track: tgt.track, id: tgt.id } : { track: tgt.track, id: newId });
       return;
     }
@@ -999,9 +1016,9 @@ export default function App() {
     };
     if (selection.items) {
       // Several clips: one undo step for all of them.
-      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'beginGesture', group: true });
       selection.items.forEach(removeOne);
-      dispatch({ type: 'endGesture' });
+      dispatch({ type: 'endGesture', group: true });
     } else removeOne(selection);
     setSelection(null);
   }, [selection]);
@@ -1029,7 +1046,8 @@ export default function App() {
   };
   const copy = useCallback(() => {
     const c = findClip(project, selection);
-    if (c && !c.gap) setClipboard({ track: selection.track, clip: c });
+    // The clip's media item travels with it: a paste into another project adds it there (see 'paste').
+    if (c && !c.gap) setClipboard({ track: selection.track, clip: c, media: c.mediaId ? project.media.find((m) => m.id === c.mediaId) || null : null });
     return !!(c && !c.gap);
   }, [project, selection]);
   const cut = useCallback(() => {
@@ -1040,8 +1058,10 @@ export default function App() {
   }, [copy, selection]);
   const paste = useCallback(() => {
     if (!clipboard) return;
+    const p = projectRef.current, { clip, media } = clipboard;
+    if (clip.mediaId && !p.media.some((m) => m.id === clip.mediaId) && !media?.path) { showAlert(t('app.paste_media_missing')); return; }
     const newId = uid();
-    dispatch({ type: 'paste', track: clipboard.track, clip: clipboard.clip, at: readTime(), newId });
+    dispatch({ type: 'paste', track: clipboard.track, clip, media, mediaId: uid(), at: readTime(), newId });
     setSelection({ track: clipboard.track, id: newId });
   }, [clipboard, time]);
   // Detach audio: render the clip's sound to its own file (electron/media/detach.cjs, cached),
@@ -1072,7 +1092,7 @@ export default function App() {
     const linkId = uid();
     const audioId = uid();
     let media = projectRef.current.media.find((x) => x.path === res.path);
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     if (!media) { media = { ...res, id: uid(), origin: 'detach' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
     dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { muted: true, linkId } });
     dispatch({ type: 'insertAudioClip', clip: {
@@ -1080,7 +1100,7 @@ export default function App() {
       speed: c.speed || 1, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0,
       linkId, linkOff: 0, linkInOff: -(c.in || 0),
     } });
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
     select({ track: 'audio', id: audioId });
   }, [selection, select]);
 
@@ -1115,10 +1135,10 @@ export default function App() {
     const c = sel && findClip(p, sel);
     if (!c || !c.linkId) return;
     const partner = findLinkPartner(p, c);
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { linkId: undefined, linkOff: undefined, linkInOff: undefined } });
     if (partner) dispatch({ type: 'update', track: partner.track, id: partner.clip.id, patch: { linkId: undefined, linkOff: undefined, linkInOff: undefined } });
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
   }, [selection]);
 
   // Link the two selected clips (one picture + one audio) into a synced pair. The audio
@@ -1137,13 +1157,13 @@ export default function App() {
       ? (videoLayout(p.videoClips).find((l) => l.clip.id === pc.id)?.start ?? 0)
       : pc.start;
     const linkId = uid();
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     dispatch({ type: 'update', track: pic.track, id: pic.id, patch: { linkId } });
     dispatch({ type: 'update', track: 'audio', id: ac.id, patch: {
       linkId, linkOff: ac.start - vStart, linkInOff: ac.in - pc.in,
       speed: pc.speed || 1, out: ac.in + (pc.out - pc.in),
     } });
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
   }, [selection]);
 
   // Select every clip on the layer of the given clip (Select all in the clip menu).
@@ -1164,9 +1184,9 @@ export default function App() {
     const items = (selection?.items && selection.items.some((it) => it.track === sel.track && it.id === sel.id))
       ? selection.items.filter((it) => it.track === sel.track)
       : [sel];
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     items.forEach((it) => dispatch({ type: 'update', track: it.track, id: it.id, patch: { layer } }));
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
     return items;
   }, [selection]);
 
@@ -1214,7 +1234,7 @@ export default function App() {
     if (!current()) return; // another project, or the clip changed meanwhile
     let media = projectRef.current.media.find((x) => x.path === fm.path);
     const stillId = uid();
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     if (!media) { media = { ...fm, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
     if (sel.track === 'video') {
       const idx = videoLayout(p.videoClips).findIndex((x) => x.clip.id === c.id);
@@ -1236,7 +1256,7 @@ export default function App() {
       dispatch({ type: 'addOverlayClip', mediaId: media.id, clipId: stillId, at, layer: c.layer });
       dispatch({ type: 'update', track: 'overlay', id: stillId, patch: { transform: c.transform || undefined } });
     }
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
     setSelection({ track: sel.track, id: stillId });
   };
 
@@ -1268,10 +1288,10 @@ export default function App() {
     setRenderJob(null);
     if (!current()) return; // another project, or the clip changed while rendering
     let media = projectRef.current.media.find((x) => x.path === res.path);
-    dispatch({ type: 'beginGesture' });
+    dispatch({ type: 'beginGesture', group: true });
     if (!media) { media = { ...res, id: uid(), origin: 'reverse' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
     dispatch({ type: 'update', ...sel, patch: { mediaId: media.id, in: 0, out: res.duration, reversed: { mediaId: c.mediaId, in: c.in || 0, out: c.out ?? m.duration } } });
-    dispatch({ type: 'endGesture' });
+    dispatch({ type: 'endGesture', group: true });
   };
 
   const openClipMenu = (e, track, clip) => {
@@ -1349,9 +1369,9 @@ export default function App() {
     const changed = c && (JSON.stringify(draftCrop) !== JSON.stringify(snap.crop)
       || draftAspect !== snap.cropAspect || draftRot !== snap.rot);
     if (changed) {
-      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'beginGesture', group: true });
       dispatch({ type: 'update', track: cropEdit.track, id: cropEdit.id, patch: { crop: draftCrop, cropAspect: draftAspect, transform: { ...transformOf(c), rot: draftRot } } });
-      dispatch({ type: 'endGesture' });
+      dispatch({ type: 'endGesture', group: true });
     }
     setCropEdit(null);
   };
@@ -1398,9 +1418,9 @@ export default function App() {
     off();
     if (res && res.points && res.points.length && !current()) { setRenderJob(null); return; } // another project, or the clip changed
     if (res && res.points && res.points.length) {
-      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'beginGesture', group: true });
       dispatch({ type: 'update', track: pick.track, id: pick.id, patch: { track: { points: res.points, box: pick.box, fps: res.fps } } });
-      dispatch({ type: 'endGesture' });
+      dispatch({ type: 'endGesture', group: true });
       setRenderJob(null);
     } else if (res && res.canceled) setRenderJob(null);
     else setRenderJob({ error: (res && res.error) || t('app.tracking_failed') });
@@ -1600,9 +1620,9 @@ export default function App() {
         return true;
       });
       if (!items.length) return;
-      dispatch({ type: 'beginGesture' });
+      dispatch({ type: 'beginGesture', group: true });
       items.forEach((it) => dispatch({ type: 'duplicate', ...it, newId: uid() }));
-      dispatch({ type: 'endGesture' });
+      dispatch({ type: 'endGesture', group: true });
     } else if (okItem(selection)) dispatch({ type: 'duplicate', ...selection, newId: uid() });
   }, [selection]);
 
@@ -1647,6 +1667,7 @@ export default function App() {
     try {
       const res = await window.api.openProject();
       if (!res) return;
+      if (res.error) { showAlert(res.error); return; }
       const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
       await flushAutosave(); // the current project keeps its last changes (file + slot)
       autosave.current.file = res.file;
@@ -1727,6 +1748,7 @@ export default function App() {
       storeRecents(recentsRef.current.filter((x) => x.path !== filePath));
       return { error: t('app.project_file_not_found') };
     }
+    if (res.error) return { error: res.error }; // not a ClipCraft project: the file is left alone
     try {
       const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
       await flushAutosave();
@@ -2228,9 +2250,12 @@ export default function App() {
     },
     open: async ({ id, path: filePath }) => {
       if (!id && !filePath) return { error: 'Give the id from list_projects, or the path of a .clipcraft.json file.' };
-      setPlaying(false);
       const slots = await window.api.slotList?.().catch(() => []) || [];
-      const result = id && slots.some?.((x) => x.id === id) ? await loadSlot(id)
+      const slot = id && slots.some?.((x) => x.id === id);
+      // An outside agent opens project files only: any other file would become the auto save target.
+      if (!slot && !/\.clipcraft\.json$/i.test(String(filePath || id))) return { error: 'Only a .clipcraft.json project file can be opened. Give the id from list_projects, or the path of a .clipcraft.json file.' };
+      setPlaying(false);
+      const result = slot ? await loadSlot(id)
         : await loadFile(filePath || id);
       await settle();
       return result;
@@ -2345,7 +2370,7 @@ export default function App() {
   // The editor's own boundary: a failing panel shows a message instead of blanking the window,
   // while this component (the project, its history and autosave) stays mounted.
   return (
-    <ErrorBoundary name="the editor" message={t('error-boundary.editor_message')} onUndo={state.past.length ? () => dispatch({ type: 'undo' }) : undefined}>
+    <ErrorBoundary name="the editor" message={t('error-boundary.editor_message')} onUndo={state.past.length || state.gestureStart ? () => { dispatch({ type: 'endGesture' }); dispatch({ type: 'undo' }); } : undefined}>
     <div className={`app mode-${workspaceMode} ${dragOver ? 'drag-over' : ''} drawer-${agentDrawer || 'none'}`} style={{ gridTemplateRows: agentMode ? `44px 34px minmax(0, 1fr) ${panes.bottom}px` : `44px minmax(0, 1fr) ${panes.bottom}px`, ...(agentMode ? { gridTemplateColumns: `${panes.left}px minmax(0, 1fr)${agentDrawer ? ` ${panes.right}px` : ''}` } : {}), '--agent-bottom': `${panes.bottom}px`, '--agent-left': `${panes.left}px` }}
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
@@ -2362,9 +2387,9 @@ export default function App() {
       </div>
       <div className="workspace" style={{ gridTemplateColumns: panes.rightCollapsed ? `${panes.left}px minmax(0, 1fr)` : `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch} settingsVersion={settingsVersion}
-          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} selectedText={selectedText}
+          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} onTtsBegin={projectStamp} selectedText={selectedText}
           onOpenSettings={(section) => setSettingsOpen(typeof section === 'string' ? section : true)} onRemoveMedia={removeMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
-          recorder={recorder} onStartRecord={() => recorder.start(readTime())} onAddText={addText} onAddTextOver={addTextOver}
+          recorder={recorder} onStartRecord={startVoiceOver} onAddText={addText} onAddTextOver={addTextOver}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
           target={target} updateTarget={updateTarget} selectedCount={selectedPictures(project, selection).length}
           wholeFilter={wholeFilter} onWholeVideoFilter={setWholeVideoFilter}
@@ -2438,6 +2463,9 @@ export default function App() {
       {settingsOpen && <SettingsDialog onAuthorExport={startAuthorExport} project={project} onReplaceDependency={replacePackDependency} onApplyPack={screen==='editor'?applyPackContent:undefined} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
         onAbout={() => setAboutOpen('settings')}
         onProxiesCleared={(deleted) => projectRef.current.media.forEach((m) => {
+          // A deleted copy the player still pointed at is made again (optimizing asks for it, like a project
+          // opened with a missing proxy), so the clip never stays blank until the project is reopened.
+          if (m.proxy && deleted.includes(m.proxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { proxy: null, optimizing: true } });
           if (m.lightProxy && deleted.includes(m.lightProxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { lightProxy: null } });
           if (m.proxies) {
             const proxies = Object.fromEntries(Object.entries(m.proxies).map(([k, v]) => [k, deleted.includes(v) ? null : v]));

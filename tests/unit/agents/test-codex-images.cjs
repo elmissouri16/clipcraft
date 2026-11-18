@@ -49,6 +49,10 @@ async function main() {
     assert.equal(client.config.features.shell_tool, false);
     assert.equal(client.config.features.unified_exec, false);
     assert.equal(client.config.features.plugins, false);
+    // Every built-in tool the other Codex sessions turn off stays off here too (view_image, browser, hooks…).
+    const { CODEX_FEATURES_OFF } = require('../../../electron/agents/codexNative.cjs');
+    assert.deepEqual(Object.keys(CODEX_FEATURES_OFF).filter(k => client.config.features[k] !== false), ['image_generation', 'code_mode_host']);
+    assert.equal(client.config.features.view_image, false);
     assert.equal(client.env.ELECTRON_RUN_AS_NODE, undefined);
     const run = captured.findLast(c => c.kind === 'run');
     assert.equal(run.options.model, 'chosen-model');

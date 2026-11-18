@@ -4,7 +4,10 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { localPath } = require('./editorFiles.cjs');
 
-function createEditorExportTarget(req, { outputDir, cacheDir }) {
+// mayReplace(file): for assistant and outside-agent exports, whether an existing file is one this app
+// wrote for the same owner earlier in the session (and unchanged since). Any other existing file is
+// never replaced on the model's word. Without it (extension exports) overwrite keeps its meaning.
+function createEditorExportTarget(req, { outputDir, cacheDir, mayReplace }) {
   if (typeof req?.requestId !== 'string' || !req.requestId || req.requestId.length > 100) throw Error('Export requires an active request ID.');
   if (req.overwrite !== undefined && typeof req.overwrite !== 'boolean') throw Error('overwrite must be true or false.');
   const review = req.kind === 'review';
@@ -27,6 +30,7 @@ function createEditorExportTarget(req, { outputDir, cacheDir }) {
   const parent = fs.realpathSync(path.dirname(file));
   if (!fs.statSync(parent).isDirectory()) throw Error('The output folder does not exist.');
   file = path.join(parent, path.basename(file));
+  if (fs.existsSync(file) && mayReplace && !mayReplace(file)) throw Error('The export destination already exists and this assistant did not create it. Choose a new file name.');
   if (fs.existsSync(file) && !req.overwrite) throw Error('The export destination already exists. Choose another name or explicitly request overwrite.');
   if (fs.existsSync(file) && !fs.statSync(file).isFile()) throw Error('The export destination must be a regular file.');
   const frameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-text-'));
