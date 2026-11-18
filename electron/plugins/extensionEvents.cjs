@@ -67,15 +67,14 @@ class ExtensionEvents {
    for(const job of this.runtime.active.values())if(['activating','running'].includes(job.state)&&job.subscriptions.has(event.name))this.enqueue(job,event);
   }}finally{this.pumping=false;}
  }
- subscribe(job,name,{replay=false}={}){
-  if(typeof name!=='string'||!eventName.test(name)||typeof replay!=='boolean')throw Error('Invalid event subscription');
+ subscribe(job,name,{replay=false,listener}={}){
+  if(typeof name!=='string'||!eventName.test(name)||typeof replay!=='boolean'||listener!==undefined&&(typeof listener!=='string'||!/^\d{1,16}$/.test(listener)))throw Error('Invalid event subscription');
   if(!job.subscriptions.has(name)&&job.subscriptions.size>=128)throw Error('Use at most 128 event subscriptions');job.subscriptions.add(name);
-  if(replay&&this.latest.has(name))this.enqueue(job,{...this.latest.get(name),replay:true});return true;
+  if(replay&&this.latest.has(name))this.enqueue(job,{...this.latest.get(name),replay:true,listener,key:null});return true;
  }
  unsubscribe(job,name){job.subscriptions.delete(name);const record=this.jobs.get(job);if(record){record.queue=record.queue.filter(event=>event.name!==name);record.bytes=record.queue.reduce((sum,event)=>sum+event.bytes,0);}return true;}
  enqueue(job,event){
-  const record=this.record(job);if(!event.replay&&record.seen.has(event.publication))return;
-  record.seen.add(event.publication);if(record.seen.size>128)record.seen.delete(record.seen.values().next().value);
+  const record=this.record(job);if(!event.replay){if(record.seen.has(event.publication))return;record.seen.add(event.publication);if(record.seen.size>128)record.seen.delete(record.seen.values().next().value);}
   this.append(record.queue,event,64,()=>record.bytes,bytes=>{record.bytes=bytes;},missed=>{record.missed+=missed;if(!record.warned){record.warned=true;this.runtime.log(job,'Event queue overflow; resynchronize from host reads.','warning');}});this.send(job);
  }
  ready(job){this.send(job);}
@@ -84,7 +83,7 @@ class ExtensionEvents {
   let event;while((event=record.queue.shift())){record.bytes-=event.bytes;if(job.subscriptions.has(event.name))break;event=null;}if(!event)return;
   const id=randomUUID(),meta={sequence:++record.sequence,publication:event.publication,timestamp:event.timestamp,source:event.source,missed:event.missed+record.missed,...(event.documentId?{documentId:event.documentId}:{}),...(event.projectRevision!==undefined?{projectRevision:event.projectRevision}:{}),...(event.changes?{changes:event.changes}:{}),...(event.reason?{reason:event.reason}:{}),...(event.replay?{replay:true}:{})};record.missed=0;
   const active={id,event,waits:0,controller:new AbortController()};record.active=active;active.arm=()=>{active.deadline=Date.now()+this.timeoutMs;active.timer=setTimeout(()=>this.expire(job,active),this.timeoutMs);active.timer.unref?.();};active.arm();
-  try{job.child.postMessage({type:'event',id,name:event.name,value:event.value,meta});}catch(error){this.failure(error);this.stopped(job);}
+  try{job.child.postMessage({type:'event',id,name:event.name,value:event.value,meta,...(event.listener?{listener:event.listener}:{})});}catch(error){this.failure(error);this.stopped(job);}
  }
  ack(job,id){const record=this.jobs.get(job);if(record?.active?.id!==id)return false;clearTimeout(record.active.timer);record.active.controller.abort();record.active=null;this.send(job);return true;}
  pauseDelivery(job,id){const active=this.jobs.get(job)?.active;if(!active||active.id!==id||active.expired)return ()=>{};active.waits++;clearTimeout(active.timer);let resumed=false;return ()=>{if(resumed)return;resumed=true;if(this.jobs.get(job)?.active!==active)return;if(!--active.waits)active.arm();};}

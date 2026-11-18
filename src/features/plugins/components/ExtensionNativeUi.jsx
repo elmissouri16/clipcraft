@@ -1,10 +1,11 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {ArrowRight,ChevronDown,SquareTerminal,CheckCircle2,AlertCircle} from 'lucide-react';
+import {ArrowRight,ChevronDown,CheckCircle2,AlertCircle} from 'lucide-react';
 import ContextMenu from '../../../components/ui/ContextMenu.jsx';
 import {SettingsGroup} from '../../../app/components/SettingsLayout.jsx';
 import {useExtensionUi,extensionUiError,extensionUiMessage} from '../useExtensionUi.js';
 import {t} from '../../../i18n/index.js';
+import ExtensionActionIcon from './ExtensionActionIcon.jsx';
 import PluginIdentityIcon from './PluginIdentityIcon.jsx';
 const pendingReads=new Set(),pendingWrites=new Set(),draftSavers=new Set();
 export async function flushExtensionSettings(){
@@ -17,7 +18,7 @@ export function ExtensionActions({location,extensionId,extensionKey,onChanged,be
  const [packages,setPackages]=useState([]);
  const packageKeys=items.map(entry=>entry.key).join('|');
  useEffect(()=>{if(location!=='export')return;let live=true;window.api.pluginsList?.().then(rows=>{if(live)setPackages(rows);}).catch(()=>{});return()=>{live=false;};},[location,packageKeys]);
- const run=async entry=>{setBusy(entry.id);setMessage('');setFailed(false);setPosition(null);try{if(!await flushExtensionSettings())throw Error(t('plugins.extension_settings_failed'));await beforeRun?.(entry);const result=await window.api.pluginsExtensionUiExecute(entry.id);if(result?.error)throw Error(result.error);const message=extensionUiMessage(result,t('plugins.extension_completed'));setMessage(message);onResult?.({entry,message,failed:false});onChanged?.();}catch(e){setFailed(true);const message=extensionUiError(e);setMessage(message);onResult?.({entry,message,failed:true});}finally{setBusy('');}};
+ const run=async entry=>{setBusy(entry.id);setMessage('');setFailed(false);setPosition(null);try{if(!await flushExtensionSettings())throw Error(t('plugins.extension_settings_failed'));await beforeRun?.(entry);const result=await window.api.pluginsExtensionUiExecute(entry.id,undefined,entry.instance);if(result?.error)throw Error(result.error);const message=extensionUiMessage(result,t('plugins.extension_completed'));setMessage(message);onResult?.({entry,message,failed:false});onChanged?.();}catch(e){setFailed(true);const message=extensionUiError(e);setMessage(message);onResult?.({entry,message,failed:true});}finally{setBusy('');}};
  const actions=items.filter(i=>i.kind==='action');if(!actions.length&&!error)return null;
  const toolbar=location==='toolbar',direct=toolbar?actions.slice(0,2):actions,Status=failed?AlertCircle:CheckCircle2;
  if(location==='export')return <section className="extension-export-options" data-extension-actions="export">
@@ -26,8 +27,8 @@ export function ExtensionActions({location,extensionId,extensionKey,onChanged,be
    <div className="extension-export-list">
     {actions.map(entry=>{
      const row=packages.find(row=>row.key===entry.key)||{key:entry.key,manifest:{id:entry.extensionId,name:entry.extensionName}};
-     return <button key={entry.id} type="button" className="extension-export-option" data-extension-action={entry.id} disabled={!!busy} onClick={()=>run(entry)}>
-      <PluginIdentityIcon row={row}/><span className="extension-export-copy"><strong>{entry.title}</strong><span>{entry.extensionName}</span></span><ArrowRight size={15} aria-hidden="true"/>
+     return <button key={entry.id} type="button" className="extension-export-option" data-extension-action={entry.id} disabled={!!busy||entry.enabled===false} title={entry.enabled===false?entry.disabledReason||entry.title:entry.title} onClick={()=>run(entry)}>
+      {entry.icon?<ExtensionActionIcon entry={entry} size={24}/>:<PluginIdentityIcon row={row}/>} <span className="extension-export-copy"><strong>{entry.title}</strong><span>{entry.extensionName}</span></span><ArrowRight size={15} aria-hidden="true"/>
      </button>;
     })}
    </div>
@@ -35,9 +36,9 @@ export function ExtensionActions({location,extensionId,extensionKey,onChanged,be
   {(message||error)&&<span role="status" className="extension-export-status" data-failed={failed||!!error}>{message||error}</span>}
  </section>;
  return <div className="extension-native-actions" data-extension-actions={location}>
-  {direct.map(entry=><button key={entry.id} type="button" className={toolbar?'icon-btn':'btn btn-sm'} data-extension-action={entry.id} aria-label={entry.title} title={entry.title} disabled={!!busy} onClick={()=>run(entry)}>{toolbar?<SquareTerminal size={16}/>:entry.title}</button>)}
+  {direct.map(entry=><button key={entry.id} type="button" className={toolbar?'icon-btn':'btn btn-sm'} data-extension-action={entry.id} aria-label={entry.title} disabled={!!busy||entry.enabled===false} title={entry.enabled===false?entry.disabledReason||entry.title:entry.title} onClick={()=>run(entry)}>{toolbar?<ExtensionActionIcon entry={entry}/>:<>{entry.icon&&<ExtensionActionIcon entry={entry}/>}<span>{entry.title}</span></>}</button>)}
   {toolbar&&actions.length>2&&<button ref={more} type="button" className="icon-btn" data-extension-action-overflow aria-label={t('plugins.extension_more_actions')} title={t('plugins.extension_more_actions')} aria-haspopup="menu" aria-expanded={!!position} onClick={event=>{const rect=event.currentTarget.getBoundingClientRect();setPosition(position?null:{x:rect.right-260,y:rect.bottom+6});}}><ChevronDown size={14}/></button>}
-  {position&&createPortal(<ContextMenu {...position} label={t('plugins.extension_more_actions')} onClose={()=>{setPosition(null);requestAnimationFrame(()=>more.current?.focus());}} items={actions.slice(2).map(entry=>({id:'extension-action-menu-'+entry.id,label:entry.title,disabled:!!busy,onClick:()=>run(entry)}))}/>,document.body)}
+  {position&&createPortal(<ContextMenu {...position} label={t('plugins.extension_more_actions')} onClose={()=>{setPosition(null);requestAnimationFrame(()=>more.current?.focus());}} items={actions.slice(2).map(entry=>({id:'extension-action-menu-'+entry.id,label:entry.title,icon:props=><ExtensionActionIcon entry={entry} {...props}/>,hint:entry.disabledReason,disabled:!!busy||entry.enabled===false,onClick:()=>run(entry)}))}/>,document.body)}
   {(message||error)&&(toolbar?<span className="extension-native-result" role="status" title={message||error} aria-label={message||error} data-failed={failed||!!error}><Status size={15}/></span>:<span role="status" className="dim small">{message||error}</span>)}
  </div>;
 

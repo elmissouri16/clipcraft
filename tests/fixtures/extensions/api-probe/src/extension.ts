@@ -21,12 +21,22 @@ export async function activate(context:ExtensionContext){
     {key:'label',label:'Label',type:'string',default:'hello'},
     {key:'amount',label:'Amount',type:'number',default:3,min:0,max:10,step:1},
     {key:'token',label:'Token',type:'secret'},
+    {key:'mode',label:'Mode',type:'select',options:[{label:'One',value:'one'},{label:'Two',value:'two'}]},
   ]});
   for(const location of ['toolbar','inspector','context','export','settings.plugins'] as const)
     await context.ui.registerAction({id:'act-'+location.replace('.','-'),title:'Probe '+location,location,command:'hello'});
   await context.ui.registerShortcut({id:'hello-key',title:'Probe hello',command:'hello',keys:['Alt+Shift+P']});
   await context.commands.register('hello',async()=>({message:'Hello from probe.'}));
   await context.commands.register('seen',async()=>seen.slice());
+  await context.commands.register('picker-job',()=>context.jobs.run('Picker survival',async({signal})=>{
+    await new Promise<void>((resolve,reject)=>{const timer=setTimeout(resolve,2500);signal.addEventListener('abort',()=>{clearTimeout(timer);reject(Error('Picker canceled job'));},{once:true});});return 'completed';
+  }));
+  await context.commands.register('hardening',async()=>({
+    hook:await step(()=>context.hooks.register('project.typo' as never,()=>{})),
+    integration:await step(()=>context.ui.registerIntegration({id:'typo',title:'Typo',point:'voice.typo' as never,service:'speech'})),
+    invalid:await step(()=>context.configuration.update({key:'invalid',value:{number:NaN}})),
+    mode:await context.configuration.get('mode'),
+  }));
 
   await context.commands.register('basics',async()=>({
     host:await step(()=>context.host.read()),
@@ -100,6 +110,7 @@ export async function activate(context:ExtensionContext){
     const got:unknown[]=[];view.onMessage(value=>{got.push(value);});
     const revealed=await view.reveal(),early=await view.postMessage({hello:'early'});
     await new Promise(resolve=>setTimeout(resolve,2500));
+    await context.commands.register('view-inspect',async()=>{await view.postMessage({inspect:true});await new Promise(resolve=>setTimeout(resolve,100));return got.slice();});
     const inline=await context.ui.registerView({id:'inline',title:'Inline script',entry:'assets/inline.html'});
     const inlineGot:unknown[]=[];inline.onMessage(value=>{inlineGot.push(value);});await inline.reveal();
     await new Promise(resolve=>setTimeout(resolve,2000));

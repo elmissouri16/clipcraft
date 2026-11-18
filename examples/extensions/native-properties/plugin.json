@@ -1,0 +1,9 @@
+{
+  "id": "clipcraft-examples.native-properties",
+  "name": "Native clip properties",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "contributes": {"commands": [{"id": "reset-opacity", "name": "Reset selected picture opacity"}]}
+}

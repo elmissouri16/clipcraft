@@ -102,6 +102,8 @@ class ExtensionRuntime{
   if(method==='ui.viewPost')return this.views.post(job,job.manifest.id+'.'+args.id,args.value);
   if(method==='ui.viewReveal'){this.ui.entry('view',job.manifest.id+'.'+args.id,job);return this.views.reveal(job.manifest.id+'.'+args.id);}
   if(method==='ui.registerSettings')return this.ui.register(job,'settings',args);
+  if(method==='ui.registerInspector')return this.ui.registerInspector(job,args);
+  if(method==='ui.updateAction')return this.ui.updateAction(job,args);
   if(method==='ui.registerAction')return this.ui.register(job,'action',args);
   if(method==='ui.registerIntegration')return this.ui.register(job,'integration',args);
   if(method==='ui.remove')return this.ui.remove(job,args?.kind,args?.id);
@@ -109,7 +111,7 @@ class ExtensionRuntime{
   for(const [prefix,map] of [['commands',this.commands],['services',this.services],['hooks',this.hooks]]){
    if(method===prefix+'.register'){
     if(!namespace.test(args?.id))throw Error('Invalid registration ID');const id=prefix==='hooks'?args.id:job.manifest.id+'.'+args.id;
-    if(prefix==='hooks'){const options=args.metadata??{};if(!options||typeof options!=='object'||Array.isArray(options)||Object.keys(options).some(key=>key!=='timeoutMs')||options.timeoutMs!==undefined&&(!Number.isInteger(options.timeoutMs)||options.timeoutMs<1000||options.timeoutMs>300000))throw Error('Hook timeout must be between one second and five minutes');let owners=map.get(id);if(!owners)map.set(id,owners=new Map());if(owners.has(job.key))throw Error('Duplicate hook');owners.set(job.key,job);job.hookOptions??=new Map();job.hookOptions.set(id,options.timeoutMs??30000);}
+    if(prefix==='hooks'){if(!Object.values(require('./extensionHooks.cjs').NAMES).flat().includes(id))throw Error('Unsupported document hook: '+id);const options=args.metadata??{};if(!options||typeof options!=='object'||Array.isArray(options)||Object.keys(options).some(key=>key!=='timeoutMs')||options.timeoutMs!==undefined&&(!Number.isInteger(options.timeoutMs)||options.timeoutMs<1000||options.timeoutMs>300000))throw Error('Hook timeout must be between one second and five minutes');let owners=map.get(id);if(!owners)map.set(id,owners=new Map());if(owners.has(job.key))throw Error('Duplicate hook');owners.set(job.key,job);job.hookOptions??=new Map();job.hookOptions.set(id,options.timeoutMs??30000);}
     else{if(map.has(id)||prefix==='services'&&this.hostServices.entries.has(id))throw Error('Duplicate registration');const metadata=copyPayload(args.metadata||{},{label:'Registration metadata',limit:65536}).value;if(prefix==='services'){delete metadata.host;delete metadata.id;delete metadata.extensionId;}const contract=prefix==='services'&&metadata.contract!==undefined?serviceContract(metadata.contract):undefined;if(contract)metadata.contract=contract;map.set(id,{job,local:args.id,metadata,contract});}return id;
    }
    if(method===prefix+'.register.remove'){const id=prefix==='hooks'?args.id:job.manifest.id+'.'+args.id;if(prefix==='hooks'){const owners=map.get(id);if(owners?.get(job.key)===job)owners.delete(job.key);if(owners&&!owners.size)map.delete(id);job.hookOptions?.delete(id);}else if(map.get(id)?.job===job)map.delete(id);return;}
@@ -121,7 +123,7 @@ class ExtensionRuntime{
   if(method==='services.describe'){if(!this.services.has(args.id)&&!this.hostServices.entries.has(args.id))await this.activate('service:'+args.id,{operation,agentScope:this.executionScope(job,parentRequest)});const entry=this.hostServices.list().find(entry=>entry.id===args.id)||[...this.services].map(([id,s])=>({...s.metadata,id,extensionId:s.job.manifest.id})).find(entry=>entry.id===args.id);if(!entry)throw Error('Service unavailable');return entry;}
   if(method==='services.list')return [...this.hostServices.list(),...[...this.services].map(([id,s])=>({...s.metadata,id,extensionId:s.job.manifest.id}))];
   if(method==='services.call')return this.callService(args.id,args.method,args.input,{owner:job,operation,parentRequest,jobOperation,signal,contract:args.contract});
-  if(method==='events.subscribe')return this.events.subscribe(job,args?.name,{replay:args?.replay??false});
+  if(method==='events.subscribe')return this.events.subscribe(job,args?.name,{replay:args?.replay??false,listener:args?.listener});
   if(method==='events.unsubscribe')return this.events.unsubscribe(job,args?.name);
   if(method==='events.emit'){
    if(!namespace.test(args?.name)||!['running','activating'].includes(job.state))throw Error('Invalid extension event');
@@ -151,7 +153,8 @@ class ExtensionRuntime{
    const ownerFile=path.join(directory,'owner.json');let owner;try{owner=JSON.parse(await fs.readFile(ownerFile,'utf8')).publisher;}catch(e){if(e.code!=='ENOENT'&&!(e instanceof SyntaxError))throw e;}
    if(owner!==job.manifest.publisher){if(owner!==undefined)for(const name of ['settings.json','secrets.json'])await fs.rm(path.join(directory,name),{force:true});await fs.mkdir(directory,{recursive:true});await fs.writeFile(ownerFile,JSON.stringify({publisher:job.manifest.publisher}),{mode:0o600});}
    let data={};try{data=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
-   const key=typeof args==='string'?args:args?.key;if(method.endsWith('.update')&&Buffer.byteLength(JSON.stringify(args.value)??'')>65536)throw Error('Configuration value exceeds 64 KiB');if(typeof key!=='string'||!namespace.test(key))throw Error('Invalid configuration key');
+   if(method==='configuration.update'&&args?.value!==undefined)args={...args,value:(await import('../../shared/extensionConfiguration.mjs')).configurationValue(args.value)};
+   const key=typeof args==='string'?args:args?.key;if(typeof key!=='string'||!namespace.test(key))throw Error('Invalid configuration key');
    if(method.endsWith('.get')){const value=Object.hasOwn(data,key)?data[key]:secret?undefined:this.ui.defaultValue(job,key);return secret&&value?this.safeStorage.decryptString(Buffer.from(value,'base64')):value;}
    const deleted=method.endsWith('.delete')||!secret&&args?.value===undefined;
    if(deleted&&!Object.hasOwn(data,key)||!secret&&method.endsWith('.update')&&JSON.stringify(data[key])===JSON.stringify(args.value))return true;

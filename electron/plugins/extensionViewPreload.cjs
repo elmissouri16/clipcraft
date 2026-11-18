@@ -1,8 +1,9 @@
 const {contextBridge,ipcRenderer}=require('electron');
 const listeners=new Set(),themeListeners=new Set();
-let shortcuts=new Set();
+let shortcuts=new Set(),currentTheme;
 const boot=ipcRenderer.invoke('extensionView:boot',process.sandboxed===true);boot.catch(()=>{});
 const apply=theme=>{for(const [key,value] of Object.entries(theme))document.documentElement?.style.setProperty('--cc-'+key,value);};
+boot.then(info=>{currentTheme??=info.theme;}).catch(()=>{});
 const invoke=(method,input)=>boot.then(info=>ipcRenderer.invoke('extensionView:call',info.token,method,input));
 const tabControls=backward=>{
  const controls=[...document.querySelectorAll('button,input,select,textarea,a[href],[contenteditable],[tabindex]')]
@@ -19,9 +20,9 @@ const tabControls=backward=>{
 };
 ipcRenderer.on('extensionView:pulse',(_event,sequence)=>{invoke('beat',sequence).catch(()=>{});});
 ipcRenderer.on('extensionView:message',(_event,message)=>{for(const callback of listeners)try{callback(structuredClone(message.value));}catch{}invoke('delivered',message.id).catch(()=>{});});
-ipcRenderer.on('extensionView:theme',(_event,value)=>{apply(value);for(const callback of themeListeners)try{callback(value);}catch{}});
+ipcRenderer.on('extensionView:theme',(_event,value)=>{currentTheme=value;apply(value);for(const callback of themeListeners)try{callback(value);}catch{}});
 ipcRenderer.on('extensionView:shortcuts',(_event,value)=>{shortcuts=new Set(value);});
-window.addEventListener('DOMContentLoaded',()=>boot.then(info=>apply(info.theme)).catch(()=>{}),{once:true});
+window.addEventListener('DOMContentLoaded',()=>boot.then(info=>apply(currentTheme??info.theme)).catch(()=>{}),{once:true});
 window.addEventListener('keydown',event=>{
  if(!event.isTrusted)return;
  const typing=event.composedPath().some(node=>['INPUT','TEXTAREA','SELECT'].includes(node?.tagName)||node?.isContentEditable);
@@ -33,7 +34,7 @@ window.addEventListener('keydown',event=>{
 },true);
 const subscribe=(set,callback)=>{if(typeof callback!=='function'||set.size>=32)throw Error('View listener limit reached');set.add(callback);return ()=>set.delete(callback);};
 contextBridge.exposeInMainWorld('clipcraftView',{
- getInfo:()=>boot.then(({token,...info})=>info),
+ getInfo:()=>boot.then(({token,...info})=>({...info,theme:currentTheme??info.theme})),
  postMessage:value=>invoke('message',value),
  onMessage:callback=>subscribe(listeners,callback),
  onThemeChanged:callback=>subscribe(themeListeners,callback)

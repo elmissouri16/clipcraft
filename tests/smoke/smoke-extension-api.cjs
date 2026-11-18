@@ -20,6 +20,7 @@ module.exports=async(win,app,dir)=>{
   const installed=await q('window.api.pluginsInstall()');await q(`window.api.pluginsExtensionTrust(${JSON.stringify(installed[0].key)})`);await until(running);
 
   await run('basics','basics');
+  await run('hardening','hardening');
   await run('edits','edits');
 
   // The playhead and the selection move between capturing a snapshot and applying an edit with it.
@@ -29,7 +30,14 @@ module.exports=async(win,app,dir)=>{
 
   await run('media','media',{dir});
   await run('export','export',{dir});
+  result.expectedTheme=await q(`(()=>{const css=getComputedStyle(document.documentElement);return Object.fromEntries(Object.entries({background:'--surface-1',surface:'--surface-2',text:'--text',muted:'--text-2',accent:'--primary',border:'--border'}).map(([key,value])=>[key,css.getPropertyValue(value).trim()]));})()`);
   await run('view','view');result.viewStatus=await q('window.api.pluginsExtensionStatus()');
+  const layout={x:20,y:80,width:200,height:100,visible:false,theme:result.expectedTheme};
+  for(let i=0;i<2;i++)await q(`window.api.pluginsExtensionViewLayout('fixture.api-probe.panel',${JSON.stringify(layout)})`);
+  await run('sameTheme','view-inspect');
+  const changedTheme={...result.expectedTheme,accent:'#123456'};
+  await q(`window.api.pluginsExtensionViewLayout('fixture.api-probe.panel',${JSON.stringify({...layout,theme:changedTheme})})`);
+  await run('changedTheme','view-inspect');
 
   await run('toolsList','tools-list');
   result.toolsBefore=await history();
@@ -44,13 +52,38 @@ module.exports=async(win,app,dir)=>{
   result.afterUndo=await q(`(()=>{const p=window.__fve.rawProject();return {texts:p.textClips.map(c=>c.text),filter:p.videoClips[0].filter,background:p.background,history:window.__fve.history().past.length};})()`);
 
   await run('seen','seen');
-  // A plugin-management action (here: Install, then cancel the picker) stops every extension.
-  // The ones that were running must come back, with their registrations.
-  pick=false;result.canceledInstall=await q('window.api.pluginsInstall().then(value=>value,error=>({error:error.message}))');
+  // Keep a real managed job alive while both install pickers are open/canceled.
+  pick=false;
+  result.beforePicker=(await q('window.api.pluginsExtensionStatus()')).find(row=>row.id===fixture.id);
+  const job=run('pickerJob','picker-job');
+  await until('(await window.api.pluginsExtensionStatus()).some(row=>row.jobs.length>0)');
+  result.pickers=[];
+  for(const expression of ['window.api.pluginsInstall()',`window.api.pluginsInstallDependency(${JSON.stringify(installed[0].key)})`]){
+    let resolvePicker;dialog.showOpenDialog=()=>new Promise(resolve=>{resolvePicker=resolve;});
+    const pending=q(expression);
+    for(let end=Date.now()+5000;!resolvePicker&&Date.now()<end;)await wait(10);
+    if(!resolvePicker)throw Error('Install picker did not open');
+    result.pickers.push((await q('window.api.pluginsExtensionStatus()')).find(row=>row.id===fixture.id));
+    resolvePicker({canceled:true,filePaths:[]});result.canceledInstall=await pending;
+  }
+  await job;
+  dialog.showOpenDialog=async()=>({canceled:true,filePaths:[]});
   await until(running);
   result.afterCatalogChange={toolbar:(await q(`window.api.pluginsExtensionUi('toolbar')`)).filter(entry=>entry.location==='toolbar').map(entry=>entry.id),hello:await run('helloAfterCatalogChange','hello')};
 
+  // A genuine inventory mutation still stops/restarts registrations correctly.
+  await q(`window.api.pluginsEnable(${JSON.stringify(installed[0].key)},false)`);
+  result.disabledStatus=await q('window.api.pluginsExtensionStatus()');
+  await q(`window.api.pluginsEnable(${JSON.stringify(installed[0].key)},true)`);
+  await until(running);
   result.ui={};for(const location of ['toolbar','inspector','context','export','settings.plugins'])result.ui[location]=(await q(`window.api.pluginsExtensionUi(${JSON.stringify(location)})`)).filter(entry=>entry.kind==='action'&&entry.location===location).map(entry=>entry.id);
+  const ui=require('./pluginSettingsUi.cjs')(win);
+  await ui.click('button[aria-label="Settings"]');await until('!!document.querySelector(".settings2")');await ui.click('[data-section=plugins]');
+  await until('!!document.querySelector(".plugin-row")');await ui.click('.plugin-row');
+  await until(`!!document.querySelector('[data-extension-settings="fixture.api-probe.main"] select:not(:disabled)')`);
+  result.renderedSelect=await q(`(()=>{const node=document.querySelector('[data-extension-settings="fixture.api-probe.main"] select');return {value:node.value,visible:!!node.getClientRects().length};})()`);
+  result.offStep=await q(`window.api.pluginsExtensionSettingsUpdate('fixture.api-probe.main','amount',3.5).then(()=>({ok:true}),error=>({error:error.message}))`);
+  result.amountAfterRefusal=await q(`window.api.pluginsExtensionSettingsRead('fixture.api-probe.main')`);
   result.status=await q('window.api.pluginsExtensionStatus()');
   fs.writeFileSync(path.join(dir,'editor.png'),(await win.webContents.capturePage({},{stayHidden:true,stayAwake:true})).toPNG());
   result.ok=true;

@@ -2,7 +2,7 @@ const plain=v=>v&&typeof v==='object'&&!Array.isArray(v)&&[Object.prototype,null
 const safeKey=v=>typeof v==='string'&&/^[a-z][\w.-]{0,159}$/.test(v)&&!['constructor','prototype','__proto__'].includes(v);
 export function configurationValue(value){
  const ancestors=new Set();let nodes=0;
- const walk=(v,depth=0)=>{if(++nodes>8192||depth>32)throw Error('Configuration nesting or item limit exceeded');if(v===null||['string','boolean'].includes(typeof v))return;if(typeof v==='number'&&Number.isFinite(v))return;if(!v||typeof v!=='object'||!Array.isArray(v)&&!plain(v)||ancestors.has(v))throw Error('Configuration requires finite JSON data');ancestors.add(v);for(const item of Object.values(v))walk(item,depth+1);ancestors.delete(v);};
+ const walk=(v,depth=0)=>{if(++nodes>8192||depth>32)throw Error('Configuration nesting or item limit exceeded');if(v===null||['string','boolean'].includes(typeof v))return;if(typeof v==='number'&&Number.isFinite(v))return;if(!v||typeof v!=='object'||!Array.isArray(v)&&!plain(v)||ancestors.has(v))throw Error('Configuration requires finite JSON data');ancestors.add(v);if(Array.isArray(v)&&(v.length>8192||Object.keys(v).length!==v.length||Object.keys(v).some((key,index)=>key!==String(index))))throw Error('Configuration requires dense JSON arrays');if(Object.getOwnPropertySymbols(v).length)throw Error('Configuration requires JSON keys');for(const item of Object.values(v))walk(item,depth+1);ancestors.delete(v);};
  walk(value);const text=JSON.stringify(value);if(new TextEncoder().encode(text).length>65536)throw Error('Configuration value exceeds 64 KiB');return JSON.parse(text);
 }
 export function validateExtensionSettings(settings){

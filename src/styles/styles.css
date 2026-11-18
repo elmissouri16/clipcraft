@@ -3487,3 +3487,6 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 .plugin-extension-lifecycle [hidden]{display:none!important}
 
 .plugin-debugger{display:grid;gap:8px;min-width:0}.plugin-debugger .field{min-width:0}.plugin-debugger .field input{width:100%;min-width:0;font-family:monospace}
+
+.extension-native-actions>.btn{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:var(--control-h-sm);height:auto;white-space:normal;text-align:left}.extension-native-actions>.btn>span{min-width:0;overflow-wrap:anywhere}.extension-native-actions svg,.extension-export-option>svg{flex-shrink:0}
+.extension-inspector-group{margin-bottom:12px}.extension-inspector-group .fields{padding:0}.extension-inspector-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px}.extension-inspector-field output{color:var(--text-2);font-variant-numeric:tabular-nums}.extension-inspector-toggle{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px}.extension-inspector-field input[type=color]{width:100%;min-height:28px}.extension-inspector-field input[type=range]{width:100%}

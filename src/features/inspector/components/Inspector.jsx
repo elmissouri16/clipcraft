@@ -1,3 +1,4 @@
+import ExtensionInspector from '../../plugins/components/ExtensionInspector.jsx';
 import {ExtensionActions} from '../../plugins/components/ExtensionNativeUi.jsx';
 import PluginEffectControls from '../../plugins/components/PluginEffectControls.jsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -380,7 +381,7 @@ function InspectorHeader({ Icon, title, onCollapse }) {
   </div>;
 }
 
-export default function Inspector({  collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect, readLive = null }) {
+export default function Inspector({ extensionInspectorSet,projectEpoch, collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect, readLive = null }) {
   const bodyRef = useRef(null);
   useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [selection?.track, selection?.id]);
   const time = useClockTime(clockRef, pausedTime, playing && !collapsed);
@@ -403,7 +404,7 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
     return (
       <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
         <InspectorHeader Icon={Sparkles} title={t('inspector.effect')} onCollapse={onCollapse} />
-        <div className="inspector-body" ref={bodyRef}>{multi}{!collapsed&&<ExtensionActions location="inspector"/>}<EffectPanel key={selection.id} onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
+        <div className="inspector-body" ref={bodyRef}>{multi}{!collapsed&&<><ExtensionActions location="inspector"/><ExtensionInspector project={project} selection={selection} epoch={projectEpoch} onSet={extensionInspectorSet}/></>}<EffectPanel key={selection.id} onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
       </aside>
     );
   }
@@ -432,7 +433,7 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
       <InspectorHeader Icon={Icon} title={title} onCollapse={onCollapse} />
       <div className="inspector-body" ref={bodyRef}>
       {multi}
-      {!collapsed&&<ExtensionActions location="inspector"/>}
+      {!collapsed&&<><ExtensionActions location="inspector"/><ExtensionInspector project={project} selection={selection} epoch={projectEpoch} onSet={extensionInspectorSet}/></>}
       {!clip && <ProjectDetails project={project} dispatch={dispatch} duration={duration} />}
 
       {clip && track === 'text' && <TextInspector key={clip.id} clip={clip} dispatch={dispatch} project={project} />}

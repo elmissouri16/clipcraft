@@ -614,7 +614,7 @@ const sidecar = require('./project/sidecar.cjs');
 // the chat it embeds from the document, so the document must never be the only write that succeeded.
 const writeProjectFiles = async (file, json, chat) => {
   if (chat !== undefined) await persistence.writeChat(file, chat);
-  if (json != null) await persistence.writeProject(file, json);
+  if (json != null) await pluginManager.extensionMedia.retention.retain(json,()=>persistence.writeProject(file, json),{durable:true});
 };
 // Choosing a destination is separate from preparation: canceling the picker
 // never runs hooks or publishes a staged editor change.
@@ -699,7 +699,7 @@ ipcMain.handle('project:openPath', async (_e, filePath) => {
 // a new project) flushes its slot, and every project the user touched is listed there.
 const autosaveStore = require("./project/autosave.cjs");
 const autosaveDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'autosave-test') : path.join(app.getPath('userData'), 'autosave'));
-ipcMain.handle('slots:write', (_e, record) => persistence.writeSlot(autosaveDir(), record));
+ipcMain.handle('slots:write', (_e, record) => /^[A-Za-z0-9_-]{1,80}$/.test(record?.id||'')?pluginManager.extensionMedia.retention.retain(record.projectJson,()=>persistence.writeSlot(autosaveDir(), record),{owner:'slot:'+record.id}):persistence.writeSlot(autosaveDir(), record));
 ipcMain.handle('slots:writeChat', (_e, id, json) => persistence.writeSlotChat(autosaveDir(), id, json));
 ipcMain.handle('slots:list', () => autosaveStore.listSlots(autosaveDir()));
 ipcMain.handle('slots:forFile', (_e, filePath) => autosaveStore.slotForFile(autosaveDir(), filePath));
@@ -719,7 +719,13 @@ ipcMain.handle('slots:read', (_e, id) => {
   if (slot?.file && fs.existsSync(slot.file) && require('./project/projectfile.cjs').isProjectDocument((() => { try { return fs.readFileSync(slot.file, 'utf8'); } catch { return ''; } })())) projectFiles.add(slot.file);
   return slot;
 });
-ipcMain.handle('slots:delete', (_e, id) => autosaveStore.deleteSlot(autosaveDir(), id));
+ipcMain.handle('slots:delete', (_e, id) => /^[A-Za-z0-9_-]{1,80}$/.test(id||'')?pluginManager.extensionMedia.retention.retain(null,()=>autosaveStore.deleteSlot(autosaveDir(), id),{owner:'slot:'+id,successful:()=>!fs.existsSync(autosaveStore.slotPath(autosaveDir(),id))}):false);
+
+// Recovery has an atomic native copy so reference replacement cannot outrun a
+// delayed Chromium localStorage flush after a hard kill. The renderer mirrors it.
+const recoveryFile=()=>path.join(process.env.FVE_SMOKE||app.getPath('userData'),'project-recovery.json');
+ipcMain.handle('project:writeRecovery',(_event,json)=>pluginManager.extensionMedia.retention.retain(json,()=>persistence.writeProject(recoveryFile(),json),{owner:'recovery'}));
+ipcMain.handle('project:readRecovery',async()=>{await pluginManager.ready;try{return await fs.promises.readFile(recoveryFile(),'utf8');}catch(error){if(error.code==='ENOENT')return null;throw error;}});
 
 // Closing the window: the interface saves the project, or asks (in its own dialog) about a project that never had
 // a file. If it does not answer (frozen), the window closes anyway after a few seconds; the next start offers the

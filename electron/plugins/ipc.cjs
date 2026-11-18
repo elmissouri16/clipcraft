@@ -1,7 +1,7 @@
 const {PluginManager}=require('./manager.cjs');
 function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fontDirectory}) {
   const manager=new PluginManager(root,app.getVersion());
-  const ready=examplesDirectory ? require('./examples.cjs').loadExamplePlugins(manager,examplesDirectory) : Promise.resolve();
+  let ready=examplesDirectory ? require('./examples.cjs').loadExamplePlugins(manager,examplesDirectory) : Promise.resolve();
   manager.ready=ready;
   const extensions=new (require('./extensionRuntime.cjs').ExtensionRuntime)({manager,utilityProcess:require('electron').utilityProcess,safeStorage:require('electron').safeStorage});
   manager.extensions=extensions;manager.extensionMedia=null;extensions.prepareSettings=info=>require('./extensionMigrations.cjs').prepare(info,require('../system/settings.cjs').getExtensionMigrations());
@@ -10,7 +10,10 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   const commits=new (require('./extensionCommits.cjs').ExtensionCommits)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});extensions.commits=commits;manager.extensionCommits=commits;
   app.on?.('will-quit',()=>commits.dispose());
   const processes=new (require('./extensionProcesses.cjs').ExtensionProcesses)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
-  const media=new (require('./extensionMedia.cjs').ExtensionMedia)({root:require('node:path').join(require('node:path').dirname(root),'extension-media'),isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
+  const mediaRoot=require('node:path').join(require('node:path').dirname(root),'extension-media');
+  const retention=new (require('./extensionMediaRetention.cjs').ExtensionMediaRetention)(mediaRoot,{autosaveRoot:require('node:path').join(require('node:path').dirname(root),process.env.FVE_SMOKE?'autosave-test':'autosave'),recoveryFile:require('node:path').join(require('node:path').dirname(root),'project-recovery.json')});
+  ready=Promise.all([ready,retention.ready]);manager.ready=ready;
+  const media=new (require('./extensionMedia.cjs').ExtensionMedia)({root:mediaRoot,retention,isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
   manager.extensionMedia=media;
   const operations=new (require('./extensionHooks.cjs').ExtensionHooks)({runtime:extensions,commits,media,describe:async(_op,job,operation)=>{const document=await extensions.invoke({key:job.key,generation:job.generation,method:'workspace.read',operation});if(document.name.length>1000)delete document.name;return document;}});extensions.operations=operations;manager.extensionHooks=operations;
   const views=new (require('./extensionViews.cjs').ExtensionViews)({runtime:extensions,manager,ipcMain,WebContentsView:require('electron').WebContentsView,session:require('electron').session,getWindow,sandboxEnabled:!app.commandLine?.hasSwitch?.('no-sandbox'),deadlineMs:process.env.FVE_SMOKE?4000:10000});extensions.views=views;manager.extensionViews=views;views.onChanged=()=>views.notify({type:'catalog'});
@@ -39,7 +42,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   extensions.invoke=async request=>{
     const job=extensions.active.get(request.key);if(!job||!['running','activating'].includes(job.state)||request.generation&&request.generation!==job.generation)throw Error('Extension is no longer active');
     const operation=request.operation,scope=operation?operations.authorize(job,operation,request.method):null;
-    const recheck=()=>{if(request.agentScope)agentCommands.assert(request.agentScope,getWindow()?.webContents);extensions.jobsHost.authorize(job,request.jobOperation,request.method);if(!extensions.executionActive(job,request.execution))throw Error('Extension callback canceled or finished');if(operation)operations.authorize(job,operation,request.method);};recheck();
+    const recheck=()=>{if(request.inspector&&!extensions.ui.verifyInspector(job,request.inspector))throw Error('Inspector registration changed or stopped');if(request.agentScope)agentCommands.assert(request.agentScope,getWindow()?.webContents);extensions.jobsHost.authorize(job,request.jobOperation,request.method);if(!extensions.executionActive(job,request.execution))throw Error('Extension callback canceled or finished');if(operation)operations.authorize(job,operation,request.method);};recheck();
     request={...request,generation:job.generation,extensionId:job.manifest.id,...(scope?{operation:scope}:{})};
     const callSignal=extensions.callSignal(job,request.execution,request.jobOperation),follow=(promise,abort)=>{if(!callSignal)return promise;callSignal.addEventListener('abort',abort,{once:true});if(callSignal.aborted)abort();return promise.finally(()=>callSignal.removeEventListener('abort',abort));};
     if(request.method==='files.publish'){const value=await files.publish(job,request.args,{signal:callSignal,verify:recheck});if(request.agentScope)agentCommands.receipt(request.agentScope,{kind:'file',extensionId:job.manifest.id,...value});return value;}
@@ -80,21 +83,30 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   const authoring=new (require('./authoring.cjs').AuthoringTests)({development,dialog,getWindow});manager.authoring=authoring;
   app.on?.('will-quit',()=>development.dispose());
 
+  // Pickers do not mutate the inventory. Keep extensions and their jobs alive
+  // until a package has actually been selected, and serialize catalog changes.
+  let catalogQueue=Promise.resolve();
+  const changeCatalog=fn=>{
+    const run=catalogQueue.then(async()=>{
+      await extensions.resuming;
+      const releaseEvents=extensions.events.hold();
+      const resume=[...extensions.active.values()].filter(job=>!extensions.suspended.has(job.key)).map(job=>job.key);
+      let primary;
+      try{await extensions.dispose({temporary:true});return await fn();}
+      catch(error){primary=error;throw error;}
+      finally{try{await manager.refreshAiCatalog?.();}catch(error){if(!primary)throw error;}finally{
+        extensions.events.invalidate();releaseEvents();const wc=getWindow()?.webContents;try{if(wc&&!wc.isDestroyed?.())wc.send('plugins:changed');}catch{}
+        extensions.resuming=(async()=>{for(const key of resume)await extensions.start(key,{automatic:true}).catch(()=>{});await extensions.activate('startup',{continueOnError:true}).catch(()=>{});})();
+        await extensions.resuming;
+      }}
+    });
+    catalogQueue=run.catch(()=>{});return run;
+  };
   const handle=(name,fn)=>ipcMain.handle(`plugins:${name}`,async(event,...args)=>{
     const win=getWindow();
     if(!win || event.sender!==win.webContents || event.senderFrame!==win.webContents.mainFrame) throw Error('Plugin management is only available to the editor.');
     await ready;
-    const changing=['install','installDependency','installCreatedPack','enable','remove','recover'].includes(name);
-    const releaseEvents=changing?extensions.events.hold():()=>{};
-    // A catalog change stops every extension so no package is replaced under a running process.
-    // The ones that were running come back afterwards (also when the user cancels the picker);
-    // a removed, disabled or explicitly stopped package simply does not start again.
-    const resume=changing?[...extensions.active.values()].filter(job=>!extensions.suspended.has(job.key)).map(job=>job.key):[];
-    let primary;
-    try{if(changing)await extensions.dispose({temporary:true});return await fn(...args);}
-    catch(error){primary=error;throw error;}
-    finally{if(changing){try{await manager.refreshAiCatalog?.();}catch(error){if(!primary)throw error;}finally{extensions.events.invalidate();releaseEvents();const wc=getWindow()?.webContents;try{if(wc&&!wc.isDestroyed?.())wc.send('plugins:changed');}catch{}
-      extensions.resuming=(async()=>{for(const key of resume)await extensions.start(key,{automatic:true}).catch(()=>{});await extensions.activate('startup',{continueOnError:true}).catch(()=>{});})();}}}
+    return ['installCreatedPack','enable','remove','recover'].includes(name)?changeCatalog(()=>fn(...args)):fn(...args);
   });
   handle('development',()=>development.snapshot());
   handle('beginAuthorExport',request=>authoring.export(request));
@@ -122,7 +134,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   handle('exportPackDraft',(id,input)=>packBuilder.export(id,input));
   handle('installCreatedPack',(id,token)=>packBuilder.install(id,token));
   handle('dependencies',async references=>(await import('../../shared/pluginDependencies.mjs')).dependencyReport(references,await manager.list()));
-  handle('installDependency',async key=>{if(typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key))throw Error('Invalid required pack fingerprint.');const answer=await dialog.showOpenDialog(getWindow(),{title:'Install exact required pack',properties:['openFile'],filters:[{name:'ClipCraft plugin',extensions:['tgz']}]});return answer.canceled?null:manager.install(answer.filePaths[0],false,{requiredKey:key});});
+  handle('installDependency',async key=>{if(typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key))throw Error('Invalid required pack fingerprint.');const answer=await dialog.showOpenDialog(getWindow(),{title:'Install exact required pack',properties:['openFile'],filters:[{name:'ClipCraft plugin',extensions:['tgz']}]});return answer.canceled?null:changeCatalog(()=>manager.install(answer.filePaths[0],false,{requiredKey:key}));});
   handle('list',()=>manager.list());
   handle('icon',key=>manager.icon(key));
   handle('extensionViews',()=>views.catalog());
@@ -140,7 +152,8 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   });
   handle('extensionSettingsRead',id=>extensions.ui.settings(id));
   handle('extensionSettingsUpdate',(id,key,value)=>extensions.ui.update(id,key,value));
-  handle('extensionUiExecute',(id,input)=>extensions.ui.execute(id,input));
+  handle('extensionInspectorSet',(id,input)=>extensions.ui.inspectorSet(id,input));
+  handle('extensionUiExecute',(id,input,instance)=>extensions.ui.execute(id,input,instance));
   handle('extensionShortcuts',()=>extensions.ui.shortcuts());
   handle('extensionShortcutExecute',id=>extensions.ui.executeShortcut(id));
   handle('extensionMessages',()=>messages.list());
@@ -150,7 +163,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   handle('extensionDiagnostics',()=>({items:extensions.diagnostics(),events:extensions.events.failures.slice()}));
   handle('extensionInsertArtifact',(key,args)=>extensions.invoke({key,method:'media.insert',args}));
   handle('extensionPreviewClosed',(key,id)=>{const job=extensions.active.get(key);if(!job)return false;try{media.get(job,id).previewing=false;extensions.emit('media.previewClosed',{extensionId:job.manifest.id,id}).catch(console.error);return true;}catch{return false;}});
-  handle('extensionCommitAcquire',(key,generation,execution,jobOperation)=>{const job=extensions.active.get(key);if(!job||job.generation!==generation)throw Error('Extension stopped');return commits.acquire(getWindow().webContents,[job],()=>extensions.executionActive(job,execution)&&(jobOperation===undefined||extensions.jobsHost.available(job,jobOperation)));});
+  handle('extensionCommitAcquire',(key,generation,execution,jobOperation,inspector)=>{const job=extensions.active.get(key);if(!job||job.generation!==generation)throw Error('Extension stopped');return commits.acquire(getWindow().webContents,[job],()=>extensions.executionActive(job,execution)&&(inspector===undefined||extensions.ui.verifyInspector(job,inspector))&&(jobOperation===undefined||extensions.jobsHost.available(job,jobOperation)));});
   handle('extensionCommitFinish',async(id,applied)=>{const owner=getWindow().webContents;try{await operations.finish(owner,id,applied===true);}finally{commits.finish(owner,id);}return true;});
   ipcMain.on('plugins:extensionCommitApply',(event,id)=>{let allowed=false;try{const owner=getWindow()?.webContents;if(owner&&event.sender===owner&&event.senderFrame===owner.mainFrame&&commits.apply(owner,id)){operations.claimed(owner,id);allowed=true;}}catch{}event.returnValue=allowed;});
   handle('extensionOperationBegin',input=>operations.begin(getWindow().webContents,input));
@@ -186,7 +199,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
     const res=await dialog.showOpenDialog(getWindow(),{properties:[folder?'openDirectory':'openFile'],
       ...(!folder?{filters:[{name:'ClipCraft plugin',extensions:['tgz']}]}:{})});
     if(res.canceled) return null;
-    return manager.install(res.filePaths[0],folder);
+    return changeCatalog(()=>manager.install(res.filePaths[0],folder));
   });
   handle('enable',(key,enabled)=>manager.setEnabled(key,enabled));
   handle('remove',key=>manager.remove(key));

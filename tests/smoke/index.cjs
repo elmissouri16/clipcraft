@@ -8,6 +8,7 @@ const { runExport, probe } = require("../../electron/media/ffmpeg.cjs");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = async function smoke(win, app, dir) {
+  if (process.env.FVE_SMOKE_MODE === 'extension-native-controls') return require('./smoke-extension-native-controls.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'extension-api') return require('./smoke-extension-api.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'extension-sdk-additions') return require('./smoke-extension-sdk-additions.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'extension-retirement') return require('./smoke-extension-retirement.cjs')(win,app,dir);

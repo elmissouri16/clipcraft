@@ -1,3 +1,4 @@
+import ExtensionActionIcon from '../features/plugins/components/ExtensionActionIcon.jsx';
 import ExtensionPreparation from '../features/plugins/components/ExtensionPreparation.jsx';
 import {useExtensionShortcuts} from '../features/plugins/useExtensionShortcuts.js';
 import ExtensionMessages from '../features/plugins/components/ExtensionMessages.jsx';
@@ -235,7 +236,10 @@ export default function App() {
     try {
       const { compact } = await serializeProject(projectDoc(project));
       if (version !== autosave.current.recoveryVersion) return;
-      localStorage.setItem('clipcraft.recovery', `{"savedAt":${Date.now()},"project":${compact},"file":${JSON.stringify(file || null)},"unsaved":${!!unsaved}}`);
+      const recovery=`{"savedAt":${Date.now()},"project":${compact},"file":${JSON.stringify(file || null)},"unsaved":${!!unsaved}}`;
+      await window.api.writeProjectRecovery(recovery);
+      if (version !== autosave.current.recoveryVersion) return;
+      localStorage.setItem('clipcraft.recovery', recovery);
     } catch {
       // storage full: the next save tries again
     }
@@ -407,8 +411,11 @@ export default function App() {
       // nothing usable saved
     }
     window.api.wasRecovered?.().then(async (was) => {
-      // The recovery snapshot lives in localStorage, whose commits lag behind the
-      // edits (and a hard kill can lose the last one). The project's autosave slot is
+      // Prefer the atomically persisted native recovery over its localStorage
+      // mirror, whose flush may lag after a hard kill. A missing native copy
+      // falls back to the older localStorage-only format.
+      try { const native=await window.api.readProjectRecovery();if(native!==null)saved=JSON.parse(native); } catch { return; }
+      // The project's autosave slot is
       // written to disk on the same cadence, atomically — so when a slot exists for
       // the snapshot's project, the slot's state is the recovery payload: the exact
       // project that was open, at its freshest state.
@@ -1465,7 +1472,7 @@ export default function App() {
         attachTimelineContext({ kind: 'range', start_sec: clip.start_sec, end_sec: clip.end_sec });
       } catch (error) { setTimelineContextRequest({ id: uid(), projectId: projectRef.current.id, loadVersion: projectLoadVersion, error: error.message }); }
     } },
-    ...(extensionContextActions.length?['sep',{label:t('plugins.actions_menu'),submenu:[...extensionContextActions.map(entry=>({label:entry.title,onClick:async()=>{try{const {snapshot,targets}=capturePluginEditContext(),target=targets.find(t=>t.track===sel.track&&t.id===sel.id);const result=await window.api.pluginsExtensionUiExecute(entry.id,{location:'context',editor:snapshot,clipId:target?.handle||null});if(result?.error)throw Error(result.error);}catch(error){showAlert(extensionUiError(error));}}}))]}]:[]),
+    ...(extensionContextActions.length?['sep',{label:t('plugins.actions_menu'),submenu:[...extensionContextActions.map(entry=>({label:entry.title,icon:props=><ExtensionActionIcon entry={entry} {...props}/>,disabled:entry.enabled===false,hint:entry.disabledReason,onClick:async()=>{try{const {snapshot,targets}=capturePluginEditContext(),target=targets.find(t=>t.track===sel.track&&t.id===sel.id);const result=await window.api.pluginsExtensionUiExecute(entry.id,{location:'context',editor:snapshot,clipId:target?.handle||null},entry.instance);if(result?.error)throw Error(result.error);}catch(error){showAlert(extensionUiError(error));}}}))]}]:[]),
     'sep', ...clipEditingMenuItems(sel),
   ];
   const clipEditingMenuItems = (sel) => {
@@ -2443,7 +2450,7 @@ export default function App() {
           trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))}
           cropEdit={cropEdit} onCropDraft={setCropDraft}
           colorPick={colorPick} onColorPicked={finishColorPick} />
-        {pluginPanelsOpen&&(!agentMode||agentDrawer==='plugins')?<PluginWorkbench onManage={()=>setSettingsOpen('plugins')} getEditorContext={readPluginContext} project={project} projectEpoch={projectLoadVersion} onClose={()=>{setPluginPanelsOpen(false);if(agentMode)setAgentDrawer(null);}}/>:<Inspector onSelectEffect={setSelection} collapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onCollapse={() => {
+        {pluginPanelsOpen&&(!agentMode||agentDrawer==='plugins')?<PluginWorkbench onManage={()=>setSettingsOpen('plugins')} getEditorContext={readPluginContext} project={project} projectEpoch={projectLoadVersion} onClose={()=>{setPluginPanelsOpen(false);if(agentMode)setAgentDrawer(null);}}/>:<Inspector extensionInspectorSet={extensionHost.setInspector} projectEpoch={projectLoadVersion} onSelectEffect={setSelection} collapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onCollapse={() => {
           if (agentMode) setAgentDrawer(null); else setRightCollapsed(true);
           requestAnimationFrame(() => document.querySelector('.properties-toggle')?.focus());
         }} project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} clockRef={clockRef} playing={playing} onSeek={seek}

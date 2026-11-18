@@ -30,6 +30,10 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
  check('a custom topic is published under the package ID',basics.emit.value.name==='fixture.api-probe.custom');
  check('a managed process returns its output',basics.process.value.code===0&&basics.process.value.stdout==='42');
 
+ const hardened=value('hardening');
+ check('unknown hooks and integration points reject in the actual extension host',!hardened.hook.ok&&/Unsupported document hook/.test(hardened.hook.error)&&!hardened.integration.ok&&/Unsupported UI integration/.test(hardened.integration.error),hardened);
+ check('invalid JSON rejects and the select default is readable in the real app',!hardened.invalid.ok&&/finite JSON/.test(hardened.invalid.error)&&hardened.mode==='one',hardened);
+
  const edits=value('edits');
  check('editor.apply edits a clip',edits.opacity.ok&&edits.createText.ok,edits);
  check('a revision from before a document change is stale',!edits.stale.ok&&/stale/.test(edits.stale.error),edits.stale);
@@ -49,6 +53,13 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
 
  const view=value('view');
  check('a view exchanges messages with its extension, including one posted before it finished loading',view.revealed&&view.got.some(m=>m.info==='fixture.api-probe.panel')&&view.got.some(m=>m.echo?.hello==='early'),view);
+ const initial=view.got.find(message=>message.info==='fixture.api-probe.panel');
+ check('view assets accept cache query strings and sandboxed WebAssembly compiles',initial?.asset&&initial.wasm,initial);
+ check('the first getInfo returns the actual editor theme',JSON.stringify(initial?.initialTheme)===JSON.stringify(result.expectedTheme),{initial,expected:result.expectedTheme});
+ const same=value('sameTheme').filter(message=>message.inspected).at(-1);
+ const changed=value('changedTheme'),last=changed.filter(message=>message.inspected).at(-1),notification=changed.filter(message=>message.themeChange).at(-1);
+ check('layout without a colour change does not notify theme listeners',same.changes===0,same);
+ check('a changed theme is delivered once and getInfo stays current',last.changes===1&&last.theme.accent==='#123456'&&notification.theme.accent===notification.infoTheme.accent,{last,notification});
  const logs=result.viewStatus.find(row=>row.id==='fixture.api-probe').logs.map(line=>JSON.stringify(line)).join('\n');
  check('a blocked inline view script is reported in the extension log',view.inlineGot.length===0&&/View fixture\.api-probe\.inline: .*inline script/i.test(logs),logs.slice(0,600));
 
@@ -65,8 +76,13 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
  check('Undo removes each batch as one step',!result.afterUndo.texts.includes('Kept')&&!result.afterUndo.texts.includes('From an extension')&&result.afterUndo.filter==='none'&&result.afterUndo.background==='#000000'&&result.afterUndo.history===result.toolsBefore-0,result.afterUndo);
 
  check('a canceled install leaves the extension running with its toolbar action',result.canceledInstall===null&&result.afterCatalogChange.toolbar.includes('fixture.api-probe.act-toolbar')&&result.afterCatalogChange.hello.value?.message==='Hello from probe.',result.afterCatalogChange);
+ check('both canceled install pickers preserve the live activation and running job',result.pickers.length===2&&result.pickers.every(row=>row?.generation===result.beforePicker.generation&&row.state==='running'&&row.jobs.length>0),result.pickers);
+ check('the managed job completes after both pickers are canceled',value('pickerJob')==='completed');
+ check('actual disable removes the activation before re-enable restores its actions',!result.disabledStatus.some(row=>row.id==='fixture.api-probe'));
  for(const location of ['toolbar','inspector','context','export','settings.plugins'])check('an action is registered at '+location,result.ui[location].length===1,result.ui[location]);
  check('the extension observed document, selection and playback events',['project.changed','selection.changed','playback.changed','configuration.changed'].every(name=>value('seen').includes(name)),[...new Set(value('seen'))]);
+ check('the rendered settings select agrees with configuration.get',result.renderedSelect.visible&&result.renderedSelect.value==='one',result.renderedSelect);
+ check('native settings reject an off-step number and retain the saved value',/step/.test(result.offStep.error)&&result.amountAfterRefusal.amount===3,{refusal:result.offStep,settings:result.amountAfterRefusal});
  check('the renderer logged no error',result.errors.length===0,result.errors);
  console.log(`Extension API verified in the real app (${checks.length} checks): ${dir}`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

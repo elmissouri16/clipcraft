@@ -12,8 +12,8 @@ const MAX_BYTES = 512 * 1024 * 1024;
 const check = signal => { if (signal.aborted) throw Error('Extension media operation canceled'); };
 
 class ExtensionMedia {
-  constructor({root, isActive, inspectFile = inspect}) {
-    Object.assign(this, {root, isActive, inspectFile});
+  constructor({root, isActive, inspectFile = inspect, retention}) {
+    Object.assign(this, {root, isActive, inspectFile, retention});
     this.records = new Map();
     this.running = new Map();
     this.leases = new Map();
@@ -80,6 +80,7 @@ class ExtensionMedia {
       const folder = path.join(this.root,'owned');await fsp.mkdir(folder,{recursive:true});
       const file = path.join(folder, record.id + path.extname(record.file));
       await fsp.copyFile(record.file,file,fs.constants.COPYFILE_EXCL);
+      try{await this.retention?.track(file);}catch(error){await fsp.rm(file,{force:true});throw error;}
       record.owned = file;
      }
       // Once offered to the editor, retain the durable file even if the reply is
