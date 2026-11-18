@@ -10,14 +10,17 @@ import { t } from '../../i18n/index.js';
 const MIME = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 const mimeType = () => MIME.find((m) => window.MediaRecorder?.isTypeSupported(m)) || '';
 
-// One MediaRecorder writing to one file in the main process. Chunks are sent in order.
-function fileRecorder(stream, kind, bitrate) {
+// One MediaRecorder writing to one file in the main process. Chunks are sent in order. A chunk that cannot be
+// written (full disk) stops the writing, but never the chain: finish still runs, so the part already on disk is
+// converted and added, and the error is reported with it.
+export function fileRecorder(stream, kind, bitrate) {
   const mr = new MediaRecorder(stream, { mimeType: mimeType(), videoBitsPerSecond: bitrate, audioBitsPerSecond: 160000 });
-  let id = null;
-  let chain = window.api.screenBegin(kind).then((v) => { id = v; });
+  let id = null, writeError = null;
+  let chain = window.api.screenBegin(kind).then((v) => { id = v; }, (e) => { writeError = e; });
   mr.ondataavailable = (e) => {
     if (!e.data || !e.data.size) return;
-    chain = chain.then(async () => window.api.screenChunk(id, new Uint8Array(await e.data.arrayBuffer())));
+    chain = chain.then(async () => { if (!writeError) await window.api.screenChunk(id, new Uint8Array(await e.data.arrayBuffer())); })
+      .catch((error) => { writeError ||= error; });
   };
   const stopped = new Promise((resolve) => { mr.onstop = resolve; });
   return {
@@ -27,7 +30,8 @@ function fileRecorder(stream, kind, bitrate) {
       if (mr.state !== 'inactive') mr.stop();
       await stopped;
       await chain;
-      return window.api.screenFinish(id);
+      const item = await window.api.screenFinish(id);
+      return writeError && item && !item.error ? { ...item, writeError: writeError.message } : item;
     },
     async discard() {
       if (mr.state !== 'inactive') mr.stop();
@@ -75,8 +79,8 @@ export function useScreenRecorder(onDone) {
       }
       const [screen, camera] = await Promise.all(l.recorders.map((r) => r.finish()));
       cleanup();
-      const bad = [screen, camera].find((x) => x && x.error);
-      setState({ phase: 'idle', count: 0, seconds: 0, paused: false, error: bad ? bad.error : '' });
+      const bad = [screen, camera].find((x) => x && x.error), cut = [screen, camera].find((x) => x && x.writeError);
+      setState({ phase: 'idle', count: 0, seconds: 0, paused: false, error: bad ? bad.error : cut ? t('record.part_of_recording_not_saved', { error: cut.writeError }) : '' });
       if (screen && !screen.error) doneRef.current({ screen, camera: camera && !camera.error ? camera : null, camShape: l.camShape, camStyle: l.camStyle, camGeom: l.camGeom }, l.at);
     } catch (e) {
       cleanup();

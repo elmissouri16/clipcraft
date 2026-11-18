@@ -50,6 +50,21 @@ function checkGenerated(projectJson, cacheDir) {
       }
       return out;
     });
+    // A Voice Enhancer render that is gone (project opened on another computer, cache cleared): the export would
+    // fall back to the original sound while the player played the missing file as silence. The clip is set back
+    // to its original sound and flagged, so the Enhance voice section says so and offers to render it again.
+    for (const key of ['videoClips', 'overlayClips', 'audioClips']) {
+      if (!Array.isArray(p[key])) continue;
+      p[key] = p[key].map((c) => {
+        const e = c && c.enhance;
+        if (!e || typeof e.path !== 'string' || fs.existsSync(e.path)) return c;
+        const moved = cacheDir && path.join(cacheDir, path.basename(e.path));
+        changed = true;
+        if (moved && fs.existsSync(moved)) return { ...c, enhance: { ...e, path: moved } };
+        const { path: _gone, ...rest } = e;
+        return { ...c, enhance: { ...rest, on: false, missing: true } };
+      });
+    }
     return changed ? JSON.stringify(p) : projectJson;
   } catch {
     return projectJson;
@@ -62,17 +77,19 @@ function checkGeneratedProject(project, cacheDir) {
   return checked === text ? project : JSON.parse(checked);
 }
 
-// Projects saved before the rotation fix have the stored (not turned) size of phone videos: probe those again.
+// Projects saved before the rotation fixes have the stored (not turned) size of phone videos and photos: probe
+// those again.
 async function refreshSizes(projectJson, probe) {
   try {
     const p = JSON.parse(projectJson);
     let changed = false;
     for (const m of p.media || []) {
-      if (m.type !== 'video' || (m.rotation !== undefined && m.hdr !== undefined) || !fs.existsSync(m.path)) continue;
+      const stale = m.type === 'video' ? m.rotation === undefined || m.hdr === undefined : m.type === 'image' && m.orientation === undefined;
+      if (!stale || !fs.existsSync(m.path)) continue;
       try {
         const info = await probe(m.path);
         changed = true;
-        Object.assign(m, { width: info.width, height: info.height, rotation: info.rotation, hdr: info.hdr });
+        Object.assign(m, { width: info.width, height: info.height, rotation: info.rotation, hdr: info.hdr }, m.type === 'image' ? { orientation: info.orientation ?? 1 } : {});
       } catch {
         // keep what the project says
       }

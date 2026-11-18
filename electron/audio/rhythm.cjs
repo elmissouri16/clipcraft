@@ -6,7 +6,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { Worker, isMainThread, parentPort, workerData } = require('node:worker_threads');
 
 const SR = 11025, FRAME = 512, HOP = 128;

@@ -1,7 +1,7 @@
 // User-selected image references. Originals and model previews stay on disk;
 // saved chats contain opaque IDs and metadata, never image bytes.
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { ffmpegPath } = require('../media/ffmpeg.cjs');
 const EXTENSIONS = 'png jpg jpeg jpe jfif webp gif apng bmp dib tif tiff avif heic heif hif svg ico cur jxl jp2 j2k jpf jpx jpm mj2 psd psb tga targa pcx ppm pgm pbm pnm pam pfm qoi exr hdr pic dpx sgi rgb rgba bw ras xbm xpm wbmp dng cr2 cr3 nef nrw arw sr2 srf raf orf rw2 rwl pef ptx srw mos mrw raw'.split(' ');
 const MAX_IMAGES = 6, MAX_BYTES = 20 * 1024 * 1024;

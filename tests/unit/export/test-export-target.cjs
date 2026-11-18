@@ -26,6 +26,15 @@ try {
   // Through another spelling of the same path.
   const alias = path.join(dir, 'link.mp4');
   try { fs.symlinkSync(source, alias); assert.deepEqual(exportTargetProblem({ file: alias, mediaPaths: [source], confirmed: alias }), { reason: 'source' }, 'a link to a source file is the source file'); } catch (e) { if (e.code !== 'EPERM') throw e; }
+  const hard = path.join(dir, 'hard.mp4');
+  fs.linkSync(source, hard);
+  assert.deepEqual(exportTargetProblem({ file: hard, mediaPaths: [source], confirmed: hard }), { reason: 'source' }, 'a hard link to a source file is the source file');
+  // A case-insensitive volume (NTFS, default APFS) opens INTERVIEW.MP4 as interview.mp4.
+  const upper = path.join(dir, 'INTERVIEW.MP4');
+  if (fs.existsSync(upper)) {
+    assert.deepEqual(exportTargetProblem({ file: upper, mediaPaths: [source], confirmed: upper }), { reason: 'source' }, 'another letter case of a source file is the source file');
+    assert.deepEqual(exportTargetProblem({ file: source, mediaPaths: [upper], confirmed: source }), { reason: 'source' }, 'a source path in another letter case is still the source');
+  } else console.log('case-sensitive volume: letter-case check not applicable here');
   // A typed name that matches another existing file: refused unless the dialog returned that path.
   assert.deepEqual(exportTargetProblem({ file: other, mediaPaths: [source], confirmed: picked }), { reason: 'exists' });
   assert.deepEqual(exportTargetProblem({ file: other, mediaPaths: [source], confirmed: null }), { reason: 'exists' });

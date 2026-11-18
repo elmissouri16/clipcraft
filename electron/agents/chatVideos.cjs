@@ -4,7 +4,7 @@
 // the original path, probe metadata and a small poster. Saved chats contain the ID
 // and metadata only.
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', 'mts', 'm2ts', 'ts', 'mpg', 'mpeg', 'wmv', 'flv', '3gp', 'ogv'];
 const MAX_VIDEOS = 3, MAX_SECONDS = 2 * 60 * 60;

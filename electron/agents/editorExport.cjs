@@ -33,7 +33,7 @@ function createEditorExportTarget(req, { outputDir, cacheDir, mayReplace }) {
   if (fs.existsSync(file) && mayReplace && !mayReplace(file)) throw Error('The export destination already exists and this assistant did not create it. Choose a new file name.');
   if (fs.existsSync(file) && !req.overwrite) throw Error('The export destination already exists. Choose another name or explicitly request overwrite.');
   if (fs.existsSync(file) && !fs.statSync(file).isFile()) throw Error('The export destination must be a regular file.');
-  const frameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-text-'));
+  const frameDir = require('../system/workDirs.cjs').makeWorkDir('clipcraft-text-');
   return { file, frameDir, requestId: req.requestId, noOverwrite: !req.overwrite, kind: review ? 'review' : 'export', revision: req.revision, timelineStart: review ? req.start_sec : 0 };
 }
 module.exports = { createEditorExportTarget };

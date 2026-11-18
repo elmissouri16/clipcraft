@@ -117,7 +117,7 @@ async function runEditorFileJob(req, { signal, probeAll, choosePaths, outputDir,
         try { await fs.promises.link(temporary, file); }
         catch (error) {
           if (error.code === 'EEXIST') throw Error(ours() ? 'That subtitle file already exists. Use another path, or overwrite only when the user requests it.' : foreign);
-          if (['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'].includes(error.code)) await fs.promises.copyFile(temporary, file, fs.constants.COPYFILE_EXCL);
+          if (require('../system/hardLinks.cjs').hardLinkUnsupported(error)) await fs.promises.copyFile(temporary, file, fs.constants.COPYFILE_EXCL);
           else throw error;
         }
       }

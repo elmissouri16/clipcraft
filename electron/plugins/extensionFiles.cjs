@@ -48,7 +48,7 @@ class ExtensionFiles{
     fs.chmodSync(staged,publicMode);
     try{fs.linkSync(staged,record.destination);record.published=true;record.atomic=true;}
     catch(error){
-     if(!['ENOTSUP','EOPNOTSUPP','EPERM','EXDEV'].includes(error.code))throw error;
+     if(!require('../system/hardLinks.cjs').hardLinkUnsupported(error))throw error;
      this.assert(record);target=await fsp.open(record.destination,'wx',publicMode);record.owned=await target.stat();this.assert(record);
      // FAT and exFAT give a file a new identity once it has data, so identify it after writing.
      await this.exclusiveCopy(record,staged,target);await target.sync();record.owned=await target.stat();await target.close();target=null;

@@ -20,6 +20,8 @@
 let graph = null;
 const wired = new WeakSet();
 const gains = new WeakMap();
+// An element can be sourced only once in its life: its source node is kept for a re-wire after unwireElement.
+const sources = new WeakMap();
 const listeners = new Set();
 let previewAudio = { volume: 1, muted: false };
 try {
@@ -74,7 +76,8 @@ export function wireElement(el) {
   const g = ensureAudioGraph();
   if (!g) return;
   try {
-    const src = g.ctx.createMediaElementSource(el);
+    const src = sources.get(el) || g.ctx.createMediaElementSource(el);
+    sources.set(el, src);
     const gain = g.ctx.createGain();
     gain.gain.value = 1;
     src.connect(gain);
@@ -82,6 +85,23 @@ export function wireElement(el) {
     gains.set(el, gain);
     wired.add(el);
   } catch { /* leave the element native */ }
+}
+
+// Takes an element out of the graph. A connected source keeps its element (and its decoder) alive and
+// processing for the whole session, so every element the preview retires is unwired.
+export function unwireElement(el) {
+  if (!el || !wired.has(el)) return;
+  try { sources.get(el)?.disconnect(); } catch { /* already disconnected */ }
+  try { gains.get(el)?.disconnect(); } catch { /* already disconnected */ }
+  gains.delete(el);
+  wired.delete(el);
+}
+
+// A media element leaving the preview for good: stop it, release its file and decoder, and unwire it.
+export function retireElement(el) {
+  if (!el) return;
+  try { el.pause?.(); if (el.hasAttribute?.('src')) { el.removeAttribute('src'); el.load?.(); } } catch { /* already released */ }
+  unwireElement(el);
 }
 
 // Apply a clip's effective gain (0..2, fades and muting already folded in by the player) to

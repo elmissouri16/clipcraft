@@ -1,6 +1,6 @@
 // Local measurements of a completed render. No network, inference service or
 // transcription download. Candidates describe signals, never editing intent.
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const ff = require('../media/ffmpeg.cjs');
 const { sourceFrame } = require('./agentFrames.cjs');
 const round = value => Math.round(value * 1000) / 1000;

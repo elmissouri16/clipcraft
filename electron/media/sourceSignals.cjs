@@ -1,6 +1,6 @@
 // Streaming, bounded local measurements. These signals locate places to look;
 // they do not recognize actions, emotions or the meaning of audio.
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const fs = require('node:fs');
 const { ffmpegPath, probe, toSdr } = require('./ffmpeg.cjs');
 const abortError = () => Object.assign(Error('Video indexing stopped.'), { name: 'AbortError' });

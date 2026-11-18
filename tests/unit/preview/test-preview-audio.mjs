@@ -6,14 +6,16 @@ class Node {
   gain = { value: 1 };
   connections = [];
   connect(node) { this.connections.push(node); }
+  disconnect() { this.connections = []; }
 }
 let sourceCount = 0;
+const sourceOf = new Map();
 globalThis.AudioContext = class {
   destination = new Node();
   createGain() { return new Node(); }
   createAnalyser() { return new Node(); }
   createChannelSplitter() { return new Node(); }
-  createMediaElementSource() { sourceCount++; return new Node(); }
+  createMediaElementSource(el) { if (sourceOf.has(el)) throw new Error('InvalidStateError'); sourceCount++; const node = new Node(); sourceOf.set(el, node); return node; }
 };
 const audio = await import('../../../src/features/audio/audioTap.js?monitor-test');
 const graph = audio.ensureAudioGraph();
@@ -45,6 +47,21 @@ assert.equal(graph.monitor.gain.value, 0);
 audio.setPreviewAudio({ volume: 5 });
 assert.equal(graph.monitor.gain.value, 1);
 unsubscribe();
+// A retired element (pool, main players, media peek) leaves the graph and releases its file; the same element
+// wired again reuses its one source node.
+const pooled = { volume: 1, src: 'file:///clip.mp4', paused: false, loads: 0, pause() { this.paused = true; }, hasAttribute(name) { return name === 'src' && !!this.src; }, removeAttribute(name) { if (name === 'src') this.src = ''; }, load() { this.loads++; } };
+audio.wireElement(pooled);
+const pooledSource = sourceOf.get(pooled), pooledGain = pooledSource.connections[0];
+assert.ok(pooledGain.connections.includes(graph.master), 'wired into the master');
+audio.retireElement(pooled);
+assert.deepEqual([pooled.paused, pooled.src, pooled.loads], [true, '', 1], 'retired element is stopped and its file released');
+assert.deepEqual([pooledSource.connections, pooledGain.connections], [[], []], 'retired element is disconnected from the graph');
+audio.applyElementVolume(pooled, 1.5);
+assert.equal(pooled.volume, Math.min(1, 1.5 * graph.monitor.gain.value), 'an unwired element applies monitoring natively');
+audio.wireElement(pooled);
+assert.equal(sourceOf.get(pooled), pooledSource, 're-wiring reuses the element source');
+assert.ok(pooledSource.connections.length === 1 && pooledSource.connections[0].connections.includes(graph.master), 'and reconnects it');
+audio.unwireElement(pooled); audio.unwireElement(pooled); audio.retireElement(null);
 globalThis.localStorage.setItem = () => { throw new Error('storage unavailable'); };
 audio.setPreviewAudio({ volume: 0.25 });
 assert.equal(graph.monitor.gain.value, 0.25, 'storage errors cannot block audio controls');

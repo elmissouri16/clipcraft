@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { freeLen } from '../../../state/store.js';
 import { createTimeIndex } from '../../timeline/timeIndex.js';
-import { wireElement } from '../../audio/audioTap.js';
+import { retireElement, wireElement } from '../../audio/audioTap.js';
 import { useClockTime } from '../useClockTime.js';
 import LiveGraphicFrame from '../../graphics/LiveGraphicFrame.jsx';
 
@@ -21,9 +21,7 @@ export default function PlaybackMediaPool({ project, mediaById, layout, overlayI
     if (!callbacks.current.has(key)) callbacks.current.set(key, node => {
       const map = kind === 'overlay' ? overlayEls.current : kind === 'audio' ? audioEls.current : enhEls.current;
       const old = part ? map[id]?.[part] : map[id];
-      if (old && !node) {
-        old.pause?.();old.removeAttribute?.('src');old.load?.();
-      }
+      if (old && !node) retireElement(old);
       if (part) {
         if (node) (map[id] ||= {})[part] = node;
         else if (map[id]) { delete map[id][part];if (!Object.keys(map[id]).length) delete map[id]; }

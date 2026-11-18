@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { t } = require('../system/i18n.cjs');
 
 const num = (v) => Number(v.toFixed(3)).toString();

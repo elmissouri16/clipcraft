@@ -3,8 +3,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
 const { fileFingerprint } = require("../media/mediaAnalysis.cjs");
-const { spawn } = require('node:child_process');
-const { ffmpegPath, toSdr } = require("../media/ffmpeg.cjs");
+const { spawn } = require('../system/childProcesses.cjs');
+const { ffmpegPath, toSdr, escapeFilterPath } = require("../media/ffmpeg.cjs");
 const stopped = () => Object.assign(new Error('Frame inspection stopped.'), { name: 'AbortError' });
 const checkStop = signal => { if (signal?.aborted) throw stopped(); };
 const frameSize = (width, height) => {
@@ -82,7 +82,6 @@ function sheetLayout(frames) {
   cw -= cw % 2; ch -= ch % 2;
   return { cols, rows, cw, ch };
 }
-const escapeFilterPath = file => file.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 function composeSheet(files, { cols, rows, cw, ch }, signal, font = SHEET_FONTS.find(f => fs.existsSync(f))) {
   checkStop(signal);
   const n = files.length, parts = [];

@@ -7,7 +7,7 @@
 //   meta.json     size, frame rate, frame count and render timings.
 // Graphics referenced by saved projects live here, so nothing is evicted automatically.
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-const { execFile } = require('node:child_process');
+const { execFile } = require('../system/childProcesses.cjs');
 const { GraphicImages, validateImages } = require('./images.cjs');
 
 const VERSION = 'graphics-1';
@@ -46,6 +46,32 @@ class GraphicsService {
   constructor({ root, ffmpegPath, probe, renderGraphic, maxBytes = CACHE_MAX_BYTES, now = Date.now }) {
     Object.assign(this, { root, ffmpegPath, probe, renderGraphic, maxBytes, now }); this.inUse = new Map();
     this.images = new GraphicImages({ ffmpegPath, probe });
+    this.active = new Map(); // render in progress -> { controller, work }
+    this.sweepParts();
+  }
+
+  // Partial folders (<key>.part-<pid>-<hex>) of renders whose process has ended: an app that quit or crashed
+  // mid-render. Older versions named them <key>.part-<hex>; those are always leftovers.
+  sweepParts() {
+    const removed = [];
+    let names = [];
+    try { names = fs.readdirSync(this.root); } catch { return removed; }
+    const { processAlive } = require('../system/childProcesses.cjs');
+    for (const name of names) {
+      const m = /\.part-(?:(\d+)-)?[0-9a-f]+$/.exec(name);
+      if (!m || (m[1] && processAlive(Number(m[1])))) continue;
+      try { fs.rmSync(path.join(this.root, name), { recursive: true, force: true }); removed.push(name); } catch { /* in use */ }
+    }
+    return removed;
+  }
+
+  // Quitting: every render stops and its partial folder goes now (the app is gone before the renders settle).
+  abortAll() {
+    for (const { controller, work } of this.active.values()) {
+      controller.abort();
+      try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* removed at the next start */ }
+    }
+    this.active.clear();
   }
 
   // The library pictures a request names ([{ id, path }]) become data for the sandbox, shrunk to
@@ -82,7 +108,7 @@ class GraphicsService {
     }
     return { removed, ...this.usage() };
   }
-  clear() { return this.prune({ all: true }); }
+  clear() { this.sweepParts(); return this.prune({ all: true }); }
 
   key(job) {
     return sha(JSON.stringify([VERSION, job.code, job.inputs, job.fonts.map((f) => [f.family, f.weight, f.style, f.unicodeRange, sha(f.data)]), job.width, job.height, job.fps, job.frames,
@@ -92,7 +118,15 @@ class GraphicsService {
   // Resolves with { key, file, preview, media (probe of the graphic), width, height, fps, frames,
   // duration_sec, cached, stats, samples: [{ time_sec, bytes (JPEG), width, height }] }.
   // samples false: no sample frames (the editor re-rendering a graphic needs none).
-  async render(request, { signal, onProgress, sampleTimes, samples: wantSamples = true } = {}) {
+  async render(request, { signal: outer, onProgress, sampleTimes, samples: wantSamples = true } = {}) {
+    const controller = new AbortController(), token = {};
+    const signal = outer ? AbortSignal.any([outer, controller.signal]) : controller.signal;
+    this.active.set(token, { controller, work: null });
+    try { return await this.renderOnce(request, { signal, onProgress, sampleTimes, wantSamples, token }); }
+    finally { this.active.delete(token); }
+  }
+
+  async renderOnce(request, { signal, onProgress, sampleTimes, wantSamples, token }) {
     const job = validate(await this.prepare(request, { signal })), key = this.key(job), dir = path.join(this.root, key);
     const file = path.join(dir, 'graphic.mov'), preview = path.join(dir, 'preview.webm'), metaFile = path.join(dir, 'meta.json');
     let cached = fs.existsSync(file) && fs.existsSync(preview) && fs.existsSync(metaFile), stats;
@@ -100,7 +134,8 @@ class GraphicsService {
       stats = JSON.parse(fs.readFileSync(metaFile, 'utf8')).stats;
       try { const t = new Date(this.now()); fs.utimesSync(metaFile, t, t); } catch {} // marks it recently used
     } else {
-      const work = `${dir}.part-${crypto.randomBytes(4).toString('hex')}`;
+      const work = `${dir}.part-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+      this.active.get(token).work = work;
       try {
         const out = await this.renderGraphic({ ffmpegPath: this.ffmpegPath, ...job, dir: work, signal, onProgress });
         stats = out.stats;

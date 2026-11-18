@@ -709,7 +709,7 @@ function CaptionsTab({ onAddText, captions, project, dispatch, onOpenSettings, s
       <div className="card">
         <b>{t('library.manual_caption')}</b>
         <p className="muted">{t('library.a_caption_line_at_the_bottom_of_the_frame')}</p>
-        <button className="btn btn-sm" onClick={() => onAddText({ size: 44, y: 0.9, box: true, boxColor: '#000000', outline: false, font: 'segoe', anim: 'none' })}>
+        <button className="btn btn-sm" onClick={() => onAddText({ size: 44, y: 0.9, box: true, boxColor: '#000000', outline: false, font: 'roboto', anim: 'none' })}>
           <Plus size={14} /> {t('library.add_caption')}
         </button>
       </div>

@@ -4,7 +4,8 @@ const { audioFadeFilters, audioAutomationFilters } = require('../audio/fades.cjs
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, execFile, execFileSync } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 // Temporary names in the media cache carry this process's tag: two running instances never write the same partial file.
 const PART_TAG = `${process.pid}-${require('crypto').randomBytes(4).toString('hex')}`;
 
@@ -79,7 +80,9 @@ function probe(file) {
     // A picture is decoded while it is probed (-count_frames costs nothing for one frame). A damaged
     // picture still reports a size from its header, and a looped still that never decodes would
     // keep the export encoder retrying forever.
-    const args = ['-v', 'error', ...(IMAGE_EXT.includes(ext) ? ['-count_frames'] : []), '-print_format', 'json', '-show_format', '-show_streams', file];
+    // A still also reports its decoded frame's EXIF orientation (a GIF carries none and may have many frames).
+    const args = ['-v', 'error', ...(IMAGE_EXT.includes(ext) ? ['-count_frames'] : []), ...(IMAGE_EXT.includes(ext) && ext !== 'gif' ? ['-show_entries', 'frame_tags=Orientation'] : []),
+      '-print_format', 'json', '-show_format', '-show_streams', file];
     const p = spawn(ffprobePath, args, { windowsHide: true });
     let out = '';
     let err = '';
@@ -98,7 +101,10 @@ function probe(file) {
       // Phones store portrait videos as landscape frames plus a rotation (display matrix): FFmpeg and the player
       // show them turned, so the size we use is the turned one.
       const rotation = v ? Math.round(Number((v.side_data_list || []).find((d) => d.rotation !== undefined)?.rotation ?? (v.tags && v.tags.rotate) ?? 0)) : 0;
-      const turned = Math.abs(rotation) % 180 === 90;
+      // Phone photos are stored the same way with an EXIF orientation: FFmpeg and the player show them upright, so
+      // a picture's size is its displayed one too (orientations 5-8 swap width and height).
+      const orientation = isImage ? (Number.parseInt((info.frames || []).find((f) => f.tags && f.tags.Orientation)?.tags.Orientation, 10) || 1) : 0;
+      const turned = Math.abs(rotation) % 180 === 90 || orientation >= 5 && orientation <= 8;
       // HDR video (iPhone HLG / Dolby Vision, PQ): converted to normal (SDR) colors wherever we decode it.
       const hdr = !!v && ['arib-std-b67', 'smpte2084'].includes(v.color_transfer);
       let duration = 0;
@@ -118,6 +124,7 @@ function probe(file) {
         width: v ? (turned ? v.height : v.width) : 0,
         height: v ? (turned ? v.width : v.height) : 0,
         rotation,
+        ...(isImage ? { orientation } : {}),
         hdr,
         // What the player needs to know to decide on a preview proxy.
         vcodec: v ? v.codec_name : '',
@@ -215,6 +222,34 @@ const sourceAudio = (len, from = 0) => (from < 1e-7
 // read from such an input skips the residue (sourceAudio's `from`).
 const seekTo = (t) => Math.max(0, Math.floor(Math.max(0, t) * 1000 + 1e-6) / 1000);
 const seekRest = (t) => Math.max(0, t - seekTo(t));
+// Clips that read the same file share one input: one input per clip put every clip's path on the command line,
+// past Windows' 32,767-character limit at about a hundred clips of a long recording. A shared input is seeked to
+// its first clip (seekTo) and FFmpeg decodes it once; each clip trims its own part from `base`, the input's seek
+// point. A clip `gap` seconds or more past the group's furthest end opens a new input, so no long stretch is
+// decoded for nothing. ordered (pictures): groups are runs of consecutive uses whose ranges move forward
+// (decoded frames are not held back for a later clip); otherwise (sound) all uses of a file group by position.
+// uses: [{ key, file, from, to, lane }]: uses in different lanes (tracks mixed at the same time) never share, so
+// one is not held back waiting for the other. get(key) opens the input on first use: { idx, base }.
+function sharedInputs(uses, addInput, { gap, ordered = false }) {
+  const groups = [], byKey = new Map(), id = (u) => `${u.lane || ''}\n${u.file}`;
+  const list = ordered ? uses : [...uses].sort((a, b) => (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : a.from - b.from));
+  let last = null;
+  for (const use of list) {
+    const fits = last && last.id === id(use) && use.from - last.end < gap && (!ordered || use.from >= last.lastFrom && use.from >= last.end - 0.5);
+    if (!fits) groups.push(last = { id: id(use), file: use.file, from: use.from, end: use.to, lastFrom: use.from, idx: null });
+    else { last.from = Math.min(last.from, use.from); last.end = Math.max(last.end, use.to); last.lastFrom = use.from; }
+    byKey.set(use.key, last);
+  }
+  const open = (g) => { if (g.idx === null) g.idx = addInput(['-ss', num(seekTo(g.from)), '-i', g.file]); return { idx: g.idx, base: seekTo(g.from) }; };
+  return { get: (key) => (byKey.has(key) ? open(byKey.get(key)) : null), groups };
+}
+// Pictures: a gap this long is cheaper to seek over than to decode; when that still leaves too many inputs for a
+// bounded command line, forward runs share regardless of gaps.
+function sharedPictureInputs(uses, addInput) {
+  const length = (plan) => plan.groups.reduce((n, g) => n + g.file.length + 24, 0);
+  const near = sharedInputs(uses, addInput, { gap: 5, ordered: true });
+  return length(near) <= 16000 ? near : sharedInputs(uses, addInput, { gap: Infinity, ordered: true });
+}
 // Gain, effects and level automation of a clip's sound, from its (tempo-corrected) source to
 // a 48 kHz stereo stream. The effects always run at 48 kHz (the pitch shift relies on it).
 // Loudness normalization sets the level of the effects' output, so with it on the clip's own
@@ -284,6 +319,9 @@ function lookFilters(clip, W, H) {
 }
 
 // The plain picture path: fit in the frame over the background color, look, constant frame rate.
+// A picture or video whose pixels may be transparent (PNG/WebP/GIF, ProRes 4444, VP9 alpha): the plain chain would
+// drop its alpha and show the hidden colours (often black) where the preview shows the project background.
+const mayHaveAlpha = (m) => !!m && /^(?:yuva|gbrap|ya\d|pal8)|rgba|argb|bgra|abgr/.test(String(m.pixFmt || ''));
 function clipVideoFilters(clip, W, H, fps, background) {
   return [
     `scale=${W}:${H}:force_original_aspect_ratio=decrease`,
@@ -318,6 +356,7 @@ function enhancePathOf(clip) {
 const monoUp = (m, enhanced) => (!enhanced && m && m.channels === 1 ? 'pan=stereo|c0=c0|c1=c0' : null);
 
 // samples: the clip's exact length at 48 kHz on the main-track grid (see mainGrid).
+// seeked: true when the input was seeked to the clip (seekTo(clip.in)), or the seek point of a shared input.
 function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false, samples = Math.round(clipLen(clip) * AUDIO_RATE)) {
   const len = clipLen(clip);
   if (clip.gap || !m || m.type === 'image' || !m.hasAudio || clip.muted) {
@@ -327,7 +366,7 @@ function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false, samples =
   // the stream already starts at clip.in, so the trim runs from 0 — identical samples,
   // without decoding the skipped prefix. The enhanced branch is pre-trimmed by the
   // enhance render and always reads from 0.
-  const src = sourceAudio(clip.out - clip.in, enhIdx >= 0 ? 0 : seeked ? seekRest(clip.in) : clip.in);
+  const src = sourceAudio(clip.out - clip.in, enhIdx >= 0 ? 0 : typeof seeked === 'number' ? Math.max(0, clip.in - seeked) : seeked ? seekRest(clip.in) : clip.in);
   const up = monoUp(m, enhIdx >= 0);
   return `[${enhIdx >= 0 ? enhIdx : idx}:a]` + [...src, ...clipAudioBody(clip, len, up),
     `apad=whole_len=${samples}`, `atrim=end_sample=${samples}`].join(',') + `[a${i}]`;
@@ -398,16 +437,20 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
   const plan = analysisAudioPlan(project, selection);
   const inputs = [], filters = [], mix = [];
   let n = 0;
-  const input = (c, m) => {
-    const enhanced = enhancePathOf(c), index = n++;
-    inputs.push(...(enhanced ? ['-i', enhanced] : ['-ss', num(seekTo(c.in)), '-i', m.path]));
-    return { index, enhanced };
+  const addInput = (args) => { inputs.push(...args); return n++; };
+  const users = [...plan.main.filter((c) => !c.muted).map((c) => ({ clip: c, m: plan.media.get(c.mediaId), lane: 'main' })), ...plan.extras.map(({ clip, media }, j) => ({ clip, m: media, lane: `x${j}` }))];
+  const shared = sharedInputs(users.filter(({ clip }) => !enhancePathOf(clip)).map(({ clip, m, lane }) => ({ key: clip, file: m.path, from: clip.in, to: clip.out, lane })), addInput, { gap: 60 });
+  const input = (c) => {
+    const enhanced = enhancePathOf(c);
+    if (enhanced) return { index: addInput(['-i', enhanced]), enhanced, base: 0 };
+    const { idx, base } = shared.get(c);
+    return { index: idx, enhanced: null, base };
   };
   const grid = mainGrid(plan.main, positive(project.fps, 30));
   plan.main.forEach((clip, i) => {
     const m = plan.media.get(clip.mediaId);
-    const src = !clip.muted ? input(clip, m) : { index: -1 };
-    filters.push(clipAudioFilter(clip, m, src.index, i, src.enhanced ? src.index : -1, true, grid[i].s1 - grid[i].s0));
+    const src = !clip.muted ? input(clip) : { index: -1, base: true };
+    filters.push(clipAudioFilter(clip, m, src.index, i, src.enhanced ? src.index : -1, src.base, grid[i].s1 - grid[i].s0));
   });
   if (plan.main.length) {
     let label = 'a0';
@@ -419,9 +462,9 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
     mix.push('[main]');
   }
   plan.extras.forEach(({ clip: c, media: m }, j) => {
-    const { index, enhanced } = input(c, m), len = clipLen(c);
+    const { index, enhanced, base } = input(c), len = clipLen(c);
     const up = monoUp(m, !!enhanced);
-    const chain = [...sourceAudio(c.out - c.in, enhanced ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up)];
+    const chain = [...sourceAudio(c.out - c.in, enhanced ? 0 : Math.max(0, c.in - base)), ...clipAudioBody(c, len, up)];
     chain.push('aresample=16000', 'aformat=sample_fmts=fltp:channel_layouts=mono', `adelay=${Math.round(Math.max(0, c.start || 0) * 1000)}:all=1`);
     filters.push(`[${index}:a]${chain.join(',')}[x${j}]`);
     mix.push(`[x${j}]`);
@@ -439,11 +482,12 @@ function renderTimelineAudio(project, outWav, source = 'all') {
     try { args = buildTimelineAudioArgs(project, outWav, source); } catch (e) { return reject(e); }
     const signal = typeof source === 'object' ? source?.signal : undefined;
     if (signal?.aborted) return reject(Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' }));
-    const p = spawn(ffmpegPath, args, { windowsHide: true, ...(signal ? { signal } : {}) });
+    const run = longGraph(args);
+    const p = spawn(ffmpegPath, run.args, { windowsHide: true, ...(signal ? { signal } : {}) });
     let err = '';
     p.stderr.on('data', d => { err = (err + d).slice(-3000); });
-    p.on('error', error => { if (error.name !== 'AbortError') reject(error); });
-    p.on('close', code => code === 0 ? resolve(outWav) : reject(signal?.aborted ? Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' }) : new Error(err)));
+    p.on('error', error => { run.done(); if (error.name !== 'AbortError') reject(error); });
+    p.on('close', code => { run.done(); code === 0 ? resolve(outWav) : reject(signal?.aborted ? Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' }) : new Error(err)); });
   });
 }
 const renderMainAudio = (project, outWav) => renderTimelineAudio(project, outWav, 'video');
@@ -518,7 +562,8 @@ function narrowClip(clip, m, from, to) {
 // the animated-effects pass rendered.
 // shift: seconds added to the clip's clock, so that its picture lies at its exact timeline time on
 // the frame grid its stream starts on (the stream starts on the nearest frame, see mainGrid).
-function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H, shift = 0) {
+// shared: { idx, base } of an input this clip shares with its neighbours (sharedPictureInputs), else its own.
+function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H, shift = 0, shared = null) {
   // Perf B1: media inputs are input-seeked (-ss before -i) to the clip's first frame and
   // the trim runs from 0 — the encoder never decodes the skipped prefix (measured at
   // +48% export time for a clip starting 55 min into its source). `audioSeeked` tells
@@ -567,6 +612,12 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H, shift = 
   }
   // The source frames keep their own times from clip.in (the first one can lie after it on an
   // off-grid cut): resetting them to start at 0 moved the picture up to a frame early.
+  // A shared input starts at `base` (at or before seekTo(clip.in)): the trim skips to where the clip's own seek
+  // would have started it, so the same frames are kept and timed alike.
+  if (shared) {
+    const skip = seekTo(clip.in) - shared.base;
+    return { idx: shared.idx, chain: `[${shared.idx}:v]trim=${skip > 1e-7 ? `start=${sec6(skip)}:` : ''}duration=${num(clip.out - clip.in)},setpts=(PTS-${sec6(clip.in - shared.base)}/TB)/${speedOf(clip)}+${sec6(shift)}/TB${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: shared.base };
+  }
   const idx = addInput(['-ss', num(seekTo(clip.in)), '-i', m.path]);
   return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-${sec6(seekRest(clip.in))}/TB)/${speedOf(clip)}+${sec6(shift)}/TB${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
 }
@@ -606,6 +657,8 @@ function buildExportArgs(project, outFile, opts = {}) {
   // 1) Main track: prepare each clip (trim, speed, size, look) with a matching audio stream.
   // Every clip's picture ends on exactly its frame count on the output grid, and its sound on its sample count.
   const grid = mainGrid(clips, fps);
+  const sharedPictures = sharedPictureInputs(clips.filter((c) => !c.gap && !c.videoOverride && mediaById[c.mediaId].type !== 'image')
+    .map((c) => ({ key: c, file: mediaById[c.mediaId].path, from: c.in, to: c.out })), addInput);
   clips.forEach((clip, i) => {
     const m = mediaById[clip.mediaId];
     const len = clipLen(clip);
@@ -621,7 +674,8 @@ function buildExportArgs(project, outFile, opts = {}) {
     // Shader intermediates carry straight RGBA. Composite through the explicit
     // BT.709 layer path for both full clips and partial ranges, preserving alpha
     // and avoiding an implicit BT.601 RGB conversion before BT.709 output tags.
-    const layered = layers.isLayered(clip, motion) || !!clip.videoOverride;
+    // Transparent media composite over the project background there too, as the preview shows them.
+    const layered = layers.isLayered(clip, motion) || !!clip.videoOverride || mayHaveAlpha(m);
     const maskFile = project.maskFiles && project.maskFiles[clip.id];
     const renderLayered = (srcLabel) => {
       const tag = `m${i}`;
@@ -636,7 +690,7 @@ function buildExportArgs(project, outFile, opts = {}) {
       filters.push(...layers.composite({ base: `bg${tag}`, layer: layer.out, blend: clip.blend, tag, out: `vl${i}` }));
       filters.push(`[vl${i}]${fit}[v${i}]`);
     };
-    const src = pictureSource(clip, m, len, fps, addInput, filters, `m${i}`, W, H, grid[i].start - grid[i].f0 / fps);
+    const src = pictureSource(clip, m, len, fps, addInput, filters, `m${i}`, W, H, grid[i].start - grid[i].f0 / fps, sharedPictures.get(clip));
     if (layered) {
       filters.push(`${src.chain},fps=${fps}:start_time=0,tpad=stop_mode=clone:stop=1[s${i}]`);
       renderLayered(`s${i}`);
@@ -648,7 +702,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     const audioIdx = src.own || m.type === 'image' || !m.hasAudio || clip.muted ? src.idx : addInput(['-ss', num(seekTo(clip.in)), '-i', m.path]);
     const enhP = !opts.raw && enhancePathOf(clip);
     const enhIdx = enhP ? addInput(['-i', enhP]) : -1;
-    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx, src.own ? !!src.audioSeeked : true, samples));
+    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx, src.own ? (typeof src.audioSeeked === 'number' ? src.audioSeeked : !!src.audioSeeked) : true, samples));
   });
 
   // 2) Join clips: xfade/acrossfade where a transition is set, plain concat otherwise. A transition
@@ -817,15 +871,21 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
 
   const clips = timedMain(project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]));
   const overlays = (project.overlayClips || []).filter(timed), tracks = (project.audioClips || []).filter(timed);
+  const mainHas = (clip) => { const m = mediaById[clip.mediaId]; return !!(m && m.type === 'video' && m.hasAudio && !clip.muted && !clip.gap); };
+  const overlayHas = (c) => { const m = mediaById[c.mediaId]; return !!(m && m.type === 'video' && m.hasAudio && !c.muted); };
+  // Main-track clips share inputs; each overlay or audio-track clip keeps its own (they play over the main track).
+  const users = [...clips.filter(mainHas).map((c) => [c, 'main']), ...overlays.filter(overlayHas).map((c, j) => [c, `o${j}`]), ...tracks.filter((c) => !c.muted && mediaById[c.mediaId]).map((c, j) => [c, `t${j}`])].filter(([c]) => !enhancePathOf(c));
+  const shared = sharedInputs(users.map(([c, lane]) => ({ key: c, file: mediaById[c.mediaId].path, from: c.in, to: c.out, lane })), addInput, { gap: 60 });
   if (clips.length) {
     const grid = mainGrid(clips, positive(project.fps, 30));
     clips.forEach((clip, i) => {
       const m = mediaById[clip.mediaId];
-      const has = m && m.type === 'video' && m.hasAudio && !clip.muted && !clip.gap;
+      const has = mainHas(clip);
       if (has) sound = true;
       const enhP = has && enhancePathOf(clip);
-      // B1: seek the media input to the clip start; clipAudioFilter trims from 0.
-      filters.push(clipAudioFilter(clip, m, has ? addInput(['-ss', num(seekTo(clip.in)), '-i', m.path]) : -1, i, enhP ? addInput(['-i', enhP]) : -1, true, grid[i].s1 - grid[i].s0));
+      // B1: a shared input seeked near the clip (an enhanced clip reads only its render); the trim starts at the clip.
+      const src = has && !enhP ? shared.get(clip) : null;
+      filters.push(clipAudioFilter(clip, m, src ? src.idx : -1, i, enhP ? addInput(['-i', enhP]) : -1, src ? src.base : true, grid[i].s1 - grid[i].s0));
     });
     let ca = 'a0';
     for (let i = 1; i < clips.length; i++) {
@@ -836,12 +896,13 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   }
   overlays.forEach((c, j) => {
     const m = mediaById[c.mediaId];
-    if (!m || m.type !== 'video' || !m.hasAudio || c.muted) return;
+    if (!overlayHas(c)) return;
     sound = true;
     const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
     const upO = monoUp(m, !!enhP);
-    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(seekTo(c.in)), '-i', m.path])}:a]${[...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, clipLen(c), upO)].join(',')},adelay=${delay}|${delay}[oa${j}]`);
+    const src = enhP ? { idx: addInput(['-i', enhP]), base: 0 } : shared.get(c);
+    filters.push(`[${src.idx}:a]${[...sourceAudio(c.out - c.in, enhP ? 0 : Math.max(0, c.in - src.base)), ...clipAudioBody(c, clipLen(c), upO)].join(',')},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
   tracks.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
@@ -850,8 +911,9 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up)];
-    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(seekTo(c.in)), '-i', mediaById[c.mediaId].path])}:a]${chain.join(',')},adelay=${delay}|${delay}[m${j}]`);
+    const src = enhP ? { idx: addInput(['-i', enhP]), base: 0 } : shared.get(c);
+    const chain = [...sourceAudio(c.out - c.in, enhP ? 0 : Math.max(0, c.in - src.base)), ...clipAudioBody(c, len, up)];
+    filters.push(`[${src.idx}:a]${chain.join(',')},adelay=${delay}|${delay}[m${j}]`);
     mix.push(`[m${j}]`);
   });
   if (!sound) throw new Error('Nothing to export: no clip on the timeline has sound.');
@@ -871,15 +933,24 @@ function exportAudio(project, outFile, format) {
     } catch (e) {
       return reject(e);
     }
-    const p = spawn(ffmpegPath, args, { windowsHide: true });
+    const run = longGraph(args);
+    const p = spawn(ffmpegPath, run.args, { windowsHide: true });
     let err = '';
     p.stderr.on('data', (d) => (err += d));
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve(outFile) : reject(new Error(err.slice(-3000)))));
+    p.on('error', (error) => { run.done(); reject(error); });
+    p.on('close', (code) => { run.done(); code === 0 ? resolve(outFile) : reject(new Error(err.slice(-3000))); });
   });
 }
 
-// Windows limits a command line to 32767 characters: a long filter graph (many animated clips) goes in a file.
+// A run's arguments with a long filter graph moved to a file (graphFile) in a folder of its own; done() removes it.
+function longGraph(args) {
+  const i = args.indexOf('-filter_complex');
+  if (i < 0 || args[i + 1].length < 20000) return { args, done: () => {} };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-graph-'));
+  return { args: graphFile(args, dir), done: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+// Windows limits a command line to 32767 characters: a long filter graph (many clips) goes in a file.
 function graphFile(args, dir = os.tmpdir()) {
   const i = args.indexOf('-filter_complex');
   if (i < 0 || args[i + 1].length < 20000) return args;
@@ -1019,7 +1090,7 @@ function pickEncoder(family = 'h264') {
       if (!hasEncoder(name)) continue;
       try {
         // A wedged hardware encoder (driver hang) must not hold every export: past the limit it counts as absent.
-        await runFfmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=0.5', ...videoCodec2(name, { codecFamily: family, mode: 'crf', crf: 20 }), '-pix_fmt', 'yuv420p', '-f', 'null', '-'],
+        await runFfmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=0.5', ...videoCodec2(name, { codecFamily: family, mode: 'crf', crf: 20, encoderPreset: 'veryfast' }), '-pix_fmt', 'yuv420p', '-f', 'null', '-'],
           { timeoutMs: Number(process.env.FVE_ENCODER_PROBE_MS) || 20000 });
         return name;
       } catch {
@@ -1031,8 +1102,20 @@ function pickEncoder(family = 'h264') {
   return encoderPicks.get(family);
 }
 
+// A finished render whose target could not be replaced moves next to it under a free name ("video (rendered).mp4",
+// "video (rendered 2).mp4"…). If even that fails it stays where it was rendered. Returns where it is.
+function keepFinishedRender(workingFile, outFile) {
+  const ext = path.extname(outFile), base = outFile.slice(0, outFile.length - ext.length);
+  for (let n = 1; n < 100; n++) {
+    const candidate = `${base} (rendered${n > 1 ? ` ${n}` : ''})${ext || '.mp4'}`;
+    if (fs.existsSync(candidate)) continue;
+    try { fs.renameSync(workingFile, candidate); return candidate; } catch { break; }
+  }
+  return workingFile;
+}
+
 function runExport(project, outFile, onProgress, runOpts = {}) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-'));
+  const tmpDir = require('../system/workDirs.cjs').makeWorkDir('fve-');
   const maskFiles = {};
   for (const [n, [clipId, dataUrl]] of Object.entries(project.maskImages || {}).entries()) {
     const file = path.join(tmpDir, `mask_${n}.png`);
@@ -1100,13 +1183,21 @@ ${log.slice(-3000)}`))));
       }
       if (canceled) throw stopped();
       runOpts.beforePublish?.();
-      if (runOpts.noOverwrite) {
-        try { fs.linkSync(workingFile, outFile); }
-        catch (error) {
-          if (!['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV'].includes(error.code)) throw error;
-          fs.copyFileSync(workingFile, outFile, fs.constants.COPYFILE_EXCL);
-        }
-      } else fs.renameSync(workingFile,outFile);
+      try {
+        if (runOpts.noOverwrite) {
+          try { fs.linkSync(workingFile, outFile); }
+          catch (error) {
+            if (!require('../system/hardLinks.cjs').hardLinkUnsupported(error)) throw error;
+            fs.copyFileSync(workingFile, outFile, fs.constants.COPYFILE_EXCL);
+          }
+        } else fs.renameSync(workingFile,outFile);
+      } catch (error) {
+        // The render is complete but could not take the target's place (the file is open in another program, the
+        // drive refused…): it is kept, never deleted, and the message says where it is.
+        const kept = keepFinishedRender(workingFile, outFile);
+        if (kept === workingFile) outputDir = null;
+        throw Object.assign(new Error(t('main.export_publish_failed', { name: path.basename(outFile), file: kept, reason: error.code || error.message })), { code: error.code, keptFile: kept });
+      }
       onProgress?.(1);
       return outFile;
     } finally {
@@ -1114,7 +1205,14 @@ ${log.slice(-3000)}`))));
       if (outputDir) fs.rmSync(outputDir,{recursive:true,force:true});
     }
   })();
-  return { promise, get canceled(){return canceled;}, cancel: () => { canceled = true; proc?.kill('SIGKILL'); } };
+  const cancel = () => { canceled = true; proc?.kill('SIGKILL'); };
+  // Quitting: the process ends before the promise settles, so the working folders go now, synchronously.
+  const abandon = () => {
+    cancel();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (outputDir) fs.rmSync(outputDir, { recursive: true, force: true });
+  };
+  return { promise, get canceled(){return canceled;}, cancel, abandon };
 }
 
 // Converts any audio file (e.g. a MediaRecorder .webm voice-over) to .m4a so it has a proper duration.
@@ -1242,8 +1340,11 @@ async function makeScene({ color, color2, direction = 'diagonal', width, height 
     const lerp = (i) => `${ch(c0, i)}+(${ch(c1, i) - ch(c0, i)})*${t}`;
     vf = `color=c=black:s=${w}x${h},format=rgb24,geq=r='${lerp(0)}':g='${lerp(1)}':b='${lerp(2)}'`;
   }
-  await runFfmpeg(['-f', 'lavfi', '-i', vf, '-frames:v', '1', `${out}.${PART_TAG}.part.png`]);
-  fs.renameSync(`${out}.${PART_TAG}.part.png`, out);
+  const part = `${out}.${PART_TAG}.part.png`;
+  try {
+    await runFfmpeg(['-f', 'lavfi', '-i', vf, '-frames:v', '1', part]);
+    fs.renameSync(part, out);
+  } finally { fs.rmSync(part, { force: true }); }
   return out;
 }
 
@@ -1283,7 +1384,7 @@ async function makeQualityProxy(item, cacheDir, quality, { force = false } = {})
     // AAC sound is copied, not re-encoded (the common case for MP4 sources); anything else is
     // re-encoded to AAC so the copy always plays.
     ...(item.acodec === 'aac' ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', quality === 'high' ? '128k' : '96k']),
-    '-movflags', '+faststart', part]);
+    '-movflags', '+faststart', part]).catch((error) => { fs.rmSync(part, { force: true }); throw error; });
   fs.renameSync(part, out);
   return out;
   })();
@@ -1294,7 +1395,6 @@ async function makeQualityProxy(item, cacheDir, quality, { force = false } = {})
 // Small frames of a clip for Adjust > Auto: `count` pictures spread over [from, to] (source seconds), 160 px wide,
 // as raw RGB. HDR is mapped to normal colors first, like the export does. A photo gives one frame.
 async function sampleFrames(item, from, to, count = 8) {
-  const { spawn } = require('child_process');
   const one = (t) => new Promise((resolve) => {
     const args = ['-v', 'error', ...(t != null ? ['-ss', String(Math.max(0, t))] : []), '-i', item.path, '-frames:v', '1',
       '-vf', `scale=160:-2${toSdr(item)},format=rgb24`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'];
@@ -1318,4 +1418,4 @@ async function sampleFrames(item, from, to, count = 8) {
 
 module.exports = {
   sampleFrames, analysisAudioPlan, speedOf, positive, hex, xfadeName, escapeFilterPath, audioAnalysisKey, buildTimelineAudioArgs,
-  toSdr, stillInput, graphFile, pickEncoder, warmEncoders, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };
+  toSdr, stillInput, graphFile, longGraph, pickEncoder, warmEncoders, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };

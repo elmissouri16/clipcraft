@@ -1,7 +1,7 @@
 // Text layer for the export: the interface draws each frame and sends its raw RGBA pixels; FFmpeg packs them into a
 // lossless QuickTime RLE file with transparency (text.mov) while the next frames are being drawn. This replaced one
 // PNG per frame, whose encoding in the interface took most of the export time.
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const path = require('path');
 const { makeFifo, fifoWriter } = require('./framePipes.cjs');
 

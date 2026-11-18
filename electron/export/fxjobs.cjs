@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { ffmpegPath, buildExportArgs, fitSize, graphFile, narrowClip, stillInput, toSdr, effectiveExport, speedOf, positive } = require("../media/ffmpeg.cjs");
 const { shiftCurves } = require('./layers.cjs');
 const { RenderCache } = require('./renderCache.cjs');
@@ -40,7 +40,7 @@ function checkTempSpace(dir) {
 // is still needed by the final encode. Same-volume links use no extra media bytes.
 function pinCached(cached, out) {
   try { fs.linkSync(cached,out); }
-  catch(error) { if (!['EXDEV','EPERM','ENOTSUP','EOPNOTSUPP','EMLINK'].includes(error.code)) throw error;fs.copyFileSync(cached,out); }
+  catch(error) { if (!require('../system/hardLinks.cjs').hardLinkUnsupported(error)) throw error;fs.copyFileSync(cached,out); }
   return out;
 }
 
@@ -156,7 +156,7 @@ class FxJobs {
   }
 
   tmp() {
-    if (!this.dir) this.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-fx-'));
+    if (!this.dir) this.dir = require('../system/workDirs.cjs').makeWorkDir('clipcraft-fx-');
     return this.dir;
   }
   createEncoder(file,w,h,fps) { return encoder(file,w,h,fps); }

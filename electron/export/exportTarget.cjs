@@ -9,6 +9,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const real = (file) => { try { return fs.realpathSync(file); } catch { return path.resolve(file); } };
+// The same file on disk, however its path is spelled: case-insensitive volumes (NTFS, default APFS) accept
+// Clip.mp4 for clip.mp4, and a hard link is the same file too. Compared by device and file number when the
+// volume reports them, by the resolved path otherwise.
+const identity = (file) => { try { const st = fs.statSync(file, { bigint: true }); return st.ino ? `${st.dev}:${st.ino}` : null; } catch { return null; } };
+const sameFile = (a, b) => { const ia = identity(a), ib = identity(b); return (ia !== null && ia === ib) || real(a) === real(b); };
 
 // file: the export target; mediaPaths: the project's source media paths; confirmed: the path the save
 // dialog returned for this export (or null); user: a user export (assistant and extension targets are
@@ -17,8 +22,7 @@ const real = (file) => { try { return fs.realpathSync(file); } catch { return pa
 function exportTargetProblem({ file, mediaPaths = [], confirmed = null, user = true }) {
   if (typeof file !== 'string' || !file) return null;
   if (!fs.existsSync(file)) return null;
-  const target = real(file);
-  if (mediaPaths.some((p) => typeof p === 'string' && p && fs.existsSync(p) && real(p) === target)) return { reason: 'source' };
+  if (mediaPaths.some((p) => typeof p === 'string' && p && fs.existsSync(p) && sameFile(p, file))) return { reason: 'source' };
   if (user && !(typeof confirmed === 'string' && path.resolve(confirmed) === path.resolve(file))) return { reason: 'exists' };
   return null;
 }

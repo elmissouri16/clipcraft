@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Music, Pause, Play, Plus, X } from 'lucide-react';
 import { formatTime, previewPath, toFileUrl } from "../../../state/store.js";
-import { applyElementVolume, resumeAudioGraph, subscribePreviewAudio, wireElement } from "../../audio/audioTap.js";
+import { applyElementVolume, resumeAudioGraph, retireElement, subscribePreviewAudio, wireElement } from "../../audio/audioTap.js";
 import PreviewVolume from "../../audio/components/PreviewVolume.jsx";
 import { t } from '../../../i18n/index.js';
 
@@ -10,6 +10,8 @@ import { t } from '../../../i18n/index.js';
 // frame, Esc or × goes back to the project.
 export default function MediaPeek({ m, fps = 30, onClose, onAdd, autoplay = true }) {
   const el = useRef(null);
+  // The video element leaves the graph and releases its file when it unmounts (closing the peek, a picture).
+  const videoRef = useCallback((node) => { if (!node && el.current) retireElement(el.current); el.current = node; }, []);
   const scrubRef = useRef(null);
   const tcRef = useRef(null);
   const [at, setAt] = useState(0);
@@ -86,7 +88,7 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd, autoplay = true
       <div className="stage-wrap">
         <div className="stage peek-stage" style={{ aspectRatio: `${w} / ${h}`, width: `min(100cqw, calc(100cqh * ${w / h}))` }}>
           {still ? <img src={src} alt="" draggable={false} /> : (
-            <video ref={el} src={src} playsInline preload="auto" style={m.type === 'audio' ? { display: 'none' } : undefined}
+            <video ref={videoRef} src={src} playsInline preload="auto" style={m.type === 'audio' ? { display: 'none' } : undefined}
               onTimeUpdate={(e) => setAt(e.currentTarget.currentTime)} onEnded={() => setPlaying(false)} />
           )}
           {m.type === 'audio' && (

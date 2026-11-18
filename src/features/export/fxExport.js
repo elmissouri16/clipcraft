@@ -4,6 +4,7 @@ import {assertPluginEffects} from '../plugins/effectRegistry.js';
 import { videoLayout } from "../../state/store.js";
 import { fxTransition } from "../effects/catalog.js";
 import { pixelEffectRanges, isShaderFx, pixelPasses } from "../effects/apply.js";
+import { isFilterFx } from "../effects/filters.js";
 import { fxGL } from "../effects/gl.js";
 import { easeValue } from "../effects/easing.js";
 import { bakeColorLut } from "./colorLut.js";
@@ -118,10 +119,13 @@ export async function renderFxPass(projectIn, onProgress, isCanceled) {
   };
   // A colour-only look on the whole clip (filter, LUT, Adjust) becomes one 3D LUT that FFmpeg
   // applies in the encode (src/features/export/colorLut.js): no frames make the round trip.
+  // A filter layer on the Effects track that covers the whole clip ("Whole video") is part of that
+  // look: pixelPasses already lists it, and the bake check refuses it if it is not colour-only.
   const lutRun = async ({ track, clip, start, from, to, len }) => {
     const length = (clip.out - clip.in) / (clip.speed || 1);
     if (from !== 0 || Math.abs(to - length) > 1e-6) return false;
-    if (activeEffects(projectIn, start, start + length).some(e => !e.disabled && e.strength !== 0 && isShaderFx(e.fx))) return false;
+    const coversClip = e => isFilterFx(e.fx) && !e.region && e.start <= start + 1e-6 && e.start + e.duration >= start + length - 1e-6;
+    if (activeEffects(projectIn, start, start + length).some(e => !e.disabled && e.strength !== 0 && isShaderFx(e.fx) && !coversClip(e))) return false;
     let baked;
     try { baked = bakeColorLut(gl, pixelPasses(projectIn, clip, start, 0)); } catch { return false; }
     if (!baked) return false;

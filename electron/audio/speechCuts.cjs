@@ -6,7 +6,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const SR = 16000, HOP = 160; // 10 ms frames
 const aborted = () => Object.assign(new Error('Audio analysis stopped.'), { name: 'AbortError' });

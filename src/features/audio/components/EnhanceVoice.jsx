@@ -39,6 +39,11 @@ export default function EnhanceVoice({ clip, media, set, onEnhance }) {
         ))}
       </div>
       <p className="dim small">{t('enhance.reduces_noise_and_clarifies_voice_processe')}</p>
+      {e?.missing && !e.path && (
+        <p className="dim small">{t('enhance.the_enhanced_sound_is_missing')}
+          <button type="button" className="btn btn-sm" onClick={() => onEnhance && onEnhance(strength)}>{t('enhance.enhance_again')}</button>
+        </p>
+      )}
       {stale && (
         <p className="dim small">{t('enhance.the_clip_was_trimmed_after_it_was_enhanced')}
           <button type="button" className="btn btn-sm" onClick={() => onEnhance && onEnhance(strength)}>{t('enhance.enhance_again')}</button>

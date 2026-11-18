@@ -6,7 +6,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { spawn, execFile } = require('node:child_process');
+const { execFile } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const MAX_LINES = 40;
 const BETWEEN = 'Read each paragraph as its own line, with a clear pause of about one second between paragraphs.';

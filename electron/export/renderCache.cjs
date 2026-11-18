@@ -38,7 +38,7 @@ class RenderCache {
     try {
       if(immutable){
         try {await fs.promises.link(file,partial);}
-        catch(error){if(!['EXDEV','EPERM','ENOTSUP','EOPNOTSUPP','EMLINK'].includes(error.code))throw error;await fs.promises.copyFile(file,partial);}
+        catch(error){if(!require('../system/hardLinks.cjs').hardLinkUnsupported(error))throw error;await fs.promises.copyFile(file,partial);}
       }else await fs.promises.copyFile(file,partial);
       await fs.promises.rename(partial,output);
     }

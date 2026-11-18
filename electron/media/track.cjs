@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const WORK_W = 480; // working width the matching runs at (speed); results are reported in fractions, so this is invisible outside
 const TRACK_FPS = 30; // frames per second pulled from the source (the fps filter caps faster sources)

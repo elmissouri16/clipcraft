@@ -15,7 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const VERSION = 'edit-style-v2';
 const MAX_SEC = 30 * 60;          // longer references: the first 30 minutes
@@ -198,10 +198,11 @@ function run(cmd, args, { signal, onStdout, maxErr = 4000 } = {}) {
   });
 }
 
+// The shared, quote-safe helper (a quote in a path closes the quoted filter value otherwise).
+const escapeFilterPath = (file) => require('./ffmpeg.cjs').escapeFilterPath(file);
 // Streams the video at the analysis rate and size, calling onFrame(index, rgb).
 // One decode feeds both FFmpeg's scene-change detector (its times go to `sceneFile`)
 // and the raw analysis frames: decoding is the expensive part (4K HEVC especially).
-const escapeFilterPath = (file) => String(file).replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 async function readFrames(ffmpegPath, file, { fps, w, h, seconds, signal, spawnDecoder, sceneFile, threshold }, onFrame) {
   const size = w * h * 3;
   let pending = Buffer.alloc(0), index = 0;

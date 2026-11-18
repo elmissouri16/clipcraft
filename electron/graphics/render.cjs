@@ -12,6 +12,12 @@ const { app, BrowserWindow, ipcMain, session } = require('electron');
 const { TextStream } = require('../export/textstream.cjs');
 
 const DIR = __dirname, PARTITION = 'graphics-sandbox';
+// The sandbox folder's URL as Chromium spells requests for it: percent-encoded (spaces, accents) and file:///C:/…
+// on Windows. options: url.pathToFileURL's (tests pass { windows }).
+function ownPrefix(dir = DIR, options) {
+  const href = require('node:url').pathToFileURL(dir, options).href;
+  return href.endsWith('/') ? href : href + '/';
+}
 const jobs = new Map(); // webContents id -> job
 let registered = false, secured = false;
 
@@ -89,7 +95,7 @@ function secure() {
   const ses = session.fromPartition(PARTITION);
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
-  const own = 'file://' + DIR.split(path.sep).join('/') + '/';
+  const own = ownPrefix();
   ses.webRequest.onBeforeRequest((details, callback) => {
     const url = details.url;
     callback({ cancel: !(url.startsWith(own) || url.startsWith('blob:') || url.startsWith('data:')) });
@@ -144,4 +150,4 @@ async function renderGraphic({ ffmpegPath, code, inputs = {}, fonts = [], images
   }
 }
 
-module.exports = { renderGraphic, createLiveGraphic, PARTITION };
+module.exports = { renderGraphic, createLiveGraphic, PARTITION, ownPrefix };

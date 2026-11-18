@@ -1,5 +1,5 @@
 // Host-owned generated-media validation, independent of any extension recipe.
-const {spawn}=require('node:child_process'),{ffprobePath}=require('./ffmpeg.cjs');
+const {spawn}=require('../system/childProcesses.cjs'),{ffprobePath}=require('./ffmpeg.cjs');
 function processFile(binary,args,signal=new AbortController().signal){
  if(signal.aborted)return Promise.reject(Object.assign(Error('Media inspection canceled'),{name:'AbortError'}));
  return new Promise((resolve,reject)=>{const child=spawn(binary,args,{windowsHide:true,stdio:['ignore','pipe','pipe']}),chunks=[];let bytes=0,error='',settled=false,exceeded=false;

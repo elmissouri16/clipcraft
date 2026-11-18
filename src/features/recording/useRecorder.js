@@ -41,10 +41,15 @@ export function useRecorder(onDone) {
         ctxRef.current?.close().catch(() => {});
         ctxRef.current = null;
         analyserRef.current = null;
-        const buf = await new Blob(chunks).arrayBuffer();
-        const item = await window.api.saveRecording(new Uint8Array(buf));
-        if (item.error) setError(item.error);
-        else doneRef.current(item, at);
+        // A failed save is shown, never swallowed (the main process keeps what it could of the recording).
+        try {
+          const buf = await new Blob(chunks).arrayBuffer();
+          const item = await window.api.saveRecording(new Uint8Array(buf));
+          if (item?.error) setError(item.error);
+          else doneRef.current(item, at);
+        } catch (e) {
+          setError(t('record.could_not_save_voiceover', { error: e.message }));
+        }
       };
       mr.start();
       mrRef.current = mr;

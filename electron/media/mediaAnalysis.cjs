@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { ffmpegPath, probe } = require('./ffmpeg.cjs');
 const VERSION = 'shots-v1';
 const abortError = () => Object.assign(new Error('Media analysis stopped.'), { name: 'AbortError' });

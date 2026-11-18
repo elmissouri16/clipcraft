@@ -79,7 +79,14 @@ function exportActivity(active,progress=0) {
 }
 ipcMain.handle('export:activity',(_event,state)=>exportActivity(state?.active===true,state?.progress));
 function stopExportWork(){currentExport?.cancel();fxJobs.clear();for(const stream of textStreams.values())stream.kill();}
-app.on('will-quit',()=>{exportActivity(false);stopExportWork();});
+// Every FFmpeg the main process started (proxies, thumbnails, clip renders, export helpers) stops with the app.
+const childProcesses=require('./system/childProcesses.cjs');
+// Quitting removes the export's working folders synchronously: the app is gone before an async cleanup runs.
+app.on('will-quit',()=>{exportActivity(false);currentExport?.abandon?.();stopExportWork();for(const dir of [...frameDirs])dropFrames(dir);graphicsService?.abortAll();childProcesses.killAll();});
+process.once('exit',()=>childProcesses.killAll());
+// Working folders an earlier run left in the temp folder when it crashed (their owner process is gone), and
+// half-rendered motion graphics (the service sweeps its partial folders when it starts).
+app.whenReady().then(()=>{require('./system/workDirs.cjs').sweepWorkDirs();graphics();}).catch(()=>{});
 
 // Restore the last window placement when it is still on a connected display.
 function savedBounds() {
@@ -298,6 +305,8 @@ function mediaCacheDir() {
   if (!mediaCacheReady) {
     mediaCacheReady = true;
     fs.mkdirSync(dir, { recursive: true });
+    // Half-written files of jobs that were running when the app last stopped.
+    childProcesses.sweepPartFiles(dir);
     const old = path.join(app.getPath('userData'), 'cache');
     try {
       for (const f of fs.readdirSync(old)) {
@@ -421,7 +430,18 @@ ipcMain.handle('media:saveRecording', async (_e, bytes) => {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const webm = path.join(dir, `voiceover-${stamp}.webm`);
   fs.writeFileSync(webm, Buffer.from(bytes));
-  const m4a = await toM4a(webm, webm.replace(/\.webm$/, '.m4a'));
+  const m4a = webm.replace(/\.webm$/, '.m4a');
+  try {
+    await toM4a(webm, m4a);
+  } catch (e) {
+    // The conversion failed (an empty or cut-off recording, a full disk): nothing is swallowed. An empty file is
+    // removed; otherwise the original is kept and added if it plays, or the message says where it is.
+    fs.rmSync(m4a, { force: true });
+    if (!(bytes?.byteLength > 0)) { fs.rmSync(webm, { force: true }); return { error: i18n.t('main.recording_was_empty') }; }
+    const [kept] = await probeAll([webm]);
+    if (kept && !kept.error && kept.duration > 0) return kept;
+    return { error: `${i18n.t('main.could_not_save_recording', { reason: String(e.message || '').trim().split('\n').pop() })} ${i18n.t('main.original_was_kept', { path: webm })}` };
+  }
   fs.rmSync(webm, { force: true });
   return (await probeAll([m4a]))[0];
 });
@@ -756,7 +776,7 @@ ipcMain.handle('export:begin', async (_e, suggested) => {
     if (res.canceled) return { canceled: true };
     file = res.filePath;
   }
-  const frameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-text-'));
+  const frameDir = require('./system/workDirs.cjs').makeWorkDir('clipcraft-text-');
   frameDirs.add(frameDir);confirmedExportFiles.set(frameDir, file);
   return { file, frameDir };
 });
@@ -898,7 +918,7 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
 // cache (never scaled — the Export dialog's cover preview shows this, not a thumbnail-sprite
 // frame). Cached per file+position; the cache keeps only the newest few grabs.
 ipcMain.handle('media:frame', async (_e, mediaPath, at) => {
-  const { execFile } = require('child_process');
+  const { execFile } = require('./system/childProcesses.cjs');
   const { ffmpegPath } = require("./media/ffmpeg.cjs");
   try {
     if (!mediaPath || !fs.existsSync(mediaPath)) return { ok: false, error: i18n.t('main.media_file_not_found') };
@@ -963,7 +983,7 @@ ipcMain.handle('export:coverFrame', async (_e, project, at) => {
 // exported frame, overlays included — then a stream-copy remux adds it as attached_pic (the
 // original file is only replaced once the remux succeeds, so a failure leaves the export untouched).
 ipcMain.handle('export:cover', async (event, file, mediaPath, at) => {
-  const { execFile } = require('child_process');
+  const { execFile } = require('./system/childProcesses.cjs');
   const { ffmpegPath } = require("./media/ffmpeg.cjs");
   const run = (args) => new Promise((resolve, reject) => execFile(ffmpegPath, args, (e) => (e ? reject(e) : resolve())));
   let tmp;
@@ -1407,7 +1427,7 @@ ipcMain.handle('enhance:cancel', () => { if (enhanceJob) enhanceJob.canceled = t
 // Freeze frame (context menu, item 12): grab one frame of a media file as a PNG still the
 // project can hold. Cached by file + time; the file lands in the media cache like other stills.
 ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
-  const { execFile } = require('child_process');
+  const { execFile } = require('./system/childProcesses.cjs');
   const { ffmpegPath } = require("./media/ffmpeg.cjs");
   try {
     if (!fs.existsSync(mediaPath)) return { error: i18n.t('main.media_file_not_found') };
@@ -1656,7 +1676,7 @@ const editStyle = () => editStyleService ||= require('./media/editStyle.cjs').cr
     try {
       const wav = path.join(tmp, 'speech.wav');
       await new Promise((resolve, reject) => {
-        const p = require('node:child_process').spawn(require('./media/ffmpeg.cjs').ffmpegPath, ['-hide_banner', '-v', 'error', '-y', '-i', file, '-t', String(seconds), '-vn', '-ac', '1', '-ar', '16000', wav], { windowsHide: true, stdio: 'ignore', signal });
+        const p = require('./system/childProcesses.cjs').spawn(require('./media/ffmpeg.cjs').ffmpegPath, ['-hide_banner', '-v', 'error', '-y', '-i', file, '-t', String(seconds), '-vn', '-ac', '1', '-ar', '16000', wav], { windowsHide: true, stdio: 'ignore', signal });
         p.once('error', reject); p.once('close', code => code === 0 ? resolve() : reject(new Error('Could not read the reference audio.')));
       });
       // Segments keep their words: the timed transcript and the speech pacing both come from them.

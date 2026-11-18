@@ -2,6 +2,7 @@
 // fragment shaders; the preview draws with them in real time and the export sends every frame through the same
 // shaders (src/features/export/fxExport.js), so both show the same picture.
 import { parse } from './expr.js';
+import { t } from '../../i18n/index.js';
 
 // ---- Expression -> GLSL (one expression per colour channel; ch 0 = red, 1 = green, 2 = blue).
 function toGlsl(ast, mode, ch) {
@@ -193,9 +194,13 @@ export class FxGL {
     const gl = this.canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false });
     if (!gl) throw new Error('WebGL 2 is not available, so animated effects cannot be drawn.');
     this.gl = gl;
-    // The graphics driver can drop the context (GPU reset): start a new one at the next draw.
+    // The graphics driver can drop the context (GPU reset): start a new one at the next draw. A lost context
+    // draws and reads nothing, so work still holding this one (an export's effects pass) fails at its next
+    // read-back instead of writing stale frames (assertLive).
+    this.lost = false;
     this.canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
+      this.lost = true;
       if (shared === this) shared = null;
     });
     this.programs = new Map();
@@ -494,6 +499,7 @@ export class FxGL {
   // the GPU; finish(handle, output) collects it later. The export draws the next frame in the
   // meantime: a synchronous readPixels stalled every exported frame for ~13 ms.
   readAsync(w, h) {
+    this.assertLive();
     const { gl } = this, size = w * h * 4;
     if (!this.flipTarget(w, h)) return { bytes: this.read(w, h) };
     this.pbos ||= [];this.pboAt = ((this.pboAt ?? -1) + 1) % 3;
@@ -515,14 +521,22 @@ export class FxGL {
 
   async finish(handle, output) {
     if (handle.bytes) return handle.bytes;
+    this.assertLive();
     const { gl } = this, out = output?.length === handle.size ? output : new Uint8Array(handle.size);
     // A fence only updates between tasks: yield until the copy is done (normally at once).
     for (let i = 0; i < 2000 && gl.clientWaitSync(handle.sync, 0, 0) === gl.TIMEOUT_EXPIRED; i++) await yieldTask();
+    this.assertLive();
     gl.deleteSync(handle.sync);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, handle.pbo.buffer);
     gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, out);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this.assertLive();
     return out;
+  }
+
+  // Throws once the context is lost: its pictures are no longer the frames that were drawn.
+  assertLive() {
+    if (this.lost || this.gl.isContextLost?.()) throw new Error(t('export.gpu_context_lost'));
   }
 
   // The mirrored-blit target of read/readAsync, or false when the driver cannot make one.
@@ -543,6 +557,7 @@ export class FxGL {
   // copying it (a mirrored blit), so the rows come back in order without an 8 MB CPU flip
   // per exported frame; without a blit target the rows are flipped here.
   read(w, h, output) {
+    this.assertLive();
     const { gl } = this, size = w * h * 4;
     const out = output?.length === size ? output : new Uint8Array(size);
     try {

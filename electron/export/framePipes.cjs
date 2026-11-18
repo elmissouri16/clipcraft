@@ -15,7 +15,7 @@
 // Elsewhere, without Perl, or when anything here fails, the plain pipes are used.
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const PERL = '/usr/bin/perl';
 const SEND_BUFFER = 1 << 20;

@@ -52,4 +52,13 @@ for (const t of TEXT_TEMPLATES) {
   if (isArabic) assert.ok(ARABIC.test(sample), `${t.id} previews an Arabic line (got "${sample}")`);
   else if (!t.patch.text) assert.equal(sample, 'Made with ClipCraft', `${t.id} previews the standard line (got "${sample}")`);
 }
+// The app's own presets and the manual "Add caption" clip use bundled fonts: a system font that is only on
+// Windows (Segoe UI, Consolas) is missing on macOS and Linux, and the export then refuses the project.
+const { FONT_LIST } = await import('../../../shared/fontCatalog.mjs');
+const bundled = new Set(FONT_LIST.filter((f) => f.source === 'bundled').map((f) => f.id));
+for (const t of TEXT_TEMPLATES) if (t.patch.font) assert.ok(bundled.has(t.patch.font), `${t.id} uses a bundled font (got ${t.patch.font})`);
+const { readFileSync } = await import('node:fs');
+const panel = readFileSync(new URL('../../../src/features/library/components/LeftPanel.jsx', import.meta.url), 'utf8');
+const addCaption = /onAddText\(\{ size: 44, y: 0\.9, box: true[^}]*font: '([a-z0-9]+)'/.exec(panel);
+assert.ok(addCaption && bundled.has(addCaption[1]), `the Add caption clip uses a bundled font (got ${addCaption?.[1]})`);
 console.log(`text-templates ok (${TEXT_TEMPLATES.length} templates, ${mat.length} Craft, ${mot.length} Motion, all references valid)`);

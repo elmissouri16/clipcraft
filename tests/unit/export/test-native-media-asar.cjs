@@ -4,7 +4,7 @@ let directory;const results=[];
 (async()=>{
  const root=path.resolve(__dirname,'../../..');directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-native-media-asar-')));console.log('Native media ASAR evidence: '+directory);
  const payload=path.join(directory,'payload'),template=path.join(directory,'template','app.asar'),platformPackage='@ffprobe-installer/'+process.platform+'-'+process.arch,binary=process.platform==='win32'?'ffprobe.exe':'ffprobe';await fs.mkdir(payload);await fs.mkdir(path.dirname(template));
- for(const name of ['electron/media','electron/audio','electron/export','shared'])await fs.cp(path.join(root,name),path.join(payload,name),{recursive:true});await fs.copyFile(path.join(root,'package.json'),path.join(payload,'package.json'));
+ for(const name of ['electron/media','electron/audio','electron/export','electron/system','shared'])await fs.cp(path.join(root,name),path.join(payload,name),{recursive:true});await fs.copyFile(path.join(root,'package.json'),path.join(payload,'package.json'));
  for(const name of ['ffmpeg-static','@ffprobe-installer/ffprobe',platformPackage])await fs.cp(path.dirname(require.resolve(name+'/package.json')),path.join(payload,'node_modules',name),{recursive:true});
  const asar=require('@electron/asar');await asar.createPackageWithOptions(payload,template,{unpackDir:'node_modules/{ffmpeg-static,@ffprobe-installer}'});
  const ffmpegRelative=path.join('node_modules','ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),ffprobeRelative=path.join('node_modules',platformPackage,binary);for(const name of [ffmpegRelative,ffprobeRelative]){assert.equal(asar.statFile(template,name).unpacked,true);await fs.access(template+'.unpacked/'+name);}

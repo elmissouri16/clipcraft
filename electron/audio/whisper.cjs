@@ -5,7 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn, execFile } = require('child_process');
+const { execFile } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 

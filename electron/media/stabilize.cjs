@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { t } = require('../system/i18n.cjs');
 
 // smoothing: frames averaged on each side for the camera path (more = steadier, more zoom); shakiness / accuracy
@@ -85,7 +85,7 @@ async function stabilize(item, { from = 0, to, level = 'recommended', cacheDir, 
     await run(ffmpegPath, [...input, '-an', '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}vidstabdetect=shakiness=${L.shakiness}:accuracy=${L.accuracy}:result=${trf}`,
       '-f', 'null', '-'], cacheDir, (t) => onProgress(Math.min(0.5, (t / len) * 0.5)), isCanceled);
     await run(ffmpegPath, [...input, '-map', '0:v:0', '-map', '0:a:0?',
-      '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}vidstabtransform=input=${trf}:smoothing=${L.smoothing}:optzoom=${L.optzoom ?? 1}:zoom=${L.zoom}:interpol=bicubic,unsharp=5:5:0.6:3:3:0.3,format=yuv420p`,
+      '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}vidstabtransform=input=${trf}:smoothing=${L.smoothing}:optzoom=${L.optzoom ?? 1}:zoom=${L.zoom}:interpol=bicubic,unsharp=5:5:0.6:3:3:0.3,crop=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
       ...(sdr ? ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'] : []),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '17', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', part],
     cacheDir, (t) => onProgress(Math.min(0.99, 0.5 + (t / len) * 0.5)), isCanceled);

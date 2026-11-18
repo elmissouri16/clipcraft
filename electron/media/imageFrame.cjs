@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 const { ffmpegPath, probe } = require('./ffmpeg.cjs');
 const stopped = () => Object.assign(new Error('Image generation stopped.'), { name: 'AbortError' });
 function validateImageFrame(width, height) {

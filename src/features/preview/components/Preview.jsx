@@ -11,7 +11,7 @@ import { Check, ChevronLeft, ChevronRight, ChevronUp, Gauge, LoaderCircle, Maxim
 import { clipCss } from "../../effects/effects.js";
 import { drawTextLayer } from "../../text/render.js";
 import { createTextFrameState } from '../../text/frameState.js';
-import { applyElementVolume, resumeAudioGraph, wireElement } from "../../audio/audioTap.js";
+import { applyElementVolume, resumeAudioGraph, retireElement, wireElement } from "../../audio/audioTap.js";
 import { fontsReady, onFontsChanged } from "../../text/fonts.js";
 import { isInternal, readPayload } from "../../timeline/dnd.js";
 import { applyChromaKey, blendOf, chromaOf, chromaParams, cropOf, customMaskCanvas, decoStyle, hasCrop, hasCustomMask, layerStyle, transformOf } from '../visual.js';
@@ -263,8 +263,9 @@ export default function Preview({
   // once per element. Runs each commit; the graph guards repeats. Matte/keying videos are muted
   // by design and are not part of the mix, so they are skipped.
   useEffect(() => {
-    wireElement(vids[0].current);
-    wireElement(vids[1].current);
+    const main = [vids[0].current, vids[1].current];
+    main.forEach(wireElement);
+    return () => main.forEach(retireElement);
   }, []);
   useEffect(() => { if (playing) resumeAudioGraph(); }, [playing]);
   useEffect(() => {

@@ -1,7 +1,7 @@
 // Static text holds use timestamped PNG surfaces instead of pumping a full raw
 // frame through an encoder for every unchanged/transparent timeline frame.
 // Animated/dense layers keep TextStream's raw delta transport.
-const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process');
+const fs=require('node:fs'),path=require('node:path'),{spawn}=require('../system/childProcesses.cjs');
 const {deflate}=require('node:zlib'),{promisify}=require('node:util');
 const compress=promisify(deflate);
 const crcTable=Uint32Array.from({length:256},(_,value)=>{

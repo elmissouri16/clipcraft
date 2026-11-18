@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const PART_TAG = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn } = require('../system/childProcesses.cjs');
 
 const MAX_SECONDS = 20;
 const num = (v) => Number(v.toFixed(3)).toString();
@@ -62,7 +62,7 @@ async function reverse(item, { from = 0, to, hasVideo = true, cacheDir, ffmpegPa
   const args = ['-ss', num(a), '-t', num(len), '-i', item.path];
   if (hasVideo) {
     args.push('-map', '0:v:0', '-map', '0:a:0?',
-      '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}reverse,format=yuv420p`,
+      '-vf', `${sdr ? `${sdr.replace(/^,/, '')},` : ''}crop=trunc(iw/2)*2:trunc(ih/2)*2,reverse,format=yuv420p`,
       ...(item.hasAudio ? ['-af', 'areverse'] : []),
       ...(sdr ? ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'] : []),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '17',
