@@ -25,7 +25,10 @@ const hex = (c, def = '#ffffff') => (c || def).replace('#', '0x');
 function probe(file) {
   const ext = path.extname(file).slice(1).toLowerCase();
   return new Promise((resolve, reject) => {
-    const args = ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file];
+    // A picture is decoded while it is probed (-count_frames costs nothing for one frame). A damaged
+    // picture still reports a size from its header, and a looped still that never decodes would
+    // keep the export encoder retrying forever.
+    const args = ['-v', 'error', ...(IMAGE_EXT.includes(ext) ? ['-count_frames'] : []), '-print_format', 'json', '-show_format', '-show_streams', file];
     const p = spawn(ffprobePath, args, { windowsHide: true });
     let out = '';
     let err = '';
@@ -39,6 +42,7 @@ function probe(file) {
       const v = streams.find((s) => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
       const a = streams.find((s) => s.codec_type === 'audio');
       const isImage = IMAGE_EXT.includes(ext) && !a;
+      if (isImage && !(Number(v && v.nb_read_frames) >= 1)) return reject(new Error('This picture is damaged or is not a readable image.'));
       // Phones store portrait videos as landscape frames plus a rotation (display matrix): FFmpeg and the player
       // show them turned, so the size we use is the turned one.
       const rotation = v ? Math.round(Number((v.side_data_list || []).find((d) => d.rotation !== undefined)?.rotation ?? (v.tags && v.tags.rotate) ?? 0)) : 0;
