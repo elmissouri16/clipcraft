@@ -3,7 +3,8 @@ name: Plugin SDK validation
 on:
   pull_request:
   push:
-    branches: [main, 'release/**']
+    # The feature branch is listed while the plugin system is validated before its merge.
+    branches: [main, 'release/**', 'feat/plugin-system-foundation']
   workflow_dispatch:
 
 permissions:
