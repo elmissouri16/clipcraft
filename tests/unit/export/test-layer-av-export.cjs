@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const { ffmpegPath, probe, runExport } = require("../../../electron/media/ffmpeg.cjs");
+const { ffmpegPath, probe, runExport, exportAudio, buildExportArgs, buildAudioExportArgs } = require("../../../electron/media/ffmpeg.cjs");
 
 const fails = [];
 const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if (!cond) fails.push(msg); };
@@ -99,6 +99,14 @@ const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if
   ok(bandDb(outG, 440) < -60, `main layer muted: its tone is gone (=${bandDb(outG, 440).toFixed(1)} dB)`);
   const infoG = await probe(outG);
   ok(Math.abs(infoG.duration - 4) < 0.3 && infoG.width === 320, 'main layer muted: the video itself exported in full');
+
+  // A per-clip mute must also work when callers use the raw export builders.
+  const mutedClip=withAudio(null);mutedClip.audioClips[0].muted=true;
+  for(const args of [buildExportArgs(mutedClip,path.join(dir,'unused.mp4')).args,buildAudioExportArgs(mutedClip,path.join(dir,'unused.wav'),'wav')])ok(!args.includes(t440)&&args.includes(t880),'raw export builder omits only the explicitly muted audio input');
+  const rawVideo=path.join(dir,'clip-muted.mp4');await runExport(mutedClip,rawVideo,()=>{}).promise;
+  ok(bandDb(rawVideo,440)<-60&&bandDb(rawVideo,880)>-45,'raw video export obeys per-clip mute and retains the other tone');
+  const rawAudio=path.join(dir,'clip-muted.wav');await exportAudio(mutedClip,rawAudio,'wav');
+  ok(bandDb(rawAudio,440)<-60&&bandDb(rawAudio,880)>-45,'raw audio-only export obeys per-clip mute and retains the other tone');
 
   console.log(fails.length ? `\n${fails.length} FAILURE(S)` : '\nALL PASS');
   process.exit(fails.length ? 1 : 0);

@@ -582,7 +582,7 @@ function buildExportArgs(project, outFile, opts = {}) {
   }
 
   // 5) Music track and overlay sound: trim, fade, delay to timeline position, mix with the main audio.
-  const music = project.audioClips.filter((c) => mediaById[c.mediaId]);
+  const music = project.audioClips.filter((c) => !c.muted && mediaById[c.mediaId]);
   const mixLabels = [`[${ca}]`];
   music.forEach((c, j) => {
     const enhP = enhancePathOf(c);
@@ -636,6 +636,9 @@ function buildExportArgs(project, outFile, opts = {}) {
     '-filter_complex', filters.join(';'),
     '-map', `[${outLabel}]`, '-map', `[${ca}]`,
     ...videoCodec2(opts.encoder, eff), '-pix_fmt', 'yuv420p',
+    // The filter graph owns the exact output grid, but some FFmpeg builds lose
+    // its rate metadata through framesync/setpts and otherwise encode at 25 fps.
+    '-r', String(eff.outFps),
     // The pipeline works in BT.709 SDR throughout (HDR inputs are tone-mapped to BT.709 above);
     // tag it explicitly — untagged yuv420p otherwise probes as color_* "unknown".
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
@@ -688,7 +691,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', m.path])}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFadeFilters(c, clipLen(c), num), ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
-  project.audioClips.filter((c) => mediaById[c.mediaId]).forEach((c, j) => {
+  project.audioClips.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
     sound = true;
     const len = (c.out - c.in) / (c.speed || 1);
     const delay = Math.round(c.start * 1000);

@@ -47,7 +47,13 @@ function fifoWriter(fifo, proc) {
       if (proc.exitCode !== null || proc.signalCode) throw new Error('The effect encoder ended before all frames were written.');
       try {
         const probe = fs.openSync(fifo, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK);
-        try { fd = fs.openSync(fifo, fs.constants.O_WRONLY); } finally { fs.closeSync(probe); }
+        try {
+          // The encoder can close its reader after the probe succeeds. Hold
+          // our own nonblocking reader across the blocking open so that race
+          // cannot freeze the main thread. It never reads or survives open().
+          const reader = fs.openSync(fifo, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+          try { fd = fs.openSync(fifo, fs.constants.O_WRONLY); } finally { fs.closeSync(reader); }
+        } finally { fs.closeSync(probe); }
         return fd;
       } catch (error) {
         if (error.code !== 'ENXIO' || Date.now() > until) throw error;

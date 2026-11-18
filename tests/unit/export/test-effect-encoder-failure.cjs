@@ -18,6 +18,12 @@ const ff=require('../../../electron/media/ffmpeg.cjs');
   const normal=new FxJobs(),job=normal.begin(p,{kind:'clip',track:'video',clipId:'v'}),decoder=normal.jobs.get(job.id).decs[0];
   processes.push(decoder);await normal.read(job.id,1);normal.clear();
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('decoder remained alive')),2000);if(decoder.exitCode!==null||decoder.signalCode){clearTimeout(timer);resolve();}else decoder.once('close',()=>{clearTimeout(timer);resolve();});});
+  const output=path.join(dir,'real-encoder.mkv'),stream=encoder(output,16,16,24),frames=[];processes.push(stream.p);
+  for(let i=0;i<6;i++){const frame=Buffer.alloc(16*16*4);for(let offset=0;offset<frame.length;offset+=4)frame.set([i*25,80,150,128+i*20],offset);frames.push(frame);await stream.write(frame);}
+  await stream.end();await stream.done;
+  const decoded=execFileSync(ff.ffmpegPath,['-v','error','-i',output,'-f','rawvideo','-pix_fmt','rgba','-']);assert.deepEqual(decoded,Buffer.concat(frames),'Real effect FIFO handoff preserves every frame/alpha and closes for EOF');
+  if(process.platform==='darwin'&&!process.env.FVE_PLAIN_FRAME_PIPES)assert.ok(fs.existsSync(output+'.in'),'The real macOS effect encoder used its FIFO');
   console.log('Effect encoder: disk/codec failure reasons survive backpressure; canceled decoders exit and pending reads unblock.');
+  console.log('Real lossless effect encoder: all six RGBA frames decode exactly and EOF completes.');
  }finally{jobs.clear();for(const proc of processes)if(proc.exitCode===null)proc.kill('SIGKILL');fs.rmSync(dir,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
