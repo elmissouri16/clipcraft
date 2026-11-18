@@ -35295,5 +35295,46 @@
       "SDK publication",
       "historical export timeout"
     ]
+  },
+  "extensionApiReview": {
+    "at": "2026-11-18T03:43:24.225Z",
+    "ok": true,
+    "releaseReady": false,
+    "scope": "Plugin API defect review, editor tool bridge and author guide; local macOS arm64 only, not pushed or run in CI",
+    "suites": [
+      {
+        "file": "tests/unit/plugins/test-extension-reliability.cjs",
+        "checks": 11
+      },
+      {
+        "file": "tests/unit/plugins/test-extension-edit-regressions.mjs",
+        "checks": 9
+      },
+      {
+        "file": "tests/unit/plugins/test-extension-api-ui.cjs",
+        "checks": 49,
+        "realApp": true
+      },
+      {
+        "file": "tests/unit/media/test-probe-pictures.cjs"
+      }
+    ],
+    "fullBattery": {
+      "profile": "macOS arm64, two workers, FVE_SMOKE_QUIET=1",
+      "pass": 357,
+      "fail": 2,
+      "failures": [
+        "tests/unit/audio/test-captions.cjs",
+        "tests/unit/library/test-assets.cjs"
+      ]
+    },
+    "manual": [
+      "files.publish and pack writing on a temporary exFAT image (macOS only)",
+      "settings-form secret/number handling via the real component under a minimal hook runtime"
+    ],
+    "adjustedSuites": [
+      "tests/unit/plugins/test-extension-hook-runtime.cjs",
+      "tests/unit/plugins/test-extension-shortcuts-ui.cjs"
+    ]
   }
 }

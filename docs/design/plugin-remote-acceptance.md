@@ -13,9 +13,9 @@ GitHub-hosted runners for the first time. Run 44223811817 (commit `7cbf43f`)
 passed on Ubuntu and macOS and failed two of nine suites on Windows, on both
 Node versions:
 
-- `test-extension-package-paths`: on Windows the tar reader rewrites `\\` to
+- `test-extension-package-paths`: on Windows the tar reader rewrites `\` to
   `/` in entry names before the package reader sees them. An archive entry
-  named `dist\\outside.js` was therefore admitted as `dist/outside.js` on
+  named `dist\outside.js` was therefore admitted as `dist/outside.js` on
   Windows and refused on Linux and macOS. The reader now judges names as the
   archive wrote them (raw header name, PAX `path`/`linkpath` records and GNU
   long names). The suite gained PAX and GNU cases and reruns every malformed

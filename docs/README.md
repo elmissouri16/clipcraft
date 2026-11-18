@@ -2,6 +2,8 @@
 
 - [Bundled, system and imported fonts](media/fonts.md) — loading, availability and export checks.
 - [Public plugin SDK and authoring tools](../packages/plugin-sdk/README.md) — typed helpers, scaffolding, checking, bundling, validation and packaging.
+- [Extension API guide](design/plugin-extension-api.md) — every context namespace with examples, lifecycle rules, limits and known gaps.
+- [Plugin API review, 2026-11-18](design/plugin-api-review.md) — defects found and fixed, what was added and what remains.
 - [Current trusted Node extension contract](design/plugin-extension-host.md) — commands, events, services, hooks, jobs and native views.
 - [Runnable Node extensions](../examples/extensions/README.md) — speech, AI, media, export and editor features through general APIs.
 - [Creative content extensions](design/plugin-content-packs.md): sound/font assets, title/caption styles, LUT/color looks, motion and mixed effect/transition packs.
