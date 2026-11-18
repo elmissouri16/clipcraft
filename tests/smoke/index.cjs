@@ -62,6 +62,7 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'ui-review') return require('./smoke-ui-review.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'ux-layout') return require('./smoke-ux-layout.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'recovery-notice') return require('./smoke-recovery-notice.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'editor-errors') return require('./smoke-editor-errors.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'workspaces') return require('./smoke-workspaces.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-ownership') return require('./smoke-agent-ownership.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'agent-completion') return require('./smoke-agent-completion.cjs')(win, app, dir);

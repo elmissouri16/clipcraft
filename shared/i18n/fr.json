@@ -3949,5 +3949,12 @@
   "plugins.clear_filters": "Effacer les filtres",
   "plugins.select_plugin": "Sélectionner un plugin",
   "plugins.select_plugin_hint": "Choisissez une extension ou un pack créatif pour consulter ses réglages et outils.",
-  "plugins.empty_hint": "Installez un plugin pour ajouter des outils et des ressources créatives à ClipCraft."
+  "plugins.empty_hint": "Installez un plugin pour ajouter des outils et des ressources créatives à ClipCraft.",
+  "main.media_no_length": "Ce fichier n’a pas de durée lisible : il est peut-être endommagé ou son enregistrement a été interrompu.",
+  "main.media_no_streams": "Ce fichier ne contient ni audio ni vidéo.",
+  "error-boundary.title": "Un problème est survenu",
+  "error-boundary.message": "ClipCraft a cessé d’afficher sa fenêtre à cause d’une erreur. Réessayez pour revenir à l’accueil, où votre projet peut être rouvert depuis sa sauvegarde automatique.",
+  "error-boundary.editor_message": "Une partie de l’éditeur s’est arrêtée à cause d’une erreur. Votre projet est toujours ouvert et la sauvegarde automatique continue. Réessayez pour afficher l’éditeur, ou annulez la dernière modification si elle a causé le problème.",
+  "error-boundary.try_again": "Réessayer",
+  "error-boundary.undo": "Annuler la dernière modification"
 }

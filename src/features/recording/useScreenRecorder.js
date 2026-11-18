@@ -108,18 +108,26 @@ export function useScreenRecorder(onDone) {
     const l = { streams: [], recorders: [], offs: [], at: opts.at || 0, acc: 0, paused: false, camShape: opts.camShape, sourceId: opts.sourceId,
       camStyle: { stroke: opts.camStroke || 0, strokeColor: opts.camStrokeColor || '#ffffff', glow: opts.camGlow || 0, glowColor: opts.camGlowColor || '#825cfb' } };
     live.current = l;
+    // Cancelled while a permission prompt was open: the cleanup has run, and access granted after it
+    // would leave the screen capture, camera or microphone live. Whatever arrives late is stopped here.
+    const gone = () => live.current !== l;
+    const abandon = () => { l.streams.forEach((s) => s.getTracks().forEach((t) => t.stop())); l.audioCtx?.close().catch(() => {}); };
     try {
       await window.api.screenChoose(opts.sourceId, opts.systemAudio);
+      if (gone()) return;
       const display = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: !!opts.systemAudio });
       l.streams.push(display);
+      if (gone()) return abandon();
       const mic = opts.mic ? await navigator.mediaDevices.getUserMedia({
         audio: { deviceId: opts.micId ? { exact: opts.micId } : undefined, echoCancellation: true, noiseSuppression: true },
       }) : null;
       if (mic) l.streams.push(mic);
+      if (gone()) return abandon();
       const cam = opts.camera ? await navigator.mediaDevices.getUserMedia({
         video: { deviceId: opts.cameraId ? { exact: opts.cameraId } : undefined, width: 1280, height: 720, frameRate: 30 }, audio: false,
       }) : null;
       if (cam) l.streams.push(cam);
+      if (gone()) return abandon();
 
       // One sound track: the PC's sound and the microphone mixed together.
       const sounds = [display, mic].filter((s) => s && s.getAudioTracks().length);
@@ -136,11 +144,11 @@ export function useScreenRecorder(onDone) {
       display.getVideoTracks()[0].addEventListener('ended', () => stop());
 
       for (let c = 3; c > 0; c--) {
-        if (live.current !== l) return;
+        if (gone()) return abandon();
         setState((s) => ({ ...s, count: c }));
         await new Promise((r) => setTimeout(r, 1000));
       }
-      if (live.current !== l) return;
+      if (gone()) return abandon();
       if (opts.hideApp) {
         await window.api.screenWindow('minimize');
         await new Promise((r) => setTimeout(r, 400)); // let the minimize animation finish before recording
@@ -158,6 +166,7 @@ export function useScreenRecorder(onDone) {
         window.api.screenBarState(s);
       }, 250);
     } catch (e) {
+      if (gone()) return abandon(); // already cancelled (and possibly a new recording started): only release this attempt
       cleanup();
       window.api.screenBar(false);
       window.api.screenCamera(false);

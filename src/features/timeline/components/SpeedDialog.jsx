@@ -8,7 +8,8 @@ import { t } from '../../../i18n/index.js';
 // ramping — the whole clip plays at the one rate, exactly like the inspector's Speed tab.
 // A linked audio partner follows automatically (the store keeps pairs in sync).
 const PRESETS = [25, 50, 75, 100, 125, 150, 200, 400];
-const clampSpeed = (s) => Math.min(16, Math.max(0.05, s));
+// 1/16 to 16x: the range a media element can play (Chromium refuses a playbackRate outside it).
+const clampSpeed = (s) => Math.min(16, Math.max(0.0625, s));
 
 export default function SpeedDialog({ clip, name, onApply, onClose }) {
   const sourceLen = (clip.out - clip.in); // seconds of source the clip plays
@@ -42,7 +43,7 @@ export default function SpeedDialog({ clip, name, onApply, onClose }) {
         </div>
         <label className="field">
           <span>{t('speed-dialog.speed')}</span>
-          <input type="number" min="5" max="1600" step="5" value={pct} aria-label={t('speed-dialog.speed_in_percent')}
+          <input type="number" min="6.25" max="1600" step="any" value={pct} aria-label={t('speed-dialog.speed_in_percent')}
             onChange={(e) => setFromPct(e.target.value)} />
         </label>
         <label className="field">

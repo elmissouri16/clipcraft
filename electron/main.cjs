@@ -155,7 +155,7 @@ function createWindow() {
     reloadSoon();
   });
   win.webContents.on('render-process-gone', (_e, d) => {
-    exportActivity(false);stopExportWork();
+    exportActivity(false);stopExportWork();dropExportTargetsOf(win.webContents);
     if (d.reason === 'clean-exit') return;
     logCrash('interface crashed', { reason: d.reason, exitCode: d.exitCode });
     recovered = true; // the interface reloads and restores the project it autosaved
@@ -776,6 +776,13 @@ const dropFrames = (dir) => {
 };
 
 ipcMain.handle('export:abort', (_e, dir) => dropFrames(dir));
+// The interface crashed: it reloads in the same webContents, so 'destroyed' never fires for the
+// assistant and extension exports it was running. Without this every later export was refused
+// as "already running" until restart.
+function dropExportTargetsOf(contents) {
+  for (const [dir, owned] of [...agentExportTargets]) if (owned.sender === contents) { owned.controller.abort(); dropFrames(dir); }
+  for (const [dir, owned] of [...extensionExportTargets]) if (owned.sender === contents) dropFrames(dir);
+}
 
 // Animated effects pass (see electron/export/fxjobs.cjs): frames go to the interface's WebGL shaders and back.
 const fxJobs = new FxJobs();
@@ -1688,6 +1695,7 @@ ipcMain.handle('agent:nativeToolResult', (event, req) => {
   if (!pending || job.controller.signal.aborted) return false;
   job.pending.delete(req.callId); job.lifetime.touch(); pending.resolve(req.result); return true;
 });
+const NATIVE_CALL_BACKSTOP = require('./agents/contract.cjs').LIMITS.toolCallsPerRequest + 100;
 ipcMain.handle('agent:runNative', async (event, req) => {
   const key = agentRequestKey(event, req?.requestId);
   if (nativeRuns.has(key) || agentRequests.has(key)) return { ok:false, error:'This assistant request is already running.' };
@@ -1717,7 +1725,11 @@ ipcMain.handle('agent:runNative', async (event, req) => {
     checkAbort(job.controller.signal);
     job.lifetime.touch();
     if (event.sender.isDestroyed()) throw new Error('The editor window closed.');
-    if (++job.calls > 240) { job.failure = {code:'edit_limit',error:'The assistant reached its tool-call limit. Completed edits were kept. Continue from the current timeline.'}; job.controller.abort(); throw new Error(job.failure.error); }
+    // A backstop only: the request's budget (LIMITS.toolCallsPerRequest) is enforced gently by the
+    // session manager (nativeAgents.cjs), which answers over-budget calls itself so the agent can still
+    // validate. complete_edit and the host's own completion check are always allowed, and an
+    // analysis subagent's calls are its own, not the parent's.
+    if (!analysis && name !== 'complete_edit' && name !== '__native_status' && ++job.calls > NATIVE_CALL_BACKSTOP) { job.failure = {code:'edit_limit',error:'The assistant reached its tool-call limit. Completed edits were kept. Continue from the current timeline.'}; job.controller.abort(); throw new Error(job.failure.error); }
     const callId = require('node:crypto').randomUUID();
     return new Promise((resolve,reject) => {
       job.pending.set(callId,{resolve,reject,...(analysis ? {analysisRequestId:analysis.request_id} : {})});

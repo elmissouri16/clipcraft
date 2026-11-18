@@ -3949,5 +3949,12 @@
   "plugins.clear_filters": "Clear filters",
   "plugins.select_plugin": "Select a plugin",
   "plugins.select_plugin_hint": "Choose an extension or creative pack to view its settings and tools.",
-  "plugins.empty_hint": "Install a plugin package to add tools and creative assets to ClipCraft."
+  "plugins.empty_hint": "Install a plugin package to add tools and creative assets to ClipCraft.",
+  "main.media_no_length": "This file has no readable length: it may be damaged or its recording was interrupted.",
+  "main.media_no_streams": "This file has no audio or video.",
+  "error-boundary.title": "Something went wrong",
+  "error-boundary.message": "ClipCraft stopped showing its window because of an error. Try again to go back to Home, where your project can be reopened from its autosave.",
+  "error-boundary.editor_message": "Part of the editor stopped because of an error. Your project is still open and autosave keeps running. Try again to show the editor, or undo the last change if it caused the problem.",
+  "error-boundary.try_again": "Try again",
+  "error-boundary.undo": "Undo last change"
 }

@@ -152,6 +152,29 @@ const parsed = await runOnce({ sdk: once.sdk, executablePath: '/fake/opencode', 
 check('a structured one-shot request returns the parsed JSON object', parsed.text === 'hi' && Array.isArray(parsed.calls));
 check('a one-shot request registers no MCP server and tells the agent the schema', once.log.mcpAdds.length === 0 && /JSON Schema/.test(fileOf(dir2).agents.clipcraft.system) && once.log.creates[0].agent === 'clipcraft');
 check('a failed turn surfaces OpenCode’s error', await (async () => { const bad = fakeSdk(async ({ emit }) => { emit('session.execution.failed', { sessionID: 'ses_test1', error: { message: 'Provider refused.' } }); }); const d = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-opencode-test-')); try { await runOnce({ sdk: bad.sdk, executablePath: '/fake/opencode', cwd: d, env: {}, cfg: {}, prompt: 'x', spawnImpl: fakeSpawn }); return false; } catch (e) { return /Provider refused/.test(e.message); } })());
+// The server dying mid-turn fails the turn at once (it used to wait for Stop or the 30-minute timeout).
+const within = (promise, ms) => Promise.race([promise.then(() => null, (e) => e), new Promise((r) => setTimeout(() => r(new Error('still waiting')), ms))]);
+const stuck = async ({ emit }) => { emit('session.execution.started', { sessionID: 'ses_test1' }); }; // busy until something ends it
+{
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-opencode-test-'));
+  const session = new OpenCodeSession({ sdk: fakeSdk(stuck).sdk, executablePath: '/fake/opencode', cwd: d, env: {}, spawnImpl: fakeSpawn });
+  const turn = session.run({ prompt: 'x', signal: new AbortController().signal, onTool, turnId: 0 });
+  setTimeout(() => launches.at(-1).proc.emit('exit', null, 'SIGKILL'), 100);
+  const error = await within(turn, 3000);
+  check('an OpenCode server that exits mid-turn fails the turn with that reason', /OpenCode exited during the request \(SIGKILL\)/.test(error?.message));
+  check('the dead session refuses the next turn instead of waiting', /OpenCode exited/.test((await within(session.run({ prompt: 'y', onTool, turnId: 1 }), 1000))?.message));
+  session.close(); fs.rmSync(d, { recursive: true, force: true });
+}
+{
+  // No exit seen (the process is not ours to watch, or the event was lost), but the port refuses every reconnect.
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-opencode-test-'));
+  const fake = fakeSdk(stuck), make = fake.sdk.OpenCode.make;
+  fake.sdk.OpenCode.make = (options) => ({ ...make(options), event: { subscribe: () => ({ async *[Symbol.asyncIterator]() { throw Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:65530'), { code: 'ECONNREFUSED' }) }); } }) } });
+  const session = new OpenCodeSession({ sdk: fake.sdk, executablePath: '/fake/opencode', cwd: d, env: {}, spawnImpl: fakeSpawn });
+  const error = await within(session.run({ prompt: 'x', signal: new AbortController().signal, onTool, turnId: 0 }), 5000);
+  check('a server that keeps refusing connections fails the turn', /OpenCode stopped answering/.test(error?.message));
+  session.close(); fs.rmSync(d, { recursive: true, force: true });
+}
 // Windows npm shim resolution.
 const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-opencode-shim-'));
 fs.mkdirSync(path.join(shimDir, 'node_modules', '@opencode', 'cli-windows-x64', 'bin'), { recursive: true });

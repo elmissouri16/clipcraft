@@ -32,7 +32,8 @@ module.exports=async(win,app,dir)=>{
       options.onTool('complete_edit',{}).catch(()=>{});
       throw Error('Fixture provider disconnected during completion');
     }
-    if(mode==='limit'){for(let i=0;i<241;i++)await call('get_project');}
+    // One call past the hard backstop (the documented budget plus headroom, electron/main.cjs).
+    if(mode==='limit'){const backstop=require('../../electron/agents/contract.cjs').LIMITS.toolCallsPerRequest+100;for(let i=0;i<=backstop;i++)await call('get_project');}
     if(mode==='active'){
       for(let i=0;i<4;i++){await wait(450);await call('set_project',{name:'Progress '+i});}
     }else if(mode==='captions'){
@@ -80,7 +81,7 @@ module.exports=async(win,app,dir)=>{
     fs.writeFileSync(path.join(dir,'timeout.png'),(await win.capturePage()).toPNG());
     shortClock=false;await send('cleanup');await until(ended+'&&!!document.querySelector(".pilot-error")');
     check('provider cleanup preserves the failure instead of reporting Stop',await q('document.querySelector(".pilot-error").textContent.includes("provider disconnected")&&!document.querySelector(".pilot-msg.assistant .bubble")?.textContent.includes("Stopped.")'));
-    await send('limit');await until(ended+'&&!!document.querySelector(".pilot-error")',1000);
+    await send('limit');await until(ended+'&&!!document.querySelector(".pilot-error")',1500);
     check('tool-call limit is recoverable and never disguised as user Stop',await q('document.querySelector(".pilot-error").textContent.includes("tool-call limit")&&document.querySelector(".pilot-error").textContent.includes("Continue from current timeline")'));
     await send('stop');await until('!!document.querySelector("button[aria-label=Stop]")&&window.__fve.rawProject().name==="Retained completed work"');await click('button[aria-label=Stop]');
     await until(ended+'&&document.querySelector(".pilot-msg.assistant .bubble")?.textContent.includes("Stopped.")');

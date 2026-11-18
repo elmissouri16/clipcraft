@@ -23,6 +23,7 @@ import { mismatchFor, sequencePatchFor } from "../features/timeline/sequence.js"
 import { sizeFor } from "../features/effects/effects.js";
 import { filterFx, isFilterFx } from "../features/effects/filters.js";
 import ContextMenu from "../components/ui/ContextMenu.jsx";
+import ErrorBoundary from "../components/ui/ErrorBoundary.jsx";
 import {
   MessageSquarePlus, ScanLine, AudioLines, CircleAlert, ClipboardPaste, Copy, CopyPlus, Crop, Crosshair, Eraser, Eye, EyeOff, FileAudio, FlipHorizontal2, Gauge, Info, Layers, Link2, ListChecks, Loader2, Paintbrush, PanelBottom, Pin, PinOff, Pipette, Repeat, Rewind, RotateCcw, RotateCw, Scissors, ScissorsLineDashed, Snowflake, Sparkles, Split, Trash2, Unlink,
 } from 'lucide-react';
@@ -517,12 +518,19 @@ export default function App() {
     setCaptions((c) => ({ ...c, busy: true, error: null, stage: 'Preparing', progress: 0 }));
     const off = window.api.onCaptionsProgress(({ stage, progress }) => setCaptions((c) => ({ ...c, stage, progress })));
     const { style, engine, wordsPerLine, ...engineOpts } = opts;
+    // Transcribing takes a while: the result belongs to the project load it was made for, never to
+    // one opened meanwhile (the same rule as clipJob below).
+    const pid = projectRef.current.id, version = loadVersionRef.current;
     // Cloud engines return the same segment shape, so everything after this call —
     // caption clips, styling, apply-to-all — is the one shared path.
-    const res = engine === 'cloud'
-      ? await window.api.runCaptionsCloud(project, engineOpts)
-      : await window.api.runCaptions(project, engineOpts);
+    let res;
+    try {
+      res = engine === 'cloud'
+        ? await window.api.runCaptionsCloud(project, engineOpts)
+        : await window.api.runCaptions(project, engineOpts);
+    } catch (e) { res = { error: e.message }; }
     off();
+    if (projectRef.current.id !== pid || loadVersionRef.current !== version) { setCaptions((c) => ({ ...c, busy: false })); return; }
     if (res.ok) {
       // Words-per-line (when set) regroups the segments here, once, for every engine.
       dispatch({ type: 'setCaptions', style, segments: regroupSegments(res.segments, wordsPerLine).map((s) => ({ ...s, id: uid() })) });
@@ -2334,7 +2342,10 @@ export default function App() {
     );
   }
 
+  // The editor's own boundary: a failing panel shows a message instead of blanking the window,
+  // while this component (the project, its history and autosave) stays mounted.
   return (
+    <ErrorBoundary name="the editor" message={t('error-boundary.editor_message')} onUndo={state.past.length ? () => dispatch({ type: 'undo' }) : undefined}>
     <div className={`app mode-${workspaceMode} ${dragOver ? 'drag-over' : ''} drawer-${agentDrawer || 'none'}`} style={{ gridTemplateRows: agentMode ? `44px 34px minmax(0, 1fr) ${panes.bottom}px` : `44px minmax(0, 1fr) ${panes.bottom}px`, ...(agentMode ? { gridTemplateColumns: `${panes.left}px minmax(0, 1fr)${agentDrawer ? ` ${panes.right}px` : ''}` } : {}), '--agent-bottom': `${panes.bottom}px`, '--agent-left': `${panes.left}px` }}
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
@@ -2505,6 +2516,7 @@ export default function App() {
         onRename={renameExport} onSettings={changeExportSettings} onResolution={changeExportResolution}
         onPosterAt={changePosterAt} onPosterImage={changePosterImage} />}
     </div>
+    </ErrorBoundary>
   );
 }
 

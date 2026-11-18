@@ -543,6 +543,10 @@ kbd {
 .modal .pct { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .modal .path { word-break: break-all; }
 .modal-actions { display: flex; gap: 8px; }
+/* What a failed part of the interface shows instead of a blank window (src/components/ui/ErrorBoundary.jsx). */
+.error-boundary { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text); }
+html[data-platform='darwin'] .error-boundary { -webkit-app-region: drag; } /* the window stays movable without the top bar */
+.error-boundary .modal { -webkit-app-region: no-drag; }
 .error-log { width: 100%; text-align: left; max-height: 220px; overflow: auto; font-size: 11px; background: #000; padding: 10px; border-radius: var(--r-sm); white-space: pre-wrap; user-select: text; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

@@ -190,7 +190,10 @@ function syncMedia(el, url, localTime, playing, volume, rate = 1) {
     swapWants.set(el, { time: localTime, playing }); // keep the landing spot current while it loads
   }
   applyElementVolume(el, volume);
-  if (el.playbackRate !== rate) el.playbackRate = rate;
+  // A media element refuses (throws on) a rate outside 1/16..16x; a project saved with a slower
+  // clip plays at the floor instead of blanking the editor.
+  const playRate = Number.isFinite(rate) ? Math.min(16, Math.max(0.0625, rate)) : 1;
+  if (el.playbackRate !== playRate) el.playbackRate = playRate;
   if (el.readyState >= 1 && Math.abs(el.currentTime - localTime) > (playing ? DRIFT * rate : 0.01)) el.currentTime = localTime;
   if (playing && el.paused && !el.dataset.swap) el.play().catch(() => {});
   if (!playing && !el.paused) el.pause();
@@ -436,10 +439,18 @@ export default function Preview({
       const a = frameOf(outgoing, 'a');
       const b = frameOf(incoming, 'b');
       tc.dataset.renderError=a.dataset.renderError||b.dataset.renderError||'';
-      const out = fxGL().transition(a, b, pw, ph, easeValue(incoming.clip.transition?.ease, (t - incoming.start) / incoming.trans), fxTr.expr);
-      tc.getContext('2d').drawImage(out, 0, 0);
-      tc.style.display = 'block';
-      slots.forEach((s) => { s.current.style.opacity = '0'; });
+      const p = easeValue(incoming.clip.transition?.ease, (t - incoming.start) / incoming.trans);
+      let out = null;
+      try { out = fxGL().transition(a, b, pw, ph, p, fxTr.expr); } catch(error) { tc.dataset.renderError='Could not render a transition: '+error.message; }
+      if (out) {
+        tc.getContext('2d').drawImage(out, 0, 0);
+        tc.style.display = 'block';
+        slots.forEach((s) => { s.current.style.opacity = '0'; });
+      } else {
+        // No WebGL 2, or the expression did not compile: the plain cross-fade of the non-shader path.
+        tc.style.display = 'none';
+        slots[incoming.index % 2].current.style.opacity = String(Math.min(1, Math.max(0, p)));
+      }
     } else if (tc) {
       tc.style.display = 'none';
     }

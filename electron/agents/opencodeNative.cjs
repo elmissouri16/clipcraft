@@ -23,6 +23,9 @@ const textResult = (text, isError = false) => ({ ...(isError ? { isError: true }
 const errorResult = (error) => textResult(JSON.stringify({ error }), true);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const realPath = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+// The server's port no longer answers (its process is gone): fetch reports ECONNREFUSED on the cause.
+const refused = (error) => [error?.code, error?.cause?.code, error?.cause?.cause?.code].includes('ECONNREFUSED');
+const REFUSED_LIMIT = 3; // consecutive refused reconnects before the server counts as gone
 
 // Last matching rule wins: nothing but the ClipCraft tools, plus OpenCode's own web tools under Web research.
 function permissionRules(webResearch) {
@@ -169,7 +172,7 @@ class OpenCodeSession {
   constructor({ sdk, executablePath, cwd, env, cfg = {}, system = '', tools = [], webResearch = false, spawnImpl = spawn, Endpoint = NativeMcpEndpoint }) {
     // OpenCode keys locations by real path (macOS temp dirs live behind the /var symlink).
     Object.assign(this, { sdk, executablePath, cwd: realPath(cwd), env, cfg, system, tools, webResearch, spawnImpl, Endpoint });
-    this.active = null; this.closed = false; this.tokenUsage = null; this.started = null; this.endpoint = null; this.server = null; this.client = null; this.sessionID = null;
+    this.active = null; this.closed = false; this.gone = null; this.tokenUsage = null; this.started = null; this.endpoint = null; this.server = null; this.client = null; this.sessionID = null;
     this.events = new AbortController();
   }
   // Lazily: the endpoint, the project config, the server, the client, the session, then the event stream.
@@ -181,6 +184,10 @@ class OpenCodeSession {
       fs.writeFileSync(path.join(this.cwd, 'opencode.json'), `${JSON.stringify(projectConfig({ system: this.system, webResearch: this.webResearch }), null, 2)}\n`);
       this.server = await startServer({ executablePath: this.executablePath, cwd: this.cwd, env: this.env, spawnImpl: this.spawnImpl });
       if (this.closed) { this.server.close(); throw new Error('OpenCode session closed.'); }
+      // Nothing else would notice the server dying: the event stream reconnects and the turn waits.
+      const proc = this.server.process;
+      proc?.on?.('exit', (code, signal) => this.serverGone(`OpenCode exited during the request (${signal || `code ${code}`}). Completed edits were kept; send the request again to restart it.`));
+      if (proc && (proc.exitCode != null || proc.signalCode != null)) this.serverGone(`OpenCode exited during the request (${proc.signalCode || `code ${proc.exitCode}`}). Completed edits were kept; send the request again to restart it.`);
       this.client = this.sdk.OpenCode.make({ baseUrl: this.server.url, headers: authHeaders(this.server.password) });
       if (this.endpoint) await this.attachEndpoint();
       const ref = modelRef(this.cfg);
@@ -188,8 +195,17 @@ class OpenCodeSession {
         ...(ref ? { model: ref } : {}), permissions: permissionRules(this.webResearch) });
       this.sessionID = session?.id || session?.data?.id;
       if (!this.sessionID) throw new Error('OpenCode did not create a session.');
+      if (this.gone) throw this.gone;
       this.listen();
     })();
+  }
+  // The server process exited (or stopped answering): the session cannot continue. The active turn
+  // fails with the reason; the session manager then drops this session and a new request starts afresh.
+  serverGone(message) {
+    if (this.closed || this.gone) return;
+    this.gone = new Error(message);
+    this.events.abort();
+    this.active?.reject(this.gone);
   }
   // Register the editor endpoint with this server (in memory only) and wait until OpenCode has connected
   // and read the tool list; a session that cannot reach its tools is refused rather than run blind.
@@ -216,11 +232,15 @@ class OpenCodeSession {
   // The server's event stream, reconnected until the session closes.
   listen() {
     (async () => {
-      while (!this.closed) {
+      let refusals = 0;
+      while (!this.closed && !this.gone) {
         try {
-          for await (const event of this.client.event.subscribe({ types: EVENT_TYPES, signal: this.events.signal })) this.receive(event);
-        } catch { /* stream ended */ }
-        if (!this.closed) await sleep(250);
+          for await (const event of this.client.event.subscribe({ types: EVENT_TYPES, signal: this.events.signal })) { refusals = 0; this.receive(event); }
+        } catch (error) {
+          // stream ended; a server that keeps refusing the connection is gone even if no exit was seen
+          if (refused(error) && ++refusals >= REFUSED_LIMIT) this.serverGone('OpenCode stopped answering during the request. Completed edits were kept; send the request again to restart it.');
+        }
+        if (!this.closed && !this.gone) await sleep(250);
       }
     })();
   }
@@ -270,6 +290,7 @@ class OpenCodeSession {
   // One turn: { prompt, images, signal, onTool, onSearch, turnId } -> { text }
   async run({ prompt, images = [], signal, onTool, onSearch, turnId }) {
     checkAbort(signal); await abortable(this.ready(), signal); checkAbort(signal);
+    if (this.gone) throw this.gone;
     if (this.active) throw new Error('This OpenCode conversation is already running.');
     const { readImages } = require('./agentImages.cjs');
     const files = readImages(images).map((image) => ({ uri: `data:image/jpeg;base64,${image.data}`, name: String(image.label || 'frame.jpg').slice(0, 200) }));

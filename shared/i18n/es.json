@@ -3949,5 +3949,12 @@
   "plugins.clear_filters": "Borrar filtros",
   "plugins.select_plugin": "Selecciona un plugin",
   "plugins.select_plugin_hint": "Elige una extensión o un pack creativo para ver sus ajustes y herramientas.",
-  "plugins.empty_hint": "Instala un plugin para añadir herramientas y recursos creativos a ClipCraft."
+  "plugins.empty_hint": "Instala un plugin para añadir herramientas y recursos creativos a ClipCraft.",
+  "main.media_no_length": "Este archivo no tiene una duración legible: puede estar dañado o su grabación se interrumpió.",
+  "main.media_no_streams": "Este archivo no contiene audio ni vídeo.",
+  "error-boundary.title": "Algo salió mal",
+  "error-boundary.message": "ClipCraft dejó de mostrar su ventana por un error. Inténtalo de nuevo para volver al inicio, donde puedes reabrir tu proyecto desde su guardado automático.",
+  "error-boundary.editor_message": "Una parte del editor se detuvo por un error. Tu proyecto sigue abierto y el guardado automático continúa. Inténtalo de nuevo para mostrar el editor, o deshaz el último cambio si causó el problema.",
+  "error-boundary.try_again": "Reintentar",
+  "error-boundary.undo": "Deshacer el último cambio"
 }

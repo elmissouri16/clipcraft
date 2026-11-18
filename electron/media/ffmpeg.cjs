@@ -16,11 +16,43 @@ const layers = require("../export/layers.cjs");
 const { audioFxFilters } = require("../audio/audiofx.cjs");
 const { mediaWorkBudget } = require('./workBudget.cjs');
 const { progressReader } = require('../export/ffmpegProgress.cjs');
+// User-facing text (main-process dictionaries), loaded only when a message is shown.
+const t = (key, params) => require('../system/i18n.cjs').t(key, params);
 
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 const num = (n) => Number(n).toFixed(3);
 const hex = (c, def = '#ffffff') => (c || def).replace('#', '0x');
+
+// Shortest clip length the filter graphs can express: num() prints 3 decimals, and FFmpeg reads
+// trim/atrim duration=0 (and apad whole_dur=0) as "no limit", so a shorter clip would play its whole
+// source (or a silent source forever) instead of nothing.
+const MIN_CLIP_LEN = 0.001;
+
+// Seconds as ffprobe prints them, or a Matroska DURATION tag ("00:01:02.500000000").
+const seconds = (v) => {
+  if (v == null || v === '' || v === 'N/A') return NaN;
+  const hms = /^(\d+):(\d{1,2}):(\d+(?:\.\d+)?)$/.exec(String(v).trim());
+  return hms ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3]) : parseFloat(v);
+};
+// A container without a duration (a browser-recorded WebM, an interrupted MKV): the streams'
+// own durations first, otherwise the end of the last packet, read by demuxing (no decoding).
+function containerDuration(info) {
+  const own = seconds(info.format && info.format.duration);
+  if (own > 0) return own;
+  const streams = (info.streams || []).filter((s) => s.codec_type === 'video' || s.codec_type === 'audio');
+  return Math.max(0, ...streams.map((s) => Math.max(seconds(s.duration) || 0, seconds(s.tags && (s.tags.DURATION || s.tags.duration)) || 0)));
+}
+function lastPacketEnd(file, startTime) {
+  return new Promise((resolve) => {
+    const p = spawn(ffprobePath, ['-v', 'error', '-show_entries', 'packet=pts_time,dts_time,duration_time', '-of', 'csv=p=0', file], { windowsHide: true });
+    let end = 0, rest = '';
+    const read = (line) => { const [pts, dts, dur] = line.split(','); const t = seconds(pts) >= 0 ? seconds(pts) : seconds(dts); if (t >= 0) end = Math.max(end, t + (seconds(dur) || 0)); };
+    p.stdout.on('data', (d) => { const lines = (rest + d).split(/\r?\n/); rest = lines.pop(); lines.forEach(read); });
+    p.on('error', () => resolve(0));
+    p.on('close', () => { if (rest) read(rest); resolve(Math.max(0, end - Math.max(0, startTime || 0))); });
+  });
+}
 
 function probe(file) {
   const ext = path.extname(file).slice(1).toLowerCase();
@@ -35,9 +67,10 @@ function probe(file) {
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
-    p.on('close', (code) => {
+    p.on('close', async (code) => {
       if (code !== 0) return reject(new Error(err || `ffprobe exited with ${code}`));
-      const info = JSON.parse(out);
+      let info;
+      try { info = JSON.parse(out); } catch { return reject(new Error(t('main.media_no_streams'))); }
       const streams = info.streams || [];
       const v = streams.find((s) => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
       const a = streams.find((s) => s.codec_type === 'audio');
@@ -49,9 +82,16 @@ function probe(file) {
       const turned = Math.abs(rotation) % 180 === 90;
       // HDR video (iPhone HLG / Dolby Vision, PQ): converted to normal (SDR) colors wherever we decode it.
       const hdr = !!v && ['arib-std-b67', 'smpte2084'].includes(v.color_transfer);
+      let duration = 0;
+      if (!isImage) {
+        duration = containerDuration(info);
+        if (!(duration > 0) && (v || a)) duration = await lastPacketEnd(file, seconds(info.format && info.format.start_time));
+        // A clip of a file with no length would be cut to nothing in the preview and, in FFmpeg, play without end.
+        if (!(duration >= MIN_CLIP_LEN)) return reject(new Error(t(v || a ? 'main.media_no_length' : 'main.media_no_streams')));
+      }
       resolve({
         type: isImage ? 'image' : v ? 'video' : 'audio',
-        duration: isImage ? 0 : parseFloat(info.format && info.format.duration) || 0,
+        duration,
         hasVideo: !!v,
         hasAudio: !!a,
         // Frame rate from the stream's average (or nominal) rate, rounded (29.97 -> 30).
@@ -77,6 +117,30 @@ function probe(file) {
 }
 
 const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
+// A clip the filter graphs can express (MIN_CLIP_LEN of source and of timeline). Shorter clips
+// (a media item probed before its length could be read, a range cut to nothing) occupy no
+// time on the timeline, so leaving them out changes nothing but the graph.
+const timed = (c) => clipLen(c) >= MIN_CLIP_LEN && c.out - c.in >= MIN_CLIP_LEN;
+// The main track without such clips. The clip after a dropped one keeps the plain cut the
+// timeline showed: its transition was 0 long against a 0-long neighbour.
+function timedMain(clips) {
+  const out = [];
+  let dropped = false;
+  for (const c of clips) {
+    if (!timed(c)) { dropped = true; continue; }
+    out.push(dropped && c.transition ? { ...c, transition: null } : c);
+    dropped = false;
+  }
+  return out;
+}
+// Where the main track ends (transitions overlap neighbours), and the whole timeline with the
+// placed (overlay, audio) clips: the bound every audio render is cut to.
+function mainEnd(clips) {
+  let end = 0;
+  clips.forEach((c, i) => { end = (i ? end - transitionDur(clips, i) : 0) + clipLen(c); });
+  return end;
+}
+const placedEnd = (clips) => Math.max(0, ...clips.map((c) => Math.max(0, c.start || 0) + clipLen(c)));
 
 // HDR (HLG or PQ, BT.2020) to normal BT.709 colors: to linear light, BT.709 primaries, Hable tone curve. Without it
 // the picture comes out pale and yellowish, because every later step reads the HDR values as normal ones.
@@ -208,10 +272,10 @@ function analysisAudioPlan(project, selection = 'all') {
     return !c.gap && !c.disabled && !c.muted && !state.hidden && !state.muted && (!solo || state.solo)
       && (!selected || selected.has(c.id)) && (c.volume ?? 1) > 0 && m && m.type !== 'image' && (m.hasAudio || m.type === 'audio');
   };
-  const main = (source === 'all' || source === 'video') ? lists.video.map(c => ({ ...c, muted: !audible(c, 'video') })) : [];
+  const main = (source === 'all' || source === 'video') ? timedMain(lists.video).map(c => ({ ...c, muted: !audible(c, 'video') })) : [];
   const extras = [];
   for (const track of ['overlay', 'audio']) if (source === 'all' || source === track) {
-    for (const c of lists[track]) if (audible(c, track)) extras.push({ clip: c, media: media.get(c.mediaId), track });
+    for (const c of lists[track]) if (timed(c) && audible(c, track)) extras.push({ clip: c, media: media.get(c.mediaId), track });
   }
   const sounding = [...main.filter(c => !c.muted).map(c => ({ clip: c, media: media.get(c.mediaId), track: 'video' })), ...extras];
   if (!sounding.length) throw new Error(`No audible clips in the selected ${source} source. Check mute, solo, hidden layers and clip selection.`);
@@ -285,7 +349,9 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
   });
   if (mix.length === 1) filters.push(`${mix[0]}aformat=sample_fmts=s16:channel_layouts=mono[out]`);
   else filters.push(`${mix.join('')}amix=inputs=${mix.length}:duration=longest:normalize=0,aformat=sample_fmts=s16:channel_layouts=mono[out]`);
-  return ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'), '-map', '[out]', '-ar', '16000', outWav];
+  // Never longer than the timeline, whatever a source stream does past its clip.
+  const total = Math.max(mainEnd(plan.main), placedEnd(plan.extras.map(e => e.clip)));
+  return ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'), '-map', '[out]', '-ar', '16000', '-t', num(total), outWav];
 }
 
 function renderTimelineAudio(project, outWav, source = 'all') {
@@ -448,7 +514,7 @@ function buildExportArgs(project, outFile, opts = {}) {
   let nInputs = 0;
   const addInput = (args) => { inputs.push(...args); return nInputs++; };
 
-  const clips = project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]);
+  const clips = timedMain(project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]));
   if (clips.length === 0) throw new Error('The video track is empty.');
 
   // 1) Main track: prepare each clip (trim, speed, size, look) with a matching audio stream.
@@ -542,7 +608,7 @@ function buildExportArgs(project, outFile, opts = {}) {
   let rgbComposited = false;
 
   // 3) Overlay clips (picture in picture): layered like main clips, padded in time to the whole video, composited in order.
-  (project.overlayClips || []).filter((c) => mediaById[c.mediaId] && mediaById[c.mediaId].type !== 'audio').forEach((c, j) => {
+  (project.overlayClips || []).filter((c) => timed(c) && mediaById[c.mediaId] && mediaById[c.mediaId].type !== 'audio').forEach((c, j) => {
     const m = mediaById[c.mediaId];
     const sp = c.speed || 1;
     const len = (c.out - c.in) / sp;
@@ -586,7 +652,7 @@ function buildExportArgs(project, outFile, opts = {}) {
   }
 
   // 5) Music track and overlay sound: trim, fade, delay to timeline position, mix with the main audio.
-  const music = project.audioClips.filter((c) => !c.muted && mediaById[c.mediaId]);
+  const music = project.audioClips.filter((c) => !c.muted && timed(c) && mediaById[c.mediaId]);
   const mixLabels = [`[${ca}]`];
   music.forEach((c, j) => {
     const enhP = enhancePathOf(c);
@@ -667,7 +733,8 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   const fmt = 'aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo';
   let sound = false;
 
-  const clips = project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]);
+  const clips = timedMain(project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]));
+  const overlays = (project.overlayClips || []).filter(timed), tracks = (project.audioClips || []).filter(timed);
   if (clips.length) {
     clips.forEach((clip, i) => {
       const m = mediaById[clip.mediaId];
@@ -685,7 +752,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     }
     mix.push(`[${ca}]`);
   }
-  (project.overlayClips || []).forEach((c, j) => {
+  overlays.forEach((c, j) => {
     const m = mediaById[c.mediaId];
     if (!m || m.type !== 'video' || !m.hasAudio || c.muted) return;
     sound = true;
@@ -695,7 +762,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', m.path])}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(c.speed || 1), `volume=${c.volume ?? 1}`, ...audioFadeFilters(c, clipLen(c), num), ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
-  project.audioClips.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
+  tracks.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
     sound = true;
     const len = (c.out - c.in) / (c.speed || 1);
     const delay = Math.round(c.start * 1000);
@@ -711,7 +778,9 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   filters.push(mix.length === 1 ? `${mix[0]}anull[out]` : `${mix.join('')}amix=inputs=${mix.length}:duration=longest:normalize=0[out]`);
   const codec = { mp3: ['-c:a', 'libmp3lame', '-b:a', '192k'], wav: ['-c:a', 'pcm_s16le'], m4a: ['-c:a', 'aac', '-b:a', '192k'] }[format];
   if (!codec) throw new Error(`Unknown audio format: ${format}`);
-  return ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'), '-map', '[out]', ...codec, outFile];
+  // Bounded by the timeline (main track, overlays, audio track), like the video export's -t.
+  const total = Math.max(mainEnd(clips), placedEnd([...overlays, ...tracks]));
+  return ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'), '-map', '[out]', ...codec, '-t', num(total), outFile];
 }
 
 function exportAudio(project, outFile, format) {
@@ -869,7 +938,9 @@ function pickEncoder(family = 'h264') {
     for (const name of names) {
       if (!hasEncoder(name)) continue;
       try {
-        await runFfmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=0.5', ...videoCodec2(name, { codecFamily: family, mode: 'crf', crf: 20 }), '-pix_fmt', 'yuv420p', '-f', 'null', '-']);
+        // A wedged hardware encoder (driver hang) must not hold every export: past the limit it counts as absent.
+        await runFfmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=0.5', ...videoCodec2(name, { codecFamily: family, mode: 'crf', crf: 20 }), '-pix_fmt', 'yuv420p', '-f', 'null', '-'],
+          { timeoutMs: Number(process.env.FVE_ENCODER_PROBE_MS) || 20000 });
         return name;
       } catch {
         // not on this PC
@@ -972,19 +1043,22 @@ function toM4a(input, output) {
     const p = spawn(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', '-i', input, '-c:a', 'aac', '-b:a', '160k', output], { windowsHide: true });
     let err = '';
     p.stderr.on('data', (d) => (err += d));
+    p.on('error', reject); // FFmpeg could not be started: an unhandled 'error' would crash the main process
     p.on('close', (code) => (code === 0 ? resolve(output) : reject(new Error(err))));
   });
 }
 
-function runFfmpeg(args, { background = false } = {}) {
+// timeoutMs: kill FFmpeg and reject when it has not finished by then (0: no limit).
+function runFfmpeg(args, { background = false, timeoutMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const command = background ? ['-threads','2',...args.slice(0,-1),'-threads','2',args.at(-1)] : args;
     const p = spawn(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error', ...command], { windowsHide: true });
     if (background) { try { os.setPriority(p.pid, 10); } catch { /* Best effort on platforms that restrict priorities. */ } }
-    let err = '';
+    let err = '', timedOut = false;
+    const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; try { p.kill('SIGKILL'); } catch { /* already gone */ } }, timeoutMs) : null;
     p.stderr.on('data', (d) => (err += d));
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.slice(-2000)))));
+    p.on('error', (error) => { clearTimeout(timer); reject(error); });
+    p.on('close', (code) => { clearTimeout(timer); if (timedOut) reject(new Error(`FFmpeg did not finish within ${timeoutMs} ms.`)); else if (code === 0) resolve(); else reject(new Error(err.slice(-2000))); });
   });
 }
 
