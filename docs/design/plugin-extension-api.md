@@ -6,7 +6,9 @@ call succeeds, and what an extension cannot do yet. The type declarations in
 [`extension.d.ts`](../../packages/plugin-sdk/src/extension.d.ts) are the exact
 reference; this guide explains how to use them.
 
-App 2.0.0, SDK 0.8.0, host API 1. The SDK is a development release.
+App 2.0.0, SDK 0.8.0, host API 1. The SDK is pre-alpha: development APIs may
+change without compatibility or migration guarantees. Match your authoring SDK
+to the current app snapshot.
 
 ## 1. What an extension is
 
@@ -95,6 +97,8 @@ These decide most "why did my call fail" questions.
 - **Plugin management restarts you.** Installing, enabling, removing or
   recovering any plugin stops all extensions briefly; the ones that were running
   start again. In-flight work is canceled, so keep long work resumable.
+  Opening or canceling an Install picker does not stop running work; the restart
+  begins only after a package is selected for installation.
 - **A handler has five minutes.** Commands, service methods, hooks and event
   listeners are stopped, and the extension with them, if they run longer. Time
   spent waiting in `jobs.run`, `processes.spawn().result`, a dialog, a message,
@@ -374,6 +378,12 @@ manifest to let the user open it before your extension is running. Messages
 sent while the page loads are delivered once it is ready. View state is not
 kept after closing: store what matters in `configuration`.
 
+Native actions also support custom vector icons, order and live availability;
+`registerAction` returns an updatable registration. `ui.registerInspector`
+registers native fields bound directly to the selected clip's properties, with
+normal Undo and stale-target/lock checks. See [native controls](plugin-extension-native-controls.md)
+and the [source example](../../examples/extensions/native-properties/README.md).
+
 ### 3.10 Events and hooks
 
 ```ts
@@ -390,7 +400,7 @@ Application events: `project.opened/closed/changed`, `editor.changed`,
 `application.configurationChanged`, `export.changed`, `extension.changed`,
 `media.previewClosed`. Events are delivered in order; under load, rapid ones
 are coalesced and the listener's second argument reports how many were skipped
-in `missed`.
+in `missed`. Explicit replay reaches only the listener requesting it.
 `configuration.changed` has `source.kind` `'user'` for a change made in your
 settings form and `'extension'` for your own write.
 
@@ -406,7 +416,7 @@ await context.hooks.register('project.willSave', async () => { /* may edit: beco
 `project.validateSave` and `export.validate` may only inspect and cancel.
 `project.willSave` and `export.willRender` may also edit through `editor.apply`,
 `markers.apply`, `captions.write`, `media.insert` and project configuration.
-Only these four hook names are dispatched.
+Only these four hook names are accepted; unknown names reject at registration.
 
 ### 3.11 Services
 
@@ -424,9 +434,11 @@ const text = await client.call('translate', {text: 'Hello', to: 'fr'});
 Services are how extensions offer functions to each other with checked inputs
 and outputs; a method marked `stream: true` returns an async iterable. The app
 consumes two integration points: register a service and announce it with
-`ui.registerIntegration({point: 'voice.engines' | 'ai.engines', service})` to
-appear as a voice or an assistant engine. The app's selected AI connection is
-available to you as the service `clipcraft.ai`.
+`ui.registerIntegration({id: 'engine', title: 'My engine', point: 'voice.engines', service})`
+to appear as a voice engine; use `point: 'ai.engines'` for an assistant engine.
+The app's selected AI connection is
+available to you as the service `clipcraft.ai`. Unknown integration points reject
+at registration.
 
 ### 3.12 Configuration and secrets
 
@@ -437,7 +449,9 @@ await context.configuration.update({scope: 'project', documentId, key: 'notes', 
 await context.secrets.store({key: 'apiKey', value: 'sk-…'});
 ```
 
-Values are JSON, 64 KiB each. Secrets are encrypted by the operating system
+Values are finite, acyclic JSON, 64 KiB each. Dates, byte arrays, nonfinite
+numbers, sparse arrays and nested undefined values reject; top-level
+`value: undefined` deletes the key. Secrets are encrypted by the operating system
 and only your extension reads them back. Both survive uninstalling.
 
 ## 4. Limits at a glance
@@ -463,10 +477,10 @@ Known gaps, so you can plan around them:
 - **UI surfaces.** No tab in the left rail or library, no status bar, no
   overlay on the player or timeline, no floating or modal window, no menu
   entries beyond the clip context menu, and no control over where a view docks.
-  Actions have a title only: no icon, enabled state or ordering. There is no
-  text-input prompt; use a view.
-- **Inspector controls bound to a clip property** are not available; inspector
-  actions are buttons.
+  There is no text-input prompt; use a view.
+- **Additional property bindings.** Native controls now bind to static picture,
+  audio and text properties through `ui.registerInspector`. Curves and effect
+  slots use their existing editing APIs.
 - **Custom effect code.** Effects and transitions are declarative expressions in
   creative packs, not shaders or code.
 - **Custom clip or track types**, and drawing your own timeline items.

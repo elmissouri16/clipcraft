@@ -8,8 +8,13 @@ A project is saved as two files next to each other:
 | `<name>.clipcraft.chat.json` | the CraftAI conversations (`project.craftAI`): sessions, messages, tool activity and the saved model context | the chat changes |
 
 The per-project autosave slots under `<userData>/autosave/` follow the same split:
-`<id>.json` is the document and `chat/<id>.json` its chat. The recovery snapshot in
-`localStorage` holds the document only; the slot carries the chat.
+`<id>.json` is the document and `chat/<id>.json` its chat. The recovery snapshot at
+`<userData>/project-recovery.json` holds the document only; the slot carries the
+chat. The renderer mirrors recovery in localStorage and prefers the atomic native
+copy at startup (falling back to legacy localStorage only when the native file is
+absent). [Adopted-media retention](../design/plugin-media-retention.md) guards
+project/slot/recovery writes before publication so source cleanup cannot remove
+a file that a persisted snapshot still references.
 
 ## Why
 

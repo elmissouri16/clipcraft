@@ -1,0 +1,12 @@
+{
+  "id": "fixture.packaged-acceptance",
+  "name": "Packaged extension acceptance",
+  "publisher": "ClipCraft tests",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "contributes": {
+    "commands": [{"id": "mark", "name": "Add acceptance marker"}, {"id": "proof", "name": "Read acceptance state"}],
+    "views": [{"id": "panel", "name": "Packaged view"}]
+  }
+}

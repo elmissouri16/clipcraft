@@ -1,5 +1,12 @@
 # Plugin API review, 2026-11-18
 
+> Followup: [pre-alpha SDK defect fixes](plugin-api-hardening.md) close the
+> picker cancellation, registration, replay, configuration/settings and view
+> findings below. [Media retention](plugin-media-retention.md) implements startup
+> cleanup for proven abandoned sources; [native controls](plugin-extension-native-controls.md)
+> adds action state/icons/ordering and bound clip properties. This review is a
+> historical checkpoint; use the status table below and the current API guide.
+
 App 2.0.0, SDK 0.8.0 and host API 1 remain unchanged. The maintainer asked for
 the extension API to be checked for defects and for what stops an extension
 from adding arbitrary features to the editor, then documented and tested. This
@@ -124,26 +131,29 @@ UI:
 - The settings-form fixes were confirmed with the review's script against the
   real component under a minimal hook runtime, not in the rendered page.
 
-## Known and not fixed
+## Disposition of the original open findings
 
-- A plugin-management action still stops extensions before its file picker
-  opens. They resume, but an in-flight job is cancelled.
-- Host calls started in a handler and not awaited are cut off when the handler
-  returns. This is the scope rule, now documented.
-- `hooks.register` and `ui.registerIntegration` accept any name; only the four
-  document hooks and the two integration points are ever used, so a typo is
-  silent.
-- `events.on(..., {replay: true})` replays per activation, so a second listener
-  re-delivers the retained event to the first.
-- `configuration.update` stores non-JSON values in their serialized form
-  without an error. Setting `step` is not enforced, and a select without a
-  default shows its first option while nothing is stored.
-- A view's `getInfo().theme` is the default theme until the first
-  `onThemeChanged`; that callback also fires on every layout. View asset URLs
-  cannot carry a query string. WebAssembly in views is probably blocked by the
-  content policy; this was not verified.
-- Copies of inserted media under `extension-media/owned` are never collected.
+| Original finding | Current disposition |
+| --- | --- |
+| Install pickers stop running jobs even on cancel | Fixed: pickers leave activations running until a package is selected. Actual catalog mutations still restart running extensions. |
+| Misspelled hooks and integrations silently register | Fixed: unknown names reject. |
+| A second replay subscription re-delivers to the first | Fixed: retained replay targets its requesting listener. |
+| Configuration silently serializes non-JSON values | Fixed: finite, acyclic JSON is checked before transport and in the host. |
+| Numeric steps and implicit select defaults disagree with reads | Fixed: steps are enforced and the first select option is the actual implicit default. |
+| Initial theme, repeated theme events and query assets | Fixed: initial theme is current, layout does not emit theme events, and packaged assets accept query strings/fragments. |
+| WebAssembly in a view is unverified | Verified: packaged view scripts can compile WebAssembly; JavaScript eval remains blocked. |
+| Adopted media is never collected | Startup cleanup reclaims newly tracked abandoned sources. Current-session Undo, saved project references and uncertain/legacy sources remain protected. |
+| Native controls lack live action state and property bindings | Implemented: vector icons, ordering, enabled state and static picture/audio/text bindings. |
+
+The defect rows are covered by [hardening](plugin-api-hardening.md); media and
+native-control behavior have their own linked contracts above. The original
+verification counts in this review describe that earlier source snapshot.
+
+These behaviors and limitations remain current:
+
+- Host calls started in a handler must finish before it returns; unawaited calls
+  are cut off when the handler ends. See the [lifecycle rules](plugin-extension-api.md#2-lifecycle-rules).
 - `applied` in `editor.apply` and `markers.apply` counts submitted operations.
-- `ClipTextStyle` offers five fonts and written captions use one fixed style;
-  the editor tools cover the rest.
-- The capability gaps listed in section 5 of the guide.
+- `ClipTextStyle` offers a bounded font list and `captions.write` uses a fixed
+  initial style; use editor tools for richer styling after creation.
+- Additional capabilities remain listed in [current gaps](plugin-extension-api.md#5-what-an-extension-cannot-do-yet).

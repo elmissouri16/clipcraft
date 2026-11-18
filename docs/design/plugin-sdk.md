@@ -29,8 +29,10 @@ Raw Node files, network and processes are available after explicit trust.
 The [SDK README](../../packages/plugin-sdk/README.md) is the current author guide.
 [Compatibility and stored-data policy](plugin-sdk-compatibility.md) defines
 updates and migrations; [SDK validation](plugin-sdk-validation.md) records local
-checks and the unexecuted remote CI matrix. Passing development checks does not
-approve publication or SDK v1.
+checks; [remote acceptance](plugin-remote-acceptance.md) records later CI and
+installed-app runs. Their source snapshots and limits remain explicit. This is
+pre-alpha work: API compatibility and a v1 freeze are not development requirements.
+Passing checks does not authorize publication.
 
 ## Historical recipe authoring design
 

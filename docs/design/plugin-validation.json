@@ -35336,5 +35336,974 @@
       "tests/unit/plugins/test-extension-hook-runtime.cjs",
       "tests/unit/plugins/test-extension-shortcuts-ui.cjs"
     ]
+  },
+  "extensionApiHardening": {
+    "at": "2026-11-18T12:37:08.503161+00:00",
+    "ok": true,
+    "scope": "Pre-alpha SDK defect fixes; local macOS arm64; no stable compatibility commitment or publication",
+    "fixed": [
+      "canceled install pickers preserve activations and jobs",
+      "unknown hook and integration registration rejection",
+      "per-listener replay and replay/live deduplication",
+      "null event-listener exception isolation",
+      "strict finite JSON configuration before transport and storage",
+      "numeric step enforcement and truthful implicit select defaults",
+      "initial/current view themes and change-only notifications",
+      "query-string packaged view assets and sandboxed WebAssembly"
+    ],
+    "regressions": {
+      "passed": 20,
+      "failed": 0,
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/results.json",
+        "sha256": "0a667c3a0eae7389e482190c760b92833936976cb722789ff0dd21514dc404a3"
+      },
+      "suites": [
+        {
+          "file": "tests/unit/editor/test-project-serialization.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-project-serialization.mjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-project-validation.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-project-validation.mjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-api-hardening.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-api-hardening.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-events-runtime.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-events-runtime.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-events.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-events.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hook-media.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-hook-media.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hook-runtime.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-hook-runtime.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hooks-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-hooks-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-api-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-api-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hooks.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-hooks.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-native-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-native-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-reliability.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-reliability.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-lifecycle-soak.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-lifecycle-soak.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-runtime.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-runtime.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-retirement-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-retirement-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-storage-lifecycle.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-storage-lifecycle.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-sdk-additions-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-sdk-additions-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-view-cleanup.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-view-cleanup.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-views.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-views.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-views-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-views-ui.cjs.log"
+        }
+      ]
+    },
+    "sdk": {
+      "passed": 9,
+      "failed": 0,
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-pcW4TD/result.json",
+        "sha256": "4060233f59302dcae39d9210663d0529d532d5c6e5f1e700b96cdcbb1970592c"
+      },
+      "sourceChanges": [],
+      "versions": {
+        "app": "2.0.0",
+        "sdk": "0.8.0",
+        "hostApi": 1
+      },
+      "artifact": {
+        "file": "artifacts/clipcraft-plugin-sdk-0.8.0.tgz",
+        "bytes": 105467,
+        "sha256": "051b4102bbec805f4314bb39b4661551fd7ae3bc821657881ef29240b0657190",
+        "files": [
+          "LICENSE",
+          "README.md",
+          "dist/authoring.cjs",
+          "dist/authoring.d.cts",
+          "dist/cli.cjs",
+          "dist/extension.d.ts",
+          "dist/extension.mjs",
+          "dist/index.d.ts",
+          "dist/index.mjs",
+          "package.json"
+        ]
+      }
+    },
+    "native": {
+      "checks": 60,
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-api-ui-I2vfeK/result.json",
+        "sha256": "7cce460d9b01a3d92f0a11cf6dd366d9b15fd664ad7fcdb63c229d8942309e74"
+      },
+      "assertionLog": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5hH3it/test-extension-api-ui.cjs.log",
+        "sha256": "2c30723b05a2f84c53687cca7f2852f520d0995e2eadc5ea6582414a2e6fb719"
+      },
+      "screenshot": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-api-ui-I2vfeK/editor.png",
+        "sha256": "1248738f820b3ad1347c5ac14694508b604633ae775412c711bc4ea1f2ee0239"
+      }
+    },
+    "earlierAttempts": [
+      {
+        "reason": "Initial sandboxed Electron launch produced no app evidence; see native run history in this session."
+      },
+      {
+        "report": {
+          "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-api-ui-tgjPm0/result.json",
+          "sha256": "c39881fc60de4ef5b9597ef51d3cdcf26e382f22c6d43a789aaaec3924f81f95"
+        },
+        "reason": "Test fixture included an undefined property in JSON-only view payload; corrected."
+      },
+      {
+        "report": {
+          "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-ExK4hb/result.json",
+          "sha256": "73a9d11ab0510ea728cde4dc3b08ba3ffccc1eb6eb310a236da94779487a9fd5"
+        },
+        "reason": "npm cache access denied by filesystem sandbox; final outside-sandbox clean-consumer run passed."
+      }
+    ],
+    "remaining": [
+      "Automatic collection of adopted extension-media/owned needs saved-project, autosave, history and uncertain-commit reference accounting.",
+      "Full application battery and cross-platform/installed-app verification were not rerun for these changes."
+    ]
+  },
+  "extensionMediaRetention": {
+    "at": "2026-11-18T12:50:47.870568+00:00",
+    "ok": true,
+    "scope": "Pre-alpha adopted-media startup cleanup; local macOS arm64; no full application battery or installed-platform certification",
+    "policy": [
+      "All newly adopted copies remain available through the creating application session.",
+      "Only a later startup removes an unchanged, tracked, unpinned and unreferenced source.",
+      "Native project-file saves pin sources permanently so copied/moved/disconnected projects remain valid.",
+      "Recovery and autosave slots use replaceable reference sets with old/new union before IO.",
+      "Native atomic recovery is authoritative over its localStorage mirror.",
+      "Authoritative native recovery and autosave files are reread independently of reference journals.",
+      "Legacy, modified, symlinked and uncertain files remain protected."
+    ],
+    "regression": {
+      "pass": 16,
+      "fail": 0,
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/results.json",
+        "sha256": "3bbc8fa4d86f81b2f8c899a336b418bb28fb1f24a1a732251a61fa0c9dac0417"
+      },
+      "suites": [
+        {
+          "file": "tests/unit/editor/test-autosave.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-autosave.cjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-project-file.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-project-file.mjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-project-persistence.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-project-persistence.cjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-project-serialization.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-project-serialization.mjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-project-validation.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-project-validation.mjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-api-hardening.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-api-hardening.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-api-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-api-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hook-media.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-hook-media.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hook-runtime.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-hook-runtime.cjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-autosave-close-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-autosave-close-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-media-retention.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-media-retention.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hooks-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-hooks-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-media-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-media-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-media.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-media.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-sdk-additions-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-sdk-additions-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-retirement-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-retirement-ui.cjs.log"
+        }
+      ]
+    },
+    "ownershipContracts": {
+      "checks": 13,
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-media-retention-OVp7vD/result.json",
+        "sha256": "6d6801571c1146a0e98e1369e379b7eadd18a060e6d01ffe5d92322940b2ccb7"
+      }
+    },
+    "native": {
+      "launches": 3,
+      "checks": 36,
+      "log": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-ucmyRK/test-extension-media-ui.cjs.log",
+        "sha256": "988c5a4a3016330dc24735638e4556d7872e9297f6ab237e0e0267da331edf18"
+      },
+      "phases": [
+        {
+          "checks": 25,
+          "report": {
+            "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-media-ui-SzTf0L/result.json",
+            "sha256": "88302af6cdc31cb0efbd1ed5c6af51224aaa6cf469f473e47bff26fc8e2ac564"
+          },
+          "assertions": [
+            "decoded generated audio returns an opaque handle and keeps the project unchanged",
+            "preview decodes the owned copy without autoplay",
+            "shared preview transport plays the generated audio",
+            "preview Add adopts durable media and places it in one Undo step",
+            "Undo removes the generated media and clip together",
+            "Redo restores usable owned media",
+            "generated placement respects target locks without partial media import",
+            "empty caption append does not add an Undo entry",
+            "caption replacement commits through one Undo step",
+            "stale caption writes are rejected",
+            "image output decodes before insertion",
+            "image placement uses one new Undo step",
+            "video output decodes before insertion",
+            "video placement uses one new Undo step",
+            "switching documents closes generated previews",
+            "orphan source remains available after Undo during its creating session",
+            "recovery source remains available after Undo during its creating session",
+            "slot source remains available after Undo during its creating session",
+            "release and extension shutdown preserve adopted timeline audio",
+            "stopped generations cannot insert late results",
+            "removing the package retains generated project-owned audio",
+            "the real project save pins its generated source before publication",
+            "native recovery publishes its protected media snapshot atomically",
+            "native generated-media workflow keeps the app hidden",
+            "native generated-media workflow has no renderer errors"
+          ]
+        },
+        {
+          "checks": 5,
+          "report": {
+            "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-media-ui-SzTf0L/reopen-result.json",
+            "sha256": "de3a0fe515ca7ff5fa5247c8f7f5269d269140adce6bf35ff14492250f77c9ff"
+          },
+          "assertions": [
+            "generated audio survives a real restart after extension removal",
+            "restarted project needs no extension process or installed package",
+            "restart retains audio placement and decoded duration",
+            "unreferenced adopted media is collected on restart",
+            "autosave-only and native-recovery-only media survive startup collection"
+          ]
+        },
+        {
+          "checks": 6,
+          "report": {
+            "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-media-ui-SzTf0L/collected-result.json",
+            "sha256": "adc65147cee53593a2ad57f6185741c56baf8e0fd0032f64dde500e3305d9967"
+          },
+          "assertions": [
+            "generated audio survives a real restart after extension removal",
+            "restarted project needs no extension process or installed package",
+            "restart retains audio placement and decoded duration",
+            "unreferenced adopted media is collected on restart",
+            "discarded slot and replaced recovery sources are collected on the following restart",
+            "the source saved in a project remains durable after all transient references are gone"
+          ]
+        }
+      ]
+    },
+    "otherChecks": [
+      "Renderer Vite build passed (existing chunk-size/dynamic-import warnings).",
+      "Structure/runtime dependency and whitespace checks passed."
+    ],
+    "sourceSha256": {
+      "electron/plugins/extensionMediaRetention.cjs": "3d251552613859ca7a7c9acaa7ec4719442f7fdbb7368224c2f70e88a41a9671",
+      "electron/plugins/extensionMedia.cjs": "7866ee72138531bae451d88b2884705db80af92f5e8b772444ecb90681fadcaa",
+      "electron/plugins/ipc.cjs": "bbec98867011679045d87c3b13cccf5800c6b372002bca2d8c7aa52868b08b70",
+      "electron/main.cjs": "7d7e25d0d31ec5e24dad39974800f7e7a7ff28fdf831682eb5396b4801940c4b",
+      "electron/preload.cjs": "7fe8e70bcb9df80b3442f352572949ab5fb0a5d371303478b5b38c4d961ecb95",
+      "src/app/App.jsx": "4acd7c5a25cd6c40547ae9942fdc0f21407acac78ff67553f13213ff99bb68af",
+      "tests/unit/plugins/test-extension-media-retention.cjs": "4df95515ace56553626aec64699adb4b8a726fcb148ba59cbf01c2d3b2ce20ca",
+      "tests/smoke/smoke-extension-media.cjs": "2c0ce33d7ce024d47144c52f13a59abe422ecd275f83fdf9d3fbe65361af3f3e",
+      "tests/unit/plugins/test-extension-media-ui.cjs": "903e5e3cdb6062128d99cacb144762a81c48638ac6515c86a2e889f24bf6b6b3"
+    },
+    "followupTo": "extensionApiHardening.remaining[0]",
+    "limits": [
+      "Saved-project source pins are deliberately permanent; these are durable media, not disposable cache.",
+      "Untracked files predating the ownership journal are not retrospectively collected.",
+      "No commit, push, installer, publication or version change."
+    ]
+  },
+  "extensionNativeControls": {
+    "at": "2026-11-18T13:20:43.677Z",
+    "ok": true,
+    "scope": "Implement the recommended richer native action and bound clip-property inspector stage; pre-alpha, local macOS arm64",
+    "requirements": {
+      "actions": [
+        "original bounded vector artwork",
+        "live title/enabled/reason/order updates",
+        "ordering and overflow in native surfaces",
+        "disabled execution refused by host",
+        "stale action updates/invocations refused after same-ID replacement"
+      ],
+      "inspector": [
+        "actual project property values and resolved defaults",
+        "canonical typed clip operations and one Undo per changed commit",
+        "manual/Undo/Redo/load synchronization",
+        "selection/document lifetime and native registration-instance commit guards",
+        "locks and complete private linked-pair validation",
+        "text, number/range, boolean, select and colour controls",
+        "multiline text, no-op edits and preservation of automation"
+      ]
+    },
+    "regression": {
+      "pass": 19,
+      "fail": 0,
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/results.json",
+        "sha256": "524ef9ee0baffa5da1d02935a62c9013dff6dbc3c3b417dd6f299bee30ce2829"
+      },
+      "suites": [
+        {
+          "file": "tests/unit/editor/test-project-serialization.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-project-serialization.mjs.log"
+        },
+        {
+          "file": "tests/unit/editor/test-project-validation.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-project-validation.mjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-api-hardening.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-api-hardening.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hook-runtime.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-hook-runtime.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-hooks-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-hooks-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-media-retention.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-media-retention.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-api-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-api-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-media-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-media-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-native-controls.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-native-controls.mjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-native-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-native-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-native-controls-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-native-controls-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-reliability.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-reliability.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-runtime.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-runtime.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-retirement-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-retirement-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-sdk-additions-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-sdk-additions-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-shortcuts.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-shortcuts.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-shortcuts-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-shortcuts-ui.cjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-plugin-properties.mjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-plugin-properties.mjs.log"
+        },
+        {
+          "file": "tests/unit/plugins/test-extension-views-ui.cjs",
+          "status": "PASS",
+          "code": 0,
+          "log": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-views-ui.cjs.log"
+        }
+      ]
+    },
+    "sdk": {
+      "report": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-ivFwfg/result.json",
+        "sha256": "a9a7fcab3178d1309d31fc01be74866a7f86497047b147f705aa20f438340e2e"
+      },
+      "pass": 9,
+      "fail": 0,
+      "sourceChangesDuringRun": [],
+      "postRunDocumentationOnlyDelta": [
+        "examples/extensions/README.md"
+      ],
+      "artifact": {
+        "file": "artifacts/clipcraft-plugin-sdk-0.8.0.tgz",
+        "bytes": 105848,
+        "sha256": "b819020a528efc1a153f56662b2db19d3ebedb676a9b4047d99fc14bd73e54a9",
+        "files": [
+          "LICENSE",
+          "README.md",
+          "dist/authoring.cjs",
+          "dist/authoring.d.cts",
+          "dist/cli.cjs",
+          "dist/extension.d.ts",
+          "dist/extension.mjs",
+          "dist/index.d.ts",
+          "dist/index.mjs",
+          "package.json"
+        ]
+      },
+      "versions": {
+        "app": "2.0.0",
+        "sdk": "0.8.0",
+        "hostApi": 1
+      }
+    },
+    "contracts": {
+      "properties": 42,
+      "checks": [
+        "every declared property resolves its renderer default and produces a canonical typed operation",
+        "property compatibility, bounds, steps, enum choices and read-only declarations reject invalid writes",
+        "real worker registrations expose live action state, icon clearing and ordering; the host enforces disabled state",
+        "icons accept path data and reject executable markup",
+        "registration replacement revokes old native commit guards and invalid values reject before editor dispatch",
+        "a disposed action handle cannot mutate a replacement under the same ID",
+        "Stop removes action and inspector registrations"
+      ],
+      "log": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-native-controls.mjs.log",
+        "sha256": "a21a3959405be4cda6ed99dd96821d688dff6b5556bc3dc4cd257ac24da186c4"
+      }
+    },
+    "native": {
+      "processes": 2,
+      "checks": 41,
+      "phases": [
+        {
+          "report": {
+            "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-bJJDPZ/result.json",
+            "sha256": "b8c47012abf5c4faec9b7c9636e5f44bd2539c774ccff7f15c4f7006d07f78c5"
+          },
+          "checks": [
+            "native inspector controls show the actual selected clip values",
+            "custom vector action artwork renders in the native toolbar",
+            "action order controls direct toolbar placement",
+            "a live title/order change moves the action into overflow with its disabled reason",
+            "disabled actions cannot be invoked through the native bridge",
+            "inspector action icons and disabled state render together",
+            "clip-context actions render their icon and disabled reason",
+            "export actions render custom artwork and disabled state",
+            "plugin settings actions retain their native disabled state and artwork",
+            "long action labels wrap inside the native settings pane",
+            "voice settings actions retain their native disabled state and artwork",
+            "a range edit commits its property as one Undo step",
+            "Undo updates the bound range from the project",
+            "Redo updates the bound range",
+            "an enabled native action dispatches with its registration identity and one Undo step",
+            "native typed numeric input edits the actual transform",
+            "typing the existing value creates no extra Undo entry",
+            "manual edits outside the extension immediately update bound values",
+            "changing selection drops the previous clip draft without writing either clip",
+            "a document edit discards a stale field draft",
+            "locked clip controls are disabled",
+            "text content and style controls bind directly to the text clip",
+            "checkbox, select and colour controls preserve their typed values",
+            "audio edge and mute properties use canonical sound edits",
+            "playhead movement while a write waits does not invalidate its document target",
+            "selection changes after sending a native write still prevent stale mutation",
+            "removing an inspector revokes its pending native commit reservation",
+            "invalid property values reject in the host before any editor request",
+            "a locked linked partner disables property controls too",
+            "an unlocked linked target commits with its whole private pair validated",
+            "a static control cannot erase existing property automation",
+            "reloading the same project ID drops drafts from the old document lifetime",
+            "disabling the package removes native properties and actions",
+            "re-enabling rebuilds controls from the current project values",
+            "Stop removes both native action and property controls",
+            "the native workflow keeps the window hidden",
+            "no renderer errors occurred"
+          ]
+        },
+        {
+          "report": {
+            "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-bJJDPZ/reopen-result.json",
+            "sha256": "bef943c0ee4b0defc11594d433d080a41f9da7c939f8c3d67bb186bd5ec1b8c3"
+          },
+          "checks": [
+            "cold restart activates the installed extension and restores native controls",
+            "the bound control reads the saved clip property rather than a cached form value",
+            "action icons and live selection enablement return after a real restart",
+            "native restart has no renderer errors"
+          ]
+        }
+      ],
+      "log": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-2KpEfc/test-extension-native-controls-ui.cjs.log",
+        "sha256": "c39302c9f2e9e0be0d317dadc601241692b8e12516eb87b1c8280b476b8863e0"
+      },
+      "screenshot": {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-bJJDPZ/controls.png",
+        "sha256": "181ecb5552faa353038017e8f0e6f3992ca12cc0e13be74f6653d8d8a1cf4dac"
+      },
+      "screenshotInspected": true
+    },
+    "earlierFailures": [
+      {
+        "report": {
+          "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-UOWTpV/result.json",
+          "sha256": "695c73c739fb0bbf5aebc710a227112358ab7e52bac3f15504e47b58c7ea4a90"
+        },
+        "reason": "Hidden native input fixture lacked WebContents focus; corrected typing focus and retained exact value diagnostics."
+      },
+      {
+        "report": {
+          "path": "/tmp/clipcraft-native-controls-action-repro.log",
+          "sha256": "7da684d5c4aa206383493b004e046adfc3be306da0769eb969941dc06b0d2264"
+        },
+        "reason": "Regression reproduced a disposed action handle mutating a same-ID replacement; native action instance guards added and regression now passes."
+      }
+    ],
+    "otherChecks": {
+      "rendererBuild": {
+        "path": "/tmp/clipcraft-native-controls-build.log",
+        "sha256": "4aed0a9472d9ba5fad471f73e7d6d1fdae43fc79c9cc9cbc26d2a3f348f6112e"
+      },
+      "structure": "npm run test:structure passed",
+      "whitespace": "git diff --check passed"
+    },
+    "sourceSha256": {
+      "electron/plugins/extensionUi.cjs": "2118e4f5aea0c2f5182aa0dd648431271aff2f6e211a18d95407f4a0f0dc99a5",
+      "electron/plugins/extensionRuntime.cjs": "517499846e3cc662c229a497436b9d0bf5fa742500ac25a5e2370df8e637b22e",
+      "electron/plugins/extensionWorker.cjs": "15325ceaa7dfa5055f1e176fffc0eed0cbd0742dbf14715309ba2d750bde3336",
+      "electron/plugins/ipc.cjs": "98c3b10f4dea7d4da7a224a5a44419f1a8b552636d9c1b1088853697e1c863bf",
+      "electron/preload.cjs": "775362f73f6d5f525292bea5a1c50f69a85e73a9671ce240b7b546f575a1afce",
+      "shared/extensionInspector.mjs": "8a766b465c5599805bc509ff76e020fce8e7412ab22569410a8b45d9e60155f0",
+      "shared/extensionCapabilities.cjs": "da80f0025c92299c4d5471468f3c79d69ea9c5e3b6a6951c556788cde16c28ae",
+      "src/features/plugins/components/ExtensionInspector.jsx": "391e7ae91c2116618be503ff4669327ab2c582c2d4e39b6ebe40f84b57245ffc",
+      "src/features/plugins/components/ExtensionActionIcon.jsx": "f1f3fcdcf911ca179e87e5aaaa388950e79b09d81e990d7419a99d5133f834e5",
+      "src/features/plugins/components/ExtensionNativeUi.jsx": "c3ee34406c1dc048f79241a7b0316e8bd3ae8e1cc0c60cb72a551f83571e18a9",
+      "src/features/plugins/useExtensionHost.js": "98ae8b953ec81c81318d6a0ba6dcbdde490905738169963a3f521d3e492be746",
+      "src/features/inspector/components/Inspector.jsx": "4f9e7493cc006135be0525a128d40f975c6126df995675519969bbe0a7e6f603",
+      "src/app/App.jsx": "6f90f144063cfff27a91814e9f51a5d878ed48ab9eb163e85951a00753a97d0d",
+      "src/styles/styles.css": "9ffd6597e656706eefa74a02c6ccb5d1666b205236c69c335cc706fa7ed33bc0",
+      "packages/plugin-sdk/src/extension.d.ts": "af44831c59124c4e3d630a114a3560184c2f0db692b2ef526d82794f395fb060",
+      "examples/extensions/native-properties/src/extension.ts": "3f9a3ba3c2f78ca24315b6fb727c60cea13112473a9c18a8699a1608efa15f2a"
+    },
+    "limits": [
+      "Full application battery and installed/cross-platform checks not rerun.",
+      "Bindings cover the canonical static picture/audio/text properties; curves and effect slots keep their existing editing APIs.",
+      "No commit, push, installer, publication, dependency or version changes."
+    ]
+  },
+  "extensionAuthoringPackaged": {
+    "date": "2026-11-18T13:38:03.647Z",
+    "status": "passed-local-prealpha",
+    "scope": "Current author docs/examples and macOS arm64 release-configuration app directory; not an installer or remote installed-platform run",
+    "versions": {
+      "app": "2.0.0",
+      "sdk": "0.8.0",
+      "hostApi": 1
+    },
+    "authoring": {
+      "examples": 14,
+      "receipt": {
+        "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-examples-authoring-hibGCT/result.json",
+        "sha256": "064b06ac5edafdad1ddd2baac15ce42759f2a2fd177da97343e41ed89fe8f3b5"
+      },
+      "fingerprints": [
+        {
+          "name": "ai-chapter-markers",
+          "key": "9ede96cc85224db77813d7b7e5127f48f975ed9bd362dce8a9ca7a6f1b711d4e"
+        },
+        {
+          "name": "caption-translation",
+          "key": "3c82c476ed48b20bc79495ba463e27868b4d539064221a0fa58f22ca5653a2ea"
+        },
+        {
+          "name": "chapter-markers",
+          "key": "7569ffac988836398caac69b2a2fc68c126f7b67f3049d5df933065d75fb40ba"
+        },
+        {
+          "name": "clip-controls-demo",
+          "key": "49f7a976905cbfc7fb4a02ea6d7bde4659abcc95e630793ca748e3921ada4301"
+        },
+        {
+          "name": "gif-export",
+          "key": "f6370f24ae0204a3a256457fd825baec785f7a23bbd29bda5e5807711b9b2bb1"
+        },
+        {
+          "name": "local-ai-provider",
+          "key": "5b534a20b7c5e7f11940ed5d498726108226f8d7e3dc147262a725d32ea4524b"
+        },
+        {
+          "name": "local-speech",
+          "key": "2501e4bdf8c6c66c74188b9b9603fa7cf951b7f54fe4559e834538728174b58c"
+        },
+        {
+          "name": "media-library-jobs",
+          "key": "93dc3b11ae2bf4444445ca42ba53423e798b35b30aa5bef202e0d20edc1f6bf9"
+        },
+        {
+          "name": "native-properties",
+          "key": "36c04cdf2e04f72f4c5667d0c3b6aaad643ca5d32c3a2134d796361bccfc2ac1"
+        },
+        {
+          "name": "preference-workbench",
+          "key": "24f34fa93c327b62f1fb9793530f2a84a5b216039e4fc4710cbcf61bb7794858"
+        },
+        {
+          "name": "project-dashboard",
+          "key": "bbc027e00af62020f83cfa9ddb10105014863dc87af2f36cc9ac5bc772312c46"
+        },
+        {
+          "name": "reviewed-gif-upload",
+          "key": "5367a69f07d937bf2954e3f659aab77b80445e9b32aafbf93142beeacbde3397"
+        },
+        {
+          "name": "voicestudio",
+          "key": "85a95360d6ae3b2fc8f34dc9f48ab9edfe7cfdc8b6e32b4820a6b68f96dec67e"
+        },
+        {
+          "name": "workbench",
+          "key": "f0d8905652d9ca24f37ca3dfa21ccb026b13b2411ef8ff464d62e8179548ec98"
+        }
+      ]
+    },
+    "sdk": {
+      "suites": 9,
+      "sourceChanges": [],
+      "receipt": {
+        "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-DEnLur/result.json",
+        "sha256": "6c1c33fd4319cd1418d1cb4843a9a901ed662aa4b61d2ad069207524ea6ef17d"
+      },
+      "sourceManifest": {
+        "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-DEnLur/source-after.json",
+        "sha256": "dd2204f22a02364df462bb05f511659a6cd3617132b37a3916c2a0e7b4e4f093"
+      },
+      "artifact": {
+        "file": "artifacts/clipcraft-plugin-sdk-0.8.0.tgz",
+        "bytes": 106097,
+        "sha256": "68715e692956981fd04a3ccf076c540c5480ab3c3de7291334c1eb22a422a431",
+        "files": [
+          "LICENSE",
+          "README.md",
+          "dist/authoring.cjs",
+          "dist/authoring.d.cts",
+          "dist/cli.cjs",
+          "dist/extension.d.ts",
+          "dist/extension.mjs",
+          "dist/index.d.ts",
+          "dist/index.mjs",
+          "package.json"
+        ]
+      }
+    },
+    "packaged": {
+      "checks": 69,
+      "processes": 2,
+      "receipt": {
+        "file": "/tmp/clipcraft-packaged-extension-verified/receipt.json",
+        "sha256": "31dd1f582d9c29f78cc13f8347e53379d3443062affd96e9c8ee9ece6f3fdce2"
+      },
+      "archive": {
+        "bytes": 84073791,
+        "sha256": "cb1d9ae6e530a06209b780dbc5ad33f6f20093792dea1a001b36a4f90dc948ad",
+        "files": 7113
+      },
+      "executable": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-app-directory-XCr3Ht/mac-arm64/ClipCraft.app/Contents/MacOS/ClipCraft",
+      "sourceEquivalence": {
+        "files": 517,
+        "changed": [],
+        "receipt": {
+          "file": "/tmp/clipcraft-packaged-extension-verified/source-equivalence.json",
+          "sha256": "dafce5d3f1bf387fe7ec3e633889ca40e85599b063f8f4dfbf5c665ca0615878"
+        }
+      },
+      "extension": {
+        "id": "fixture.packaged-acceptance",
+        "key": "d5b05f3d601cc798b09242ce68a5fdc88491b0622ca4ae41ae54eacd20aee809",
+        "appVersion": "2.0.0",
+        "archive": "/tmp/clipcraft-packaged-extension-verified/extension.tgz",
+        "sha256": "70fd1ee5167d5ecd0994c71f1e5cf5746f2ee9d98da5a28d4e75a829462fc131",
+        "packaged": true
+      },
+      "export": {
+        "bytes": 431629,
+        "duration": 3,
+        "video": {
+          "codec": "h264",
+          "width": 640,
+          "height": 360
+        },
+        "audio": {
+          "codec": "aac"
+        }
+      },
+      "limits": [
+        "Native picker/trust replies are fixtures supplied through the main-process debugger; their UI was not exercised.",
+        "Installer UI, save/reopen dialogs and the system keychain were not exercised.",
+        "The screenshot is retained as evidence; its pixels are not asserted.",
+        "The application is stopped by signal after the checks; a clean user quit is not asserted."
+      ],
+      "screenshot": {
+        "file": "/tmp/clipcraft-packaged-extension-verified/editor.png",
+        "sha256": "6d83c4cf8a0607dfd20dcd5462b2de33bd45c0245af43f6c0e56fd0fd5461269"
+      },
+      "screenshotInspected": true
+    },
+    "documentation": {
+      "links": {
+        "file": "/tmp/clipcraft-packaged-extension-verified/documentation-links.json",
+        "sha256": "e9d72d17e3ab259caa766fa9150b2448ca2209b90a83f9279763c8777443f8e2"
+      },
+      "files": [
+        "docs/README.md",
+        "docs/design/plugin-api-review.md",
+        "docs/design/plugin-extension-api.md",
+        "docs/design/plugin-extension-events.md",
+        "docs/design/plugin-extension-host.md",
+        "docs/design/plugin-roadmap.md",
+        "docs/design/plugin-sdk-compatibility.md",
+        "docs/design/plugin-sdk.md",
+        "docs/design/plugin-sdk-validation.md",
+        "docs/design/plugin-extension-unfinished.md",
+        "docs/design/plugin-release-readiness.md",
+        "docs/design/plugin-authoring-packaged-followup.md",
+        "packages/plugin-sdk/README.md",
+        "examples/extensions/README.md"
+      ]
+    },
+    "checks": {
+      "structure": "PASS",
+      "runtimeDependencies": "PASS via test:structure",
+      "whitespace": "PASS",
+      "workflowLint": "PASS actionlint with ShellCheck/Pyflakes integrations disabled",
+      "rendererBuild": {
+        "log": "/tmp/clipcraft-authoring-renderer-build.log",
+        "result": "PASS; existing chunk size and mixed static/dynamic import warnings"
+      }
+    },
+    "retainedFailures": [
+      {
+        "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-app-directory-XCr3Ht/packaging.log",
+        "reason": "Sandbox refused builder cache; same app-directory preparation passed with cache access"
+      },
+      {
+        "file": "/tmp/clipcraft-packaged-extension-verified/initial-fixture-typecheck.json",
+        "reason": "Retained initial fixture repro read projectRevision from workspace.read instead of workspace.inspect"
+      },
+      {
+        "file": "/tmp/clipcraft-packaged-extension-first/receipt.json",
+        "reason": "Controller lacked async expression wrapper"
+      },
+      {
+        "file": "/tmp/clipcraft-packaged-extension-final/receipt.json",
+        "reason": "Controller expected preload path in runtime preferences that omit it"
+      },
+      {
+        "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-oVi9Jl/result.json",
+        "reason": "Sandbox blocked npm cache access; verification passed with cache access"
+      }
+    ],
+    "unchangedManifests": true,
+    "limits": [
+      "No full application battery rerun",
+      "Native picker/trust UI and live provider quality were not exercised",
+      "No new Windows/Linux/Intel Mac execution",
+      "No installer, commit, push, publication, version or dependency change"
+    ]
   }
 }

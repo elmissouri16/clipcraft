@@ -194,3 +194,13 @@ validation, shared by host, worker and published SDK helpers.
 `shared/extensionCapabilities.cjs` owns feature revisions.
 `shared/extensionConfiguration.mjs` validates project-owned extension namespaces
 and prepares anchored settings actions; writes use ordinary editor/draft commits.
+
+`electron/plugins/extensionMediaRetention.cjs` records newly adopted media,
+protects project and recovery/slot publication and collects proven abandoned
+sources at process startup. Project-file pins are durable; recovery and slot
+reference sets are replaceable. See [media retention](../design/plugin-media-retention.md).
+
+`shared/extensionInspector.mjs` validates declarative clip-property bindings and
+maps them to canonical edit operations. `ExtensionInspector.jsx` reads actual
+clip values; `useExtensionHost.js` anchors writes to the document/selection and
+native registration instance before the ordinary private transaction commits.

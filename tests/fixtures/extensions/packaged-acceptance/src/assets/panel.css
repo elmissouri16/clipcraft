@@ -1,0 +1,2 @@
+body { background: var(--cc-background, #18202b); color: var(--cc-text, #f1f4f8); font: 16px system-ui; padding: 20px; }
+output { display: block; color: rgb(24, 145, 83); }

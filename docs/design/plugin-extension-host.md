@@ -3,6 +3,10 @@
 The accepted direction replaces fixed executable recipes with long-lived trusted
 Node extensions. Application 2.0.0, SDK 0.8.0 and host API 1 remain unchanged.
 This document records the implemented contract and remaining release acceptance.
+ClipCraft is pre-alpha; API compatibility and migration guarantees are not
+development requirements. Use the [API guide](plugin-extension-api.md) and
+[current roadmap](plugin-roadmap.md#current-pre-alpha-development-scope) for
+authoring and current scope. Outcome sections below retain their original evidence.
 
 ## Implemented foundation
 
@@ -146,7 +150,10 @@ the final plugin selection. None of the skipped gates becomes a release pass.
   the archive/abuse and installed-app matrix. The Node worker now has a native
   ASAR check; its [self-contained native view followup](plugin-extension-asar-views.md)
   adds archived dependencies/preload/protocol and a missing-preload control.
-  Complete Windows/Linux and installed-release acceptance remain open.
+  Later [remote acceptance](plugin-remote-acceptance.md) covers the SDK matrix
+  and installed-app checks on Linux, Windows and both macOS architectures.
+  Those runs did not install an extension inside the packaged app and predate
+  the current native-control additions; current packaged extension evidence is separate.
 - Finish representative hardware/performance, long-session memory and manual UX
   acceptance. [Stabilization](plugin-extension-stabilization.md) records the
   current bounded measurements and native lifecycle/storage checks.

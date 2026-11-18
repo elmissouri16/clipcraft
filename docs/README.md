@@ -3,6 +3,10 @@
 - [Bundled, system and imported fonts](media/fonts.md) — loading, availability and export checks.
 - [Public plugin SDK and authoring tools](../packages/plugin-sdk/README.md) — typed helpers, scaffolding, checking, bundling, validation and packaging.
 - [Extension API guide](design/plugin-extension-api.md) — every context namespace with examples, lifecycle rules, limits and known gaps.
+- [Native extension actions and property controls](design/plugin-extension-native-controls.md) — live action state, icons and selected clip bindings with Undo.
+- [Pre-alpha SDK defect followup](design/plugin-api-hardening.md) — resolved registration, replay, configuration, picker and view defects.
+- [Adopted extension media retention](design/plugin-media-retention.md) — startup ownership cleanup and project/Undo protections.
+- [Author docs and packaged extension verification](design/plugin-authoring-packaged-followup.md) — current examples, packaged install/trust/Undo/views and cold restart.
 - [Plugin API review, 2026-11-18](design/plugin-api-review.md) — defects found and fixed, what was added and what remains.
 - [Current trusted Node extension contract](design/plugin-extension-host.md) — commands, events, services, hooks, jobs and native views.
 - [Runnable Node extensions](../examples/extensions/README.md) — speech, AI, media, export and editor features through general APIs.
@@ -14,7 +18,7 @@
 - [Plugin developer sessions](design/plugin-extension-development.md) — temporary Node snapshots, reload, build watching and runtime diagnostics.
 - [Picked media and destination jobs](design/plugin-media-jobs.md) — managed imports/process recipes and reviewed bounded HTTPS uploads.
 - [Reviewed panel actions](design/plugin-panel-reviewed-actions.md) — host AI/caption review and verified path-free GIF receipts.
-- [Native plugin controls](design/plugin-native-controls.md) — toolbar actions, scoped inspector drafts and strict boolean command inputs.
+- [Historical native plugin controls](design/plugin-native-controls.md) — retired recipe toolbar actions and inspector drafts; use current Node registrations above.
 - [Plugin UI actions](design/plugin-ui-actions.md) — declarative menu entries, selection conditions and host command controls.
 - [Plugin edit transactions](design/plugin-edit-transactions.md) — atomic, permission-gated clip moves and trims.
 - [Plugin editor context](design/plugin-editor-context.md) — permission-gated selection, playback and bounded timeline metadata.

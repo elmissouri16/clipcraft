@@ -99,6 +99,8 @@ jobs:
           path: |
             packaged-evidence/receipt.json
             packaged-evidence/application.log
+            packaged-evidence/restart.log
+            packaged-evidence/extension.tgz
             packaged-evidence/editor.png
             packaged-evidence/export.mp4
           if-no-files-found: warn

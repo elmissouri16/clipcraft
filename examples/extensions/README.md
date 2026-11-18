@@ -8,13 +8,23 @@ From the repository root:
 
 ```sh
 node scripts/build-plugin-sdk.cjs
+node packages/plugin-sdk/dist/cli.cjs check examples/extensions/chapter-markers
 node packages/plugin-sdk/dist/cli.cjs build examples/extensions/chapter-markers
+node packages/plugin-sdk/dist/cli.cjs validate examples/extensions/chapter-markers/dist
+node packages/plugin-sdk/dist/cli.cjs pack examples/extensions/chapter-markers/dist /tmp/chapter-markers.tgz
 ```
 
 Install that project's compiled `dist` directory, or start a development session
 with the built project. Installation/inspection never executes authored code.
 Trust & activate grants Node access to files, network and programs. Development
 trust and settings last for that session. Example and SDK versions are unchanged.
+This SDK is pre-alpha; use examples, SDK types and app code from the same
+development snapshot. API compatibility and author migrations are not guaranteed.
+
+Replace `chapter-markers` in these commands with a source name from the table.
+Use a new archive destination each time; `pack` refuses to overwrite a file.
+External-service examples need the accounts/programs described by their README.
+Building them checks their source; it does not verify a live provider.
 
 | Source project | Try it in the app |
 | --- | --- |
@@ -31,6 +41,7 @@ trust and settings last for that session. Example and SDK versions are unchanged
 | `caption-translation` | Choose a source track/language, review original and translated text, then create one separate hidden caption track with Undo. |
 | `workbench` | Open two independent views, exchange messages, invoke commands and render the current project. |
 | `voicestudio` | Configure the optional service in Voice settings. Its transport runs in the extension and its ordinary service connects through `voice.engines`. |
+| `native-properties` | Edit selected clip properties directly in the native inspector; try the selection-aware toolbar action and Undo. |
 
 The first eleven sources replace historical sandbox recipes with the same IDs,
 publishers and versions. The host retains the old immutable package beside its

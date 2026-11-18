@@ -1,9 +1,11 @@
 # SDK compatibility and stored data
 
-This is the current pre-v1 authoring policy for trusted Node extensions and
-creative packs. App 2.0.0, SDK 0.8.0 and host API 1 remain unchanged during the
-accepted migration. Stable SDK publication and installed-platform acceptance
-remain release gates; the development version is not a production certification.
+This records current development behavior for trusted Node extensions and
+creative packs. ClipCraft is pre-alpha: breaking API changes are allowed and
+stable compatibility, migration guarantees and a v1 freeze are not required.
+App 2.0.0, SDK 0.8.0 and host API 1 are the current version numbers, not a promise
+that every development snapshot is interchangeable. Stored-data protections
+below describe the implementation; they do not impose a stable API policy.
 
 ## Contract authority
 
@@ -15,12 +17,10 @@ features. Creative contributions remain declarative.
 
 `apiVersion` selects the host contract. `minClipcraftVersion` rejects older app
 versions, while the SDK package version identifies authoring tools/types. They
-are separate numbers. Once the stable v1 contract is frozen, removing or changing
-a public operation incompatibly requires a new host API and corresponding SDK
-major release. Additive optional fields/operations must preserve existing behavior;
-authors must check availability or require an app version that implements them.
-Unsupported calls reject explicitly. Current development snapshots with frozen
-version numbers are not interchangeable stable releases.
+are separate numbers. Use authoring types and the app from the same development
+snapshot. Feature discovery describes what that running host supports; it does
+not promise compatibility with earlier snapshots. Unsupported calls reject
+explicitly. A future stable release policy will be decided when needed.
 
 ## Immutable updates and trust
 
@@ -100,9 +100,11 @@ See [project configuration](plugin-sdk-general-contracts.md#project-configuratio
 
 `npm run sdk:verify` runs the SDK development suites and prepares a candidate
 only after successful checks with unchanged source. The
-[validation report](plugin-sdk-validation.md) records exact Node 20.19.0/24.22.2
-macOS runs and the local nonpublishing CI matrix. Remote workflow execution,
-installed-platform acceptance and publication remain separate gates.
+[validation report](plugin-sdk-validation.md) records development runs.
+[Remote acceptance](plugin-remote-acceptance.md) records the later SDK matrix
+and installed-app runs. Those runs predate the current native-control additions;
+the [current packaged extension followup](plugin-authoring-packaged-followup.md)
+adds local macOS app-directory evidence without certifying the other platforms.
 
 The SDK authoring tools declare Node >=20.19.0. Targeted admission/authoring
 checks passed on Linux arm64 under the exact 20.19.0 floor and Node 24.16.0.
@@ -147,5 +149,5 @@ merely from successful development checks.
 The native `test-extension-storage-lifecycle` suite checks actual encrypted data
 through update, author migration, rollback refusal, uninstall/reinstall and
 inventory reconstruction. `test-plugin-sdk-cli` checks an offline clean consumer
-and archive/native fingerprint parity. These checks do not substitute for the
-Windows/Linux and installed-release matrix.
+and archive/native fingerprint parity. These checks do not substitute for a
+current Windows/Linux and installed-release matrix.

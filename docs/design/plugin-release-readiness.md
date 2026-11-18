@@ -8,6 +8,11 @@
 > The subsequent [stabilization checkpoint](plugin-extension-stabilization.md)
 > fixes three local prerequisites and records bounded discovery/lifecycle
 > measurements; the raw historical runs below remain unchanged.
+> Later [remote acceptance](plugin-remote-acceptance.md) records the OS matrix,
+> and the [packaged extension followup](plugin-authoring-packaged-followup.md)
+> covers current local macOS extension installation. The feature pause and
+> SDK 1.0 decision below apply to the historical candidate. Current development
+> is pre-alpha, with no compatibility freeze.
 
 
 Date: 2026-11-15. Decision: **hold SDK 1.0 and production release**.

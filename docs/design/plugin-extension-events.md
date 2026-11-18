@@ -69,7 +69,8 @@ count skipped intermediate changes. Full revision-scoped content remains
 available through [workspace inspection](plugin-project-inspection.md).
 
 `replay` defaults to false. Explicit replay delivers the latest retained state
-with `event.replay === true`; it does not reconstruct history. The cache has a
+with `event.replay === true` only to the listener requesting it; it does not
+re-deliver to existing listeners or reconstruct history. The cache has a
 4 MiB bound. Per-activation delivery sequence remains ordered; publication IDs
 identify the original host observation, so replay may refer to an older
 publication. Consumers should check document IDs and use host reads when they need
@@ -135,5 +136,7 @@ workflow passed the focused frozen-source selection. Exact counts, source hashes
 initial failures and native evidence are recorded under
 `plugin-validation.json.extensionHostEvents`. The optional
 workbench example includes a typed last-project-event command. Complete event
-support does not establish the remaining development-reload, legacy migration,
-ASAR or Windows/Linux release gates.
+support does not establish other host workflows. Later
+[development](plugin-extension-development.md), [retirement](plugin-legacy-retirement.md),
+[ASAR](plugin-extension-asar-views.md) and [remote acceptance](plugin-remote-acceptance.md)
+records describe their own coverage; their earlier status is not a current gap list.

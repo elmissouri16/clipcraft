@@ -8,14 +8,15 @@ their public runtime/SDK declarations have now been
 [retired](plugin-legacy-retirement.md). Creative packs and validated private
 editing contracts remain supported. Current regression/release gates remain open.
 
-## Current pre-v1 scope
+<a id="current-pre-v1-scope"></a>
+## Current pre-alpha development scope
 
-The maintainer's current direction is to finish the missing SDK capabilities
-before v1, without incrementing the SDK or application versions during this work.
-Keep SDK 0.8.0, host API 1 and application 2.0.0. Earlier stage text saying
-"later" or "deferred" records the original sequence; it does not move the
-following requirements outside v1. Production release remains blocked on the
-[release gates](plugin-release-readiness.md) as well as the unfinished scope.
+ClipCraft is pre-alpha. Current work prioritizes useful SDK capabilities,
+correctness and real-app verification. Breaking development API changes are
+acceptable; stable compatibility, migration guarantees and an SDK v1 contract
+freeze are not requirements for this implementation work. App 2.0.0, SDK 0.8.0
+and host API 1 currently remain unchanged. Earlier stages below retain their
+historical names and verification scopes.
 
 - [x] Extend linked split/trim to consistent shifted picture/audio pairs.
 - [x] Add explicit linked reordering with per-operation companion allowlists.
@@ -38,20 +39,25 @@ following requirements outside v1. Production release remains blocked on the
 - [x] Add [creative pack search, tags, favorites and actual previews](plugin-usability-expansion.md).
 - [x] Add [reviewed unused preview-cache cleanup](plugin-usability-expansion.md) that protects project-owned media.
 - [x] Add [versioned feature discovery, typed service contracts, project configuration and local debugger attach](plugin-sdk-general-contracts.md).
-- [ ] Finalize capability/version support, reconcile author documentation and
-  verify the complete supported SDK against the release/platform matrix.
+- [x] Add [live native action state/icons/ordering and bound clip-property inspector controls](plugin-extension-native-controls.md).
+- [x] Reconcile [current author documentation and runnable examples](plugin-authoring-packaged-followup.md).
+- [x] Verify extension installation, native controls, views and cold restart in a
+  current macOS packaged app directory; retain the fixture in packaged CI acceptance.
+- [ ] Exercise complete extension workflows across the installed/platform matrix.
 
-Current compatibility, retained-data and author migration rules are documented
-in [SDK compatibility](plugin-sdk-compatibility.md). Discovery/lifecycle hardening
+Current development and retained-data behavior is documented
+in [SDK storage policy](plugin-sdk-compatibility.md). Discovery/lifecycle hardening
 and reproducible local fixtures are recorded in
 [stabilization](plugin-extension-stabilization.md). The combined release item
 above stays open until the supported installed/platform matrix is complete.
 
 The [SDK validation command and CI workflow](plugin-sdk-validation.md) now provide
 repeatable development checks and candidate checksums. The remote six-job matrix
-and the installed-app acceptance on four platforms passed on 2026-11-18
+and the earlier installed-app acceptance on four platforms passed on 2026-11-18
 ([remote acceptance](plugin-remote-acceptance.md)). Performance budgets, manual
-acceptance, signing and a release run keep the combined item above open.
+acceptance, signing and a release run remain separate. The current local
+[packaged extension followup](plugin-authoring-packaged-followup.md) does not
+establish the new extension workflow on the other platforms.
 
 Additional AI-provider wire formats are optional expansion, not a v1 requirement.
 Only add one for a named provider/use case that the current OpenAI-compatible

@@ -4,6 +4,9 @@
 > installed-app acceptance on Linux, Windows and both macOS architectures have
 > since run and passed; see [remote acceptance](plugin-remote-acceptance.md).
 > The table below is the earlier record, annotated with what changed.
+> The subsequent [authoring/packaged followup](plugin-authoring-packaged-followup.md)
+> also verifies extension installation and native workflows in a current macOS
+> app directory; that new workflow still needs remote installed-platform coverage.
 
 The maintainer resumed work with the instruction to skip blocked items, leave
 them unfinished in the report, and continue the rest. These items are excluded
@@ -36,5 +39,6 @@ evidence. [Native-media layout verification](plugin-extension-native-media-paths
 now fixes and verifies a reproduced archive-path rewrite bug.
 [Preview/preference read bounds](plugin-extension-storage-bounds.md) also cover
 cache accounting, retained panel data and favorites. The final frozen local
-plugin selection passed 112 suites. All gates in the table above remain unfinished;
-this local result is not production or SDK v1 approval.
+plugin selection passed 112 suites at that checkpoint. Later outcomes are
+annotated in the table and linked above; that local result did not establish
+production readiness.

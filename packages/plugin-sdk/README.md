@@ -1,8 +1,9 @@
 # ClipCraft plugin SDK
 
-SDK **0.8.0**, application **2.0.0**, host API **1**. These versions stay unchanged
-while the pre-v1 extension work is completed. The release/platform gates remain
-open; this is a development SDK.
+SDK **0.8.0**, application **2.0.0**, host API **1**. This is pre-alpha development:
+APIs may change without compatibility or migration guarantees. These version
+numbers do not identify an interchangeable stable contract; use the types and
+runtime from the same development snapshot.
 
 Executable plugins are trusted, persistent **Node extensions**. Use commands,
 events, services, hooks, managed work and native UI registrations to compose a
@@ -113,6 +114,14 @@ Workbench HTML receives a message-only bridge in an isolated renderer. Privilege
 operations belong in the Node activation. Native settings support strings,
 numbers, booleans, choices and masked secrets. Actions can appear in the toolbar,
 inspector, clip context, export dialog or supported settings locations.
+
+Native actions support vector icons, ordering and live enabled state through
+the returned registration's `update` method. `ui.registerInspector` binds native
+fields to selected picture, sound and text properties; values follow manual
+edits and Undo/Redo. These fields use document/selection anchors and enforce
+track locks. See [native controls](../../docs/design/plugin-extension-native-controls.md)
+and the runnable [native-properties example](../../examples/extensions/native-properties/README.md).
+Native settings store configuration; bound inspector fields edit the clip.
 
 Core integrations consume ordinary service registrations at `voice.engines` and
 `ai.engines`. The selected core AI connection is also available through the

@@ -58,10 +58,10 @@ cancelled matrix cannot produce a successful aggregate. See GitHub's
 [workflow contexts](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts)
 and [dependency pinning guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/lock-workflow-dependencies).
 
-The workflow is local and uncommitted. It has not been pushed, dispatched or
-executed on GitHub. No branch-protection setting was changed. Its aggregate
-check is available for a future maintainer decision about required checks;
-this document does not claim that such protection is configured.
+The first draft was local and uncommitted. The later
+[remote acceptance](plugin-remote-acceptance.md) records its actual GitHub runs.
+Required-check configuration is separate; this report does not claim that
+branch protection is configured.
 
 ## Verification on 2026-11-17
 
