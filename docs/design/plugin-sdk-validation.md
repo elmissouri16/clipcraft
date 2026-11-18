@@ -100,6 +100,10 @@ application battery was not rerun in this stage.
 
 ## Remaining acceptance
 
+> The remote matrix has since run and passed, after two Windows-only failures
+> were fixed; see [remote acceptance](plugin-remote-acceptance.md). The text
+> below is the record as of 2026-11-17.
+
 Remote matrix execution and any required-check configuration remain pending.
 Installed Windows/Linux/macOS release artifacts, complete abuse/distribution
 acceptance, hardware/performance budgets and remaining manual/assistive-technology

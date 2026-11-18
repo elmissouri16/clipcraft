@@ -101,6 +101,7 @@ documentation links remain usable.
 - [Fresh-cache SDK correction and Mac/Linux verification](design/plugin-sdk-cache-followup.md).
 - [Self-contained ASAR worker and native view](design/plugin-extension-asar-views.md).
 - [Unfinished gates skipped in the resumed pass](design/plugin-extension-unfinished.md).
+- [Remote SDK matrix, installed-app acceptance and release automation](design/plugin-remote-acceptance.md).
 - [Bounded inventory recovery enumeration](design/plugin-extension-recovery-bounds.md).
 - [Native-media ASAR paths and decoded exports](design/plugin-extension-native-media-paths.md).
 - [Preview/preference read bounds and final local plugin selection](design/plugin-extension-storage-bounds.md).

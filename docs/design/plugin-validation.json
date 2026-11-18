@@ -35095,5 +35095,205 @@
     },
     "retainedFailure": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-plugin-usability-ui-MPHZSh/result.json",
     "scope": "Pack-filter geometry and typography; existing preview/application/restart checks passed; no SDK or app version change"
+  },
+  "extensionRemoteMatrixInstalledApp": {
+    "at": "2026-11-18T02:49:17.440Z",
+    "ok": true,
+    "releaseReady": false,
+    "scope": "GitHub-hosted SDK matrix and installed-app acceptance on the fork; unsigned installers, nothing published",
+    "sdkMatrix": {
+      "failedRun": 44223811817,
+      "failedCommit": "7cbf43f",
+      "failedSuitesOnWindows": [
+        "test-extension-package-paths",
+        "test-extension-resource-admission"
+      ],
+      "run": 44224897377,
+      "commit": "1075d0d5da43b252355d3a2f2811a338d5c20480",
+      "jobs": [
+        {
+          "name": "SDK on macos-latest / Node 20.19.0",
+          "conclusion": "success"
+        },
+        {
+          "name": "SDK on ubuntu-latest / Node 20.19.0",
+          "conclusion": "success"
+        },
+        {
+          "name": "SDK on ubuntu-latest / Node 24.22.2",
+          "conclusion": "success"
+        },
+        {
+          "name": "SDK on macos-latest / Node 24.22.2",
+          "conclusion": "success"
+        },
+        {
+          "name": "SDK on windows-latest / Node 24.22.2",
+          "conclusion": "success"
+        },
+        {
+          "name": "SDK on windows-latest / Node 20.19.0",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "installedApp": {
+      "failedRun": 44223811766,
+      "failedReason": "macOS universal merge: mach-o file count differs between architectures",
+      "run": 44224897396,
+      "commit": "1075d0d5da43b252355d3a2f2811a338d5c20480",
+      "receipts": [
+        {
+          "platform": "Linux x64",
+          "runner": "ubuntu-latest",
+          "ok": true,
+          "checks": 29,
+          "noSandbox": false,
+          "installer": {
+            "name": "clipcraft_2.0.0_amd64.deb",
+            "bytes": 184724072,
+            "sha256": "be7247faebd416da3915f6d27cf334062d4c1699d457ad1eee73a5aeb9f0b6bf"
+          },
+          "archive": {
+            "bytes": 83901134,
+            "sha256": "8ef0b146ae6889a106cea82a5fe94044e349d9c705c5d917bc96622eed008a4e",
+            "files": 7106
+          },
+          "architectures": null,
+          "export": {
+            "bytes": 417530,
+            "duration": 3,
+            "video": {
+              "codec": "h264",
+              "width": 640,
+              "height": 360
+            },
+            "audio": {
+              "codec": "aac"
+            }
+          }
+        },
+        {
+          "platform": "Windows x64",
+          "runner": "windows-latest",
+          "ok": true,
+          "checks": 29,
+          "noSandbox": false,
+          "installer": {
+            "name": "ClipCraft-Setup-2.0.0.exe",
+            "bytes": 199774974,
+            "sha256": "31f0297b9e59b853081b61dae662af887b2f34ef01329f4dd7772a2b3f48bbb9"
+          },
+          "archive": {
+            "bytes": 84113285,
+            "sha256": "6f33487a4d90bec99410d92112559e8518a6b3e58e7b519bdde091ca3e5c9c06",
+            "files": 7106
+          },
+          "architectures": null,
+          "export": {
+            "bytes": 417472,
+            "duration": 3,
+            "video": {
+              "codec": "h264",
+              "width": 640,
+              "height": 360
+            },
+            "audio": {
+              "codec": "aac"
+            }
+          }
+        },
+        {
+          "platform": "macOS arm64",
+          "runner": "macos-latest",
+          "ok": true,
+          "checks": 29,
+          "noSandbox": false,
+          "installer": {
+            "name": "ClipCraft-2.0.0-arm64.dmg",
+            "bytes": 195844549,
+            "sha256": "44e314371a96adb333b2e035d4387058facebac87188aa8e9ccfbf0e3da8ac83"
+          },
+          "archive": {
+            "bytes": 83899798,
+            "sha256": "5ff262d8c6c40c6baae850f354f656eec67824adcab626b000c7e067b46642f6",
+            "files": 7106
+          },
+          "architectures": {
+            "ffmpeg": "arm64",
+            "ffprobe": "arm64",
+            "application": "arm64"
+          },
+          "export": {
+            "bytes": 430732,
+            "duration": 3,
+            "video": {
+              "codec": "h264",
+              "width": 640,
+              "height": 360
+            },
+            "audio": {
+              "codec": "aac"
+            }
+          }
+        },
+        {
+          "platform": "macOS x64",
+          "runner": "macos-15-intel",
+          "ok": true,
+          "checks": 29,
+          "noSandbox": false,
+          "installer": {
+            "name": "ClipCraft-2.0.0-x64.dmg",
+            "bytes": 219066880,
+            "sha256": "0f36be1f941366b1ab75e3f5109b5d25f743543f1fb9692d32a651bad62d66e4"
+          },
+          "archive": {
+            "bytes": 83900998,
+            "sha256": "7d7ae5c2fde550a5da82ac81818dce481175f821e9c6095f265ae84b60ca7e84",
+            "files": 7106
+          },
+          "architectures": {
+            "ffmpeg": "x86_64",
+            "ffprobe": "x86_64",
+            "application": "x86_64"
+          },
+          "export": {
+            "bytes": 417472,
+            "duration": 3,
+            "video": {
+              "codec": "h264",
+              "width": 640,
+              "height": 360
+            },
+            "audio": {
+              "codec": "aac"
+            }
+          }
+        }
+      ]
+    },
+    "fullBattery": {
+      "commit": "1075d0d",
+      "profile": "macOS arm64, two workers, FVE_SMOKE_QUIET=1",
+      "pass": 351,
+      "fail": 4,
+      "failures": [
+        "audio/test-captions.cjs (Windows-only prerequisite)",
+        "library/test-assets.cjs (sibling asset manifest absent)",
+        "plugins/test-plugin-settings-ui.cjs (UI readiness timeout under load; passed on focused rerun)",
+        "system/test-language-ui.cjs (UI readiness timeout under load; passed on focused rerun)"
+      ]
+    },
+    "open": [
+      "PERF-01 budgets",
+      "UX-01 manual and assistive-technology acceptance",
+      "original asset manifest",
+      "Windows caption prerequisite",
+      "signing and notarization",
+      "release run",
+      "SDK publication",
+      "historical export timeout"
+    ]
   }
 }

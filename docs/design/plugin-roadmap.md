@@ -48,9 +48,10 @@ and reproducible local fixtures are recorded in
 above stays open until the supported installed/platform matrix is complete.
 
 The [SDK validation command and CI workflow](plugin-sdk-validation.md) now provide
-repeatable development checks and candidate checksums. Exact Node 20.19.0 and
-24.22.2 pass locally on macOS; the remote six-job matrix has not run. This does
-not close the combined capability/release item above.
+repeatable development checks and candidate checksums. The remote six-job matrix
+and the installed-app acceptance on four platforms passed on 2026-11-18
+([remote acceptance](plugin-remote-acceptance.md)). Performance budgets, manual
+acceptance, signing and a release run keep the combined item above open.
 
 Additional AI-provider wire formats are optional expansion, not a v1 requirement.
 Only add one for a named provider/use case that the current OpenAI-compatible
