@@ -20,9 +20,9 @@ export const TOOL_GROUPS = {
 export const CORE_TOOLS = ['list_plugin_commands', 'get_project', 'list_options', 'set_project', 'set_aspect_ratio', 'undo'];
 const S = { type: 'STRING' };
 export const CONTEXT_TOOLS = [
-  { name: 'load_tools', description: 'Load groups as needed: discovery (resume long-video indexing, retrieve/review movie, stream or gameplay moments, propose preview cards, add chosen clips); reference (reference edit measurements); graphics (custom drawings/charts); editorial (playbook, speech logging/cleanup, highlights, critique); timeline (cuts/trim/speed/reverse/freeze/links); layers; files (local import); text (speech/captions/titles); captions (word timing/subtitles); audio (beats/effects/envelopes/ducking/music/voices); visual (color/effects/transitions/crop); motion (keyframes/paths/tracking/reframe); media (stock/scenes/images/frames); export (render/local review); plugins (installed sandboxed commands; discover with list_plugin_commands); external (configured MCP). Load several groups together; they remain available this request.',
+  { name: 'load_tools', description: 'Load groups from the enum for this request. discovery indexes/reviews source footage and proposes clips; reference measures edits; graphics draws; editorial plans/critiques; timeline edits timing; audio handles speech/music; motion tracks/animates; media searches/inspects; plugins runs discovered commands; external exposes configured MCP. Load several; groups stay available.',
     parameters: { type: 'OBJECT', properties: { groups: { type: 'ARRAY', items: { ...S, enum: [...Object.keys(TOOL_GROUPS), 'external'] } } }, required: ['groups'] } },
-  { name: 'recall_context', description: 'Read original tool output abbreviated in context. ref = context_ref or an archived turn:N reference; offset / max_chars page through JSON; optional query locates text. Read data rather than repeating expensive tools. Search/stock ids from older requests expire: search again before adding.',
+  { name: 'recall_context', description: 'Read archived output by context_ref or turn:N. offset/max_chars page JSON; query locates text. Reuse evidence instead of rerunning tools. Re-search expired stock ids.',
     parameters: { type: 'OBJECT', properties: { ref: S, offset: { type: 'INTEGER' }, max_chars: { type: 'INTEGER' }, query: S }, required: ['ref'] } },
 ];
 

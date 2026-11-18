@@ -6,6 +6,6 @@ contextBridge.exposeInMainWorld('frameInspection',{
 // Only the read capabilities needed by the shared preview renderer.
 contextBridge.exposeInMainWorld('api',{
   fontsList:()=>ipcRenderer.invoke('fonts:list'),
-  fontData:id=>ipcRenderer.invoke('fonts:data',id),
+  fontData:(id,face)=>ipcRenderer.invoke('fonts:data',id,face),
   readLut:ref=>ipcRenderer.invoke('lut:read',ref),
 });

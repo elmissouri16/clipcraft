@@ -1,0 +1,51 @@
+{
+  "id": "clipcraft-examples.lut-demo",
+  "name": "LUT demo",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Original small cube tables. Preview them on the sample and apply them to a selected clip; they remain exact package dependencies.",
+  "contributes": {
+    "luts": [
+      {
+        "id": "blue",
+        "name": "Blue-hour cube",
+        "file": "assets/blue-hour.cube",
+        "license": "Original ClipCraft example LUT, created from the included numeric table. MIT License; see the repository LICENSE."
+      },
+      {
+        "id": "gold",
+        "name": "Golden-light cube",
+        "file": "assets/golden-light.cube",
+        "license": "Original ClipCraft example LUT, created from the included numeric table. MIT License; see the repository LICENSE."
+      }
+    ],
+    "colorPresets": [
+      {
+        "id": "blue-look",
+        "name": "Blue hour at half strength",
+        "settings": {
+          "filter": "none",
+          "lut": "blue",
+          "lutIntensity": 50,
+          "grade": {
+            "contrast": 8
+          }
+        }
+      },
+      {
+        "id": "gold-look",
+        "name": "Golden light at half strength",
+        "settings": {
+          "filter": "none",
+          "lut": "gold",
+          "lutIntensity": 50,
+          "grade": {
+            "shadow": 6
+          }
+        }
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

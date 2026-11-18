@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {validateMotionContributions,motionPresetPatch,motionFromClip} from '../../../shared/pluginMotion.mjs';
+import {ANIMATIONS} from '../../../shared/motionCatalog.mjs';
+import {stateAt} from '../../../src/features/timeline/anim.js';
+import {validateManifest} from '../../../shared/pluginManifest.mjs';
+const require=createRequire(import.meta.url),{PluginManager}=require('../../../electron/plugins/manager.cjs'),checks=[],check=(name,fn)=>{fn();checks.push(name);};
+const preset={id:'pan-zoom',name:'Pan and zoom',curves:{scale:[{at:0,value:1},{at:1,value:1.3,ease:'smooth'}],x:[{at:0,value:0},{at:1,value:.2}]}};
+check('motion pack accepts bounded normalized zoom/pan curves',()=>assert.equal(validateMotionContributions([preset])[0].curves.scale[1].value,1.3));
+for(const kind of ['in','out','combo'])for(const p of ANIMATIONS[kind])check('existing '+kind+' animation '+p.id+' is available to packs',()=>assert.ok(validateMotionContributions([{id:'sample',name:'Sample',animation:{[kind]:{type:p.id,...(kind!=='combo'?{duration:.2}:{})}}}])));
+for(const mutate of [v=>delete v.id,v=>v.curves={source:[]},v=>v.curves.scale=[{at:0,value:1}],v=>v.curves.scale[1].at=0,v=>v.curves.scale[1].value=100,v=>v.curves.scale[1].ease='eval',v=>v.curves.scale[1].ease={p1x:3,p1y:0,p2x:1,p2y:1},v=>v.animation={in:{type:'shell'}},v=>v.animation={combo:{type:ANIMATIONS.combo[0].id},in:{type:ANIMATIONS.in[0].id}},v=>v.animation=null,v=>v.dispatch={type:'delete'}]){const p=structuredClone(preset);mutate(p);check('reject arbitrary or invalid motion',()=>assert.throws(()=>validateMotionContributions([p])));}
+const definition={...preset,digest:'a'.repeat(64),pluginId:'studio.motion',version:'0.1.0'},clip={in:10,out:14,speed:2,transform:{scale:1,x:0,y:0,rot:0},anim:{in:{type:ANIMATIONS.in[0].id,duration:.5}},keyframes:{y:[{t:10,v:1}],volume:[{t:10,v:1}]}};
+const patch=motionPresetPatch(definition,clip);check('replacement maps normalized curves onto exact source time and preserves unrelated keys',()=>{assert.equal(patch.keyframes.scale[0].t,10);assert.equal(patch.keyframes.scale[1].t,14);assert.equal(patch.keyframes.y,undefined);assert.deepEqual(patch.keyframes.volume,clip.keyframes.volume);assert.deepEqual(patch.anim,{});assert.equal(patch.packMotion.digest,definition.digest);});
+const applied={...clip,...patch};check('existing motion engine samples the preset at the clip speed',()=>{const a=stateAt(applied,0,2),b=stateAt(applied,2,2);assert.ok(Math.abs(a.transform.scale-1)<1e-6);assert.ok(Math.abs(b.transform.scale-1.3)<1e-6);assert.ok(Math.abs(b.transform.x-.2)<1e-6);});
+const normalized=motionFromClip(applied),roundTrip={...definition,...normalized};check('captured motion preserves a non-default base pose and opacity',()=>{const copied=motionFromClip({...applied,transform:{scale:1.4,x:.2,y:.1,rot:5},opacity:.6}),next=motionPresetPatch({...definition,...copied},{in:0,out:2,transform:{scale:3}});assert.deepEqual(next.transform,{scale:1.4,x:.2,y:.1,rot:5});assert.equal(next.opacity,.6);});
+check('in-app source normalization round-trips curves without losing easing',()=>assert.deepEqual(motionPresetPatch(roundTrip,clip).keyframes,patch.keyframes));
+check('trimmed motion retains points outside the visible interval',()=>{const p=motionFromClip({...applied,in:11,out:13});assert.equal(p.curves.scale[0].at,-.5);assert.equal(p.curves.scale[1].at,1.5);});
+const manifest={id:'studio.motion',name:'Motion',publisher:'Studio',version:'0.1.0',apiVersion:1,contributes:{motionPresets:[preset]}};check('pure motion packs require no entry/permissions',()=>assert.deepEqual(validateManifest(manifest).permissions,[]));
+const dir=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-motion-packs-')),source=path.join(dir,'source');await fs.mkdir(source);await fs.writeFile(path.join(source,'plugin.json'),JSON.stringify(manifest));const manager=new PluginManager(path.join(dir,'installed'),'2.0.0');await manager.install(source,true);assert.equal((await manager.creative()).motionPresets.length,1);checks.push('installed motion-only package contributes catalog choices');await manager.setEnabled((await manager.list())[0].key,false);assert.equal((await manager.creative()).motionPresets.length,0);checks.push('disabling removes choices while copied animation/curves remain self-contained');
+await fs.writeFile(path.join(dir,'result.json'),JSON.stringify({ok:true,checks},null,2));console.log(checks.length+' motion pack checks passed; evidence: '+dir);

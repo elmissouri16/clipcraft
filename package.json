@@ -90,6 +90,7 @@
     "typescript": "7.0.2",
     "vite": "^6.0.7"
   },
+  "exports": {"./internal/shortcut-contract": "./shared/pluginShortcuts.cjs"},
   "scripts": {
     "assets:preview": "node scripts/fetch-preview-photos.cjs --required",
     "predev": "node scripts/fetch-preview-photos.cjs",
@@ -101,10 +102,13 @@
     "test": "node scripts/test.cjs",
     "pretest": "node scripts/check-structure.cjs",
     "test:structure": "node scripts/check-structure.cjs",
+    "test:runtime-deps": "node scripts/check-runtime-dependencies.cjs",
     "build": "vite build",
     "start": "vite build && electron .",
     "package:linux": "vite build && electron-builder --linux deb --x64",
-    "sdk:build": "node scripts/build-plugin-sdk.cjs"
+    "sdk:build": "node scripts/build-plugin-sdk.cjs",
+    "sdk:cache": "node scripts/cache-plugin-sdk.cjs",
+    "sdk:verify": "node scripts/verify-plugin-sdk.cjs"
   },
   "build": {
     "appId": "com.clipcraft.app",

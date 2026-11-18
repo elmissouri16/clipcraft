@@ -1,0 +1,19 @@
+{
+  "id": "clipcraft-examples.local-speech",
+  "name": "Local speech transcript",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minClipcraftVersion": "2.0.0",
+  "entry": "commands.js",
+  "description": "Run an approved whisper-cli and a verified local model on picked audio. Review and save a new SRT file without uploading audio or changing the project.",
+  "permissions": ["local.run"],
+  "contributes": {
+    "localTools": [{"id":"speech","name":"Local speech","adapter":"speech.whisper","models":["base","turbo","darija"]}],
+    "commands": [{"id":"transcribe","name":"Transcribe picked audio","parameters":[
+      {"id":"model","name":"Model","type":"enum","default":"base","options":[{"value":"base","label":"Base"},{"value":"turbo","label":"Turbo"},{"value":"darija","label":"Darija"}]},
+      {"id":"start_sec","name":"Source start (seconds)","min":0,"max":86400,"step":0.1,"default":0},
+      {"id":"duration_sec","name":"Duration (seconds)","min":0.1,"max":120,"step":0.1,"default":5}
+    ]}]
+  }
+}

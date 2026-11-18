@@ -1,10 +1,18 @@
 # Stage 4b: declarative AI providers
 
+> Historical executable recipe design. Its runtime/SDK declarations are retired.
+> Use the [general Node host](plugin-extension-host.md) and
+> [migration rules](plugin-legacy-retirement.md). Creative pack and private edit
+> validation contracts remain where referenced by the current host.
+
+
 An API-1 package can contribute `aiProviders` without an executable entry or command
 permissions. The first slice adapts the existing OpenAI Chat Completions transport.
 Each provider declares a local ID, name, description, `protocol: "openai"`, `baseUrl`,
 `needsKey`, `defaultModel` and 1–32 models `{id,name,vision}`. All declared models
-must support function tools. Additional protocols and custom headers are later work.
+must support function tools. Additional wire formats are optional integrations
+requiring a named unsupported provider/use case; they are not a v1 requirement.
+Custom headers remain unsupported.
 
 Install adds metadata only. No model discovery, probing or requests occur at
 startup. The model catalog and vision flags come from the package; they are

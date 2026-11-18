@@ -22,7 +22,7 @@ module.exports = async (win, app, dir) => {
       children++;active++;peak = Math.max(peak, active);
       try {
         check(`${provider}: child inherits selected provider/model`, cfg.provider === provider && cfg.model === 'fixture-model' && !cfg.subagents && !cfg.webResearch);
-        check(`${provider}: child receives only source reads and submission`, options.tools.length === 4 && !options.tools.some(t => ['add_video_clip', 'delegate_video_analysis', 'export_video'].includes(t.name)));
+        check(`${provider}: child receives only source reads and submission`, JSON.stringify(options.tools.map(t=>t.name).sort()) === JSON.stringify(['read_video_transcript','find_video_moments','review_video_moment','inspect_frames','submit_analysis'].sort()));
         check(`${provider}: child cannot invoke an editor mutation`, (await options.onTool('add_text', { text: 'Forbidden' })).isError);
         if (mode === 'cancel') await new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(Error('Stopped child')), { once: true }));
         const scope = JSON.parse(options.prompt.split('\n')[0].slice(8));

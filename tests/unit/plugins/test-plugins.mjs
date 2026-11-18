@@ -8,6 +8,7 @@ import {pluginPresetPatch,storedExportSettings,resolveExport,settingsPatch} from
 const require=createRequire(import.meta.url),{PluginManager}=require('../../../electron/plugins/manager.cjs'),tar=require('tar');
 const root=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-plugin-unit-'));
 const sample=JSON.parse(await fs.readFile(new URL('../../../examples/plugins/review-copy/plugin.json',import.meta.url)));
+delete sample.icon; // These minimal admission/render fixtures intentionally contain no artwork.
 let checks=0;
 const check=async(name,fn)=>{await fn();checks++;console.log('PASS',name);};
 try {
@@ -55,7 +56,7 @@ try {
  const duplicates=path.join(root,'duplicates.tgz');await tar.c({file:duplicates,gzip:true,cwd:folder},['plugin.json','plugin.json']);
  await assert.rejects(manager.install(duplicates),/only one/);checks++;
  const link=path.join(root,'links');await fs.mkdir(link);await fs.symlink(path.join(folder,'plugin.json'),path.join(link,'plugin.json'));
- await assert.rejects(manager.install(link,true),/only plugin.json/);checks++;
+ await assert.rejects(manager.install(link,true),/regular file/);checks++;
  const links=path.join(root,'links.tgz');await tar.c({file:links,gzip:true,cwd:link},['plugin.json']);
  await assert.rejects(manager.install(links),/only one/);checks++;
  for (const prefix of ['../escape','/absolute']) {
@@ -76,7 +77,7 @@ try {
  const exampleKey=(await developer.list())[0].key;await developer.setEnabled(exampleKey,false);
  await loadExamplePlugins(developer,examples,()=>{});
  assert.equal((await developer.list()).length,1);assert.equal((await developer.presets()).length,1);checks++;
- const ipc={handlers:new Map(),handle(name,fn){this.handlers.set(name,fn);}};
+ const ipc={on(){},handlers:new Map(),handle(name,fn){this.handlers.set(name,fn);}};
  const frame={},sender={mainFrame:frame};
  require('../../../electron/plugins/ipc.cjs').registerPlugins({ipcMain:ipc,app:{getVersion:()=> '2.0.0'},dialog:{},getWindow:()=>({webContents:sender}),root:path.join(root,'ipc')});
  await assert.rejects(ipc.handlers.get('plugins:list')({sender:{},senderFrame:frame}),/only available/);checks++;

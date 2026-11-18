@@ -2,7 +2,7 @@
 const path=require('node:path'),fs=require('node:fs');
 const tools=require('./authoring.cjs');
 const VERSION=require('../package.json').version;
-const help=`ClipCraft plugin SDK ${VERSION} (host API 1)\n\nclipcraft-plugin create <new-directory> --id publisher.name --name "Plugin name" --publisher "Author" [--template panel|command|effect|transition|export-preset|ai-provider]\nclipcraft-plugin check <source-project>\nclipcraft-plugin build <source-project>\nclipcraft-plugin watch <source-project>\nclipcraft-plugin validate <dist-folder|archive.tgz>\nclipcraft-plugin inspect <dist-folder|archive.tgz>\nclipcraft-plugin pack <dist-folder> <new-archive.tgz>\n\nOptions: --json, --app-version 2.0.0, --help, --version\nSource projects are not installable: install the compiled dist folder.\nWatch rebuilds local output; it never installs, approves or executes a plugin.\n`;
+const help=`ClipCraft plugin SDK ${VERSION} (host API 1)\n\nclipcraft-plugin create <new-directory> --id publisher.name --name "Plugin name" --publisher "Author" [--template extension|effect|transition|export-preset|content-pack|text-style-pack|color-pack|motion-pack]\nclipcraft-plugin check <source-project>\nclipcraft-plugin build <source-project>\nclipcraft-plugin watch <source-project>\nclipcraft-plugin validate <dist-folder|archive.tgz>\nclipcraft-plugin inspect <dist-folder|archive.tgz>\nclipcraft-plugin pack <dist-folder> <new-archive.tgz>\n\nOptions: --json, --app-version 2.0.0, --help, --version\nSource projects are not installable: install the compiled dist folder.\nWatch rebuilds local output; it never installs, approves or executes a plugin.\n`;
 function parse(args){
  const positional=[],options={};const allowed=['id','name','publisher','template','app-version','json','help','version'];
  for(let i=0;i<args.length;i++){
@@ -50,8 +50,8 @@ async function main(args=process.argv.slice(2)){
  else if(command==='check')value=await tools.checkPlugin(paths[0],settings);
  else if(command==='build')value=await tools.buildPlugin(paths[0],settings);
  else if(command==='pack')value=await tools.packPlugin(paths[0],paths[1],settings);
- else value=await tools.validatePlugin(paths[0],settings);
- if(command==='inspect')value={...value,capabilities:{commands:value.manifest.permissions||[],panels:value.manifest.contributes.panels?.map(p=>({id:p.id,permissions:p.permissions||[],commands:p.commands||[]}))||[],contributions:Object.keys(value.manifest.contributes).filter(key=>value.manifest.contributes[key].length)}};
+ else value=await (command==='inspect'?tools.inspectPlugin:tools.validatePlugin)(paths[0],settings);
+ if(command==='inspect')value={...value,capabilities:{node:!!value.manifest.main,migrationRequired:!!value.migrationRequired,contributions:Object.keys(value.manifest.contributes).filter(key=>value.manifest.contributes[key].length)}};
  output({command,...value},options.json);
 }
 if(require.main===module)main().catch(error=>{diagnostic(error,process.argv.includes('--json'));process.exitCode=1;});

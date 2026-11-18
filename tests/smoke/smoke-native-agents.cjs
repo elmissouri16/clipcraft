@@ -16,6 +16,7 @@ module.exports=async(win,app,dir)=>{
  settings.setFirstRun({tourSeen:true,packPromptSeen:true});
  win.webContents.setBackgroundThrottling(false);win.webContents.on('console-message',(_event,level,message)=>{if(level>=3)result.errors.push(message);});
  if(!live){
+  settings.saveServiceKey('gemini-tts','fixture-mocked-speech-key');
   tts.speak=async(_fetch,_key,_dir,{signal})=>{voiceStarted=true;return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>{voiceAborted=true;reject(new Error('Stopped'));},{once:true}));};
   local.status=async()=>({ok:true,authenticated:true,version:'native-fixture'});
   const {createNativeAgents}=require("../../electron/agents/nativeAgents.cjs");

@@ -1,3 +1,4 @@
+import {packTextTemplates,useCreativePacks,preferredPackLuts,preferredPackColors,colorPresetPatch} from '../../plugins/creativeRegistry.js';
 import { useEffect, useRef, useState } from 'react';
 import {
   Blend, Captions as CaptionsIcon, Contrast, Film, FolderOpen, ImagePlus, Music, Plus, SlidersHorizontal,
@@ -298,8 +299,16 @@ function AudioTab(props) {
     setSub(id);
   };
   useEffect(() => {
-    if (sub !== 'auto' || !lib) return;
-    navigate(packSubs.length ? `music:pack:${packSubs[0]}` : 'music:All');
+    if (!lib) return;
+    if (sub === 'auto') { navigate(packSubs.length ? `music:pack:${packSubs[0]}` : 'music:All'); return; }
+    // Navigation can precede the async catalog. Keep the selected collection
+    // aligned with the options shown once the catalog arrives or changes.
+    if (pack) {
+      const kind = group === 'sfx' ? 'sfx' : 'music';
+      const available = kind === 'sfx' ? packSfxSubs : packSubs;
+      const collection = sub.slice(sub.indexOf(':pack:') + 6);
+      if (available.length && !available.includes(collection)) navigate(`${kind}:pack:${available[0]}`);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sub, lib]);
   const changeDestination = id => navigate(browserMemory.get(`audio:destination:${id}`) || ({ library: `music:pack:${packSubs[0] || 'Library'}`, online: 'music:All', project: 'yours', favorites: 'favorites' })[id]);
@@ -323,24 +332,25 @@ function AudioTab(props) {
     <div className="browser-audio-source"><Dropdown ariaLabel={t('library.audio_source')} value={tool ? 'tool' : destination} options={[...(tool ? [{ value: 'tool', label: sub === 'tts' ? t('tts.text_to_speech') : t('audio.credits') }] : []), ...destinations.map(([value, label]) => ({ value, label }))]} onChange={id => id !== 'tool' && changeDestination(id)} /></div>
     <div className="seg-tabs browser-destinations" aria-label={t('library.audio_source')}>{destinations.map(([id,label]) => <button key={id} className={!tool && sub !== 'auto' && destination === id ? 'on' : ''} aria-pressed={!tool && sub !== 'auto' && destination === id} onClick={() => changeDestination(id)}>{label}</button>)}</div>
     <div className="pad-block">
-      {sub === 'auto' ? <p className="empty-note">{t('library.loading_your_audio_library')}</p> : <AudioLibrary {...props} onSectionChange={navigate} section={sub} browserMemory={browserMemory} navigation={navigation} providerControl={providerControl} onShowCredits={() => setSub('credits')} onAddMedia={props.onAdd} />}
+      {sub === 'auto' ? <p className="empty-note">{t('library.loading_your_audio_library')}</p> : <AudioLibrary {...props} MediaCard={MediaCard} onSectionChange={navigate} section={sub} browserMemory={browserMemory} navigation={navigation} providerControl={providerControl} onShowCredits={() => setSub('credits')} onAddMedia={props.onAdd} />}
     </div>
   </TabFrame>;
 }
 
 function TextTab({ onAddText, sub, setSub }) {
+  useCreativePacks();
   return (
     <TabFrame>
       <Head title={sub === 'All' ? t('library.text_templates') : catalogLabel('text_cat', sub)} hint={t('library.click_or_drag_a_style_to_the_timeline')}>
         <button className="btn btn-primary btn-sm" onClick={() => onAddText({})}><Plus size={14} /> {t('inspector.add_text')}</button>
       </Head>
       <div className="chips scroll-x src-chips" role="group" aria-label={t('library.text_template_category')}>
-        {TEMPLATE_CATEGORIES.map((c) => (
-          <button key={c} className={`chip ${sub === c ? 'on' : ''}`} aria-pressed={sub === c} onClick={() => setSub(c)}>{catalogLabel('text_cat', c)}</button>
+        {[...TEMPLATE_CATEGORIES,...(packTextTemplates().length?['Plugins']:[])].map((c) => (
+          <button key={c} className={`chip ${sub === c ? 'on' : ''}`} aria-pressed={sub === c} onClick={() => setSub(c)}>{c==='Plugins'?t('plugins.title'):catalogLabel('text_cat', c)}</button>
         ))}
       </div>
       <div className="pad-block">
-        <TemplateGrid draggable category={sub} onPick={(t) => onAddText({ ...t.patch, template: t.id })} />
+        <TemplateGrid draggable category={sub} onPick={(t) => onAddText({ ...t.patch, ...(t.previewText?{text:t.previewText}:{}),...(t.duration?{duration:t.duration}:{}), template: t.id })} />
       </div>
     </TabFrame>
   );
@@ -526,6 +536,8 @@ const CAPTION_MODELS = [
 ];
 
 function CaptionsTab({ onAddText, captions, project, dispatch, onOpenSettings, settingsVersion }) {
+  useCreativePacks();
+  const templates=[...TEXT_TEMPLATES,...packTextTemplates()];
   const [lang, setLang] = useState('auto');
   const [model, setModel] = useState('base');
   // Cloud engines (item O): the user's own provider key, saved through the same encrypted
@@ -553,7 +565,7 @@ function CaptionsTab({ onAddText, captions, project, dispatch, onOpenSettings, s
   const needsDownload = !captions.models?.[model];
   const [source, setSource] = useState('all');
   const [tplId, setTplId] = useState('cap-classic');
-  const tpl = TEXT_TEMPLATES.find((t) => t.id === tplId);
+  const tpl = templates.find((t) => t.id === tplId);
   const pickStyle = (t) => {
     setTplId(t.id);
     if (project.textClips.some((c) => c.caption)) dispatch({ type: 'styleCaptions', patch: { ...t.patch, template: t.id } });
@@ -574,7 +586,7 @@ function CaptionsTab({ onAddText, captions, project, dispatch, onOpenSettings, s
     if (!f) return;
     const cues = regroupSegments(parseSRT(await f.text()), wpl);
     if (!cues.length) { setSrtNote(t('library.no_subtitle_cues_were_found_in_that_file')); return; }
-    const style = TEXT_TEMPLATES.find((x) => x.id === srtTplId) || tpl;
+    const style = templates.find((x) => x.id === srtTplId) || tpl;
     dispatch({ type: 'importSrtCaptions', style: { ...style.patch, template: style.id }, segments: cues.map((c) => ({ ...c, id: uid() })) });
     setSrtNote(tn('library.imported_count_subtitles_from_file', cues.length, { file: f.name }));
   };
@@ -732,6 +744,7 @@ function ManyNote({ count }) {
 // overlay pictures and graphics, where a clip filter visibly does nothing. The whole-video layer is
 // App's wholeFilter / onWholeVideoFilter; the tab opens on that scope when such a layer exists.
 function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, project, wholeFilter = null, onWholeVideoFilter = null }) {
+  useCreativePacks();
   const [scope, setScope] = useState(wholeFilter ? 'video' : 'clip');
   const whole = scope === 'video' && !!onWholeVideoFilter;
   const current = whole ? (wholeFilter ? filterFxLook(wholeFilter.fx) : 'none') : (target?.clip.filter || 'none');
@@ -742,7 +755,7 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
   const [presetName, setPresetName] = useState('');
   const [compareId, setCompareId] = useState(null); // hold a tile: show the unfiltered picture
   const storePresets = (list) => { setPresets(list); savePresets(localStorage, list); };
-  const canSave = !whole && !!target && current !== 'none' && !current.startsWith('lut:');
+  const canSave = !whole && !!target && current !== 'none' && !current.startsWith('lut:')&&!current.startsWith('pack-lut:');
   return (
     <>
       <Head title={t('audio-fx.filters')} hint={whole ? t('library.click_a_look_whole_video_hold_to_compare') : t('library.click_or_drag_onto_a_clip_hold_to_compare')} />
@@ -755,6 +768,7 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
       {whole && <p className="hint">{t('library.the_look_goes_on_the_effects_track_over_ev')}</p>}
       {!whole && <NeedClip target={target} />}
       {!whole && <ManyNote count={selectedCount} />}
+      {!whole&&!!preferredPackColors().length&&<div className="pad-block"><div className="look-cat-title">{t('plugins.color_presets')}</div><div className="chips">{preferredPackColors().map(p=><button className="chip" key={`${p.digest}/${p.id}`} disabled={!target} title={p.pluginName} onClick={()=>target&&updateTarget(colorPresetPatch(p))}>{p.name}</button>)}</div></div>}
       {has && current !== 'none' && (
         <div className="pad-block filter-k">
           <Slider dispatch={dispatch} label={t('library.name_intensity', { name: filterLabel(current, filterName(current)) })} value={k} min={0} max={100} step={1}
@@ -802,7 +816,7 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
           </div>
         </div>
       ))}
-      <LutBrowser target={whole ? { clip: { filter: current, filterIntensity: k } } : target} updateTarget={apply} dispatch={dispatch} project={project} current={current} />
+      <LutBrowser allowPackGrade={!whole} target={whole ? { clip: { filter: current, filterIntensity: k } } : target} updateTarget={apply} dispatch={dispatch} project={project} current={current} />
     </>
   );
 }
@@ -811,7 +825,8 @@ function FiltersTab({ target, updateTarget, media, selectedCount = 0, dispatch, 
 // and the user's imported .cube library (applied through the grade's LUT slot, the mechanism
 // that supports file paths). Imported entries persist in localStorage; invalid files surface
 // the parser's error instead of failing silently.
-function LutBrowser({ target, updateTarget, dispatch, project, current }) {
+function LutBrowser({ target, updateTarget, dispatch, project, current, allowPackGrade=true }) {
+  useCreativePacks();
   const [lib, setLib] = useState(() => loadLutLibrary(localStorage));
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -862,6 +877,7 @@ function LutBrowser({ target, updateTarget, dispatch, project, current }) {
           </div>
         </div>
       ))}
+      {allowPackGrade&&!!preferredPackLuts().length&&<><div className="look-cat-title sub">{t('plugins.lut_packs')}</div><div className="tile-grid">{preferredPackLuts().map(l=><button className="tile" key={`${l.digest}/${l.id}`} disabled={!target} title={`${l.pluginName} — ${l.license}`} onClick={()=>target&&updateTarget({grade:{...(target.clip.grade||{}),lut:{ref:l.ref,name:l.name,intensity:100,dependency:{pluginId:l.pluginId,digest:l.digest,version:l.version,id:l.id,name:l.name}}}})}><span className="tile-preview filter-thumb"><LookThumb lutRef={l.ref}/></span><span className="tile-label">{l.name}</span></button>)}</div></>}
       <div className="look-cat-title sub">{t('library.my_luts')} <span className="dim">{t('library.cube_3d_or_1d')}</span></div>
       <div className="preset-save">
         <button className="btn btn-sm" disabled={busy} onClick={importCube}>{busy ? t('library.importing') : t('grade.import_cube')}</button>

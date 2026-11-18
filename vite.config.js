@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import fontFormats from './build/font-formats.cjs';
@@ -11,10 +12,11 @@ const prodOnlyCsp = {
 
 export default defineConfig({
   plugins: [react(), prodOnlyCsp],
+  resolve: { alias: { 'clipcraft/internal/shortcut-contract': fileURLToPath(new URL('./shared/pluginShortcuts.cjs', import.meta.url)) } },
   css: { postcss: { plugins: [fontFormats] } },
   server: { port: 5173, strictPort: true },
   // Only the app's page: otherwise the dependency scan also crawls build output such as android/build.
-  optimizeDeps: { entries: ['index.html'] },
+  optimizeDeps: { entries: ['index.html'], include: ['clipcraft/internal/shortcut-contract'] },
   base: './',
   build: { outDir: 'dist', emptyOutDir: true },
 });

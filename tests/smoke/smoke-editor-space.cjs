@@ -58,7 +58,8 @@ module.exports = async (win, app, dir) => {
     await q(`(()=>{const source=[...document.querySelectorAll('.asset[draggable=true]')].find(e=>e.textContent.includes('Portrait source'));const target=document.querySelector('.tl-lane[data-lane=overlay]'),r=target.getBoundingClientRect(),dt=new DataTransfer();const ev=(type,el)=>el.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:dt,clientX:r.left+120,clientY:r.top+r.height/2}));ev('dragstart',source);ev('dragover',target);ev('drop',target);ev('dragend',source);})()`);
     await until('window.__fve.rawProject().overlayClips.length===1');
     check('dropping into a folded group uses layer zero and reveals the edit', await q('window.__fve.rawProject().overlayClips[0].layer===0&&!document.querySelector(".tl-row.is-folded .tl-lane[data-lane=overlay]")'));
-    await q('window.__fve.tab("audio")');await until('!!document.querySelector(".lib-credit-reminder")');
+    await q('window.__fve.tab("audio")');await until('!!document.querySelector(".browser-audio-source")');
+    await q('[...document.querySelectorAll(".browser-destinations button")].find(b=>b.textContent.trim()==="This project").click()');await until('!!document.querySelector(".lib-credit-reminder")');
     check('audio browsing shows a compact reminder with no expanded credit block', await q('document.querySelector(".lib-credit-link").textContent.includes("1 credit needed")&&!document.querySelector(".lib-credits")'));
     const reminderHeight = await q('document.querySelector(".lib-credit-reminder").getBoundingClientRect().height');
     await focusForClipboard();await click('.lib-credit-reminder button[aria-label="Copy credits"]');

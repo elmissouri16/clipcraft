@@ -2,14 +2,42 @@
 
 - [Bundled, system and imported fonts](media/fonts.md) — loading, availability and export checks.
 - [Public plugin SDK and authoring tools](../packages/plugin-sdk/README.md) — typed helpers, scaffolding, checking, bundling, validation and packaging.
-- [Plugin developer sessions](design/plugin-development.md) — temporary snapshots, reload, build watching and bounded runtime diagnostics.
+- [Current trusted Node extension contract](design/plugin-extension-host.md) — commands, events, services, hooks, jobs and native views.
+- [Runnable Node extensions](../examples/extensions/README.md) — speech, AI, media, export and editor features through general APIs.
+- [Creative content extensions](design/plugin-content-packs.md): sound/font assets, title/caption styles, LUT/color looks, motion and mixed effect/transition packs.
+- [Creative expansion audit](design/plugin-creative-expansion.md): native pack authoring, project dependency recovery and six-item acceptance evidence.
+- [Plugin usability expansion](design/plugin-usability-expansion.md): pack search/favorites/previews, reviewed preference migration, live rendering authoring and safe preview-cache cleanup.
+- [Runnable plugin examples](../examples/plugin-showcase/README.md): installable examples for every contribution type and an isolated eight-stage demo project.
+- [Historical managed local tools/models](design/plugin-local-tools.md) — retired speech recipe; current implementations use ordinary Node extensions.
+- [Plugin developer sessions](design/plugin-extension-development.md) — temporary Node snapshots, reload, build watching and runtime diagnostics.
+- [Picked media and destination jobs](design/plugin-media-jobs.md) — managed imports/process recipes and reviewed bounded HTTPS uploads.
+- [Reviewed panel actions](design/plugin-panel-reviewed-actions.md) — host AI/caption review and verified path-free GIF receipts.
+- [Native plugin controls](design/plugin-native-controls.md) — toolbar actions, scoped inspector drafts and strict boolean command inputs.
 - [Plugin UI actions](design/plugin-ui-actions.md) — declarative menu entries, selection conditions and host command controls.
 - [Plugin edit transactions](design/plugin-edit-transactions.md) — atomic, permission-gated clip moves and trims.
 - [Plugin editor context](design/plugin-editor-context.md) — permission-gated selection, playback and bounded timeline metadata.
 - [Linked plugin split and trim](design/plugin-linked-edits.md) — explicit picture/audio partners and synchronized atomic edits.
 - [Main-track plugin split and trim](design/plugin-main-ranges.md) — source continuity, explicit gaps and retained transition overlap.
+- [Linked plugin reorder](design/plugin-linked-reorder.md) — explicit companion pairs, preserved offsets, transition policies and atomic sequencing.
+- [Plugin source automation](design/plugin-automation.md) — fixed-duration speed, source-time curves and validated effect-slot editing.
+- [Plugin static properties](design/plugin-properties.md) — typed text/style, picture geometry/opacity, volume/mute and edge fades.
+- [Plugin clip lifecycle](design/plugin-lifecycle.md) — bounded creation/deletion/duplication, explicit track creation and placement.
+- [Plugin ripple removal](design/plugin-ripple.md) — bounded clock removal, explicit free-clip/pair scope, gap and transition policies.
 - [Main-track plugin reorder](design/plugin-main-reorder.md) — explicit gap/transition policies and atomic transactions.
 - [SDK implementation contract](design/plugin-sdk.md)
+- [Trusted extension project inspection](design/plugin-project-inspection.md)
+- [Trusted extension workbench views](design/plugin-extension-views.md)
+- [Trusted extension messages](design/plugin-extension-messages.md)
+- [Trusted extension shortcuts](design/plugin-extension-shortcuts.md)
+- [Trusted extension save/export hooks](design/plugin-extension-hooks.md)
+- [Trusted extension video export](design/plugin-extension-exports.md)
+- [Trusted extension events](design/plugin-extension-events.md)
+- [Node extension development and diagnostics](design/plugin-extension-development.md)
+- [General marker edits, file pickers and host tools](design/plugin-extension-document-tools.md)
+- [Managed extension jobs and file publication](design/plugin-extension-jobs-files.md)
+- [CraftAI through ordinary extension services](design/plugin-extension-ai.md)
+- [Application services and atomic caption tracks](design/plugin-extension-host-services.md)
+- [Ordinary extension commands in CraftAI](design/plugin-extension-agent-commands.md)
 - [Plugin system and author contract](design/plugin-system.md)
 - [Sandboxed plugin command SDK](design/plugin-commands.md)
 - [Plugin AI workflows](design/plugin-ai-workflows.md) — caption sharing, bounded chapter generation and host review.
@@ -18,6 +46,9 @@
 - [Plugin AI providers](design/plugin-ai-providers.md) — declarative services, scoped credentials, destination consent and host-owned requests.
 - [Custom plugin panels](design/plugin-panels.md) — isolated docked interfaces, read-only summary SDK, theme/focus contracts and failure recovery.
 - [Plugin implementation roadmap](design/plugin-roadmap.md)
+- [Plugin production-readiness audit](design/plugin-production-readiness.md) — prioritized release blockers, evidence gaps and acceptance criteria; v1 remains on hold.
+- [Plugin candidate release gate](design/plugin-release-readiness.md) — fixed-candidate full battery, integration fixes, artifact provenance and unresolved failures; production hold remains.
+- [Plugin permission and transaction review](design/plugin-transaction-review.md) — permission matrix, ordered mixtures, commit/revocation boundaries and bounded generated/app evidence.
 - [Project structure and development commands](architecture/project-structure.md)
 - [The project file and its chat sidecar](architecture/project-file.md)
 - [AI providers: one table, four protocols](agents/ai-providers.md)
@@ -47,3 +78,31 @@
 
 Screenshots and demo media retain their existing paths so external README and
 documentation links remain usable.
+
+- [Historical executable retirement and compatibility](design/plugin-legacy-retirement.md).
+
+- [SDK capability discovery, typed services, project settings and debugger attach](design/plugin-sdk-general-contracts.md).
+- [SDK compatibility, data lifecycle and distribution](design/plugin-sdk-compatibility.md).
+- [Extension discovery, lifecycle and fixture stabilization](design/plugin-extension-stabilization.md).
+- [Portable package admission and live-library followup](design/plugin-extension-package-hardening.md).
+- [Creative intake and macOS/Linux development verification](design/plugin-extension-platform-followup.md).
+- [Native export reliability and lower-third example followup](design/plugin-extension-reliability-followup.md).
+- [Bounded package work and SDK source capture](design/plugin-extension-resource-admission.md).
+- [Native extension-view keyboard acceptance](design/plugin-extension-keyboard.md).
+- [Closed extension-view package retention](design/plugin-extension-view-cleanup.md).
+- [Native view layout and modal focus](design/plugin-extension-layout.md).
+- [Normal-session observations and remaining retention limits](design/plugin-extension-normal-session.md).
+- [Bounded private-session reuse and stable SDK payloads](design/plugin-extension-session-reuse.md).
+- [Bounded SDK archive publication](design/plugin-extension-package-publication.md).
+- [Archive boundaries, metadata and nested compression](design/plugin-extension-archive-limits.md).
+- [Native encoder FIFO handoff and recovery](design/plugin-extension-fifo-handoff.md).
+- [Combined full application regression and fixture corrections](design/plugin-extension-full-regression.md).
+- [SDK verification command and nonpublishing CI](design/plugin-sdk-validation.md).
+- [Fresh-cache SDK correction and Mac/Linux verification](design/plugin-sdk-cache-followup.md).
+- [Self-contained ASAR worker and native view](design/plugin-extension-asar-views.md).
+- [Unfinished gates skipped in the resumed pass](design/plugin-extension-unfinished.md).
+- [Bounded inventory recovery enumeration](design/plugin-extension-recovery-bounds.md).
+- [Native-media ASAR paths and decoded exports](design/plugin-extension-native-media-paths.md).
+- [Preview/preference read bounds and final local plugin selection](design/plugin-extension-storage-bounds.md).
+
+- [Plugin management layout](design/plugin-management-layout.md) — research, configuration hierarchy and packaged icons.

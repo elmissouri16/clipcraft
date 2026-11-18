@@ -1,3 +1,4 @@
+import {useCreativePacks,preferredPackLuts} from '../../plugins/creativeRegistry.js';
 import React, { useState } from 'react';
 import { CurvesPanel, HslPanel } from './HslCurves.jsx';
 import NumBox from "../../../components/ui/NumBox.jsx";
@@ -31,6 +32,9 @@ function Row({ item, value, onChange, dispatch }) {
 
 // LUT: a bundled look or the user's own .cube file, with an intensity.
 function LutSection({ lut, onChange, dispatch }) {
+  const creative=useCreativePacks();
+  const preferred=preferredPackLuts(),retained=creative.luts.find(l=>l.digest===lut?.ref?.pluginDigest&&l.id===lut?.ref?.assetId);
+  const packLuts=[...preferred,...(retained&&!preferred.some(l=>l.digest===retained.digest&&l.id===retained.id)?[{...retained,ref:lut.ref}]:[])];
   const [error, setError] = React.useState('');
   const [imported, setImported] = React.useState([]);
   const current = lut && lut.ref ? lutKey(lut.ref) : '';
@@ -40,10 +44,12 @@ function LutSection({ lut, onChange, dispatch }) {
     if (!ref) return onChange(null);
     const res = await loadLut(ref);
     if (res.error) return setError(res.error);
-    onChange({ ref, name, intensity: lut?.intensity ?? 100 });
+    const packed=creative.luts.find(l=>l.digest===ref.pluginDigest&&l.id===ref.assetId);
+    onChange({ ref, name, intensity: lut?.intensity ?? 100,...(packed?{dependency:{pluginId:packed.pluginId,digest:packed.digest,version:packed.version,id:packed.id,name:packed.name}}:{}) });
   };
   const choose = (key) => {
     if (key === '') return pick(null);
+    const packed=packLuts.find(l=>lutKey(l.ref)===key);if(packed)return pick(packed.ref,packed.name);
     const b = BUNDLED_LUTS.find((x) => lutKey(x.ref) === key);
     if (b) return pick(b.ref, b.name);
     const o = own.find((x) => `p:${x.path}` === key);
@@ -66,6 +72,7 @@ function LutSection({ lut, onChange, dispatch }) {
           <optgroup label="slay">
             {BUNDLED_LUTS.map((b) => <option key={b.file} value={lutKey(b.ref)}>{catalogName('lut', b)}</option>)}
           </optgroup>
+          {!!packLuts.length&&<optgroup label={t('plugins.title')}>{packLuts.map(l=><option key={lutKey(l.ref)} value={lutKey(l.ref)}>{l.name} — {l.pluginName}</option>)}</optgroup>}
           {own.length > 0 && (
             <optgroup label={t('grade.imported')}>
               {own.map((o) => <option key={o.path} value={`p:${o.path}`}>{o.name}</option>)}

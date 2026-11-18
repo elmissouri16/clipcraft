@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),{EventEmitter}=require('node:events'),{ExtensionCommits}=require('../../../electron/plugins/extensionCommits.cjs');
+(async()=>{
+ const owner=Object.assign(new EventEmitter(),{isDestroyed:()=>false}),other=Object.assign(new EventEmitter(),{isDestroyed:()=>false}),job={active:true},next={active:true},gate=new ExtensionCommits({isActive:job=>job.active,pendingMs:20});
+ const first=gate.acquire(owner,[job]);assert.equal(gate.apply(other,first.id),false);await gate.drain(job);assert.equal(gate.apply(owner,first.id),false);assert.equal(gate.records.size,0);
+ const second=gate.acquire(owner,[job,next]);assert.equal(gate.apply(owner,second.id),true);assert.equal(gate.apply(owner,second.id),true);job.active=false;let drained=false;const waiting=gate.drain(job).then(()=>{drained=true;});await Promise.resolve();assert.equal(drained,false);assert.equal(gate.finish(other,second.id),false);gate.finish(owner,second.id);await waiting;assert.equal(drained,true);
+ assert.throws(()=>gate.acquire(owner,[job]),/authorized/);job.active=true;const third=gate.acquire(owner,[job]);job.active=false;assert.equal(gate.apply(owner,third.id),false);assert.equal(gate.records.size,0);job.active=true;
+ let allowed=true;const stale=gate.acquire(owner,[job],()=>allowed);allowed=false;assert.equal(gate.apply(owner,stale.id),false);
+ const expired=gate.acquire(owner,[job]);await new Promise(resolve=>setTimeout(resolve,35));assert.equal(gate.apply(owner,expired.id),false);
+ const gone=gate.acquire(owner,[job]);gate.apply(owner,gone.id);const closed=gate.drain(job);owner.emit('destroyed');await closed;assert.equal(gate.records.size,0);assert.equal(gate.owners.size,0);assert.equal(owner.listenerCount('destroyed'),0);
+ const {emptyProject,historyReducer,prepareExtensionCommit,pluginEditsApplied}=await import('../../../src/state/store.js');const base={past:[],present:emptyProject(),future:[]},draft={...base.present,name:'Prepared'};let claims=0;
+ const action=prepareExtensionCommit(base,draft,()=>{claims++;return true;});assert.equal(historyReducer({...base},action).present.name,base.present.name);assert.equal(claims,0,'a stale history is rejected before a native claim');const committed=historyReducer(base,action);assert.equal(committed.present.name,'Prepared');assert.equal(committed.past.length,1);assert.ok(pluginEditsApplied(committed,action));assert.equal(historyReducer(committed,action),committed);assert.deepEqual(historyReducer(committed,{type:'undo'}).present,base.present);
+ const refused=prepareExtensionCommit(base,draft,()=>false);assert.equal(historyReducer(base,refused),base);assert.equal(historyReducer(base,JSON.parse(JSON.stringify(action))),base);
+ console.log('Native commit reservations, synchronous claims, stop barriers, expiry, owner loss and exact-history atomic Undo passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,0 +1,91 @@
+{
+  "id": "clipcraft-examples.reviewed-gif-upload",
+  "name": "Reviewed GIF upload",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Example HTTPS PUT upload. Replace the placeholder origin with a server you control before use. Every upload needs a separately reviewed URL; no keys belong in the package.",
+  "permissions": [
+    "export.gif",
+    "export.upload"
+  ],
+  "entry": "commands.js",
+  "contributes": {
+    "commands": [
+      {
+        "id": "export-gif",
+        "name": "Export GIF and review upload",
+        "description": "End is exclusive. No audio. Existing files are protected; choose a new filename.",
+        "parameters": [
+          {
+            "id": "start_sec",
+            "name": "Start (seconds)",
+            "min": 0,
+            "max": 1000000,
+            "step": 0.1,
+            "default": 0
+          },
+          {
+            "id": "end_sec",
+            "name": "End (seconds; 0 = five seconds or project end)",
+            "min": 0,
+            "max": 1000000,
+            "step": 0.1,
+            "default": 0
+          },
+          {
+            "id": "max_size",
+            "name": "Longest edge",
+            "type": "enum",
+            "default": "size-480",
+            "options": [
+              {
+                "value": "size-320",
+                "label": "320 px"
+              },
+              {
+                "value": "size-480",
+                "label": "480 px"
+              },
+              {
+                "value": "size-720",
+                "label": "720 px"
+              },
+              {
+                "value": "size-960",
+                "label": "960 px"
+              }
+            ]
+          },
+          {
+            "id": "fps",
+            "name": "Frame rate",
+            "type": "enum",
+            "default": "fps-10",
+            "options": [
+              {
+                "value": "fps-5",
+                "label": "5 fps"
+              },
+              {
+                "value": "fps-10",
+                "label": "10 fps"
+              },
+              {
+                "value": "fps-20",
+                "label": "20 fps"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "exportDestinations": [
+      {
+        "id": "reviewed-put",
+        "name": "Configured HTTPS PUT destination (replace placeholder)",
+        "origin": "https://uploads.example.com"
+      }
+    ]
+  }
+}

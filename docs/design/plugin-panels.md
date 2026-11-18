@@ -1,6 +1,14 @@
 # Stage 5a: isolated custom panels
 
-This slice skips destination uploads and begins Stage 5 at the user's request.
+> Historical executable recipe design. Its runtime/SDK declarations are retired.
+> Use the [general Node host](plugin-extension-host.md) and
+> [migration rules](plugin-legacy-retirement.md). Creative pack and private edit
+> validation contracts remain where referenced by the current host.
+
+
+The original Stage 5 slice preceded destination uploads. The current pre-v1
+[picked media/destination job contract](plugin-media-jobs.md) now supports them
+through the same explicit command allowlist.
 A package can contribute one `panels` entry with `{id,name,entry:"panel.html",
 script?:"panel.js",style?:"panel.css",permissions:[],commands?:[]}`.
 Panel permissions allow `project.read` and `storage.local`; the extensions below
@@ -99,7 +107,7 @@ Electron references: [WebContentsView](https://www.electronjs.org/docs/latest/ap
 
 A panel may declare `commands: ["add-chapter-markers"]`, with at most eight
 unique IDs from its own package. Packages exposing panel actions may request
-only `project.read` and `markers.write` in this slice. Existing read-only packages
+canonical command permissions, including [reviewed AI, caption and GIF actions](plugin-panel-reviewed-actions.md). Package permission combinations and per-run host approval remain authoritative. Existing read-only packages
 retain their normalized manifests and fingerprints.
 
 `getInfo().commands` describes only those declared commands and parameters.
@@ -121,8 +129,9 @@ Closure, project replacement, revocation, crash and Stop cancel pending approval
 and staged work, including late responses. Applying is an atomic boundary:
 a commit already authorized can finish even if its view closes immediately after.
 Cancellation is unavailable during that short phase. Panel lifecycle operations
-never cancel unrelated manual commands. Storage, AI actions, caption/export actions,
-network and broader editor capabilities remain outside this slice.
+never cancel unrelated manual commands. Local storage and
+[reviewed AI/caption/GIF actions](plugin-panel-reviewed-actions.md) have separate
+bounded contracts; direct network and arbitrary editor APIs remain unavailable.
 
 
 Author a command button using the synchronous trusted click handler:
@@ -137,7 +146,7 @@ button.addEventListener('click', async () => {
   }
 });
 const unsubscribe = window.clipcraftPanel.commands.onProgress(({phase, progress}) => {
-  // phase: permission, running, applying, completed, denied, canceled or failed.
+  // phase: permission, running, review, applying, completed, denied, canceled or failed.
   // progress is a number in [0, 1]. No plugin message or project data is included.
 });
 cancelButton.addEventListener('click', () => window.clipcraftPanel.commands.cancel());
@@ -146,7 +155,7 @@ cancelButton.addEventListener('click', () => window.clipcraftPanel.commands.canc
 A trusted click creates one permit, consumed by `run`, expiring after 1.5 seconds.
 Do not await unrelated work before requesting the command. Synthetic events and
 automatic calls reject before IPC or native approval. `run` resolves to a status
-(`completed`, `denied`, `canceled`, `failed`); only completion carries `markers_added`.
+(`completed`, `denied`, `canceled`, `failed`). Completion carries actual marker/clip counts, or the caption/GIF receipt defined by the [reviewed actions contract](plugin-panel-reviewed-actions.md).
 A denied panel must be reopened before another action. Invalid allowlists/inputs
 and unsupported capabilities close the panel. Payload, rate and subscription
 limits also apply to the action API. There is one action per panel and one command
@@ -169,7 +178,11 @@ panel ID, never from page input. Storage lives outside the immutable package and
 project files. Different plugins, panels and package versions cannot read each
 other's state, even when their IDs/publisher text match. Exact-version reopening,
 project replacement and app restart retain the data; disabling retains it but
-revokes access. New versions start empty; migration is future explicit work.
+revokes access. New versions start empty until the user chooses the reviewed
+[preference migration](plugin-usability-expansion.md) in Settings. Selected keys
+copy between intact matching plugin/panel identities, with explicit conflict
+approval, quota checks and stale-review rejection. Source data stays intact;
+provider credentials and grants are separate and never transferred.
 Removal deletes that version's data. Settings provides a confirmed Clear saved
 data control that closes the version's open panel and clears its namespace.
 
@@ -202,3 +215,43 @@ permissions. Catch rejected operations and show their error to the user; the hos
 preserves the last committed state on validation/quota failure. Do not store keys,
 passwords or large media in preferences. The dashboard uses a single record so its
 note and chapter count publish together.
+
+## Pre-v1 ripple command allowlists
+
+Panels may allowlist commands using `timeline.ripple` with `editor.read` and the
+explicit free-clip/pair grants required by their scope. Execution still needs a
+trusted click and fresh native consent; panels receive no direct write API.
+Stopping/closing the panel discards staged ripple. See [the contract](plugin-ripple.md).
+
+The current pre-v1 extension also supports [bounded clip lifecycle and track
+placement](plugin-lifecycle.md). `clips.manage` and `tracks.write` are distinct
+grants requiring `editor.read`, with `clips.links` for explicit pair operations.
+Panels still run only allowlisted commands through native consent and receive
+verified clip/track counts; menu registration grants no implicit collateral edits.
+
+The current pre-v1 [static property contract](plugin-properties.md) adds
+`clips.properties`, with `clips.links` and both handles for linked targets.
+Native consent, exact target scope, lock checks and verified clip receipts apply
+to Settings, registered menus, allowlisted panel commands and CraftAI. It does
+not grant arbitrary patches, speed, keyframe or effect-parameter writes.
+
+[Source automation](plugin-automation.md) adds separate `clips.retime`,
+`clips.automation` and `clips.effects` command grants, each requiring `editor.read`.
+Linked targets also require both handles and `clips.links`. Settings, menus,
+allowlisted panel commands and CraftAI share exact scope, native consent and
+actual receipts; catalog changes invalidate prepared effect commits.
+
+
+[Reviewed panel actions](plugin-panel-reviewed-actions.md) now extend the same
+allowlist to chapter AI, translated captions and host GIF publication. Panel
+progress includes `review`; caption receipts report actual count/track/language,
+and native GIF receipts expose verified metadata without paths. Each run retains
+native consent, mandatory review where applicable, exact lifetime checks and
+cancellation. GIF files remain after publication and are not timeline Undo edits.
+
+
+[Picked media and reviewed upload jobs](plugin-media-jobs.md) also run through
+same-package command allowlists. Library imports report `media_added: 1`; GIF
+uploads retain a native artifact and a separate bounded upload receipt without
+paths, URLs, credentials or response bodies. Separate host source/destination
+choices, final authorization, cancellation and native lifetime checks remain required.

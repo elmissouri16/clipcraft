@@ -1,3 +1,4 @@
+import {ExtensionActions} from '../../plugins/components/ExtensionNativeUi.jsx';
 import PluginEffectControls from '../../plugins/components/PluginEffectControls.jsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useClockTime } from '../../preview/useClockTime.js';
@@ -379,7 +380,7 @@ function InspectorHeader({ Icon, title, onCollapse }) {
   </div>;
 }
 
-export default function Inspector({ collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect }) {
+export default function Inspector({  collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect }) {
   const bodyRef = useRef(null);
   useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [selection?.track, selection?.id]);
   const time = useClockTime(clockRef, pausedTime, playing && !collapsed);
@@ -400,7 +401,7 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
     return (
       <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>
         <InspectorHeader Icon={Sparkles} title={t('inspector.effect')} onCollapse={onCollapse} />
-        <div className="inspector-body" ref={bodyRef}>{multi}<EffectPanel onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
+        <div className="inspector-body" ref={bodyRef}>{multi}{!collapsed&&<ExtensionActions location="inspector"/>}<EffectPanel onSelectEffect={onSelectEffect} project={project} selection={selection} dispatch={dispatch} onAddTextOver={onAddTextOver} /></div>
       </aside>
     );
   }
@@ -424,6 +425,7 @@ export default function Inspector({ collapsed = false, onCollapse, project, sele
       <InspectorHeader Icon={Icon} title={title} onCollapse={onCollapse} />
       <div className="inspector-body" ref={bodyRef}>
       {multi}
+      {!collapsed&&<ExtensionActions location="inspector"/>}
       {!clip && <ProjectDetails project={project} dispatch={dispatch} duration={duration} />}
 
       {clip && track === 'text' && <TextInspector key={clip.id} clip={clip} dispatch={dispatch} project={project} />}

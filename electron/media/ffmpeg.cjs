@@ -1,15 +1,16 @@
 const { audioFadeFilters, audioAutomationFilters } = require('../audio/fades.cjs');
 // Builds FFmpeg arguments for exporting a project to MP4.
-// Pure module (no Electron imports) so it can be tested from plain Node.
+// Media and argument helpers also run from plain Node for standalone tests.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, execFile, execFileSync } = require('child_process');
 
-const ffmpegPath = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
+const {unpackedBinaryPath}=require('./nativePaths.cjs');
+const ffmpegPath = unpackedBinaryPath(require('ffmpeg-static'));
 // ffprobe-static ships an Intel-only macOS binary. Prefer the native platform
 // package, including arm64, so a clean Apple Silicon Mac needs no Rosetta.
-const ffprobePath = (() => {try{return require('@ffprobe-installer/ffprobe').path;}catch{return require('ffprobe-static').path;}})().replace('app.asar', 'app.asar.unpacked');
+const ffprobePath = unpackedBinaryPath((() => {try{return require('@ffprobe-installer/ffprobe').path;}catch{return require('ffprobe-static').path;}})());
 
 const layers = require("../export/layers.cjs");
 const { audioFxFilters } = require("../audio/audiofx.cjs");
@@ -940,6 +941,7 @@ ${log.slice(-3000)}`))));
         await once(fallback);
       }
       if (canceled) throw stopped();
+      runOpts.beforePublish?.();
       if (runOpts.noOverwrite) {
         try { fs.linkSync(workingFile, outFile); }
         catch (error) {

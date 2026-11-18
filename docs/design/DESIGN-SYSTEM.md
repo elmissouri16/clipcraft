@@ -56,6 +56,22 @@ desktop editor (Final Cut, Resolve, Xcode), not as a web page in a window. The r
   tag and time readouts are neutral and tabular. **Even grids**: choice grids never
   centre a lone last option.
 
+Plugins settings follows the same page/group owners through three task views:
+**Installed**, **Pack content**, and **Create & develop**. Use the existing neutral
+segmented selector, kept visible while the settings body scrolls. Selected-package
+configuration uses a searchable compact inventory beside one stable detail pane.
+The selected extension owns the settings shown in that pane; unrelated extension
+forms never appear above the inventory. Package PNG artwork is displayed when
+provided, with deterministic monograms as a fallback. Maintenance and technical details use
+secondary disclosures, while missing required packs and running/error states stay
+visible in context. Creative pack creation does not require Developer mode.
+Workspace visibility must not implicitly cancel jobs; hidden workspaces retain
+their existing owners until explicit cancellation, closure or revocation.
+Creative previews use a result list beside a selected-item card, compact shared
+transport and Slider controls, and neutral Original / With effect segments. Only
+the sample artwork uses gradients. Sample playback pauses in hidden task views;
+that pause does not cancel the host jobs owned by those views.
+
 Superseded by v14 in the original spec below: §4 Radii, §5 Elevation, §7 Buttons,
 Inputs, Search, Segmented, Chips, Panels & decks, Dialogs and Menus, and divergence
 rulings D2 and D6. The token tables (§1 colour, §2 type, §3 spacing) still apply.

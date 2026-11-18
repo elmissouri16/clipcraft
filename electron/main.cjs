@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, net, nativeImage, powerSaveBlocker, Menu, screen, protocol } = require('electron');
 
-require('./plugins/ipcGuard.cjs').installCommandIpcGuard(ipcMain);
-require('./plugins/commandProtocol.cjs').registerCommandScheme(protocol,[require('./plugins/panelProtocol.cjs').PANEL_SCHEME]);
+require('./plugins/ipcGuard.cjs').installExtensionViewIpcGuard(ipcMain);
+protocol.registerSchemesAsPrivileged([require('./plugins/extensionViewProtocol.cjs').VIEW_SCHEME]);
 
 const { scopedFetch, checkAbort, activityTimeout } = require("./system/cancel.cjs");
 app.setName('ClipCraft');
@@ -47,7 +47,7 @@ const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
 
 let win;
 const pluginManager = require('./plugins/ipc.cjs').registerPlugins({
-  ipcMain, app, dialog, getWindow:()=>win,
+  ipcMain, app, dialog, getWindow:()=>win, fontDirectory:()=>fontDir(),
   root:path.join(process.env.FVE_SMOKE || app.getPath('userData'),'plugins'),
   examplesDirectory:!app.isPackaged && process.env.CLIPCRAFT_DEV_EXAMPLES === '1' ? path.join(__dirname,'../examples/plugins') : undefined,
 });
@@ -411,7 +411,7 @@ ipcMain.handle('media:saveRecording', async (_e, bytes) => {
 // ---- Your fonts: .ttf / .otf / .woff / .woff2 kept in <userData>/fonts for every project. ----
 const userFonts = require('./export/fonts.cjs');
 const fontDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'fonts-test') : path.join(app.getPath('userData'), 'fonts'));
-const fontList = () => userFonts.list(fontDir()).map(({ id, name }) => ({ id, name }));
+const fontList = async () => {await pluginManager.ready;return [...userFonts.list(fontDir()).map(({ id, name }) => ({ id, name })), ...await pluginManager.fonts()];};
 ipcMain.handle('fonts:list', () => fontList());
 ipcMain.handle('fonts:import', async (_e, files) => {
   try {
@@ -421,25 +421,27 @@ ipcMain.handle('fonts:import', async (_e, files) => {
         title: i18n.t('main.add_fonts'), properties: ['openFile', 'multiSelections'],
         filters: [{ name: i18n.t('font-picker.fonts'), extensions: userFonts.EXT.map((x) => x.slice(1)) }],
       });
-      if (res.canceled) return { added: [], skipped: [], list: fontList() };
+      if (res.canceled) return { added: [], skipped: [], list: await fontList() };
       paths = res.filePaths;
     }
-    return { ...userFonts.add(fontDir(), paths), list: fontList() };
+    return { ...userFonts.add(fontDir(), paths), list: await fontList() };
   } catch (e) {
     return { error: e.message };
   }
 });
-ipcMain.handle('fonts:data', (_e, id) => {
+ipcMain.handle('fonts:data', async (_e, id, face=0) => {
+  if(typeof id==='string'&&id.startsWith('pack-font:'))return (await pluginManager.contentBytes(id,'font',face)).bytes;
   const file = userFonts.fileOf(fontDir(), id);
   return file ? fs.readFileSync(file) : null;
 });
-ipcMain.handle('fonts:remove', (_e, id) => {
+ipcMain.handle('fonts:remove', async (_e, id) => {
+  if(typeof id==='string'&&id.startsWith('pack-font:'))throw Error('Manage font packs in Settings → Plugins.');
   try {
     userFonts.remove(fontDir(), id);
   } catch (e) {
     return { error: e.message };
   }
-  return { list: fontList() };
+  return { list: await fontList() };
 });
 
 // ---- Favorites (sounds, videos, photos), kept across projects. UI tests use their own file. ----
@@ -558,37 +560,34 @@ const writeProjectFiles = async (file, json, chat) => {
   if (chat !== undefined) await persistence.writeChat(file, chat);
   if (json != null) await persistence.writeProject(file, json);
 };
-// Saves to the project's file, or asks where the first time (and for "Save as").
-ipcMain.handle('project:save', async (_e, json, file, opts = {}) => {
-  try {
-    if (file && projectFiles.has(file) && !opts.saveAs) {
-      await writeProjectFiles(file, json, opts.chat);
-      return file;
-    }
-    const name = String(opts.name || 'project').replace(/[\\/:*?"<>|]+/g, '').trim() || 'project';
-    const res = await dialog.showSaveDialog(win, {
-      title: opts.saveAs ? i18n.t('main.save_project_as') : i18n.t('main.save_project'),
-      defaultPath: file || `${name}.clipcraft.json`,
-      filters: [{ name: i18n.t('main.filter_project'), extensions: ['json'] }],
-    });
-    if (res.canceled) return null;
-    await writeProjectFiles(res.filePath, json, opts.chat);
-    projectFiles.add(res.filePath);
-    return res.filePath;
-  } catch (e) {
-    return { error: i18n.t('main.could_not_save_project', { reason: e.message }) };
-  }
+// Choosing a destination is separate from preparation: canceling the picker
+// never runs hooks or publishes a staged editor change.
+const pickProjectSaveTarget=async(file,opts={})=>{
+ if(file&&projectFiles.has(file)&&!opts.saveAs)return file;
+ const name=String(opts.name||'project').replace(/[\\/:*?"<>|]+/g,'').trim()||'project';
+ const res=await dialog.showSaveDialog(win,{title:opts.saveAs?i18n.t('main.save_project_as'):i18n.t('main.save_project'),defaultPath:file||`${name}.clipcraft.json`,filters:[{name:i18n.t('main.filter_project'),extensions:['json']}]});
+ if(res.canceled)return null;projectFiles.add(res.filePath);return res.filePath;
+};
+ipcMain.handle('project:saveTarget',async(_event,file,opts)=>{try{return await pickProjectSaveTarget(file,opts);}catch(error){return {error:i18n.t('main.could_not_save_project',{reason:error.message})};}});
+ipcMain.handle('project:save',async(_event,json,file,opts={})=>{
+ try{const target=await pickProjectSaveTarget(file,opts);if(!target)return null;await writeProjectFiles(target,json,opts.chat);return target;}
+ catch(error){return {error:i18n.t('main.could_not_save_project',{reason:error.message})};}
 });
 // An external agent's save_project with a path (docs/design/external-agent-mcp.md): no dialog, so only a
 // new *.clipcraft.json in an existing folder, or the project's own file; never another existing file.
+const checkAgentProjectTarget=(target,current)=>{
+  if (typeof target !== 'string' || !path.isAbsolute(target)) return { error: 'Give an absolute path ending in .clipcraft.json.' };
+  const file = path.resolve(target);
+  if (!/\.clipcraft\.json$/i.test(file)) return { error: 'The path must end in .clipcraft.json.' };
+  if (!fs.existsSync(path.dirname(file)) || !fs.statSync(path.dirname(file)).isDirectory()) return { error: `The folder ${path.dirname(file)} does not exist.` };
+  const own = typeof current === 'string' && current && path.resolve(current) === file;
+  if (fs.existsSync(file) && !own) return { error: `${file} already exists. Choose a new file name; existing files are never overwritten.` };
+  return {file};
+};
+ipcMain.handle('project:saveAgentTarget',(_event,target,current)=>{try{return checkAgentProjectTarget(target,current);}catch(error){return {error:`Could not save the project: ${error.message}`};}});
 ipcMain.handle('project:saveAgent', async (_e, json, target, current, chat) => {
   try {
-    if (typeof target !== 'string' || !path.isAbsolute(target)) return { error: 'Give an absolute path ending in .clipcraft.json.' };
-    const file = path.resolve(target);
-    if (!/\.clipcraft\.json$/i.test(file)) return { error: 'The path must end in .clipcraft.json.' };
-    if (!fs.existsSync(path.dirname(file)) || !fs.statSync(path.dirname(file)).isDirectory()) return { error: `The folder ${path.dirname(file)} does not exist.` };
-    const own = typeof current === 'string' && current && path.resolve(current) === file;
-    if (fs.existsSync(file) && !own) return { error: `${file} already exists. Choose a new file name; existing files are never overwritten.` };
+    const checked=checkAgentProjectTarget(target,current);if(checked.error)return checked;const file=checked.file;
     await writeProjectFiles(file, json, chat);
     projectFiles.add(file);
     return { file };
@@ -674,15 +673,22 @@ ipcMain.handle('app:closeCancel', () => { clearTimeout(closeTimer); relaunchOnCl
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
 const frameDirs = new Set();
 const agentExportTargets = new Map();
-pluginManager.commandRuntime.gifExporter=require('./export/pluginGif.cjs').createGifExporter({
- dialog,getWindow:()=>win,isExportBusy:()=>!!currentExport||!!agentExportTargets.size,
- createFrames:require('./export/pluginGifFrames.cjs').createGifFrames({ipcMain,BrowserWindow,manager:pluginManager}),
+const extensionExportTargets = new Map();
+let currentExportFrameDir=null;
+pluginManager.extensionExports.configure({
+  begin(record){
+    if(currentExport||agentExportTargets.size||extensionExportTargets.size)throw Error('Another export is already running.');
+    const target=require('./agents/editorExport.cjs').createEditorExportTarget({...record.input,requestId:record.id,kind:'export'},{outputDir:process.env.FVE_SMOKE||app.getPath('downloads'),cacheDir:path.join(mediaCacheDir(),'extension-renders')});
+    frameDirs.add(target.frameDir);extensionExportTargets.set(target.frameDir,{...target,record,sender:record.owner,controller:record.controller});return target;
+  },
+  cancel(record){if(record.target?.frameDir===currentExportFrameDir)stopExportWork();},
+  async release(record){if(record.target.frameDir===currentExportFrameDir&&currentExport)await currentExport.promise.catch(()=>{});dropFrames(record.target.frameDir);},
 });
 const agentExportOutputs = new Map();
 
 ipcMain.handle('agent:exportBegin', (event, req = {}) => {
   try {
-    if (currentExport || agentExportTargets.size || pluginManager.commandRuntime.gifExporter.busy) throw Error('Another export is already running.');
+    if (currentExport || agentExportTargets.size || extensionExportTargets.size) throw Error('Another export is already running.');
     const key = agentRequestKey(event, req.requestId);
     if (agentRequests.has(key)) throw Error('This assistant request is already running.');
     const target = require('./agents/editorExport.cjs').createEditorExportTarget(req, {
@@ -698,7 +704,7 @@ ipcMain.handle('agent:exportBegin', (event, req = {}) => {
 });
 
 ipcMain.handle('export:begin', async (_e, suggested) => {
-  if(pluginManager.commandRuntime.gifExporter.busy)throw Error('A GIF export is already running.');
+  if(currentExport||agentExportTargets.size||extensionExportTargets.size)throw Error('Another export is already running.');
   let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'ui-export.mp4') : null;
   if (!file) {
     const base = String(suggested || 'export').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'export';
@@ -756,6 +762,7 @@ const dropFrames = (dir) => {
     if (!owned.sender.isDestroyed()) owned.sender.removeListener('destroyed', owned.destroyed);
   }
   frameDirs.delete(dir);
+  extensionExportTargets.delete(dir);
   textStreams.get(dir)?.kill();
   textStreams.delete(dir);
   textCacheKeys.delete(dir);
@@ -793,11 +800,14 @@ ipcMain.handle('export:caps', async () => {
 ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
   let exportJob, ownsFrames = false;
   try {
-    const owned = agentExportTargets.get(target?.frameDir);
+    const author=target?.authorToken?pluginManager.authoring.verify(target.authorToken,event.sender):null;
+    if(author&&author.kind!=='exportPresets')throw Error('Invalid author export authorization.');
+    const extensionOwned=extensionExportTargets.get(target?.frameDir);
+    const owned = agentExportTargets.get(target?.frameDir)||extensionOwned;
     if ((owned || target?.requestId) && (!owned || owned.sender.id !== event.sender.id || owned.requestId !== target.requestId || owned.file !== target.file)) throw Error('This assistant export target is not valid.');
     ownsFrames = frameDirs.has(target?.frameDir);
     if (owned?.controller.signal.aborted) return { canceled: true };
-    if (currentExport || pluginManager.commandRuntime.gifExporter.busy) throw Error('Another video is already being encoded.');
+    if (currentExport) throw Error('Another video is already being encoded.');
     const project = fxJobs.resolve(projectIn);
     if (owned && fs.existsSync(target.file) && project.media.some(m => m.path && fs.existsSync(m.path) && fs.realpathSync(m.path) === fs.realpathSync(target.file))) throw Error('Choose an output path different from source media.');
     const textFile = path.join(target.frameDir, 'text.mov');
@@ -806,8 +816,11 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
       : project;
     // Low-End mode: the export yields CPU to the rest of the PC (nice +10). Other modes
     // run at normal priority. Priority never changes the encoder settings or output.
-    exportJob = runExport(withText, target.file, (p,detail) => {if(!win.isDestroyed())win.webContents.send('export:progress',p,detail);}, { nice: settings.getPerfMode() === 'low-end' ? 10 : 0, noOverwrite: !!owned?.noOverwrite });
-    currentExport = exportJob;
+    exportJob = runExport(withText, target.file, (p,detail) => {if(!win.isDestroyed())win.webContents.send('export:progress',p,detail);}, { nice: settings.getPerfMode() === 'low-end' ? 10 : 0, noOverwrite: !!owned?.noOverwrite, beforePublish:()=>{if(author)pluginManager.authoring.verify(target.authorToken,event.sender);if(extensionOwned)pluginManager.extensionExports.assert(extensionOwned.record);} });
+    const stopAuthor=()=>exportJob.cancel();
+    author?.controller.signal.addEventListener('abort',stopAuthor,{once:true});
+    exportJob.promise.finally(()=>author?.controller.signal.removeEventListener('abort',stopAuthor)).catch(()=>{});
+    currentExport = exportJob;currentExportFrameDir=target.frameDir;
     await exportJob.promise;
     let size = 0;
     try { size = fs.statSync(target.file).size; } catch { /* the done card shows no size */ }
@@ -815,8 +828,8 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     if (owned) {
       const probe = await require('./media/ffmpeg.cjs').probe(target.file);
       if (probe.type !== 'video' || !probe.width || !(probe.duration > 0) || !size) throw Error('The rendered file could not be verified as a video.');
-      metadata = { duration_sec: probe.duration, width: probe.width, height: probe.height, fps: probe.fps, video_codec: probe.vcodec, audio_codec: probe.acodec, has_audio: probe.hasAudio };
-      agentExportOutputs.set(target.file, { owner: event.sender.id, requestId: owned.requestId, revision: owned.revision, timelineStart: owned.timelineStart || 0, metadata, fingerprint: fileFingerprint(target.file) });
+      metadata = { duration_sec: probe.duration, width: probe.width, height: probe.height, fps: probe.fps, video_codec: probe.vcodec, audio_codec: probe.acodec || null, has_audio: probe.hasAudio };
+      if(!extensionOwned)agentExportOutputs.set(target.file, { owner: event.sender.id, requestId: owned.requestId, revision: owned.revision, timelineStart: owned.timelineStart || 0, metadata, fingerprint: fileFingerprint(target.file) });
       while (agentExportOutputs.size > 64) agentExportOutputs.delete(agentExportOutputs.keys().next().value);
     }
     return { ok: true, file: target.file, size, ...(metadata ? { metadata } : {}) };
@@ -824,7 +837,7 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     if (exportJob?.canceled) return { canceled: true };
     return { ok: false, error: e.message };
   } finally {
-    if (currentExport === exportJob) currentExport = null;
+    if (currentExport === exportJob) {currentExport = null;currentExportFrameDir=null;}
     if (ownsFrames) dropFrames(target.frameDir);
     if (exportJob) fxJobs.clear();
   }
@@ -954,6 +967,7 @@ ipcMain.handle('export:cancel', () => {
 });
 // ---- Settings and AI. API keys stay in this process; the renderer only ever sees a hint like "…abcd". ----
 const settings = require("./system/settings.cjs");
+settings.onChanged(({keys})=>pluginManager.extensions.emit('application.configurationChanged',{keys},{source:{kind:'unknown'},reason:'configuration'}).catch(()=>{}));
 const ai = require("./agents/ai.cjs");
 const localAgents = require("./agents/localAgents.cjs");
 const agentRuntimes = require('./agents/agentRuntime.cjs').createAgentRuntimes({
@@ -976,16 +990,11 @@ ipcMain.handle('app:openHelp', (_e, url) => {
   return false;
 });
 
-pluginManager.providerService=require('./plugins/providerService.cjs').createProviderService({manager:pluginManager,settings,dialog,getWindow:()=>win});
-require('./plugins/providerGate.cjs').configure(pluginManager.providerService);
-app.on('before-quit',()=>pluginManager.providerService.revoke());
-const providerSetup=async(event,provider)=>{
- if(require('./agents/providers.cjs').isPlugin(provider)){
-  if(event.sender!==win?.webContents||event.senderFrame!==win?.webContents.mainFrame)throw Error('Plugin providers are only available to the editor.');
-  await pluginManager.providerService.ensure(provider);
- }
-};
-ipcMain.handle('settings:get', async()=>{await pluginManager.providerService.refresh();return settings.getPublic();});
+pluginManager.extensionAi=new (require('./agents/extensionAi.cjs').ExtensionAi)(pluginManager);
+require('./agents/extensionAi.cjs').configure(pluginManager.extensionAi);
+new (require('./agents/extensionAiAccess.cjs').ExtensionAiAccess)({getConfig:()=>settings.getActive(),chat:(...args)=>require('./agents/ai.cjs').chat(...args),presets:require('./agents/providers.cjs'),onChanged:listener=>settings.onChanged(listener),prepare:async context=>{const providers=require('./agents/providers.cjs'),id=settings.getPublic().provider;if(providers.isExtension(id)){if(id.startsWith('extension:'+context.owner.manifest.id+'.'))throw Error('An AI service cannot recursively request its selected connection.');providers.setExtensionProviders(await pluginManager.extensionAi.catalog());}}}).register(pluginManager.extensions);
+pluginManager.refreshAiCatalog=async()=>require('./agents/providers.cjs').setExtensionProviders(await pluginManager.extensionAi.catalog());
+ipcMain.handle('settings:get',async()=>{await pluginManager.refreshAiCatalog();return settings.getPublic();});
 // UI language (docs/design/localization.md): settled at startup for both processes; the renderer asks
 // synchronously before React renders; a change is saved and applies after Restart.
 const i18n = require('./system/i18n.cjs');
@@ -1028,7 +1037,6 @@ ipcMain.handle('mcp:call', (event, { name, args, requestId, revision }) => withA
 ipcMain.handle('mcp:test', async (_e, server) => mcpRegistry.test(server));
 ipcMain.handle('settings:save', async(event, patch) => {
   try {
-    await providerSetup(event,patch.provider);
     return { ok: true, settings: settings.save(patch) };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -1036,7 +1044,7 @@ ipcMain.handle('settings:save', async(event, patch) => {
 });
 ipcMain.handle('settings:clearKey', (_e, provider) => settings.clearKey(provider));
 ipcMain.handle('settings:saveProviderKey', async(event, provider, key) => {
-  try { await providerSetup(event,provider); return { ok: true, settings: settings.saveProviderKey(provider, key) }; }
+  try { return { ok: true, settings: settings.saveProviderKey(provider, key) }; }
   catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('settings:setModel', (_e, provider, model) => {
@@ -1074,32 +1082,14 @@ ipcMain.handle('settings:clearServiceKey', (_e, name) => settings.clearServiceKe
 ipcMain.handle('app:version', () => app.getVersion());
 
 
-// ---- Text to speech: Gemini, VoiceStudio (an app on this computer, over its local API) and ElevenLabs. Keys
-// stay in the main process. ----
-const tts = require("./audio/tts.cjs");
-const geminiTts = require("./audio/geminiTts.cjs");
+// ---- Built-in voice engines and general extension integrations. ----
+const tts = require('./audio/tts.cjs');
+const geminiTts = require('./audio/geminiTts.cjs');
+const extensionVoices=new (require('./audio/extensionVoices.cjs').ExtensionVoices)(pluginManager);
 const ttsOut = () => path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'voiceovers');
 const ttsWords = (text) => String(text || '').trim().split(/\s+/).slice(0, 5).join(' ').replace(/[\\/:*?"<>|]+/g, '');
-// The VoiceStudio connector as the renderer sees it: the saved switch and address, and (when on) whether the
-// app answers there, its version, engine and voices.
-const studioState = async (signal) => {
-  const c = settings.getVoiceStudio();
-  if (!c.enabled) { let url = ''; try { url = tts.studioUrl(c.url); } catch { url = c.url; } return { ...c, url, running: false, version: '', engine: '', engines: [], voices: [] }; }
-  return { ...c, ...(await tts.studioStatus(net.fetch, c.url, { signal })) };
-};
-ipcMain.handle('tts:status', async () => ({ studio: await studioState(), elevenKey: !!settings.getServiceKey('elevenlabs'),
-  geminiKey: !!settings.getServiceKey('gemini-tts'), gemini: geminiTts.catalog(), voiceDefault: settings.getVoiceDefault() }));
-ipcMain.handle('settings:setVoiceDefault', (_e, value) => settings.setVoiceDefault(value));
-ipcMain.handle('settings:setVoiceStudio', (_e, value) => {
-  try { if (typeof value?.url === 'string') tts.studioUrl(value.url); } catch (e) { return { error: e.message }; }
-  return settings.setVoiceStudio(value);
-});
-// Tries an address (the draft in Settings, or the saved one) and says what answers there.
-ipcMain.handle('tts:studioTest', async (_e, url) => {
-  const st = await tts.studioStatus(net.fetch, typeof url === 'string' && url.trim() ? url : settings.getVoiceStudio().url);
-  if (!st.running) return { ok: false, text: st.error || tts.STUDIO_NOT_RUNNING };
-  return { ok: true, text: i18n.t('main.voicestudio_is_running', { version: st.version || '?', engine: st.engine || 'VoiceStudio', count: st.voices.length }) };
-});
+ipcMain.handle('tts:status', async () => ({extensions:await extensionVoices.catalog(),elevenKey:!!settings.getServiceKey('elevenlabs'),geminiKey:!!settings.getServiceKey('gemini-tts'),gemini:geminiTts.catalog(),voiceDefault:settings.getVoiceDefault()}));
+ipcMain.handle('settings:setVoiceDefault',(_e,value)=>settings.setVoiceDefault(value));
 ipcMain.handle('tts:geminiTestKey', async (_e, key) => {
   try { return await geminiTts.testKey(net.fetch, String(key || '').trim() || settings.getServiceKey('gemini-tts')); }
   catch (e) { return { ok: false, text: e.message }; }
@@ -1133,9 +1123,9 @@ ipcMain.handle('tts:testKey', async (_e, key) => {
 // Speaks the text and returns a media item (the file stays in <userData>/voiceovers).
 ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, async signal => {
   try {
-    if (!req || !['voicestudio', 'eleven', 'gemini'].includes(req.engine)) return { error: 'Choose a supported speech engine.' };
+    if (!req || !['eleven', 'gemini'].includes(req.engine)&&!/^extension:[a-z][\w.-]{1,159}$/.test(req.engine)) return { error: 'Choose a supported speech engine.' };
     const send = (stage, fraction, extra) => { if (win && !win.isDestroyed()) win.webContents.send('tts:progress', { stage, fraction, ...extra }); };
-    let file, waited = 0, studioVoice = null;
+    let file, waited = 0, extensionItem = null;
     if (req.engine === 'gemini') {
       send('speech', 0);
       const onWait = (seconds) => { waited += seconds; send('wait', 0, { seconds }); };
@@ -1144,19 +1134,7 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
       send('voice', 0);
       file = await tts.elevenSpeak(scopedFetch(net.fetch, signal), settings.getServiceKey('elevenlabs'), ttsOut(), { ...req, signal });
     } else {
-      // VoiceStudio: the connector must be on and the app answering; the voice must be one it lists, because it
-      // speaks with its default voice for an unknown id instead of refusing.
-      const c = settings.getVoiceStudio();
-      if (!c.enabled) return { error: 'VoiceStudio is off. Turn it on in Settings > Voice.' };
-      send('voice', 0);
-      const st = await tts.studioStatus(scopedFetch(net.fetch, signal), c.url, { signal });
-      if (!st.running) return { error: st.error || tts.STUDIO_NOT_RUNNING };
-      studioVoice = st.voices.find((v) => v.id === req.voiceId);
-      if (!studioVoice) return { error: `VoiceStudio has no voice "${req.voiceId}". Its voices: ${st.voices.map((v) => `${v.id} (${v.name})`).join(', ') || 'none'}.` };
-      // A "Describe a voice" entry builds the voice from the style text, so it needs one.
-      if (studioVoice.kind === 'design' && !String(req.style || '').trim()) return { error: `Describe the voice in style first: ${studioVoice.name} builds it from that description (who speaks, how they feel, how fast).` };
-      send('studio', 0);
-      file = await tts.studioSpeak(scopedFetch(net.fetch, signal), c.url, ttsOut(), { ...req, voiceId: studioVoice.wire || studioVoice.id, model: studioVoice.engine || '', signal });
+      send('extension',0);extensionItem=await extensionVoices.generate(req.engine,req,signal);file=extensionItem.path;
     }
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
@@ -1165,7 +1143,7 @@ ipcMain.handle('tts:speak', (event, req) => withAgentJob(event, req?.requestId, 
       ? { license: 'gemini', providerName: 'Google Gemini', creator: req.voiceId || geminiTts.DEFAULT_VOICE, line: 'Speech generated with Google Gemini TTS' }
       : req.engine === 'eleven'
       ? { license: 'elevenlabs', providerName: 'ElevenLabs', creator: req.voiceName || 'ElevenLabs voice', line: 'Voice generated with ElevenLabs (elevenlabs.io)' }
-      : { license: 'voicestudio', providerName: 'VoiceStudio', creator: studioVoice.kind === 'design' ? `${studioVoice.model} voice design` : studioVoice.name, line: `Voice generated with VoiceStudio (${studioVoice.kind === 'design' ? `${studioVoice.model} voice design` : studioVoice.name})` };
+      : extensionItem.credit;
     return { ...m, origin: 'tts', name: `Voice - ${words || 'text'}${path.extname(file)}`, credit, ...(waited ? { waited_sec: Math.round(waited) } : {}) };
   } catch (e) {
     return { error: e.message, ...(e.limit ? { limit: e.limit } : {}) };
@@ -1198,10 +1176,12 @@ ipcMain.handle('tts:speakLines', (event, req) => withAgentJob(event, req?.reques
 // ---- Asset pack library: folder-backed (electron/library/assets.cjs). The folder is created on
 // first read so the panels can name a real path in their empty state. ----
 const assets = require("./library/assets.cjs");
-ipcMain.handle('assets:list', () => {
+ipcMain.handle('assets:list', async () => {
+  await pluginManager.ready;
   const root = assets.assetsRoot(app.getPath('userData'), process.env);
   assets.ensureRoot(root);
-  return assets.readLibraryFor(app.getPath('userData'), process.env, process.resourcesPath);
+  const lib=assets.readLibraryFor(app.getPath('userData'), process.env, process.resourcesPath), sounds=await pluginManager.sounds();
+  return {...lib,items:[...lib.items,...sounds],total:lib.total+sounds.length,hasLibrary:lib.hasLibrary||sounds.length>0};
 });
 
 // ---- Stock photos (Openverse/Pixabay) and videos (Pixabay). Keys stay here. ----
@@ -1413,8 +1393,8 @@ ipcMain.handle('stock:add', (event, item, opts = {}) => withAgentJob(event, opts
 const draftConfig = (draft = {}) => {
   return ai.resolveDraft(settings.getActive(draft.provider), draft);
 };
-ipcMain.handle('ai:test', async(event, draft) => {try{await providerSetup(event,draft?.provider);return await ai.testConnection(draftConfig(draft));}catch(error){return {ok:false,error:error.message};}});
-ipcMain.handle('ai:models', async(event, draft) => {try{await providerSetup(event,draft?.provider);return await ai.listModels(draftConfig(draft),{refresh:!!draft?.refresh});}catch(error){return {ok:false,error:error.message};}});
+ipcMain.handle('ai:test', async(event, draft) => {try{return await ai.testConnection(draftConfig(draft));}catch(error){return {ok:false,error:error.message};}});
+ipcMain.handle('ai:models', async(event, draft) => {try{return await ai.listModels(draftConfig(draft),{refresh:!!draft?.refresh});}catch(error){return {ok:false,error:error.message};}});
 ipcMain.handle('ai:modelCapabilities', (_e, draft) => ai.modelCapabilities(draftConfig(draft), { refresh: !!draft?.refresh }));
 ipcMain.handle('ai:sdkStatus', async (_e, draft) => {
   const cfg = draftConfig(draft);
@@ -1437,8 +1417,9 @@ ipcMain.handle('ai:pickExecutable', async (_e, provider) => {
 
 // ---- LUTs (.cube): the bundled ones in shared/luts, or a file the user picked. ----
 const LUT_DIR = path.join(__dirname, '..', 'shared', 'luts');
-ipcMain.handle('lut:read', (_e, ref) => {
+ipcMain.handle('lut:read', async (_e, ref) => {
   try {
+    if(ref?.pluginDigest!==undefined||ref?.assetId!==undefined){await pluginManager.ready;const value=await pluginManager.contentBytes(`pack-lut:${ref.pluginDigest}:${ref.assetId}`,'lut');return {text:new TextDecoder('utf-8',{fatal:true}).decode(value.bytes)};}
     let file;
     if (ref && ref.bundled) {
       if (!/^[\w.-]+\.cube$/i.test(ref.bundled)) return { error: 'Unknown LUT' };
@@ -1664,10 +1645,10 @@ ipcMain.handle('agent:step', async (event, req) => {
   try {
     const fb = require("./agents/aifallback.cjs");
     const active = settings.getActive();
-    const first = require('./agents/providers.cjs').isPlugin(req.provider)||fb.TOOL_PROVIDERS.includes(req.provider) || localAgents.isProvider(req.provider) ? req.provider : active.provider;
+    const first = require('./agents/providers.cjs').isRetired(req.provider)||require('./agents/providers.cjs').isExtension(req.provider)||fb.TOOL_PROVIDERS.includes(req.provider) || localAgents.isProvider(req.provider) ? req.provider : active.provider;
     if (localAgents.isProvider(first)) throw new Error('SDK editing now uses native tools. Restart ClipCraft to load the updated editor.');
     const keys = settings.getPublic().keys || {};
-    const order = require('./agents/providers.cjs').isPlugin(first)?[first]:fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
+    const order = require('./agents/providers.cjs').isRetired(first)||require('./agents/providers.cjs').isExtension(first)?[first]:fb.TOOL_PROVIDERS.includes(first) ? fb.fallbackOrder(first, (p) => p === 'ollama' || !!keys[p]) : [first];
     // SDK choices are explicit: never silently send their conversations to an API
     // provider (or launch a local SDK as an API provider's fallback).
     const images=agentFrames.images(event.sender.id,req.frameIds||[]);

@@ -12,6 +12,7 @@ import {fxTransition} from '../../../src/features/effects/catalog.js';
 import {fxWork} from '../../../src/features/export/fxExport.js';
 const require=createRequire(import.meta.url),{PluginManager}=require('../../../electron/plugins/manager.cjs'),ff=require('../../../electron/media/ffmpeg.cjs');
 const sample=JSON.parse(await fs.readFile(new URL('../../../examples/plugins/diagonal-reveal/plugin.json',import.meta.url)));
+delete sample.icon; // These minimal admission/render fixtures intentionally contain no artwork.
 const definition=validateManifest(sample).contributes.transitions[0];
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 check('transition-only manifest accepted',()=>assert.equal(definition.duration,.5));

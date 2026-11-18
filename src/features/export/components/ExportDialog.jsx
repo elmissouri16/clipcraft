@@ -1,4 +1,4 @@
-import PluginCommands from '../../plugins/components/PluginCommands.jsx';
+import {ExtensionActions} from '../../plugins/components/ExtensionNativeUi.jsx';
 // Export dialog: cover + settings form, then the encoding view, then the done card.
 // Structure is the classic export sheet (cover left, form right, footer with duration + size),
 // drawn entirely in ClipCraft's own design system. Every number on it comes from the SAME
@@ -83,11 +83,7 @@ function Row({ label, children }) {
   return <div className="x-row"><span className="x-row-label">{label}</span><div className="x-row-ctl">{children}</div></div>;
 }
 
-export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen, onStart, onPickTarget, onRename, onSettings, onResolution, onPosterAt, onPosterImage, pluginCommands }) {
-  const [exportKind,setExportKind]=useState('video'),[gifPlugins,setGifPlugins]=useState([]);
-  const pluginBusy=['permission','running','review','applying'].includes(pluginCommands?.status?.phase);
-  useEffect(()=>{let live=true;const refresh=()=>window.api?.pluginsList?.().then(rows=>{if(live)setGifPlugins(rows.filter(r=>r.enabled&&r.manifest?.permissions?.includes('export.gif')));}).catch(()=>{});refresh();const off=window.api?.onPluginsChanged?.(refresh);return()=>{live=false;off?.();};},[]);
-  const exportType=<label className="plugin-export-type"><span>{t('plugins.export_type')}</span><Dropdown ariaLabel={t('plugins.export_type')} value={exportKind} disabled={pluginBusy} onChange={setExportKind} options={[{value:'video',label:t('plugins.video_export')},...gifPlugins.map(row=>({value:row.key,label:row.manifest.name}))]}/></label>;
+export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen, onStart, onPickTarget, onRename, onSettings, onResolution, onPosterAt, onPosterImage, onExtensionActionResult }) {
   const [choosing, setChoosing] = useState(false);
   const [pluginPresets, setPluginPresets] = useState([]);
   const [pluginError, setPluginError] = useState('');
@@ -104,9 +100,9 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
   },[state.ready,state.done,!!state.error]);
   const dialogKeys = event => {
     if (event.defaultPrevented) return;
-    if(event.key==='Escape'&&!pluginBusy&&(state.ready||state.done||state.error)){event.preventDefault();event.stopPropagation();onClose();return;}
+    if(event.key==='Escape'&&(state.ready||state.done||state.error)){event.preventDefault();event.stopPropagation();onClose();return;}
     if(event.key!=='Tab')return;
-    const buttons=[...dialog.current.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter(e=>e.getClientRects().length);
+    const buttons=[...dialog.current.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(e=>e.getClientRects().length);
     const first=buttons[0],last=buttons.at(-1);
     if(!first){event.preventDefault();return;}
     if(event.shiftKey&&(document.activeElement===first||document.activeElement===dialog.current)){event.preventDefault();last.focus();}
@@ -119,10 +115,11 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
         <div className="modal">
           <div className="modal-icon error"><CircleAlert size={26} /></div>
           <h3 id="export-title">{t('export.export_failed')}</h3>
+              {state.extension && <span className="dim">{t('plugins.requested_by_extension',{name:state.extension})}</span>}
           <pre className="error-log">{state.error}</pre>
           <div className="modal-actions">
             <button className="btn" onClick={onClose}>{t('app.close')}</button>
-            {state.project && state.eff && <button className="btn btn-primary" disabled={pluginBusy} onClick={onStart}>{t('export.try_again')}</button>}
+            {!state.extension && state.project && state.eff && <button className="btn btn-primary" onClick={onStart}>{t('export.try_again')}</button>}
           </div>
         </div>
       </div>
@@ -134,6 +131,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
         <div className="modal">
           <div className="modal-icon ok"><CircleCheck size={26} /></div>
           <h3 id="export-title">{state.review ? t('export.section_preview_ready') : t('export.export_complete')}</h3>
+              {state.extension && <span className="dim">{t('plugins.requested_by_extension',{name:state.extension})}</span>}
           {state.review && <video className="review-video" controls preload="metadata" src={toFileUrl(state.file)} aria-label={t('export.rendered_section_preview')} />}
           {state.review && <p className="export-dialog-note">{t('export.play_this_section_to_check_the_motion_and')}</p>}
           {state.review && state.metadata && <p className="export-dialog-note">{fmtDur(state.metadata.duration_sec)} · {state.metadata.width}×{state.metadata.height} · {state.metadata.fps} fps</p>}
@@ -179,6 +177,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           <div className="modal export-modal">
             <div className="x-head">
               <h3 id="export-title">{t('export.exporting_video')}</h3>
+              {state.extension && <span className="dim">{t('plugins.requested_by_extension',{name:state.extension})}</span>}
             </div>
             <div className="x-enc-body">
               <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={false} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} readOnly />
@@ -229,24 +228,6 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
     );
   }
 
-  if(exportKind!=='video'){
-    const row=gifPlugins.find(r=>r.key===exportKind);
-    return (
-      <div ref={dialog} onKeyDown={dialogKeys} tabIndex={-1} className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="export-title">
-        <div className="modal export-modal export-ready">
-          <div className="x-head">
-            <h3 id="export-title">{t('plugins.gif_export')}</h3>
-            <button type="button" className="icon-btn" disabled={pluginBusy} onClick={onClose} aria-label={t('app.close')}><X size={16}/></button>
-          </div>
-          <div className="plugin-export-body">
-            {exportType}
-            {row?<PluginCommands row={row} controller={pluginCommands} exportMode/>:<p role="alert">{t('plugins.gif_unavailable')}</p>}
-          </div>
-          <div className="x-footer"><button type="button" className="btn btn-ghost" disabled={pluginBusy} onClick={onClose}>{t('app.close')}</button></div>
-        </div>
-      </div>
-    );
-  }
   const { project, eff } = state;
   const stored = storedExportSettings(project);
   const custom = { ...CUSTOM_DEFAULTS, ...(stored.custom || {}) };
@@ -265,7 +246,6 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
         <div className="x-body">
           <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={choosing} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} />
           <div className="x-form">
-            {exportType}
             <MediaCredits project={project} />
             <Row label={t('home.name')}>
               <input type="text" value={state.name || ''} onChange={(e) => onRename(e.target.value)} aria-label={t('export.output_file_name')} />
@@ -347,6 +327,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
               </div>
             )}
           </div>
+          <ExtensionActions location="export" beforeRun={()=>new Promise(resolve=>onClose(resolve))} onResult={onExtensionActionResult}/>
         </div>
         <div className="x-foot">
           <span className="x-foot-meta" title={est.exact ? t('export.size_from_bitrate_settings') : t('export.size_estimated_from_settings')}>
@@ -354,7 +335,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           </span>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={onClose}>{t('app.cancel')}</button>
-            <button className="btn btn-primary" disabled={pluginBusy} onClick={onStart}>{t('topbar.export')}</button>
+            <button className="btn btn-primary" onClick={onStart}>{t('topbar.export')}</button>
           </div>
         </div>
       </div>

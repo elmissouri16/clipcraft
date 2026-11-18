@@ -1,11 +1,12 @@
+// Native edit planning and read-only historical metadata regression.
 import assert from 'node:assert/strict';
 import {emptyProject,historyReducer,preparePluginEdits,prepareProjectAction,pluginEditsApplied,videoLayout,projectDuration} from '../../../src/state/store.js';
 import {createEditorContext} from '../../../src/features/plugins/editorContext.js';
 import {editorSnapshot} from '../../../shared/pluginEditor.mjs';
 import {clipTransaction} from '../../../shared/pluginEdits.mjs';
-import {validateManifest} from '../../../shared/pluginManifest.mjs';
+import {validateLegacyManifest as validateManifest} from '../../../shared/legacyPluginManifest.mjs';
 import {actionState} from '../../../shared/pluginActions.mjs';
-import {actionSelection} from '../../../src/features/plugins/actionContext.js';
+import {actionSelection} from '../../fixtures/plugins/legacySelection.mjs';
 import {audioGain} from '../../../src/features/audio/fades.js';
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 const permissions=['editor.read','clips.linked'],baseClip=(id,n=4,extra={})=>({id,in:0,out:n,speed:1,...extra});
@@ -69,4 +70,59 @@ check('the private array guard retains ordinary main coverage and lock behavior'
 const manifest={id:'studio.linked',name:'Linked',publisher:'Studio',version:'1.0.0',apiVersion:1,entry:'commands.js',permissions,contributes:{commands:[{id:'run',name:'Run'}]}};
 check('manifest supports independent and combined linked edit grants',()=>{assert.ok(validateManifest(manifest));assert.ok(validateManifest({...manifest,permissions:[...permissions,'clips.write','timeline.edit','timeline.reorder']}));});
 for(const grants of [['clips.linked'],[...permissions,'markers.write'],[...permissions,'captions.read'],[...permissions,'export.gif']])check('incompatible permissions cannot mix with linked writes',()=>assert.throws(()=>validateManifest({...manifest,permissions:grants})));
+const near=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-8,`${actual} != ${expected}`);
+for(const track of ['video','overlay'])for(const offset of [-1.25,-1/3,1/3,1.25])for(const speed of [1,1.5,2.25]){
+ check(`${track} shifted split/trim preserves relative sources and offset ${offset} at speed ${speed}`,()=>{
+  const x=fixture({track,picture:{in:2,out:2+4*speed,speed},sound:{start:4+offset,in:5,out:5+4*speed,speed,linkOff:offset}});
+  const split=x.apply([x.split()]),r=x.apply([x.split(),x.trim(4.5,5.5)]),p=r.state.present;
+  const pictures=pics(p,track),layout=new Map(videoLayout(p.videoClips).map(l=>[l.clip.id,l]));
+  assert.equal(pictures.length,2);assert.equal(p.audioClips.length,2);
+  for(let i=0;i<2;i++){
+   const v=pictures[i],a=p.audioClips.find(c=>c.linkId===v.linkId),start=i?6:4.5;
+   near(track==='video'?layout.get(v.id).start:v.start,start);near(a.start,start+offset);
+   near(v.in,2+(i?2:.5)*speed);near(v.out,2+(i?4:1.5)*speed);
+   near(a.in,5+(i?2:.5)*speed);near(a.out,5+(i?4:1.5)*speed);
+   assert.equal(a.linkOff,offset);assert.equal(a.linkInOff,3);assert.equal(a.speed,speed);
+   assert.deepEqual(a.volumeKeys,x.state.present.audioClips[0].volumeKeys);
+   for(const t of [.1,.4,.8])near(audioGain(a,t,i?2:1),audioGain(x.state.present.audioClips[0],t+(i?2:.5),4));
+  }
+  assert.equal(split.state.present.audioClips[0].in,5);
+  assert.equal(split.state.present.audioClips[1].out,5+4*speed);
+  assert.notEqual(pictures[0].linkId,pictures[1].linkId);
+  assert.equal(p.markers,x.state.present.markers);assert.equal(p.textClips,x.state.present.textClips);
+  near(projectDuration(p),12);assert.equal(r.state.past.length,1);
+  const undone=historyReducer(r.state,{type:'undo'});assert.deepEqual(undone.present,x.state.present);
+  assert.deepEqual(historyReducer(undone,{type:'redo'}).present,p);
+ });
+}
+for(const offset of [-.75,.75]){
+ check('audio-initiated shifted operations use picture times '+offset,()=>{
+  const x=fixture({sound:{start:4+offset,linkOff:offset}}),trim=x.trim(5,7);
+  [trim.clipId,trim.partnerClipId]=[trim.partnerClipId,trim.clipId];
+  const p=x.apply([trim]).state.present;near(p.audioClips[0].start,5+offset);near(p.audioClips[0].in,7);
+  const s=x.apply([x.split(6,'reject','private-a','private-v')]).state.present;near(s.audioClips[1].start,6+offset);
+ });
+ check('full shifted trim is a no-op '+offset,()=>{const x=fixture({sound:{start:4+offset,linkOff:offset}});assert.equal(x.prepare([x.trim(4,8)]).action,null);});
+ check('shifted registered actions respect complete pairs and partner locks '+offset,()=>{
+  const x=fixture({sound:{start:4+offset,linkOff:offset}}),action={locations:['clip-menu'],permissions};
+  assert.equal(actionState(action,'clip-menu',{hasProject:true,selection:actionSelection(x.state.present,{track:'audio',id:'private-a'})}).enabled,true);
+  const locked=fixture({sound:{start:4+offset,linkOff:offset},extra:{layerState:{'audio:0':{locked:true}}}});
+  assert.equal(actionState(action,'clip-menu',{hasProject:true,selection:actionSelection(locked.state.present,{track:'video',id:'private-v'})}).reason,'locked');
+  assert.throws(()=>locked.prepare([locked.split()]),/locked/);
+ });
+ check('shifted pairs still reject extension and tiny source pieces '+offset,()=>{
+  const x=fixture({sound:{start:4+offset,linkOff:offset}});
+  for(const op of [x.trim(3.9,7),x.trim(5,8.1),x.split(4.05),x.split(7.95)])assert.throws(()=>x.prepare([op]));
+ });
+}
+check('shifted main transition edits preserve unrelated main times',()=>{
+ const x=fixture({picture:{transition:{type:'fade',duration:1}},sound:{start:3.5,linkOff:.5}});
+ assert.throws(()=>x.prepare([x.split(5.25)]),/transition/);
+ const p=x.apply([x.split(5.25,'preserve-overlap'),x.trim(3.5,4.5,'preserve-overlap')]).state.present;
+ near(videoLayout(p.videoClips).find(l=>l.clip.id==='after').start,7);near(p.audioClips[0].start,4);
+});
+check('shifted source violations reject the whole batch',()=>{
+ const x=fixture({sound:{start:4.5,linkOff:.5},extra:{media:[{id:'audio-media',type:'audio',duration:12}]}});
+ assert.throws(()=>x.prepare([x.split()]),/source bounds/);
+});
 console.log(JSON.stringify({ok:true,checks}));

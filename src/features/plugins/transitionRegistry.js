@@ -23,7 +23,7 @@ export function pluginTransitionInstance(id,params) {
 }
 export function pluginTransitionProblem(id,instance) {
   if(!isPluginTransition(id)||instance?.disabled)return null;
-  const d=definitions.get(id);if(!d)return 'Required transition plugin version is unavailable or disabled.';
+  const d=definitions.get(id);if(!d)return 'Required transition plugin version is unavailable or disabled. Check Settings → Plugins; review recovery if the inventory is damaged.';
   if(!instance||['pluginId','contributionId','version','digest'].some(k=>instance[k]!==d[k]))return 'Saved transition dependency does not match its installed version.';
   try{effectParameters(d,instance.params);}catch(error){return error.message;}
   return null;

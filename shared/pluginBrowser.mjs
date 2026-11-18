@@ -1,0 +1,8 @@
+// Stable favorite identities survive package upgrades; project references still use exact digests.
+export const PACK_CONTENT_KINDS=['textStyles','effects','transitions','motionPresets','luts','colorPresets','fonts','sounds'];
+export function packBrowserItems(rows){return rows.filter(r=>r.enabled&&!r.error&&!r.recovered&&!r.removing&&r.manifest).flatMap(row=>PACK_CONTENT_KINDS.flatMap(kind=>(row.manifest.contributes[kind]||[]).map(item=>({kind,item,key:row.key,pluginId:row.manifest.id,pluginName:row.manifest.name,publisher:row.manifest.publisher,version:row.manifest.version,favoriteId:`${row.manifest.id}/${kind}/${item.id}`,tags:[kind,...(item.kind?[item.kind]:[]),...(['transitions','motionPresets'].includes(kind)?['animated']:[])]}))));}
+export function filterPackBrowser(items,{query='',kind='',tag='',favoritesOnly=false,favorites=[]}={}){
+ const tokens=query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean),saved=new Set(favorites);
+ return items.filter(v=>(!kind||v.kind===kind)&&(!tag||v.tags.includes(tag))&&(!favoritesOnly||saved.has(v.favoriteId))&&tokens.every(q=>[v.item.name,v.pluginName,v.pluginId,v.publisher,...v.tags].join(' ').toLocaleLowerCase().includes(q))).sort((a,b)=>a.item.name.localeCompare(b.item.name)||a.favoriteId.localeCompare(b.favoriteId));
+}
+export function validatePackFavorites(value){if(!Array.isArray(value)||value.length>2000||new Set(value).size!==value.length||value.some(v=>typeof v!=='string'||!new RegExp('^[a-z][a-z0-9-]{0,47}\\.[a-z][a-z0-9-]{0,47}/('+PACK_CONTENT_KINDS.join('|')+')/[a-z][a-z0-9-]{0,63}$').test(v)))throw Error('Invalid pack favorites.');return [...value];}

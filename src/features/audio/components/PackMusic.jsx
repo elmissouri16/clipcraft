@@ -19,34 +19,45 @@ export default function PackMusic({ collection, onAddFile, group = 'Music', navi
   const [adding, setAdding] = useState('');
   const [err, setErr] = useState('');
   const [playing, setPlaying] = useState('');
-  const audio = useRef(null);
+  const audio = useRef(null), previewGeneration=useRef(0), previewLease=useRef(null);
+  const releasePreview=()=>{const token=previewLease.current;previewLease.current=null;if(token)window.api.pluginsReleaseSoundPreview(token).catch(()=>{});};
   useEffect(() => {
     const a = new Audio();
-    a.onended = () => setPlaying('');
+    a.onended = () => {releasePreview();setPlaying('');};
+    a.onerror = () => {releasePreview();setPlaying('');setErr(t('plugins.preview_audio_failed'));};
     audio.current = a;
-    return () => a.pause();
+    return () => {previewGeneration.current++;a.pause();releasePreview();};
   }, []);
-  useEffect(() => { audio.current?.pause(); setPlaying(''); }, [collection]);
+  const availablePaths=(lib?.items||[]).map(i=>i.path).join('\0');
+  useEffect(() => { previewGeneration.current++;audio.current?.pause();releasePreview(); setPlaying(''); }, [collection, availablePaths]);
 
   const items = (lib?.items || []).filter((i) => i.group === group && i.sub === collection);
   const query = q.trim().toLowerCase();
   const shown = items.filter((i) => !query || i.name.toLowerCase().includes(query));
 
-  const toggle = (item) => {
+  const toggle = async (item) => {
     const a = audio.current;
     if (!a || item.missing) return;
-    if (playing === item.path) { a.pause(); setPlaying(''); return; }
-    a.src = toFileUrl(item.path);
-    a.play().catch(() => {});
+    if (playing === item.path) { a.pause();releasePreview(); setPlaying(''); return; }
+    a.pause();releasePreview();
+    const generation=++previewGeneration.current;
+    let source=item;
+    try{if(item.localId)source=await window.api.pluginsPreviewSound(item.id);}catch(e){setErr(e.message);return;}
+    if(generation!==previewGeneration.current){if(source.token)window.api.pluginsReleaseSoundPreview(source.token).catch(()=>{});return;}
+    previewLease.current=source.token||null;
+    a.src = toFileUrl(source.path);
+    a.play().catch(() => {releasePreview();setPlaying('');});
     setPlaying(item.path);
   };
   const add = async (item) => {
     if (item.missing || adding) return;
     setAdding(item.path);
     setErr('');
-    const r = await onAddFile?.(item.path, assetAddWhere(item));
-    setAdding('');
-    if (r?.error) setErr(r.error);
+    try{
+      const source=item.localId?await window.api.pluginsSoundAsset(item.id):item;
+      const r = await onAddFile?.(source.path, assetAddWhere(item), item.localId?source:undefined);
+      if(r?.error)setErr(r.error);
+    }catch(e){setErr(e.message);}finally{setAdding('');}
   };
   const isMusic = group === 'Music';
 
@@ -59,7 +70,7 @@ export default function PackMusic({ collection, onAddFile, group = 'Music', navi
       ) : lib.error ? <p className="error-text">{t('pack.could_not_read_the_audio_library_error', { error: lib.error })}</p> : !lib.hasLibrary || !items.length && !query ? (
         <>
           <p className="empty-note">{!lib.hasLibrary ? t('pack.audio_library_not_installed_yet') : t(isMusic ? 'pack.no_tracks_in_installed_library' : 'pack.no_sounds_in_installed_library', { collection })}</p>
-          <p className="lib-note">{t('pack.from_your_assets_folder_free_to_use_no_cre')}</p>
+          <p className="lib-note">{items.some(i=>i.localId)?t('plugins.pack_license_hint'):t('pack.from_your_assets_folder_free_to_use_no_cre')}</p>
         </>
       ) : (
         <>
@@ -71,7 +82,7 @@ export default function PackMusic({ collection, onAddFile, group = 'Music', navi
                   {playing === item.path ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
                 </button>
                 <div className="lib-meta">
-                  <b title={item.name}>{item.name}</b>
+                  <b title={item.license||item.name}>{item.name}</b>
                   <span className="lib-sub"><span>{collection}{item.duration ? ` · ${formatTime(item.duration).slice(0, 5)}` : ''}</span>
                     {item.kind === 'video' && <i className="lic cc0">{t('pack.video')}</i>}
                     {item.missing && <i className="lic by">{t('pack.missing_file')}</i>}</span>
@@ -84,7 +95,7 @@ export default function PackMusic({ collection, onAddFile, group = 'Music', navi
             ))}
           </div>
           {!shown.length && <p className="empty-note">{items.length ? t('pack.nothing_matches_query', { collection, query: q.trim() }) : t(isMusic ? 'pack.no_tracks_in_assets_folder_yet' : 'pack.no_sounds_in_assets_folder_yet', { collection })}</p>}
-          <p className="lib-note">{t('pack.from_your_assets_folder_free_to_use_no_cre')}</p>
+          <p className="lib-note">{items.some(i=>i.localId)?t('plugins.pack_license_hint'):t('pack.from_your_assets_folder_free_to_use_no_cre')}</p>
         </>
       )}
     </>

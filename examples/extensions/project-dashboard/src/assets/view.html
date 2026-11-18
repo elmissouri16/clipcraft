@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Project dashboard</title><link rel="stylesheet" href="view.css"><script src="view.js" defer></script></head>
+<body><main>
+ <header><p class="eyebrow">Your project at a glance</p><h1 id="name">Loading project…</h1><p id="format" class="muted"></p></header>
+ <dl class="stats"><div><dt>Duration</dt><dd id="duration">—</dd></div><div><dt>Picture clips</dt><dd id="pictures">—</dd></div><div><dt>Text clips</dt><dd id="text">—</dd></div><div><dt>Audio clips</dt><dd id="audio">—</dd></div></dl>
+ <section><h2>Markers <span id="marker-count"></span></h2><ol id="markers"></ol></section>
+ <section><label for="note">Saved note</label><textarea id="note" rows="4" maxlength="2000" placeholder="A thought for your next editing session…"></textarea><p class="muted small">Choose Save preferences to keep this note and chapter count after closing the view. Development-session preferences last until that session ends.</p></section>
+ <section aria-labelledby="chapter-heading"><h2 id="chapter-heading">Chapter markers</h2>
+  <label for="chapter-count">Chapter count</label><input id="chapter-count" type="number" min="1" max="20" step="1" value="5">
+  <p class="muted">The trusted extension adds markers as one Undo step.</p>
+  <div class="actions"><button id="add-chapters" type="button">Add chapter markers</button></div>
+  <p id="action-status" role="status"></p>
+ </section>
+ <section><button id="save-preferences" type="button" disabled>Save preferences</button><p id="preferences-status" role="status">Loading saved preferences…</p></section>
+ <button id="refresh" type="button">Refresh summary</button><p id="status" role="status" class="muted small">Summary updates as you edit.</p>
+</main></body></html>

@@ -1,4 +1,4 @@
-const pluginGate=require('../plugins/providerGate.cjs');
+const extensionAi=require('./extensionAi.cjs');
 const { attachImages, openAiParts, anthropicParts } = require('./agentImages.cjs');
 // AI provider layer for the CraftAI assistant. Runs only in the main process so API keys never reach the UI.
 // chat() takes plain messages and returns text; tool calling is added on top of this later.
@@ -24,7 +24,7 @@ function resolveDraft(saved, draft = {}) {
     model,
     reasoningEffort: model === saved.model ? saved.reasoningEffort || ''
       : typeof saved.reasoningEfforts?.[model] === 'string' ? saved.reasoningEfforts[model] : '',
-    baseUrl: providers.isPlugin(saved.provider) ? saved.baseUrl : draft.baseUrl !== undefined ? draft.baseUrl.trim().replace(/\/+$/, '') : saved.baseUrl,
+    baseUrl:draft.baseUrl!==undefined?draft.baseUrl.trim().replace(/\/+$/,''):saved.baseUrl,
     apiKey: (draft.apiKey || '').trim() || saved.apiKey,
     executablePath: draft.executablePath !== undefined ? String(draft.executablePath).trim() : saved.executablePath,
     webResearch: typeof draft.webResearch === 'boolean' ? draft.webResearch : saved.webResearch,
@@ -70,34 +70,17 @@ function normalizeModel(provider, model) {
 }
 
 async function http(url, { headers, body, timeoutMs = 45000, signal }, key) {
-  const pluginScope=pluginGate.current();
-  if(pluginScope)signal=signal?AbortSignal.any([signal,pluginScope.signal]):pluginScope.signal;
-  if(pluginScope){
-    await pluginScope.verify();
-    if(url!==`${pluginScope.baseUrl}/chat/completions`||!body)throw Error('Plugin provider request escaped its approved endpoint.');
-    const vision=providers.byId(pluginScope.provider)?.models.find(m=>m.id===body.model)?.vision;
-    const hasImage=value=>value&&typeof value==='object'&&(value.type==='image_url'||value.type==='input_image'||Object.values(value).some(hasImage));
-    if(!vision&&hasImage(body))throw Error('This plugin model does not declare image support. Choose a vision-capable provider.');
-  }
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   let res, raw;
   try {
     res = await fetch(url, {
       method: body ? 'POST' : 'GET',
-      ...(pluginScope?{redirect:'manual'}:{}),
       headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
       body: body ? JSON.stringify(body) : undefined,
       signal: signal ? AbortSignal.any([ctl.signal, signal]) : ctl.signal,
     });
-    if(pluginScope){
-      if(res.status>=300&&res.status<400)throw Error('Redirects from plugin providers are blocked.');
-      const reader=res.body?.getReader();let bytes=0;const chunks=[];
-      if(reader){try{while(true){const chunk=await reader.read();if(chunk.done)break;bytes+=chunk.value.length;if(bytes>4*1024*1024)throw Error('Plugin provider response exceeds 4 MiB.');chunks.push(Buffer.from(chunk.value));}}finally{await reader.cancel().catch(()=>{});}}
-      raw=reader?Buffer.concat(chunks).toString('utf8'):await res.text();
-      if(Buffer.byteLength(raw)>4*1024*1024)throw Error('Plugin provider response exceeds 4 MiB.');
-      await pluginScope.verify();
-    }else raw = await res.text();
+    raw = await res.text();
   } catch (e) {
     if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
     const why = e.name === 'AbortError' ? 'timed out' : redact(e.cause?.code || e.message, key);
@@ -153,9 +136,9 @@ function explain(status, detail) {
 const textOf = (parts) => (parts || []).map((p) => p.text || '').join('');
 
 async function modelCapabilities(cfg, { refresh = false, signal } = {}) {
+  if(extensionAi.isExtension(cfg.provider))return extensionAi.get().capabilities(cfg,{signal});
   if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
   const model = normalizeModel(cfg.provider, cfg.model);
-  if(providers.isPlugin(cfg.provider))return {ok:true,model,reasoningEfforts:[],source:'plugin declaration',vision:!!providers.byId(cfg.provider)?.models.find(m=>m.id===model)?.vision};
   const key = createHash('sha256').update(JSON.stringify([cfg.provider, model, cfg.baseUrl, cfg.executablePath, cfg.apiKey])).digest('hex');
   const cached = capabilityCache.get(key);
   if (!refresh && cached && Date.now() - cached.time < 180000) return cached.value;
@@ -259,7 +242,8 @@ async function geminiGenerate(cfg, body, timeoutMs, signal) {
 }
 
 // cfg: { provider, model, baseUrl, apiKey }; messages: [{ role: 'user' | 'assistant', content }]; system: string.
-async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs, signal }) {
+async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs, signal, serviceScope }) {
+  if(extensionAi.isExtension(cfg.provider))return extensionAi.get().chat(cfg,{system,messages,maxTokens,timeoutMs,signal,serviceScope});
   if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
   if (localAgents.isProvider(cfg.provider)) {
     if (cfg.reasoningEffort) await selectedThinking(cfg, signal);
@@ -331,6 +315,7 @@ async function checkedStep(result, tools) {
 }
 
 async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  if(extensionAi.isExtension(cfg.provider))return checkedStep(await extensionAi.get().generate(cfg,{...opts,contents:attachImages(opts.contents||[],opts.images)}),opts.tools||[]);
   if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
   if (localAgents.isProvider(cfg.provider)) {
     if (cfg.reasoningEffort) await selectedThinking(cfg, opts.signal);
@@ -644,8 +629,8 @@ async function testConnection(cfg) {
 
 // Asks the provider which models this key can use, so the user picks a real model id instead of typing one.
 // Returns { ok, models: [id...] } or { ok: false, error }.
-async function listModels(cfg, {refresh=false}={}) {
-  if(providers.isPlugin(cfg.provider))return {ok:true,models:providers.byId(cfg.provider).models.map(m=>m.id),source:'plugin declaration'};
+async function listModels(cfg, {refresh=false,signal}={}) {
+  if(extensionAi.isExtension(cfg.provider))return extensionAi.get().listModels(cfg,{signal});
   if (localAgents.isProvider(cfg.provider)) return localAgents.listModels(cfg,{refresh});
   const { provider, apiKey } = cfg;
   const base = (cfg.baseUrl || '').replace(/\/+$/, '');
@@ -678,4 +663,5 @@ async function listModels(cfg, {refresh=false}={}) {
   }
 }
 
-module.exports = { chat:pluginGate.guarded(chat), agentStep:pluginGate.guarded(agentStep), testConnection:pluginGate.guarded(testConnection), listModels:pluginGate.guarded(listModels), modelCapabilities:pluginGate.guarded(modelCapabilities), normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };
+const currentConnection=fn=>async(cfg,...args)=>{if(providers.isRetired(cfg?.provider))throw Error('This provider recipe is retired. Select an available connection or a Node extension service.');return fn(cfg,...args);};
+module.exports = { chat:currentConnection(chat), agentStep:currentConnection(agentStep), testConnection:currentConnection(testConnection), listModels:currentConnection(listModels), modelCapabilities:currentConnection(modelCapabilities), normalizeModel, AiError, toOpenAiMessages, toJsonSchema, toAnthropicMessages, openAiBase, resolveDraft };

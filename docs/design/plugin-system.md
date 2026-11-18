@@ -1,12 +1,19 @@
 # ClipCraft plugin system
 
-Status: Stages 0–2, 3a and 3c implemented: export presets, declarative effects/transitions, sandboxed marker commands and CraftAI command discovery/execution. Stage 3b adds brokered AI chapter suggestions and caption translation, with explicit text-sharing consent and mandatory host review. Stage 4a adds bounded local GIF export jobs through the same sandbox, with host-owned rendering and verified artifacts. Stage 4b adds declarative OpenAI-compatible provider plugins with scoped credentials and host-owned requests. Stage 5a adds isolated custom panels, approved marker actions, scoped local preferences and host-owned dock controls. The public SDK adds typed authoring tools, and [developer sessions](plugin-development.md) add explicit command/panel reload and bounded runtime diagnostics. See [custom panel contract](plugin-panels.md), [AI provider contract](plugin-ai-providers.md), [GIF export contract](plugin-gif-export.md) and [implementation roadmap](plugin-roadmap.md).
+Current executable API: [trusted Node extensions](plugin-extension-host.md).
+The command/panel recipes described later in this design are historical and
+retired. [Migration rules](plugin-legacy-retirement.md) retain creative assets,
+immutable fingerprints and saved data without restoring execution. The
+[current SDK guide](../../packages/plugin-sdk/README.md) defines authoring.
+
+
+Status: Stages 0–2, 3a and 3c implemented: export presets, declarative effects/transitions, sandboxed marker commands and CraftAI command discovery/execution. Stage 3b adds brokered AI chapter suggestions and caption translation, with explicit text-sharing consent and mandatory host review. Stage 4a adds bounded local GIF export jobs through the same sandbox, with host-owned rendering and verified artifacts. Stage 4b adds declarative OpenAI-compatible provider plugins with scoped credentials and host-owned requests. Stage 5a adds isolated custom panels, approved marker/clip actions, scoped local preferences and host-owned dock controls. [Reviewed panel actions](plugin-panel-reviewed-actions.md) extend its command allowlist to chapter AI, translated captions and native GIF publication. The public SDK adds typed authoring tools, and [developer sessions](plugin-development.md) add explicit command/panel reload and bounded runtime diagnostics. See [custom panel contract](plugin-panels.md), [AI provider contract](plugin-ai-providers.md), [GIF export contract](plugin-gif-export.md) and [implementation roadmap](plugin-roadmap.md).
 
 ## Goals and boundaries
 
 Community developers can add features through versioned contribution points. Start with export presets, then effects/transitions, commands and AI workflows, provider/export integrations, custom panels and managed local jobs. Each stage ships independently with an original example and a real-app acceptance gate. Plugins do not import editor internals. Existing features are adapted incrementally; a conversion of every built-in feature is not required.
 
-Export presets, effects and transitions remain declarative. Command packages may additionally include one bounded JavaScript entry executed in an isolated sandbox after per-run approval. No install scripts, dependencies, direct network/filesystem access, raw FFmpeg arguments or new encoders are supported. Custom panels run in a separate sandboxed renderer and receive declared summary/storage grants and explicitly approved command requests. AI-capable commands may use fixed host-brokered chapter or translation services after explicit sharing consent. See the [command SDK](plugin-commands.md). Publisher strings are unverified and shown as such. A fingerprint detects changed content; it does not authenticate an author. Opening a project never installs a plugin.
+Export presets, effects, transitions and [creative sound/font packs](plugin-content-packs.md) remain declarative. Command packages may additionally include one bounded JavaScript entry executed in an isolated sandbox after per-run approval. No install scripts, dependencies, direct network/filesystem access, raw FFmpeg arguments or new encoders are supported. Custom panels run in a separate sandboxed renderer and receive declared summary/storage grants and explicitly approved command requests. AI-capable commands may use fixed host-brokered chapter or translation services after explicit sharing consent. See the [command SDK](plugin-commands.md). Publisher strings are unverified and shown as such. A fingerprint detects changed content; it does not authenticate an author. Opening a project never installs a plugin.
 
 ## Components and ownership
 
@@ -16,11 +23,87 @@ Export presets, effects and transitions remain declarative. Command packages may
 - The export adapter snapshots a preset into existing custom settings. It uses the existing resolver, capability detection, codec fallbacks and encoder path.
 - Plugin UI uses the native Settings page/group components, existing dropdowns and semantic theme tokens. Descriptions are text, never HTML.
 
-Plugin data lives under `<userData>/plugins/` (or the isolated smoke profile). Each content fingerprint names an immutable directory holding `plugin.json`. `inventory.json` contains `{key, enabled}` records. At most one version of a plugin ID is preferred/enabled for new contributions. While that plugin ID is enabled, its retained installed effect/transition versions remain available to projects pinned to them. Older rows display “Retained version.” Disabling the preferred version disables rendering for that plugin ID. Older versions remain installed until removed; enabling one is a rollback operation. A broken or changed manifest is unavailable and its diagnosis remains visible. An unreadable inventory refuses mutations rather than resetting user state.
+Plugin data lives under `<userData>/plugins/` (or the isolated smoke profile). Each content fingerprint names an immutable directory holding `plugin.json`. `inventory.json` contains `{key, enabled}` records. At most one version of a plugin ID is preferred/enabled for new contributions. While that plugin ID is enabled, its retained installed effect/transition/font versions remain available to projects pinned to them. Older rows display “Retained version.” Disabling the preferred version disables rendering for that plugin ID. Older versions remain installed until removed; enabling one is a rollback operation. A broken or changed manifest is unavailable and its diagnosis remains visible. An unreadable inventory refuses mutations rather than resetting user state.
+
+Removal first atomically publishes `{key, enabled: false, removing: true}`;
+the temporary inventory file is flushed before rename. It then deletes that
+version's saved panel data and package directory, and drops the inventory row
+only after cleanup succeeds. The optional `removing` flag always overrides
+activation. Pending versions contribute no commands, panels, providers, presets
+or retained rendering definitions, and cannot be enabled or reinstalled until
+removal completes. Project metadata and other plugin versions remain intact;
+provider credentials retain their existing separate Settings policy.
+
+Failures or process interruption leave a disabled **Removal pending** row in
+Settings, identified by its fingerprint even if the payload is already partly
+gone. **Retry removal** resumes the already approved cleanup, including after
+restart, without requiring the deleted manifest or panel preferences. There is
+no automatic execution, reinstallation or cleanup on startup. An initial removal
+still needs confirmation; retrying a pending removal uses one explicit retry
+button. Catalogs refresh even when cleanup fails, so stale active entries are
+removed immediately. Corrupt/missing inventory and older orphaned payloads use
+the separate explicit recovery workflow below. Process-termination tests do not
+certify power-loss durability.
+
+### Inventory recovery
+
+If an inventory is damaged, missing alongside managed package files, unreadable,
+or not a regular file, normal discovery and mutations fail closed. Settings still
+loads its built-in providers and offers **Settings → Plugins → Review recovery**.
+No repair, deletion or activation happens automatically at startup. A fresh empty
+plugin folder is allowed without an inventory; saved panel preferences alone are
+not treated as an interrupted installation.
+
+1. Review the inventory/backup state, package identities and validation results.
+   Packages are checked with the normal manifest, assets, compatibility and exact
+   fingerprint validators; this never executes plugin code. Review also identifies
+   known pending removals, missing/invalid packages and managed staging artifacts.
+   Cancel leaves the inventory and all payloads untouched. A changed package or
+   inventory invalidates the review; reviews expire after five minutes and are
+   single use.
+2. Choose **Recover disabled versions**. Original readable inventory/backup bytes
+   are preserved under `plugins/.recovery/<archive-id>/`, together with a recovery
+   record, before index replacement. Validated versions and known missing/invalid
+   references are reconstructed with `{key, enabled: false, recovered: true}`.
+   Known pending removals retain `removing: true`. An older backup is consulted
+   only if the current index is damaged/missing; a healthy current index remains
+   authoritative. Ordinary successful mutations retain the previous good index
+   in `inventory.backup.json`; it is never automatically restored as active state.
+3. Reviewed invalid fingerprint folders and recognized `.install-XXXXXX` and
+   `inventory-<uuid>.tmp` leftovers are moved whole into the archive. Uncommitted
+   staging is never installed. Unknown root files, unsafe/symlink entries, saved
+   panel preferences, provider Settings and projects stay in place. Unavailable
+   package references remain visible; recovery never erases a project's exact
+   dependencies or Undo history. **Show recovery archive** opens the host-validated
+   archive directory. Archives are retained, with no automatic deletion policy.
+4. Explicitly enable or reinstall each desired validated version, or retry a
+   pending removal. The `recovered` marker overrides activation and retained
+   rendering until that exact version is explicitly enabled/reinstalled; enabling
+   a different version does not make it available. The development example
+   bootstrap also respects this marker. Normal per-run command, panel and provider
+   permissions still apply after activation.
+
+If preserving bytes or publishing the rebuilt index fails, stop and review again
+after resolving the displayed access/space error. Before publication the old
+inventory remains; after publication the new index remains disabled even if a
+later backup write or artifact move fails. Remaining managed leftovers are offered
+on the next explicit review. Recovery does not follow unsafe inventory/archive
+paths or overwrite unreadable/oversized inventory files: restore regular readable
+files and folder access first. Inventory reads are bounded to 1 MiB, the root scan
+to 4,096 entries, and the recovered index to 1,000 versions. If both indexes lost
+removal intent, recovery cannot infer that intent from a valid package directory;
+it stays disabled pending an explicit user decision. Corrupt panel preferences
+are preserved, with **Clear saved data** remaining a separate confirmed action.
+
+Failed renderer catalog refresh clears stale effects/transitions. Missing
+dependency errors direct users to Settings and inventory recovery; they block
+export until the required version is available or the existing explicit
+upgrade/bypass controls resolve the dependency. No substitute version is selected
+by inventory recovery.
 
 ## Manifest v1
 
-A package is a gzip-compressed tar archive named `*.clipcraft-plugin.tgz`. Declarative packages contain a regular root `plugin.json`; command packages additionally contain the declared `commands.js` entry. A custom panel declares root `panel.html` and optional `panel.js` / `panel.css` assets. Developer mode snapshots those declared files from a folder containing no other entries. Reload means installing a new validated snapshot; changing content requires incrementing its package version.
+A package is a gzip-compressed tar archive named `*.clipcraft-plugin.tgz`. Declarative packages contain a regular root `plugin.json`; command packages additionally contain the declared `commands.js` entry. A custom panel declares root `panel.html` and optional `panel.js` / `panel.css` assets. Content packs may additionally declare bounded regular WAV/MP3/OGG, WOFF2/TTF/OTF and cube files under assets/. Developer mode snapshots those declared files from a folder containing no other entries. Reload means installing a new validated snapshot; changing content requires incrementing its package version.
 
 | Field | Contract |
 |---|---|
@@ -56,7 +139,7 @@ Each preset contains `id`, `name` and `settings`. All settings fields are requir
 | `resCap` | 0, 480, 720, 1080, 1440, 2160; longest-side cap, never upscales |
 | `fps` | 0, 24, 25, 30, 50, 60; zero keeps project frame rate |
 
-Package limits: 2 MiB compressed, 512 KiB decompressed tar, 256 KiB manifest, 64 KiB executable entry, 64 KiB panel HTML/JS each, 32 KiB panel CSS, 1,000 installed versions. The parser checks entries in memory and never extracts archive paths. Links, extra or duplicate entries, absolute/traversal entry paths and malformed data are rejected. Folder snapshots reject links and undeclared files. Command fingerprints include manifest and code bytes; panel fingerprints include every declared asset. Existing package fingerprints remain compatible. Installed manifests are revalidated and fingerprint checked when read.
+Package limits: 64 MiB compressed, 129 MiB decompressed tar including headers, 128 MiB total package-file bytes, 64 declared content assets (32 MiB/sound, 8 MiB/font, 16 MiB/cube), 256 KiB manifest, 64 KiB executable entry, 64 KiB panel HTML/JS each, 32 KiB panel CSS, 1,000 installed versions. The parser checks entries in memory and never extracts archive paths. Links, extra or duplicate entries, absolute/traversal entry paths and malformed data are rejected. Folder snapshots reject links and undeclared files. Command fingerprints include manifest and code bytes; panel and creative-pack fingerprints include every declared asset. Existing package fingerprints remain compatible. Installed manifests are revalidated and fingerprint checked when read.
 
 ## Export settings and persistence
 
@@ -73,7 +156,7 @@ below remains compatible for existing hand-authored payloads.
 
 Settings → Plugins provides package installation, optional developer folder loading, installed-version selection, enable/disable, explicit removal, fingerprint and compatibility diagnostics. Removal requires an inline confirmation and preserves project settings. Installation activates the new version; switching versions is explicit. New bytes under an already installed version are rejected. Identical reinstallation is idempotent.
 
-`npm run dev` automatically installs and enables every valid example folder under `examples/plugins/` before plugin inventory or presets are returned. Packaged applications never bootstrap examples. Each startup re-enables the examples; identical snapshots are idempotent, and changed content still requires a version bump. New example folders are discovered on dev startup (restart the dev app after adding a folder). Invalid examples are logged individually and do not prevent other examples from loading.
+`npm run dev` automatically installs and enables every valid example folder under `examples/plugins/` before plugin inventory or presets are returned. Packaged applications never bootstrap examples. Each startup re-enables ordinary examples; recovered versions stay disabled until explicitly enabled/reinstalled, and pending removals cannot be reinstalled. Identical snapshots are idempotent, and changed content still requires a version bump. New example folders are discovered on dev startup (restart the dev app after adding a folder). Invalid examples are logged individually and do not prevent other examples from loading.
 
 Start with `examples/plugins/review-copy/plugin.json`. From the repository root:
 
@@ -122,7 +205,7 @@ The Stage-2b real-app gate includes native inspector edits, persistence, exact G
 
 **Providers/exports:** adapt existing agent contracts and supported protocols first. Host-owned rendering jobs control output paths, overwrite protection, cancellation and actual results; destination upload requires separate network/media permission.
 
-**Panels/local tools:** isolate custom UI from editor DOM and global CSS; provide semantic tokens and keyboard/focus rules. Local models and tools use host-approved adapters, separate permissions, explicit downloads and platform checks. No arbitrary shell or automatic plugin-supplied executables. Native process isolation requires a separate design review before shipping.
+**Panels/local tools:** isolate custom UI from editor DOM and global CSS; provide semantic tokens and keyboard/focus rules. Local models and tools use host-approved adapters, separate permissions, explicit downloads and platform checks. No arbitrary shell or automatic plugin-supplied executables. The [local speech contract](plugin-local-tools.md) records the separate native-boundary review: trusted user-approved CLI, pinned models, fixed host recipes, bounds and cancellation; no OS sandbox for arbitrary native code is claimed.
 
 Public API 1 is deliberately small. Additive supported contributions are documented with their required ClipCraft version; incompatible runtime or manifest changes need a new API version. Inter-plugin dependencies, marketplace feeds, verified publishers, signatures and automatic updates are outside Stage 1.
 
@@ -131,3 +214,80 @@ Public API 1 is deliberately small. Additive supported contributions are documen
 
 
 **Custom panels (Stage 5a first slice):** the top-bar Plugin panels control opens a dock in Edit or Agent mode. Packages supply their own bounded HTML/CSS/JS. The host owns permission approval, identity chrome, theme tokens, size, focus return, modal masking and lifetime. Each open uses a separate sandboxed WebContentsView and temporary session. The first SDK reads only an approved project summary and receives summary/theme events. Project replacement, plugin management actions, crashes, tampering, request abuse and a stuck-renderer watchdog close the panel without changing the project. The Project dashboard example is available in dev without executing at startup. See [the author contract](plugin-panels.md).
+
+## Pre-v1 ripple capability
+
+The current SDK adds `timeline.ripple` for [bounded interval removal](plugin-ripple.md),
+requiring `editor.read` and additional `clips.write`/`clips.links` grants for
+explicit free-clip/pair scope. The host validates the whole project and commits
+one Undo step. Markers and unlisted free tracks retain absolute time. This keeps
+SDK 0.8.0, API 1 and application 2.0.0; it does not close the remaining v1 gates.
+
+The current pre-v1 extension also supports [bounded clip lifecycle and track
+placement](plugin-lifecycle.md). `clips.manage` and `tracks.write` are distinct
+grants requiring `editor.read`, with `clips.links` for explicit pair operations.
+Panels still run only allowlisted commands through native consent and receive
+verified clip/track counts; menu registration grants no implicit collateral edits.
+
+The current pre-v1 [static property contract](plugin-properties.md) adds
+`clips.properties`, with `clips.links` and both handles for linked targets.
+Native consent, exact target scope, lock checks and verified clip receipts apply
+to Settings, registered menus, allowlisted panel commands and CraftAI. It does
+not grant arbitrary patches, speed, keyframe or effect-parameter writes.
+
+[Source automation](plugin-automation.md) adds separate `clips.retime`,
+`clips.automation` and `clips.effects` command grants, each requiring `editor.read`.
+Linked targets also require both handles and `clips.links`. Settings, menus,
+allowlisted panel commands and CraftAI share exact scope, native consent and
+actual receipts; catalog changes invalidate prepared effect commits.
+
+The current SDK 0.8.0 pre-v1 native UI extension adds `toolbar` and `inspector`
+action locations and strict boolean command parameters. These remain host-rendered
+same-package command controls with exact scope and fresh native approval; see
+[native controls](plugin-native-controls.md). No host/app version change is required.
+
+
+The pre-v1 [picked media and reviewed destination job contract](plugin-media-jobs.md)
+adds one verified library import/fixed process job or an explicitly reviewed HTTPS
+PUT of the same run's native GIF. Source paths, encoder arguments, URLs, credentials
+and bodies remain host-owned. SDK 0.8.0, API 1 and app 2.0.0 are unchanged.
+
+
+## Plugin settings organization
+
+Settings → Plugins has three renderer task views: **Installed** for package
+management and contextual setup, **Pack content** for enabled local-pack search,
+previews and Apply, and **Create & develop** for native pack creation and optional
+SDK tools. Pack content is not an online marketplace. Native pack creation is
+available without Developer mode; permanent compiled-folder installation and
+temporary development sessions are separate actions.
+
+Selected-package details stay with the corresponding inventory row. Storage and
+inventory recovery live under Maintenance; technical metadata, licences and reset/
+removal controls live in package disclosures. Missing project-pack warnings remain
+visible before opening their recovery/replacement details. Navigation keeps work
+components mounted, preserving active command/provider/export/local-model jobs.
+Explicit cancellation, settings closure and package/generation revocation retain
+the existing owner semantics. See `settingsHierarchy` in plugin-validation.json.
+
+### Creative preview workspace
+
+The pack browser places its bounded result list beside a selected-item inspector.
+Filters stay in a compact toolbar, and Apply stays with the selected item heading.
+Selecting another item preserves the workspace position while the host prepares
+its content; failed requests clear the stale inspector. Licences remain secondary.
+
+Effects, LUTs, colour and motion presets offer Original / With effect comparison.
+Transitions show distinct original ClipCraft sample scenes and A/B endpoint
+thumbnails. Sound previews use the same compact transport, with decoded duration
+and seeking. Parameter controls reuse the shared Slider, including editable
+numeric readouts and Reset. Development previews use this same renderer.
+
+Preview buffers follow the displayed size and display density, capped at
+1280×720. LUTs, sample artwork and motion definitions are prepared separately from
+playback and parameter changes. Playing visuals limit automatic redraws to 24 fps;
+paused visuals redraw on demand. The transport follows actual playback position,
+and pausing retains that position. Hidden task views stop visual playback and
+pause audio while preserving the host jobs owned by those views. Samples remain
+isolated from the project; Apply keeps the existing compatibility checks and Undo
+ownership. These rules do not certify release packaging or other platforms.

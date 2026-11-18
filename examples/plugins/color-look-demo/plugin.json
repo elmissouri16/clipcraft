@@ -1,0 +1,53 @@
+{
+  "id": "clipcraft-examples.color-look-demo",
+  "name": "Color looks demo",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Three original reusable grade settings, independent of external LUT files.",
+  "contributes": {
+    "colorPresets": [
+      {
+        "id": "amber",
+        "name": "Amber afternoon",
+        "settings": {
+          "filter": "none",
+          "grade": {
+            "temp": 22,
+            "contrast": 12,
+            "saturation": 8,
+            "shadow": 8
+          }
+        }
+      },
+      {
+        "id": "cool",
+        "name": "Cool evening",
+        "settings": {
+          "filter": "none",
+          "grade": {
+            "temp": -22,
+            "tint": 5,
+            "contrast": 8,
+            "saturation": -12,
+            "fade": 8
+          }
+        }
+      },
+      {
+        "id": "soft",
+        "name": "Soft monochrome",
+        "settings": {
+          "filter": "none",
+          "grade": {
+            "saturation": -100,
+            "contrast": 18,
+            "shadow": 12,
+            "fade": 10
+          }
+        }
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

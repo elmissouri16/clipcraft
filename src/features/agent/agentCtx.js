@@ -18,6 +18,7 @@ export function makeAgentCtx({ app, provider, getProject, dispatch, settle, requ
     editInterruption: () => app.getAgentInterruption?.(),
     addProbed: (...args) => live() ? app.addProbed?.(...args, requestId) : null,
     startExport: (...args) => live() ? app.startExport?.(...args) : undefined,
+    runExtensionCommand: (input,callbacks) => {if(!live()||!allowPluginCommands)throw Error('Editing stopped.');return app.runExtensionCommand(input,{...callbacks,agentToken:requestId,isCanceled:()=>!live()});},
     api: window.api, settle,
     // Undo only what this request did: the user's earlier edits stay.
     undoOwn: () => {

@@ -1,16 +1,19 @@
-import {usePluginActions} from '../features/plugins/usePluginActions.js';
-import PluginActionDialog from '../features/plugins/components/PluginActionDialog.jsx';
-import {pluginActionMenuItem} from '../features/plugins/components/PluginActionsMenu.jsx';
-import {pluginEditsApplied} from '../state/store.js';
+import ExtensionPreparation from '../features/plugins/components/ExtensionPreparation.jsx';
+import {useExtensionShortcuts} from '../features/plugins/useExtensionShortcuts.js';
+import ExtensionMessages from '../features/plugins/components/ExtensionMessages.jsx';
+import ExtensionMediaPreview from '../features/plugins/components/ExtensionMediaPreview.jsx';
+import {useExtensionHost} from '../features/plugins/useExtensionHost.js';
+import {packBrowserApplication} from '../../shared/pluginBrowserApply.mjs';
+import {dependencyReplacementUpdates} from '../../shared/pluginDependencies.mjs';
+import {pluginEditsApplied,historyOrigin} from '../state/store.js';
 import {createEditorContext} from '../features/plugins/editorContext.js';
-import PluginPanelDock from '../features/plugins/components/PluginPanelDock.jsx';
-import PluginTranslationReview from '../features/plugins/components/PluginTranslationReview.jsx';
-import {usePluginCommands} from '../features/plugins/usePluginCommands.js';
+import PluginWorkbench from '../features/plugins/components/PluginWorkbench.jsx';
+import {useExtensionUi,extensionUiError} from '../features/plugins/useExtensionUi.js';
 import {refreshPluginEffects,subscribePluginEffects,pluginEffectsRevision,assertPluginEffects} from '../features/plugins/effectRegistry.js';
 import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, canvasFor, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
+import { LAYERED, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
 import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
 import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
 import { useExternalAgent } from './useExternalAgent.js';
@@ -59,7 +62,7 @@ import { isFiles, isInternal } from "../features/timeline/dnd.js";
 import { renderTextFrames } from "../features/export/exportText.js";
 import { fxWork, renderFxPass } from "../features/export/fxExport.js";
 import { TEXT_TEMPLATES } from "../features/text/catalog.js";
-import { allFonts } from "../features/text/fonts.js";
+import { allFonts,fontsReady } from "../features/text/fonts.js";
 import { graphicOutdated, isGraphicMedia, redrawGraphicAction, renderGraphicMedia } from '../features/graphics/graphicMedia.js';
 import { graphicEdits } from '../features/graphics/graphicEdits.js';
 import { t, tn } from '../i18n/index.js';
@@ -125,6 +128,8 @@ export default function App() {
     setSelection(kept.length ? makeSelection(kept) : null);
   }, []);
   const [exporting, setExporting] = useState(null);
+  const extensionExportClose=useRef(null);
+  useEffect(()=>{if(!exporting){const ready=extensionExportClose.current;extensionExportClose.current=null;ready?.();}},[exporting]);
   const [agentRendering,setAgentRendering] = useState(false);
   const [agentRun, setAgentRun] = useState(null);
   const agentRunRef = useRef(agentRun);
@@ -690,12 +695,12 @@ export default function App() {
   };
 
   // A favorite from disk: reuse the media item when the project has it, then add it at the playhead.
-  const addFile = async (filePath, where = 'main') => {
+  const addFile = async (filePath, where = 'main', packMetadata) => {
     let m = projectRef.current.media.find((x) => x.path === filePath);
     if (!m) {
       const [res] = await window.api.probePaths([filePath]);
       if (!res || res.error) return { error: res ? t('app.name_and_error', { name: res.name, error: res.error }) : t('app.the_file_was_not_found') };
-      [m] = addItems([res]);
+      [m] = addItems([{...res,...(packMetadata?{name:packMetadata.name,credit:packMetadata.credit,origin:'plugin-pack'}:{})}]);
     }
     const clipId = uid();
     if (m.type === 'audio') {
@@ -831,6 +836,26 @@ export default function App() {
     setSelection({ track: 'video', id: clipId });
     setScreenOpen(false);
   });
+
+  const replacePackDependency = request => {
+    const current=projectRef.current,updates=dependencyReplacementUpdates(current,request);
+    if(updates.some(u=>clipLocked(current,u.track,findClipIn(current,u.track,u.id))))throw Error(t('plugins.dependency_locked'));
+    if(updates.length)dispatch({type:'updateMany',updates});return updates.length;
+  };
+
+  const applyPackContent = async request => {
+    if(screen!=='editor')throw Error(t('plugins.browser_open_project'));
+    const captured=projectRef.current,selected=selection;
+    const fresh=await window.api.pluginsPreviewContent({key:request.key,kind:request.kind,id:request.item.id});
+    if(projectRef.current!==captured)throw Error(t('plugins.project_changed'));
+    const plan=packBrowserApplication(captured,selected,{...fresh,params:request.params});
+    const textTargets=plan.title?[plan.title]:(plan.updates||[]).filter(u=>u.track==='text').map(u=>({...captured.textClips.find(c=>c.id===u.id),...u.patch}));
+    if(textTargets.length){await fontsReady(textTargets,{strict:true});if(projectRef.current!==captured)throw Error(t('plugins.project_changed'));}
+    if(plan.title){addText(plan.title);return;}
+    if(plan.soundId){const sound=await window.api.pluginsSoundAsset(plan.soundId);if(projectRef.current!==captured)throw Error(t('plugins.project_changed'));const result=await addFile(sound.path,'audio',sound);if(result?.error)throw Error(result.error);return;}
+    if(plan.updates.some(u=>clipLocked(captured,u.track,findClipIn(captured,u.track,u.id))))throw Error(t('plugins.dependency_locked'));
+    dispatch({type:'updateMany',updates:plan.updates});
+  };
 
   const addText = (patch = {}) => {
     const clipId = uid();
@@ -1356,7 +1381,7 @@ export default function App() {
         attachTimelineContext({ kind: 'range', start_sec: clip.start_sec, end_sec: clip.end_sec });
       } catch (error) { setTimelineContextRequest({ id: uid(), projectId: projectRef.current.id, loadVersion: projectLoadVersion, error: error.message }); }
     } },
-    ...(pluginActions.items('clip-menu',sel).length?['sep',{label:t('plugins.actions_menu'),submenu:pluginActions.items('clip-menu',sel).map(pluginActionMenuItem)}]:[]),
+    ...(extensionContextActions.length?['sep',{label:t('plugins.actions_menu'),submenu:[...extensionContextActions.map(entry=>({label:entry.title,onClick:async()=>{try{const {snapshot,targets}=capturePluginEditContext(),target=targets.find(t=>t.track===sel.track&&t.id===sel.id);const result=await window.api.pluginsExtensionUiExecute(entry.id,{location:'context',editor:snapshot,clipId:target?.handle||null});if(result?.error)throw Error(result.error);}catch(error){showAlert(extensionUiError(error));}}}))]}]:[]),
     'sep', ...clipEditingMenuItems(sel),
   ];
   const clipEditingMenuItems = (sel) => {
@@ -1543,14 +1568,22 @@ export default function App() {
   }, [selection]);
 
   // Saves to the project's file (asks where the first time, or always with saveAs). Returns true once saved.
+  const manualSavePending=useRef(false);
   const save = async (saveAs = false) => {
+    if(manualSavePending.current)return false;manualSavePending.current=true;
+    try{
     const a = autosave.current;
-    const p = projectRef.current;
+    let p = projectRef.current;
+    const epoch=loadVersionRef.current;
     const previousFile = a.file;
+    const target=await window.api.pickSaveProject(previousFile,{saveAs,name:p.name});
+    if(!target)return false;if(target.error)throw Error(target.error);
+    if(loadVersionRef.current!==epoch||autosave.current!==a)return false;
+    p=await extensionHost.before('save',{source:projectRef.current,destination:{path:target,saveAs}});
     clearTimeout(a.fileTimer);a.fileTimer = null;
     const { doc, chat } = await serializeProjectParts(p);
     await a.writing?.catch(() => {});
-    const res = await window.api.saveProject(doc.pretty, previousFile, { saveAs, name: p.name, chat: chat ? chat.compact : null });
+    const res = await window.api.saveProject(doc.pretty, target, { name: p.name, chat: chat ? chat.compact : null });
     if (!res) return false;
     if (res.error) {
       setSaveState('error');
@@ -1568,6 +1601,7 @@ export default function App() {
     await keepRecovery(false);
     await writeSlotNow(a.project, res); // closing after Save also waits for its slot
     return true;
+    }catch(error){if(error.name!=='AbortError'){setSaveState('error');showAlert(extensionUiError(error));}return false;}finally{manualSavePending.current=false;}
   };
 
   const open = async () => {
@@ -1788,16 +1822,16 @@ export default function App() {
   const startExport = async () => {
     if (exportRunning.current) return;
     try { await graphicEdits.flush(); } catch (error) { return showAlert(error.message); }
-    const project = renderable(projectRef.current);
+    const source=projectRef.current,project=renderable(source);
     if (!project.videoClips.length) return showAlert(t('app.add_a_video_or_photo_before_exporting'));
     setPlaying(false);
     let caps = { libx265: true };
     try { caps = await window.api.exportCaps(); } catch { /* the bundled build has libx265 */ }
-    setExporting({ ready: true, eff: resolveExport(project, caps), project, caps, target: null, name: (project.name || 'export').replace(/[\\/:*?"<>|]+/g, '_') });
+    setExporting({ ready: true, eff: resolveExport(project, caps), project, source, caps, target: null, name: (project.name || 'export').replace(/[\\/:*?"<>|]+/g, '_') });
   };
   const confirmExport = () => {
-    const { project, eff, target, name } = exporting;
-    return runExportFlow(project, eff, target, name);
+    const { project, source, eff, target, name } = exporting;
+    return runExportFlow(project, eff, target, name,false,{source});
   };
   // The dialog's own Browse: pick the output file up front (the frame folder comes with it).
   const pickExportTarget = async (name) => {
@@ -1828,7 +1862,7 @@ export default function App() {
     setExporting((e) => {
       if (!e) return e;
       const project = { ...e.project, ...patch };
-      return { ...e, project, eff: resolveExport(project, e.caps) };
+      return { ...e, project, source:{...(e.source||projectRef.current),...patch},eff: resolveExport(project, e.caps) };
     });
   };
   const changeExportResolution = (resCap) => {
@@ -1842,25 +1876,33 @@ export default function App() {
   };
   const changePosterAt = (t) => {
     dispatch({ type: 'setProject', patch: { posterAt: t } });
-    setExporting((e) => e && { ...e, project: { ...e.project, posterAt: t } });
+    setExporting((e) => e && { ...e, project: { ...e.project, posterAt: t },source:{...(e.source||projectRef.current),posterAt:t} });
   };
   // The rendered cover (export:coverFrame's per-project poster file) is the home card's picture;
   // the timestamp lets the card reload the file when the same path holds a new render.
   const changePosterImage = (file) => {
-    dispatch({ type: 'projectVisuals', projectId: exporting?.project.id, patch: { posterImage: file, posterImageAt: Date.now() } });
+    const patch={posterImage:file,posterImageAt:Date.now()};dispatch({type:'projectVisuals',projectId:exporting?.project.id,patch});
+    setExporting(e=>e&&{...e,source:{...(e.source||projectRef.current),...patch}});
   };
   const exportRunning = useRef(false);
   const exportCanceled = useRef(false);
+  const exportPreparation=useRef(null);
   const exportReporter = useRef(null);
   const runExportFlow = async (project, eff, presetTarget, name, review = false, presentation = {}) => {
     if (exportRunning.current) return { error: 'Another export is already running.' };
     exportRunning.current = true;exportCanceled.current = false;
-    let target, timer, off;
+    let target, timer, off,preparation;
+    let documentId=null,exportTerminal=false;const operationId=presentation.operationId||crypto.randomUUID(),source=presentation.extensionId?{kind:'extension',extensionId:presentation.extensionId}:presentation.allowAgent?{kind:'agent'}:{kind:'user'};
+    const publishExport=(status,value={})=>{if(!documentId||exportTerminal)return;if(['completed','canceled','failed'].includes(status))exportTerminal=true;return window.api.pluginsExtensionPublish?.('export.changed',{operationId,documentId,status,...value},{documentId,source,reason:'export'}).catch(()=>{});};
     let viewState = null;
     const publish = next => {
       viewState = typeof next === 'function' ? next(viewState) : next;
-      if (!presentation.inline) { setExporting(viewState);return; }
-      if (!viewState) return;
+      if(viewState&&presentation.extension)viewState={...viewState,extension:presentation.extension};
+      if (!presentation.inline) setExporting(viewState?.done&&presentation.showCompletion===false?null:viewState);
+      if (!viewState) {if(exportCanceled.current&&typeof next!=='function')publishExport('canceled');return;}
+      const status=viewState.done?'completed':viewState.error?'failed':'rendering',event={};
+      for(const key of ['progress','phase','phaseProgress','stage','elapsedSeconds','remainingSeconds','file','size','metadata','error'])if(viewState[key]!==undefined)event[key]=viewState[key];
+      publishExport(status,event);
       // The chat receives progress, not the render snapshot or temporary paths.
       const {progress,stage,phase,phaseProgress,remainingSeconds,elapsedSeconds,timingStatus,step,steps,stopping,done,error}=viewState;
       try { presentation.onProgress?.(Object.fromEntries(Object.entries({progress,stage,phase,phaseProgress,remainingSeconds,elapsedSeconds,timingStatus,step,steps,stopping,done,error}).filter(([,value])=>value!==undefined))); } catch { /* presentation cannot fail an export */ }
@@ -1868,10 +1910,14 @@ export default function App() {
     exportReporter.current = publish;
     const stopIfCanceled = () => { if (exportCanceled.current) throw new Error('Export canceled'); };
     try {
+      documentId=readPluginContext().documentId;
       await refreshPluginEffects();
       assertPluginEffects(project);
       target = presetTarget || await window.api.exportBegin(name);
       if (target.canceled) return { canceled: true };
+      stopIfCanceled();publishExport('preparing',{progress:0,review:!!review});preparation=new AbortController();exportPreparation.current=preparation;
+      const prepared=await extensionHost.before('export',{source:presentation.source||projectRef.current,signal:preparation.signal,operationId,destination:{path:target.file,review:!!review},allowAgent:presentation.allowAgent===true,agentToken:presentation.agentToken,agentSession:presentation.agentSession});
+      stopIfCanceled();const preparedPlan=presentation.plan?.(prepared);project=preparedPlan?preparedPlan.project:renderable(prepared);if(preparedPlan)eff=preparedPlan.effective;assertPluginEffects(project);
       project = exportRenderPlan(project, eff);
       const stages = exportStages(project, fxWork(project));
       let storage;try { storage = window.localStorage; } catch {}
@@ -1883,7 +1929,7 @@ export default function App() {
       publish({ ready:false, project, eff, target, name, review, progress:0, stage:t(review ? 'app.preparing_section_preview' : 'app.preparing_your_video'), startedAt:performance.now() });
       progress.start('prepare');timer = setInterval(() => progress.emit(), 1000);
       await new Promise(resolve => setTimeout(resolve, 0));stopIfCanceled();
-      await loadProjectLuts(project);stopIfCanceled();
+      await loadProjectLuts(project,{strict:true});stopIfCanceled();
       let toExport = { ...project, export:eff, maskImages:maskImages(project), decoImages:decoImages(project), customMaskImages:customMaskImages(project), motion:motionDataPinned(project) };
       progress.update(1);let textFrames = 0;
       if (stages.some(s => s.id === 'text')) {
@@ -1919,11 +1965,12 @@ export default function App() {
       publish({done:true,file:res.file,size,metadata:res.metadata,coverNote,review,progress:1,elapsedSeconds,stage:t(review?'app.preview_rendered':'app.video_saved')});
       return { ok: true, file: res.file, size, metadata: res.metadata, elapsed_seconds: elapsedSeconds, ...(coverNote ? { warning: coverNote } : {}) };
     } catch (error) {
+      if(error.name==='AbortError')exportCanceled.current=true;
       if (exportCanceled.current) publish(null);
       else publish({error:error.message,project,eff,name,review,target:null});
       return exportCanceled.current ? { canceled: true } : { error: error.message };
     } finally {
-      clearInterval(timer);off?.();
+      clearInterval(timer);off?.();if(exportPreparation.current===preparation)exportPreparation.current=null;
       await Promise.allSettled([window.api.fxClear(),...(target?.frameDir?[window.api.exportAbort(target.frameDir)]:[])]);
       await window.api.exportActivity?.({active:false}).catch(() => {});
       exportRunning.current = false;
@@ -1932,9 +1979,32 @@ export default function App() {
   };
   const cancelExport = () => {
     if (exportCanceled.current) return;
-    exportCanceled.current = true;
+    exportCanceled.current = true;exportPreparation.current?.abort();
     (exportReporter.current || setExporting)(e => e && { ...e, stopping:true, remainingSeconds:null });
     window.api.cancelExport().catch(() => {});
+  };
+
+  const startAuthorExport = async ({key,id,start,seconds,signal}) => {
+    if(exportRunning.current||exporting?.ready)return {error:'Finish or close the existing export first.'};
+    if(!Number.isFinite(start)||start<0||!Number.isFinite(seconds)||seconds<=0||seconds>15)return {error:'Choose up to 15 seconds of the current timeline.'};
+    let authorization,off,target;
+    const stop=()=>{if(exportRunning.current)cancelExport();window.api.pluginsCancelAuthorTest().catch(()=>{});};
+    setAgentRendering(true);
+    try{
+      await graphicEdits.flush();
+      if(signal.aborted)return {canceled:true};
+      authorization=await window.api.pluginsBeginAuthorExport({key,id});
+      signal.addEventListener('abort',stop,{once:true});
+      off=window.api.onPluginDevelopmentCatalogChanged(stop);
+      const caps=await window.api.exportCaps(),source=projectRef.current;
+      const plan=agentExportPlan({...source,exportSettings:{preset:'custom',custom:{...authorization.preset.settings}}},{review:true,start_sec:start,end_sec:Math.min(exportDuration(source),start+seconds)},caps);
+      if(signal.aborted)return {canceled:true};
+      target=await window.api.exportBegin('Author test - '+authorization.preset.name);
+      if(target.canceled||signal.aborted)return {canceled:true};
+      setPlaying(false);
+      return await runExportFlow(plan.project,plan.effective,{...target,authorToken:authorization.token},authorization.preset.name,true,{inline:true,source,plan:draft=>agentExportPlan({...draft,exportSettings:{preset:'custom',custom:{...authorization.preset.settings}}},{review:true,start_sec:start,end_sec:Math.min(exportDuration(draft),start+seconds)},caps)});
+    }catch(error){return {error:error.message};}
+    finally{off?.();signal.removeEventListener('abort',stop);if(authorization)await window.api.pluginsFinishAuthorTest(authorization.token).catch(()=>{});if(target?.frameDir)await window.api.exportAbort(target.frameDir).catch(()=>{});setAgentRendering(false);}
   };
 
   const startAgentExport = async (options = {}, request = {}) => {
@@ -1945,14 +2015,15 @@ export default function App() {
     try {
       await graphicEdits.flush();
       const caps = await window.api.exportCaps();
-      const { project: snapshot, effective } = agentExportPlan(projectRef.current, options, caps);
+      const source=projectRef.current;
+      const { project: snapshot, effective } = agentExportPlan(source, options, caps);
       if (request.isCanceled?.()) return { canceled: true };
       target = await window.api.agentExportBegin({ requestId: request.requestId, revision: request.revision, kind: options.review ? 'review' : 'export', start_sec: options.start_sec, file_path: options.file_path, name: options.name || snapshot.name, overwrite: options.overwrite });
       if (target.error) return target;
       if (request.isCanceled?.()) return { canceled: true };
       setPlaying(false);
       watch = setInterval(() => { if (request.isCanceled?.() && !exportCanceled.current) cancelExport(); }, 100);
-      const result = await runExportFlow(snapshot, effective, target, options.name || snapshot.name, !!options.review, {inline:true,onProgress:request.onProgress});
+      const result = await runExportFlow(snapshot, effective, target, options.name || snapshot.name, !!options.review, {inline:true,onProgress:request.onProgress,source,plan:draft=>agentExportPlan(draft,options,caps),allowAgent:true,agentToken:historyRef.current.agentEdit?.token});
       return { ...result, settings: effective };
     } catch (error) { return { error: error.message }; }
     finally {
@@ -1960,6 +2031,22 @@ export default function App() {
       if (target?.frameDir) await window.api.exportAbort(target.frameDir).catch(() => {});
       setAgentRendering(false);
     }
+  };
+
+  const startExtensionExport=async({input,target,title,extensionId,operationId,agentSession},{signal,onProgress})=>{
+    if(exportRunning.current||exporting?.ready||(!agentSession&&(agentRunRef.current||historyRef.current.agentEdit))||historyRef.current.gestureStart)return {error:'Finish the current edit or export first.'};
+    agentSession?.check();
+    const stop=()=>{if(exportRunning.current)cancelExport();};signal.addEventListener('abort',stop,{once:true});
+    try{
+      if(signal.aborted)return {canceled:true};await graphicEdits.flush();
+      const caps=await window.api.exportCaps(),source=projectRef.current;
+      if(signal.aborted)return {canceled:true};
+      if(input.documentId&&capturePluginEditContext().snapshot.documentId!==input.documentId)throw Error('The export document is no longer open.');
+      const plan=agentExportPlan(source,input,caps);setPlaying(false);
+      const result=await runExportFlow(plan.project,plan.effective,target,input.name||source.name,false,{source,extension:title,extensionId,operationId,onProgress,showCompletion:input.showCompletion,...(agentSession?{allowAgent:true,agentToken:agentSession.agentToken,agentSession}:{}),plan:draft=>agentExportPlan(draft,input,caps)});
+      return {...result,settings:plan.effective};
+    }catch(error){return {error:error.message};}
+    finally{signal.removeEventListener('abort',stop);}
   };
 
   // Hook used by the automated smoke test (tests/smoke/index.cjs).
@@ -1978,12 +2065,13 @@ export default function App() {
       dispatch,
       rawProject: () => projectRef.current,
       history: () => historyRef.current,
+      historyOrigin: () => historyOrigin(historyRef.current),
       exportData: () => {
         const p = renderable(projectRef.current);
         return { project: { ...p, maskImages: maskImages(p), decoImages: decoImages(p), customMaskImages: customMaskImages(p), motion: motionDataPinned(p) } };
       },
       // Test hook: exports immediately (no summary gate), resolving settings the same way.
-      exportNow: async () => { await graphicEdits.flush(); const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p)); },
+      exportNow: async () => { await graphicEdits.flush(); const p = renderable(projectRef.current); return runExportFlow(p, resolveExport(p),undefined,undefined,false,{source:projectRef.current}); },
       fxSelfTest: async () => (await import("../features/effects/selftest.js")).fxSelfTest(),
       duration: () => projectDuration(projectRef.current),
       // Test helper: give clips that name a template the template's full style (clip values win).
@@ -2026,6 +2114,7 @@ export default function App() {
     getPluginEditContext: () => capturePluginEditContext(),
     pluginEditApplied: action => pluginEditsApplied(historyRef.current,action),
     pluginCommandReady: () => !exportRunning.current && !historyRef.current.gestureStart,
+    runExtensionCommand:(...args)=>extensionHost.runAgentCommand(...args),
     addProbed: (res, agentToken) => {
       if (!res?.path) return null;
       const m = projectRef.current.media.find((x) => x.path === res.path);
@@ -2075,19 +2164,16 @@ export default function App() {
       return result;
     },
     save: async (target) => {
-      const a = autosave.current;
-      if (!target) {
-        if (!a.file) return { error: 'This project has no file yet. Call save_project with path: an absolute path ending in .clipcraft.json. It is auto-saved for Home either way.' };
-        const ok = await writeFile();
-        await writeSlotNow();
-        return ok ? { saved: true, file: a.file } : { error: 'Could not write the project file.' };
-      }
-      const p = projectRef.current;
+      const a=autosave.current,epoch=loadVersionRef.current;if(!target&&!a.file)return {error:'This project has no file yet. Give an absolute path ending in .clipcraft.json.'};
+      try{
+      const check=await window.api.preflightSaveProjectAgent(target||a.file,a.file);if(check.error)return check;
+      const p=await extensionHost.before('save',{source:projectRef.current,destination:{path:check.file,saveAs:check.file!==a.file},allowAgent:true,agentToken:historyRef.current.agentEdit?.token});
       clearTimeout(a.fileTimer); a.fileTimer = null;
       const { doc, chat } = await serializeProjectParts(p);
       await a.writing?.catch(() => {});
-      const res = await window.api.saveProjectAgent(doc.pretty, target, a.file, chat ? chat.compact : null);
+      const res = await window.api.saveProjectAgent(doc.pretty, target||a.file, a.file, chat ? chat.compact : null);
       if (res?.error) return { error: res.error };
+      if(loadVersionRef.current!==epoch||autosave.current!==a)return {saved:true,file:res.file};
       a.file = res.file;
       a.fileChat = p.craftAI;
       setSaveState('saved');
@@ -2095,7 +2181,9 @@ export default function App() {
       await keepRecovery(false);
       await writeSlotNow(p, res.file);
       return { saved: true, file: res.file };
+      }catch(error){return error.name==='AbortError'?{canceled:true}:{error:extensionUiError(error)};}
     },
+
     close: async () => {
       setPlaying(false);
       await flushAutosave();
@@ -2114,17 +2202,19 @@ export default function App() {
   const externalBadge = <ExternalAgentBadge owner={external.owner} onDisconnect={external.disconnect} />;
   const externalApproval = <ExternalAgentApproval approval={external.approval} onAnswer={external.answer} />;
 
+  const extensionShortcuts=useExtensionShortcuts({hasProject:screen==='editor',onError:error=>showAlert(extensionUiError(error))});
   // Keyboard shortcuts.
   const keys = useRef({});
-  keys.current = { togglePlay, split, remove, duplicate, seek, readTime, trimSide, toggleMarker, setTool, copy, cut, paste, extractAudio: detachAudio, save };
+  keys.current = { togglePlay, split, remove, duplicate, seek, readTime, trimSide, toggleMarker, setTool, copy, cut, paste, extractAudio: detachAudio, save, extensionShortcut:extensionShortcuts.run };
   useEffect(() => {
     // Keys come from the user's keymap (Settings > Keyboard shortcuts).
     const onKey = (e) => {
-      if (e.defaultPrevented || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (e.defaultPrevented || e.isComposing || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       const k = keys.current, action = actionFor(e);
       if (!action) return;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
       if (typing && !WORKS_IN_FIELDS.has(action)) return;
+      if(action.startsWith('extension:')){if(!e.repeat&&k.extensionShortcut(action))e.preventDefault();return;}
       // Space on a focused button presses that button rather than playing.
       if (action === 'togglePlay' && e.code === 'Space' && e.target.closest('button')) return;
       const run = {
@@ -2138,9 +2228,10 @@ export default function App() {
         save: () => k.save(false), saveAs: () => k.save(true),
       }[action];
       if (!run) return; // e.g. fullscreen: handled by the player
-      // Same defaults as before remapping: only these keys suppress the browser's own
-      // behaviour; Escape, Delete and clipboard keys still reach other listeners.
-      if (['togglePlay', 'split', 'duplicate', 'extractAudio', 'save', 'saveAs'].includes(action)) e.preventDefault();
+      // Document Undo/Redo must not also undo Chromium's last text-field edit.
+      // Editable fields returned above retain their native text history; Escape,
+      // Delete and clipboard keys still reach other listeners.
+      if (['togglePlay', 'split', 'duplicate', 'extractAudio', 'save', 'saveAs', 'undo', 'redo'].includes(action)) e.preventDefault();
       run();
     };
     window.addEventListener('keydown', onKey);
@@ -2149,10 +2240,12 @@ export default function App() {
 
   const pluginContext=useRef(null);
   if(!pluginContext.current||pluginContext.current.epoch!==projectLoadVersion)pluginContext.current={epoch:projectLoadVersion,read:createEditorContext()};
-  const readPluginContext=()=>pluginContext.current.read(projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing});
-  const capturePluginEditContext=()=>{const snapshot=readPluginContext();return {snapshot,targets:pluginContext.current.read.targets(snapshot)};};
-  const pluginCommands=usePluginCommands({getHistory:()=>historyRef.current,getEditorContext:readPluginContext,getEditContext:capturePluginEditContext,getVersion:()=>loadVersionRef.current,dispatch,hasProject:screen==='editor',isBusy:()=>!!agentRunRef.current||exportRunning.current});
-  const pluginActions=usePluginActions(pluginCommands,{project,selection,epoch:projectLoadVersion,getHistory:()=>historyRef.current,getVersion:()=>loadVersionRef.current,getSelection:()=>editorRef.current.selection,hasProject:screen==='editor',isBusy:()=>!!agentRunRef.current||exportRunning.current});
+  const readPluginContext=(input)=>pluginContext.current.read(projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input);
+  const capturePluginEditContext=(input)=>{const snapshot=readPluginContext(input);return {snapshot,targets:pluginContext.current.read.targets(snapshot)};};
+  const {items:extensionContextUi}=useExtensionUi('context');
+  const extensionContextActions=extensionContextUi.filter(entry=>entry.kind==='action');
+  useEffect(()=>window.api.onExtensionViewEvent?.(event=>{if(event.type==='reveal'){if(settingsOpen){setSettingsOpen(false);setSettingsVersion(version=>version+1);}setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}}),[agentMode,settingsOpen]);
+  const extensionHost=useExtensionHost({capture:capturePluginEditContext,inspect:(method,input)=>pluginContext.current.read[method](projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input),getHistory:()=>historyRef.current,dispatch,startExport:startExtensionExport,hasProject:screen==='editor',epoch:projectLoadVersion,selection:()=>editorRef.current.selection,documentScope:()=>{readPluginContext();return pluginContext.current.read.scope();},isPreparationBusy:(kind,allowAgent)=>!!agentRunRef.current&&!allowAgent||kind==='save'&&exportRunning.current,isBusy:()=>!!agentRunRef.current||exportRunning.current,isAgentCommandBusy:()=>!!exportRunning.current||!!historyRef.current.gestureStart});
 
   if (screen === 'home') {
     return (
@@ -2165,9 +2258,11 @@ export default function App() {
           onDiscardUnsaved={discardUnsaved} agentBadge={externalBadge}
           onSettings={() => setSettingsOpen(true)} />
         {externalApproval}
-      <PluginTranslationReview />
+        <ExtensionMessages hideJobs={!!settingsOpen||!!exporting||!!agentRun} onManage={()=>setSettingsOpen('plugins')}/><ExtensionPreparation value={extensionHost.preparing} onCancel={extensionHost.cancelBefore}/>
+
         {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
-        {settingsOpen && <SettingsDialog pluginCommands={pluginCommands} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
+        {extensionHost.preview&&<ExtensionMediaPreview preview={extensionHost.preview} onClose={extensionHost.closePreview} onInsert={extensionHost.insertPreview}/>}
+      {settingsOpen && <SettingsDialog onAuthorExport={startAuthorExport} project={project} onReplaceDependency={replacePackDependency} onApplyPack={screen==='editor'?applyPackContent:undefined} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
           onAbout={() => setAboutOpen('settings')} />}
         {aboutOpen && <AboutDialog onClose={() => { setAboutOpen(false); if (aboutOpen === 'settings') setSettingsOpen(true); }} />}
       </div>
@@ -2179,7 +2274,7 @@ export default function App() {
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
-      <TopBar pluginActions={pluginActions} onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
+      <TopBar onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
         onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }} />
 
       <div className="agent-workspace-tools" hidden={!agentMode}>
@@ -2214,7 +2309,7 @@ export default function App() {
           trackPick={trackPick} onTrackPoint={(point) => setTrackPick((p) => (p ? { ...p, point } : p))}
           cropEdit={cropEdit} onCropDraft={setCropDraft}
           colorPick={colorPick} onColorPicked={finishColorPick} />
-        {pluginPanelsOpen&&(!agentMode||agentDrawer==='plugins')?<PluginPanelDock getEditorContext={readPluginContext} controller={pluginCommands} project={project} projectEpoch={projectLoadVersion} onClose={()=>{setPluginPanelsOpen(false);if(agentMode)setAgentDrawer(null);}}/>:<Inspector onSelectEffect={setSelection} collapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onCollapse={() => {
+        {pluginPanelsOpen&&(!agentMode||agentDrawer==='plugins')?<PluginWorkbench onManage={()=>setSettingsOpen('plugins')} getEditorContext={readPluginContext} project={project} projectEpoch={projectLoadVersion} onClose={()=>{setPluginPanelsOpen(false);if(agentMode)setAgentDrawer(null);}}/>:<Inspector onSelectEffect={setSelection} collapsed={agentMode ? agentDrawer !== 'properties' : panes.rightCollapsed} onCollapse={() => {
           if (agentMode) setAgentDrawer(null); else setRightCollapsed(true);
           requestAnimationFrame(() => document.querySelector('.properties-toggle')?.focus());
         }} project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} clockRef={clockRef} playing={playing} onSeek={seek}
@@ -2239,7 +2334,6 @@ export default function App() {
         tool={tool} setTool={setTool} onTrimSide={trimSide} onMarker={toggleMarker} recorder={recorder} onToggleRecord={toggleRecording}
         onDropItem={dropItem} onDropFiles={dropFiles} canUndo={!!state.past.length} canRedo={!!state.future.length} onClipMenu={openClipMenu} onAddText={addText}
         overlay={slots.length > 0 && <SlotStrip slots={slots} media={project.media} selection={selection} onPick={pickSlot} onReplace={replaceSlot} title={project.template?.title} />} />
-      {pluginActions.request&&<PluginActionDialog key={pluginActions.request.id} request={pluginActions.request} onSubmit={pluginActions.submit} onClose={pluginActions.close}/>}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
       {speedAsk && (() => {
         const c = findClip(project, speedAsk);
@@ -2263,7 +2357,8 @@ export default function App() {
       {closeAsk && <CloseDialog name={closeAsk.name} onChoice={closeAsk.resolve} />}
       {seqAsk && <SequenceDialog media={seqAsk.media} mismatch={seqAsk.mismatch}
         onChangeSettings={() => resolveSeq(true)} onKeepSettings={() => resolveSeq(false)} />}
-      {settingsOpen && <SettingsDialog pluginCommands={pluginCommands} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
+      {extensionHost.preview&&<ExtensionMediaPreview preview={extensionHost.preview} onClose={extensionHost.closePreview} onInsert={extensionHost.insertPreview}/>}
+      {settingsOpen && <SettingsDialog onAuthorExport={startAuthorExport} project={project} onReplaceDependency={replacePackDependency} onApplyPack={screen==='editor'?applyPackContent:undefined} initialSection={typeof settingsOpen === 'string' ? settingsOpen : 'ai'} onClose={() => { setSettingsOpen(false); setSettingsVersion((v) => v + 1); }}
         onAbout={() => setAboutOpen('settings')}
         onProxiesCleared={(deleted) => projectRef.current.media.forEach((m) => {
           if (m.lightProxy && deleted.includes(m.lightProxy)) dispatch({ type: 'mediaVisuals', path: m.path, patch: { lightProxy: null } });
@@ -2281,7 +2376,8 @@ export default function App() {
         onImport={importMedia} onAttachSelection={() => selection && attachTimelineContext({ kind: 'clips', clip_refs: selection.items || [{ track: selection.track, id: selection.id }] })} hasSelection={!!selection}
         app={pilotApp} external={{ holder: external.holder, onDisconnect: external.disconnect, subscribe: external.subscribe, yieldEdit: external.yieldEdit }} />
       {externalApproval}
-      <PluginTranslationReview />
+        <ExtensionMessages hideJobs={!!settingsOpen||!!exporting||!!agentRun} onManage={()=>setSettingsOpen('plugins')}/><ExtensionPreparation value={extensionHost.preparing} onCancel={extensionHost.cancelBefore}/>
+
       {dragOver && <div className="drop-overlay"><div>{t('app.drop_files_to_import_them')}</div></div>}
       {renderJob && (
         <div className="render-job" role="status">
@@ -2337,8 +2433,8 @@ export default function App() {
           <button className="btn btn-sm btn-ghost" onClick={() => setColorPick(null)}>{t('app.cancel')}</button>
         </div>
       )}
-      {exporting && <ExportDialog pluginCommands={pluginCommands} state={exporting} onCancel={cancelExport} onStart={confirmExport}
-        onClose={() => { if(exportRunning.current)return; if(exporting.target?.frameDir)window.api.exportAbort(exporting.target.frameDir);setExporting(null); }} onShow={() => window.api.showInFolder(exporting.file)}
+      {exporting && <ExportDialog onExtensionActionResult={({entry,message})=>showAlert((entry.extensionName||entry.extensionId)+' · '+entry.title+'\n\n'+message)} state={exporting} onCancel={cancelExport} onStart={confirmExport}
+        onClose={afterClose => { if(exportRunning.current)return; if(exporting.target?.frameDir)window.api.exportAbort(exporting.target.frameDir);if(typeof afterClose==='function')extensionExportClose.current=afterClose;setExporting(null); }} onShow={() => window.api.showInFolder(exporting.file)}
         onOpen={() => window.api.openFile(exporting.file)} onPickTarget={pickExportTarget}
         onRename={renameExport} onSettings={changeExportSettings} onResolution={changeExportResolution}
         onPosterAt={changePosterAt} onPosterImage={changePosterImage} />}

@@ -121,7 +121,7 @@ function activity(name,args={},project={},result) {
   }
   if(result&&!r.error){
     if(r.status==='unchanged'){outcome=t('activity.already_matches_the_requested_settings');unchanged=true;}
-    else if(name==='run_plugin_command')outcome=r.artifact?.format==='gif'?`GIF saved · ${r.artifact.width}×${r.artifact.height} · ${r.artifact.duration_sec} s`:Number.isInteger(r.clips_changed)?tn('plugins.clips_completed',r.clips_changed):r.captions_added?t('plugins.translation_completed',{count:r.captions_added,track:r.caption_track}):tn('plugins.agent_result',r.markers_added||0);
+    else if(name==='run_plugin_command')outcome=t('plugins.agent_node_result',{edits:(r.document_receipts||[]).filter(receipt=>receipt.changed).length,files:(r.artifacts||[]).length});
     else if(name==='list_plugin_commands')outcome=tn('plugins.agent_commands_found',r.commands?.length||0);
     else if(name==='generate_images')outcome=count(r.results?.filter(x=>!x.error).length,'activity.scene_images_added_count');
     else if(name==='complete_edit')outcome=r.ready?t('activity.edit_checks_passed'):Number.isFinite(r.checked_regions)?t('activity.regions_reviewed',{checked:r.checked_regions,total:r.total_regions}):'';

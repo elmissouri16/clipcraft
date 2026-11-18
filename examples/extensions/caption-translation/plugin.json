@@ -1,0 +1,18 @@
+{
+  "id": "clipcraft-examples.caption-translation",
+  "name": "Caption translation",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "An ordinary Node command reads timeline captions, requests reviewed text completion and applies a reviewed result through general editor APIs.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "translate-captions",
+        "name": "Translate caption track"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

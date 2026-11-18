@@ -1,0 +1,110 @@
+{
+  "id": "clipcraft-examples.title-caption-demo",
+  "name": "Titles and captions demo",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Original heading, lower-third and word-highlight caption styles. Add a title or style the demo captions through the pack browser.",
+  "contributes": {
+    "textStyles": [
+      {
+        "id": "opening",
+        "name": "Opening statement",
+        "kind": "title",
+        "sampleText": "Make room for your story",
+        "duration": 3,
+        "style": {
+          "font": "anton",
+          "size": 100,
+          "color": "#fff4d6",
+          "x": 0.5,
+          "y": 0.48,
+          "stroke": {
+            "width": 0
+          },
+          "shadow": {
+            "on": true,
+            "blur": 8,
+            "opacity": 0.4,
+            "x": 0,
+            "y": 5
+          },
+          "animIn": {
+            "id": "slideUp",
+            "dur": 0.4
+          },
+          "animOut": {
+            "id": "fade",
+            "dur": 0.3
+          }
+        }
+      },
+      {
+        "id": "lower",
+        "name": "Simple lower third",
+        "kind": "lower-third",
+        "sampleText": "A new perspective",
+        "duration": 4,
+        "style": {
+          "font": "montserrat",
+          "size": 44,
+          "bold": true,
+          "color": "#ffffff",
+          "align": "left",
+          "x": 0.35,
+          "y": 0.82,
+          "maxWidth": 0.72,
+          "bg": {
+            "on": true,
+            "color": "#17283d",
+            "opacity": 0.9,
+            "padding": 0.35,
+            "radius": 10
+          },
+          "stroke": {
+            "width": 0
+          },
+          "shadow": {
+            "on": false
+          },
+          "animIn": {
+            "id": "fade",
+            "dur": 0.25
+          },
+          "animOut": {
+            "id": "fade",
+            "dur": 0.25
+          }
+        }
+      },
+      {
+        "id": "spoken",
+        "name": "Spoken word highlight",
+        "kind": "caption",
+        "style": {
+          "font": "anton",
+          "size": 62,
+          "color": "#ffffff",
+          "y": 0.8,
+          "highlight": {
+            "mode": "color",
+            "color": "#ffd66e"
+          },
+          "stroke": {
+            "width": 3,
+            "color": "#17283d"
+          },
+          "animIn": {
+            "id": "fade",
+            "dur": 0.12
+          },
+          "animOut": {
+            "id": "fade",
+            "dur": 0.12
+          }
+        }
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

@@ -1,4 +1,5 @@
-const fs=require('node:fs/promises'),{constants}=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
+const {readRegularFile}=require('./package.cjs');
 const LIMITS=Object.freeze({value:16*1024,total:64*1024,keys:64,depth:16,nodes:2048});
 class StorageError extends Error{}
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value));
@@ -34,15 +35,11 @@ class PanelStorage{
   return folder;
  }
  async read(file){
-  let handle;
   try{
-   handle=await fs.open(file,constants.O_RDONLY|constants.O_NOFOLLOW);
-   const stat=await handle.stat();if(!stat.isFile()||stat.size>LIMITS.total)throw new StorageError('Saved storage is invalid. Clear saved data to reset it.');
-   const data=JSON.parse(await handle.readFile('utf8'));
+   const bytes=await readRegularFile(file,LIMITS.total,'Saved storage'),data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
    if(!plain(data)||Object.keys(data).sort().join(',')!=='values,version'||data.version!==1)throw new Error('Invalid format');
    encoded(data.values);return data.values;
   }catch(error){if(error.code==='ENOENT')return {};throw new StorageError('Saved storage cannot be read. Clear saved data to reset it.');}
-  finally{await handle?.close();}
  }
  async execute(key,panelId,method,args,verify){
   try{return await this.manager.mutate(async()=>{
@@ -67,4 +64,4 @@ class PanelStorage{
  }
  async clearVersion(key){const folder=await this.folder(key);if(folder)await fs.rm(folder,{recursive:true,force:true});}
 }
-module.exports={PanelStorage,LIMITS,jsonValue};
+module.exports={PanelStorage,LIMITS,jsonValue,encoded};

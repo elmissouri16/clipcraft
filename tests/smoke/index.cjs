@@ -8,24 +8,31 @@ const { runExport, probe } = require("../../electron/media/ffmpeg.cjs");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = async function smoke(win, app, dir) {
+  if (process.env.FVE_SMOKE_MODE === 'extension-sdk-additions') return require('./smoke-extension-sdk-additions.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-retirement') return require('./smoke-extension-retirement.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-agent') return require('./smoke-extension-agent.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-caption-examples') return require('./smoke-extension-caption-examples.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-ai') return require('./smoke-extension-ai.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-output-examples') return require('./smoke-extension-output-examples.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-example-migration') return require('./smoke-extension-example-migration.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-development') return require('./smoke-extension-development.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-media') return require('./smoke-extension-media.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-inspection') return require('./smoke-extension-inspection.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-hooks') return require('./smoke-extension-hooks.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-exports') return require('./smoke-extension-exports.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-events') return require('./smoke-extension-events.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-shortcuts') return require('./smoke-extension-shortcuts.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-messages') return require('./smoke-extension-messages.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-views') return require('./smoke-extension-views.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-host') return require('./smoke-extension-host.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-settings') return require('./smoke-plugin-settings.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-authoring') return require('./smoke-plugin-authoring.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-showcase') return require('./smoke-plugin-showcase.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-usability') return require('./smoke-plugin-usability.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-content-packs') return require('./smoke-plugin-content-packs.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-recovery') return require('./smoke-plugin-recovery.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'plugin-removal') return require('./smoke-plugin-removal.cjs')(win,app,dir);
   if (['agent-vision','agent-web-search','codex-images','codex-images-parallel','codex-images-portrait'].includes(process.env.FVE_SMOKE_MODE)) require('./smokeNativeScript.cjs')(dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-development') return require('./smoke-plugin-development.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-ui-actions') return require('./smoke-plugin-ui-actions.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-linked-edits') return require('./smoke-plugin-linked-edits.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-main-ranges') return require('./smoke-plugin-main-ranges.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-main-reorder') return require('./smoke-plugin-main-reorder.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-edits') return require('./smoke-plugin-edits.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-editor') return require('./smoke-plugin-editor.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-sdk') return require('./smoke-plugin-sdk.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-panel-storage') return require('./smoke-plugin-panel-storage.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-panel-actions') return require('./smoke-plugin-panel-actions.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-panels') return require('./smoke-plugin-panels.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-providers') return require('./smoke-plugin-providers.cjs')(win,app,dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-gif') return require('./smoke-plugin-gif.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-translation') return require('./smoke-plugin-translation.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-ai') return require('./smoke-plugin-ai.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-agent') return require('./smoke-plugin-agent.cjs')(win, app, dir);
-  if (process.env.FVE_SMOKE_MODE === 'plugin-commands') return require('./smoke-plugin-commands.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-transitions') return require('./smoke-plugin-transitions.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-effects') return require('./smoke-plugin-effects.cjs')(win, app, dir);
   if (process.env.FVE_SMOKE_MODE === 'plugins') return require('./smoke-plugins.cjs')(win, app, dir);
@@ -1173,34 +1180,38 @@ module.exports = async function smoke(win, app, dir) {
     // and About render in French, the document carries lang="fr", and the Language page shows the choice.
     win.webContents.setBackgroundThrottling(false); win.show();
     const q = run;
-    const until = async (js, ms) => { for (let t = 0; t < ms; t += 250) { if (await q(js)) return true; await wait(250); } return false; };
+    const until = async (js, ms) => { const end=Date.now()+ms;while(Date.now()<end){if(await q(js))return;await wait(250);}throw Error('Language UI did not become ready: '+js); };
+    result.userData=app.getPath('userData');result.noSandbox=app.commandLine.hasSwitch('no-sandbox');
     const uiLang = process.env.FVE_UI_LANGUAGE || 'fr'; // the launcher wrote the same value into settings.json
     const fr = JSON.parse(fs.readFileSync(path.join(__dirname, `../../shared/i18n/${uiLang}.json`), 'utf8'));
+    const aiPrototype=require('../../electron/agents/extensionAi.cjs').ExtensionAi.prototype,catalog=aiPrototype.catalog,delay=Number(process.env.FVE_LANGUAGE_SETTINGS_DELAY_MS||0);
     try {
       await until(`!!window.__fve && !!document.querySelector('.home-frame-card')`, 15000);
       result.lang = await q('document.documentElement.lang');
       result.homeActions = await q(`[...document.querySelectorAll('.home-top .home-action')].map((b) => b.textContent.trim())`);
       result.expectedActions = [fr['home.open_project'], fr['home.import_media'], fr['home.record_screen']];
       result.newProject = await q(`document.querySelector('#home-new-title')?.textContent || ''`);
+      if(delay){result.settingsDelay={requestedMs:delay,started:Date.now()};const ready=Date.now()+delay;aiPrototype.catalog=async function(...args){await wait(Math.max(0,ready-Date.now()));result.settingsDelay.finished=Date.now();return catalog.apply(this,args);};}
       await q(`document.querySelector('.home-settings').click()`);
-      await until(`!!document.querySelector('.set2-rail button[data-section=language]')`, 5000);
+      await until(`!!document.querySelector('.set2-rail button[data-section=language]')`, 30000);
       result.railLanguage = await q(`document.querySelector('.set2-rail button[data-section=language]')?.textContent.trim() || ''`);
       result.railGeneral = await q(`document.querySelector('.set2-rail-label')?.textContent.trim() || ''`);
       await q(`document.querySelector('.set2-rail button[data-section=language]').click()`);
-      await until(`!!document.querySelector('select[aria-label]') && !!document.querySelector('.set2-page-head h4')`, 5000); // a DOM node result cannot be returned since Electron 45
+      await until(`!!document.querySelector('.set2-page select') && !!document.querySelector('.set2-page-head h4')`, 15000); // a DOM node result cannot be returned since Electron 45
       result.languagePageTitle = await q(`document.querySelector('.set2-page-head h4')?.textContent || ''`);
       result.selected = await q(`document.querySelector('.set2-page select')?.value || ''`);
       await q(`document.querySelector('.settings .about-btn').click()`);
-      await until(`/\\d/.test(document.querySelector('.about-vpill')?.textContent || '')`, 5000);
+      await until(`/\\d/.test(document.querySelector('.about-vpill')?.textContent || '')`, 15000);
       result.aboutVersion = await q(`document.querySelector('.about-vpill')?.textContent || ''`);
       result.expectedVersion = fr['home.version'];
       result.englishLeft = await q(`[...document.querySelectorAll('.modal.about button, .home-top button')].map((b) => b.textContent.trim()).filter((s) => /^(Open project|Import media|Record screen|Releases on GitHub|Source code)$/.test(s))`);
       await q('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))'); await wait(150);
       await shot(`language-${uiLang}.png`);
-      result.ok = result.lang === uiLang && JSON.stringify(result.homeActions) === JSON.stringify(result.expectedActions) && result.newProject === fr['home.new_project'] && result.railLanguage === fr['settings.language'] && result.railGeneral === fr['settings.general'] && result.selected === uiLang && result.englishLeft.length === 0;
+      result.ok = result.lang === uiLang && JSON.stringify(result.homeActions) === JSON.stringify(result.expectedActions) && result.newProject === fr['home.new_project'] && result.railLanguage === fr['settings.language'] && result.railGeneral === fr['settings.general'] && result.selected === uiLang && result.englishLeft.length === 0 && result.errors.length===0;
     } catch (e) {
       result.error = e.message;
     }
+    aiPrototype.catalog=catalog;
     fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
     return app.quit();
   }

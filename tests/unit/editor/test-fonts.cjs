@@ -6,8 +6,16 @@ const path = require('path');
 const fonts = require("../../../electron/export/fonts.cjs");
 
 const assert = (ok, what) => { if (!ok) throw new Error(what); };
-const sys = ['arial.ttf', 'georgia.ttf', 'segoeui.ttf'].map((f) => path.join(process.env.WINDIR || 'C:\Windows', 'Fonts', f)).filter((f) => fs.existsSync(f));
-assert(sys.length >= 2, 'needs two Windows fonts to test with');
+// Known family names are independent expectations, not values read from the
+// implementation. Use real local SFNT files without distributing OS font bytes.
+const pairs = [
+  [[path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'arial.ttf'), 'Arial'], [path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', 'georgia.ttf'), 'Georgia']],
+  [['/System/Library/Fonts/Supplemental/Arial.ttf', 'Arial'], ['/System/Library/Fonts/Supplemental/Georgia.ttf', 'Georgia']],
+  [['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 'DejaVu Sans'], ['/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf', 'DejaVu Serif']],
+];
+const pair = pairs.find(entries => entries.every(([file]) => fs.existsSync(file)));
+assert(pair, 'Needs a local Arial/Georgia or DejaVu Sans/Serif pair; no font-name assertion is skipped.');
+const sys = pair.map(([file]) => file), expectedName = pair[0][1];
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-fonts-'));
 const src = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-fonts-src-'));
@@ -19,7 +27,7 @@ fs.copyFileSync(sys[1], b);
 const junk = path.join(src, 'notes.txt');
 fs.writeFileSync(junk, 'hello');
 
-assert(fonts.fontName(fs.readFileSync(a)) === 'Arial', `name of arial.ttf: ${fonts.fontName(fs.readFileSync(a))}`);
+assert(fonts.fontName(fs.readFileSync(a)) === expectedName, `expected ${expectedName}: ${fonts.fontName(fs.readFileSync(a))}`);
 assert(fonts.fontName(Buffer.from('not a font at all')) === null, 'non-font has no name');
 
 let res = fonts.add(dir, [a, b, junk]);
@@ -27,7 +35,7 @@ assert(res.added.length === 2 && res.skipped[0] === 'notes.txt', `add: ${JSON.st
 res = fonts.add(dir, [a]);
 let list = fonts.list(dir);
 assert(list.length === 2, `the same file added twice is kept once: ${list.length}`);
-assert(list.some((f) => f.name === 'Arial') && list.every((f) => /^custom-[a-z0-9.-]+$/.test(f.id)), `list: ${JSON.stringify(list)}`);
+assert(list.some((f) => f.name === expectedName) && list.some((f) => f.name === pair[1][1]) && list.every((f) => /^custom-[a-z0-9.-]+$/.test(f.id)), `list: ${JSON.stringify(list)}`);
 assert(fonts.fileOf(dir, list[0].id) && fonts.fileOf(dir, 'custom-nope') === null, 'fileOf');
 
 // A different file with the same name gets its own copy.

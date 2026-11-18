@@ -1,0 +1,21 @@
+{
+  "id": "clipcraft.gif-export",
+  "name": "GIF export",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Export a verified GIF using the general video renderer, bundled tools and managed file publication.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "export-gif",
+        "name": "Export GIF"
+      }
+    ]
+  },
+  "activationEvents": [
+    "ui:export"
+  ],
+  "icon": "assets/icon.png"
+}

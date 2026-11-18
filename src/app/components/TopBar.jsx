@@ -1,6 +1,7 @@
-import PluginActionsMenu from '../../features/plugins/components/PluginActionsMenu.jsx';
+import {ExtensionActions} from '../../features/plugins/components/ExtensionNativeUi.jsx';
+
 import { useState } from 'react';
-import { ArrowUpFromLine, AudioLines, Check, ChevronDown, CircleAlert, Film, FolderOpen, Home, Loader2, Save, Settings, PanelsTopLeft } from 'lucide-react';
+import { ArrowUpFromLine, AudioLines, Check, ChevronDown, CircleAlert, Film, FolderOpen, Home, Loader2, Save, Settings, PanelsTopLeft, Puzzle } from 'lucide-react';
 import ContextMenu from "../../components/ui/ContextMenu.jsx";
 import { RATIOS, sizeFor } from "../../features/effects/effects.js";
 import { shortcutHint } from '../keymap.js';
@@ -18,7 +19,7 @@ const SAVE_STATES = {
   error: [t('topbar.not_saved'), t('topbar.the_project_file_could_not_be_written')],
 };
 
-export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, onPluginPanels,pluginActions,onManagePlugins }) {
+export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, onPluginPanels,onManagePlugins }) {
   const [menu, setMenu] = useState(null); // export menu
   const [projectMenu, setProjectMenu] = useState(null);
   const set = (patch) => dispatch({ type: 'setProject', patch, transient: true });
@@ -67,8 +68,9 @@ export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWo
             <ChevronDown size={15} />
           </button>
         </div>
-        {pluginActions&&<PluginActionsMenu actions={pluginActions} onManage={onManagePlugins}/>}
-        <button className="icon-btn plugin-panels-toggle" onClick={onPluginPanels} aria-label={t('plugins.panels')} title={t('plugins.panels')}><PanelsTopLeft size={17}/></button>
+        <ExtensionActions location="toolbar"/>
+        <button type="button" className="btn btn-sm plugin-actions-toggle" aria-label={t('plugins.actions_manage')} title={t('plugins.actions_manage')} onClick={onManagePlugins}><Puzzle size={16}/><span className="plugin-actions-label">{t('plugins.actions_menu')}</span></button>
+        <button className="icon-btn plugin-panels-toggle" onClick={onPluginPanels} aria-label={t('plugins.extension_views')} title={t('plugins.extension_views')}><PanelsTopLeft size={17}/></button>
         <button className="icon-btn settings-btn" onClick={onSettings} aria-label={t('home.settings')} title={t('home.settings')}><Settings size={17} /></button>
       </div>
     </header>

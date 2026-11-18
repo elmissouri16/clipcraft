@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ExternalLink, KeyRound, Loader2, Pause, Play, Plus, RefreshCw, Type, Unplug } from 'lucide-react';
 import { toFileUrl } from "../../../state/store.js";
-import { defaultSpeech, studioVoicesOf } from "../voiceDefault.js";
+import { defaultSpeech, engineVoices, extensionEngine, voiceEngines, engineProblem } from "../voiceDefault.js";
 import { formatDate, formatNumber, rich, t } from '../../../i18n/index.js';
 
 // Sign-up page for new ElevenLabs accounts.
 export const ELEVENLABS_SIGNUP_URL = 'https://elevenlabs.io';
-// Where to get VoiceStudio, the free voice app ClipCraft can connect to (Settings > Voice).
-export const VOICESTUDIO_URL = 'https://github.com/debpalash/VoiceStudio';
 
 // A voice's descriptive word from the catalogs (gender, language, licence, Gemini style): translated when
 // the dictionary knows it (tts.voice_<slug>), otherwise shown as the catalog gives it.
@@ -20,10 +18,10 @@ export function voiceWord(word) {
 // Audio > Text to speech. Online engines use keys stored in Settings.
 export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, settingsVersion }) {
   const [engine, setEngine] = useState('gemini');
-  const [status, setStatus] = useState(null); // The VoiceStudio connector, online-key presence and Gemini catalog.
+  const [status, setStatus] = useState(null); // Native keys and installed service integrations.
   const [eleven, setEleven] = useState({ voices: [], loading: false, error: '' });
   const [usage, setUsage] = useState(null); // ElevenLabs credits: { used, limit, left, resetsAt }
-  const [voice, setVoice] = useState({ voicestudio: '', eleven: '', gemini: 'Kore' });
+  const [voice, setVoice] = useState({ eleven: '', gemini: 'Kore' });
   const [geminiModel, setGeminiModel] = useState('');
   const [delivery, setDelivery] = useState('');
   const [text, setText] = useState('');
@@ -65,15 +63,15 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
 
   const voiceId = voice[engine];
   const voiceName = engine === 'eleven' ? eleven.voices.find((v) => v.id === voiceId)?.name
-    : engine === 'gemini' ? voiceId : studioVoicesOf(status).find((v) => v.id === voiceId)?.name;
+    : engine === 'gemini' ? voiceId : engineVoices(status, engine).find((v) => v.id === voiceId)?.name;
   const speak = async (mode) => {
     setError('');
     setBusy(mode);
     setProgress(null);
     let res;
     try {
-      res = await window.api.ttsSpeak({ engine, voiceId, voiceName, text, speed: engine === 'gemini' ? 1 : speed,
-        ...(engine === 'gemini' ? { model: geminiModel || status.gemini.defaultModel, style: delivery } : engine === 'voicestudio' ? { style: delivery } : {}) });
+      res = await window.api.ttsSpeak({ engine, voiceId, voiceName, text, speed: engine === 'eleven' || installed?.supportsSpeed ? speed : 1,
+        ...(engine === 'gemini' ? { model: geminiModel || status.gemini.defaultModel, style: delivery } : engine.startsWith('extension:') ? { style: delivery } : {}) });
     } catch (e) { res = { error: e.message }; }
     setBusy(null);
     setProgress(null);
@@ -87,23 +85,23 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
     } else onAdd(res, !!selectedText && text.trim() === selectedText.text.trim());
   };
 
-  // VoiceStudio is a separate app: its voices are offered while the connector (Settings > Voice) is on and it answers.
-  const studioVoices = studioVoicesOf(status);
-  const studioMissing = engine === 'voicestudio' && status && !studioVoices.length;
+  const installed = extensionEngine(status, engine);
+  const extension = engine.startsWith('extension:');
+  const installedVoices = engineVoices(status, engine);
+  const extensionMissing = extension && status && !installed?.available;
   useEffect(() => {
-    if (studioVoices.length && !studioVoices.some((v) => v.id === voice.voicestudio)) setVoice((v) => ({ ...v, voicestudio: studioVoices[0].id }));
-  }, [studioVoices.map((v) => v.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (installedVoices.length) setVoice((v) => v[engine] ? v : { ...v, [engine]: installedVoices[0].id });
+  }, [engine, installedVoices.map((v) => v.id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   const needKey = status && ((engine === 'eleven' && !status.elevenKey) || (engine === 'gemini' && !status.geminiKey));
-  const studioWhy = !status?.studio?.enabled ? 'off' : !status.studio.running ? 'down' : 'empty';
-  // A "Describe a voice" entry (a voice-design engine such as Qwen3-TTS) builds the voice from the Style text.
-  const studioVoice = studioVoices.find((v) => v.id === voice.voicestudio);
-  const styleRequired = engine === 'voicestudio' && studioVoice?.kind === 'design';
-  const ready = status && text.trim() && voiceId && !needKey && !studioMissing && !busy && !(styleRequired && !delivery.trim());
+  const selectedVoice = installedVoices.find((v) => v.id === voiceId);
+  const styleRequired = extension && selectedVoice?.styleRequired;
+  const voiceMissing = extension && !!voiceId && !selectedVoice;
+  const ready = status && text.trim() && voiceId && !needKey && !extensionMissing && !voiceMissing && !busy && !(styleRequired && !delivery.trim());
   return (
     <div className="tts">
       <div className="tab-title">{t('tts.text_to_speech')}</div>
       <div className="seg-tabs small" role="tablist" aria-label={t('tts.voice_engine')}>
-        {[['gemini', 'Gemini'], ['voicestudio', t('tts.voicestudio_local')], ['eleven', 'ElevenLabs']].map(([id, name]) => (
+        {voiceEngines(status).map(({ id, name }) => (
           <button key={id} role="tab" aria-selected={engine === id} className={engine === id ? 'on' : ''} disabled={!!busy} onClick={() => { setEngine(id); setError(''); }}>{name}</button>
         ))}
       </div>
@@ -118,42 +116,29 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
         <small className="muted">{text.length} / 5000</small>
       </label>
 
-      {engine === 'voicestudio' ? (studioMissing ? (
-        <div className="card stock-key" data-studio-missing={studioWhy}>
-          <div className="card-row">
-            <span className="card-icon"><Unplug size={18} /></span>
-            <div><b>{studioWhy === 'off' ? t('tts.voicestudio_is_off') : studioWhy === 'down' ? t('tts.voicestudio_is_not_running') : t('tts.voicestudio_lists_no_voice')}</b>
-              <p>{studioWhy === 'off' ? t('tts.voicestudio_is_a_free_app_install_it_then')
-                : studioWhy === 'down' ? (status.studio.error || t('tts.open_voicestudio_then_try_again'))
-                : t('tts.create_a_voice_profile_in_voicestudio')}</p></div>
-          </div>
+      {extension ? (extensionMissing ? (
+        <div className="card stock-key" data-extension-voice-missing={engine}>
+          <div className="card-row"><span className="card-icon"><Unplug size={18} /></span><div><b>{t('tts.extension_unavailable')}</b><p>{engineProblem(status, engine)}</p></div></div>
           <div className="stock-key-actions">
-            {studioWhy === 'off'
-              ? <button className="btn btn-primary btn-sm" onClick={() => onOpenSettings?.('speech')}>{t('pilot.open_settings')}</button>
-              : <button className="btn btn-primary btn-sm" onClick={() => { setError(''); refresh(); }}><RefreshCw size={13} /> {t('tts.check_again')}</button>}
-            <button className="btn btn-ghost btn-sm" onClick={() => window.api.openHelp(VOICESTUDIO_URL)}><ExternalLink size={13} /> {t('tts.get_voicestudio')}</button>
+            <button className="btn btn-primary btn-sm" onClick={() => onOpenSettings?.('plugins')}>{t('tts.manage_extensions')}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setError(''); refresh(); }}><RefreshCw size={13} /> {t('tts.check_again')}</button>
           </div>
         </div>
       ) : (
         <>
-          <label className="field">
-            <span>{t('settings.voice')}</span>
-            <select value={voice.voicestudio} aria-label={t('settings.voice')} disabled={!!busy} onChange={(e) => setVoice((v) => ({ ...v, voicestudio: e.target.value }))}>
-              {studioVoices.map((v) => (
-                <option key={v.id} value={v.id}>{v.name}{v.language ? ` · ${v.language}` : ''}{v.kind === 'default' && status.studio.engine ? ` · ${status.studio.engine}` : ''}</option>
-              ))}
+          <label className="field"><span>{t('settings.voice')}</span>
+            <select value={voiceId || ''} aria-label={t('settings.voice')} disabled={!!busy} onChange={(e) => setVoice((v) => ({ ...v, [engine]: e.target.value }))}>
+              {voiceMissing && <option value={voiceId}>{voiceId} · {t('tts.extension_unavailable')}</option>}
+              {installedVoices.map((v) => <option key={v.id} value={v.id}>{v.name}{v.language ? ` · ${v.language}` : ''}</option>)}
             </select>
-            <small className="muted">{t('tts.voices_come_from_voicestudio')}</small>
+            {selectedVoice?.description && <small className="muted">{selectedVoice.description}</small>}
           </label>
-          <label className="field">
+          {(installed?.supportsStyle || styleRequired) && <label className="field">
             <span>{styleRequired ? t('tts.style') : t('tts.style_optional')}</span>
-            <input type="text" aria-label={t('tts.speech_style')} value={delivery} maxLength={200} disabled={!!busy} required={styleRequired}
-              placeholder={styleRequired ? t('tts.e_g_a_sad_woman_almost_crying_speaking_slowly') : status.studio.activeEngine === 'omnivoice' ? t('tts.e_g_female_young_adult_low_pitch_whisper') : t('tts.e_g_calm_warm_narrator')} onChange={(e) => setDelivery(e.target.value)} />
-            {styleRequired && !delivery.trim() ? <small className="error-text">{t('tts.describe_the_voice_first_this_engine_needs')}</small>
-              : <small className="muted">{styleRequired ? t('tts.this_voice_is_built_from_the_style_text')
-                : status.studio.activeEngine === 'omnivoice' && studioVoice?.kind !== 'profile' ? t('tts.style_takes_voice_design_tags_only')
-                : t('tts.passed_to_voicestudios_engine_some_ignore')}</small>}
-          </label>
+            <input type="text" aria-label={t('tts.speech_style')} value={delivery} maxLength={1000} disabled={!!busy} required={styleRequired}
+              placeholder={t('tts.e_g_calm_warm_narrator')} onChange={(e) => setDelivery(e.target.value)} />
+            {styleRequired && !delivery.trim() && <small className="error-text">{t('tts.describe_the_voice_first_this_engine_needs')}</small>}
+          </label>}
         </>
       )) : needKey ? (
         <div className="card stock-key">
@@ -208,7 +193,7 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
         </label>
       )}
 
-      {engine !== 'gemini' && <label className="field">
+      {(engine === 'eleven' || installed?.supportsSpeed) && <label className="field">
         <span>{t('tts.speed')} <b>{speed.toFixed(2)}×</b></span>
         <input type="range" min={engine === 'eleven' ? 0.7 : 0.5} max={engine === 'eleven' ? 1.2 : 2} step="0.05" value={speed} aria-label={t('tts.speed')}
           onChange={(e) => setSpeed(Number(e.target.value))} />
@@ -218,7 +203,6 @@ export default function TextToSpeech({ onAdd, selectedText, onOpenSettings, sett
         <div className="lib-loading"><Loader2 size={15} className="spin" />
           {progress.stage === 'wait' ? t('tts.gemini_rate_limit_waiting', { seconds: Math.ceil(progress.seconds || 0) })
             : progress.stage === 'speech' ? t('tts.generating_speech_with_gemini')
-            : progress.stage === 'studio' ? t('tts.speaking_with_voicestudio_first_request')
             : t('tts.speaking')}
         </div>
       )}

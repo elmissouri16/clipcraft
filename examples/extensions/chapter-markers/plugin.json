@@ -1,0 +1,18 @@
+{
+  "id": "clipcraft-examples.chapter-markers",
+  "name": "Chapter markers",
+  "publisher": "ClipCraft examples",
+  "version": "1.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Add evenly spaced chapter markers through the general Node extension API, as one Undo step.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "add-chapter-markers",
+        "name": "Add chapter markers"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

@@ -1,17 +1,42 @@
 {
   "name": "@clipcraft/plugin-sdk",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Typed helpers and authoring tools for ClipCraft plugin API 1",
   "type": "module",
   "license": "MIT",
-  "engines": {"node": ">=20.19.0"},
-  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
-    ".": {"types": "./dist/index.d.ts", "import": "./dist/index.mjs"},
-    "./authoring": {"types": "./dist/authoring.d.cts", "require": "./dist/authoring.cjs", "default": "./dist/authoring.cjs"},
+    "./extension": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.mjs"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./authoring": {
+      "types": "./dist/authoring.d.cts",
+      "require": "./dist/authoring.cjs",
+      "default": "./dist/authoring.cjs"
+    },
     "./package.json": "./package.json"
   },
-  "bin": {"clipcraft-plugin": "./dist/cli.cjs"},
+  "bin": {
+    "clipcraft-plugin": "./dist/cli.cjs"
+  },
   "sideEffects": false,
-  "dependencies": {"acorn": "8.19.0", "esbuild": "0.25.12", "tar": "7.5.22", "typescript": "7.0.2"}
+  "dependencies": {
+    "@types/node": "24.19.2",
+    "acorn": "8.19.0",
+    "esbuild": "0.25.12",
+    "tar": "7.5.22",
+    "typescript": "7.0.2"
+  }
 }

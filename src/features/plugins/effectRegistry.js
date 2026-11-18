@@ -1,3 +1,4 @@
+import {setPluginCreative} from './creativeRegistry.js';
 import {setPluginTransitions,subscribePluginTransitions,assertPluginTransitions} from './transitionRegistry.js';
 // Renderer-owned read-only definitions. Project files carry references/parameters, never expressions.
 import {validateEffectDefinition,effectExpression,effectParameters,effectId,isPluginEffect} from '../../../shared/pluginEffects.mjs';
@@ -27,7 +28,7 @@ export function pluginEffectInstance(id,params) {
 export function pluginEffectProblem(id,instance) {
   if(!isPluginEffect(id)||instance?.disabled)return null;
   const d=definitions.get(id);
-  if(!d)return 'Required plugin version is unavailable or disabled.';
+  if(!d)return 'Required plugin version is unavailable or disabled. Check Settings → Plugins; review recovery if the inventory is damaged.';
   if(!instance||['pluginId','contributionId','version','digest'].some(k=>instance[k]!==d[k]))return 'Saved effect dependency does not match its installed version.';
   try{effectParameters(d,instance.params);}catch(e){return e.message;}
   return null;
@@ -58,8 +59,10 @@ let refreshQueue=Promise.resolve();
 export function refreshPluginEffects() {
   const job=refreshQueue.then(async()=>{
     const api=globalThis.window?.api;if(!api)return;
-    const [effects,transitions]=await Promise.all([api.pluginEffects?.(),api.pluginTransitions?.()]);
-    if(effects)setPluginEffects(effects);if(transitions)setPluginTransitions(transitions);
+    try{
+      const [effects,transitions,creative]=await Promise.all([api.pluginEffects?.(),api.pluginTransitions?.(),api.pluginCreative?.()]);
+      if(effects)setPluginEffects(effects);if(transitions)setPluginTransitions(transitions);if(creative)setPluginCreative(creative);
+    }catch(error){setPluginEffects([]);setPluginTransitions([]);setPluginCreative();throw error;}
   });
   refreshQueue=job.catch(()=>{});return job;
 }

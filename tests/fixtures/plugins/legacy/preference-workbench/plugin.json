@@ -1,0 +1,22 @@
+{
+  "id": "clipcraft-examples.preference-workbench",
+  "name": "Preference workbench",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "A small storage-only panel for trying saved preferences and reviewed copying between the two generated demo versions. It does not edit the project.",
+  "contributes": {
+    "panels": [
+      {
+        "id": "workbench",
+        "name": "Preference workbench",
+        "entry": "panel.html",
+        "script": "panel.js",
+        "style": "panel.css",
+        "permissions": [
+          "storage.local"
+        ]
+      }
+    ]
+  }
+}

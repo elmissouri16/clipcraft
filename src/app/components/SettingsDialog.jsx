@@ -7,8 +7,8 @@ import { SettingsPage, SettingsGroup } from './SettingsLayout.jsx';
 import Dropdown from "../../components/ui/Dropdown.jsx";
 import { AudioLines, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, Gauge, Info, Keyboard, Loader2, Server, Sparkles, Trash2, X, Languages } from 'lucide-react';
 import ShortcutSettings from './ShortcutSettings.jsx';
-import { ENGINE_NAMES, defaultSpeech, studioVoicesOf, usableEngines } from '../../features/audio/voiceDefault.js';
-import { VOICESTUDIO_URL } from '../../features/audio/components/TextToSpeech.jsx';
+import { defaultSpeech, engineVoices, voiceEngineName, voiceEngines, usableEngines } from '../../features/audio/voiceDefault.js';
+import { ExtensionSettings } from '../../features/plugins/components/ExtensionNativeUi.jsx';
 import { SUBAGENT_LIMITS } from '../../../shared/subagents.mjs';
 
 // Providers come from the preset table (shared/providers.json): name, key page, hint, default address.
@@ -116,7 +116,7 @@ const SECTION_GROUPS = [
 ];
 const SECTIONS = SECTION_GROUPS.flatMap(g => g.items);
 
-export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, initialSection = 'ai', pluginCommands }) {
+export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, initialSection = 'ai', project,onReplaceDependency,onApplyPack,onAuthorExport }) {
   const [section, setSection] = useState(initialSection === 'stock' || initialSection.startsWith('services') ? 'services' : initialSection);
   const [serviceTarget, setServiceTarget] = useState((initialSection.startsWith('services:') ? initialSection.slice('services:'.length) : '') || (initialSection === 'stock' ? 'pixabay' : ''));
   const openService = target => { setServiceTarget(target || ''); setSection('services'); };
@@ -179,8 +179,10 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
   };
   useEffect(() => {
     let live=true;window.api.settingsGet().then(s=>{if(live)load(s);});
-    const off=window.api.onPluginsChanged?.(()=>window.api.settingsGet().then(s=>{if(live)setSaved(s);}));
-    return()=>{live=false;off?.();};
+    let sequence=0;const refresh=()=>{const request=++sequence;window.api.settingsGet().then(s=>{if(live&&request===sequence)setSaved(s);}).catch(()=>{});};
+    const off=window.api.onPluginsChanged?.(refresh),uiOff=window.api.onExtensionUiChanged?.(refresh);
+    let previous='';const stateOff=window.api.onExtensionState?.(state=>{const signature=JSON.stringify(state.map(job=>[job.key,job.generation,job.state]));if(signature!==previous){previous=signature;refresh();}});
+    return()=>{live=false;off?.();uiOff?.();stateOff?.();};
   }, []);
 
   useEffect(() => {
@@ -285,7 +287,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
     setBusy('models');
     setResult(null);
     let r;
-    try { r = await window.api.aiModels(draft); }
+    try { r = await window.api.aiModels(draft);if(r.ok&&info.extension){const current=await window.api.settingsGet();if(generation===catalogGeneration.current)setSaved(current);} }
     catch (error) { r = { ok: false, error: error.message }; }
     if (generation !== catalogGeneration.current) return;
     setBusy(null);
@@ -302,7 +304,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
 
   return (
     <div ref={dialogRef} onKeyDown={dialogKeys} className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal settings settings2" ref={sheetRef} tabIndex={-1}>
+      <div className="modal settings settings2" data-settings-section={section} ref={sheetRef} tabIndex={-1}>
         <div className="settings-head">
           <h3 id="settings-title">{t('home.settings')}</h3>
           <button className="icon-btn" onClick={onClose} aria-label={t('settings.close_settings')}><X size={16} /></button>
@@ -347,7 +349,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
                 {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.plugin?`${p.name} · ${p.version||t('plugins.unavailable')}`:t(`providers.${p.id}.name`)}{saved.keys[p.id] ? '  ✓' : ''}</option>)}
               </select>
             </label>
-            <p className="set2-note">{info.plugin?(info.unavailable?t('plugins.provider_unavailable'):info.description):t(`providers.${provider}.hint`)}</p>
+            <p className="set2-note">{info.plugin?(info.retired?t('plugins.legacy_provider_hint'):info.unavailable?t('plugins.provider_unavailable'):info.description):t(`providers.${provider}.hint`)}</p>
             {info.keyUrl && (
               <button className="btn btn-ghost btn-sm link-btn" type="button" onClick={() => window.api.openHelp(info.keyUrl)}>
                 <ExternalLink size={13} /> {t(`providers.${provider}.key_label`)}
@@ -415,7 +417,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
               </label>
             </>
           )}
-          {info.plugin&&!info.unavailable&&<p className="set2-note">{t('plugins.provider_destination',{endpoint:info.baseUrl})}</p>}
+          {info.extension&&!info.unavailable&&<div className="service-key-link"><span className="set2-note">{t('plugins.extension_ai_settings')}</span><button type="button" className="btn btn-sm" onClick={()=>setSection('plugins')}>{t('plugins.title')}</button></div>}
           {info.needsKey && <div className="service-key-link"><span className="set2-note">{hint ? t('settings.api_key_saved_hint', { hint }) : t('settings.no_api_key_saved_for_this_provider')}</span><button type="button" className="btn btn-sm" onClick={() => openService(`assistant:${provider}`)}>{t('settings.manage_api_key')}</button></div>}
 
           {!info.plugin&&(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && (
@@ -429,7 +431,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
             <p className="error-text">{t('settings.secure_storage_is_not_available_on_this_pc')}</p>
           )}
 
-          {!info.sdk && !info.needsKey && !(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && <p className="set2-note">{t('settings.no_key_needed')}</p>}
+          {!info.extension && !info.sdk && !info.needsKey && !(provider === 'ollama' || provider === 'openai' || provider === 'custom' || baseUrl) && <p className="set2-note">{t('settings.no_key_needed')}</p>}
           </SettingsGroup>
 
           <SettingsGroup label={t('settings.model')} aside={
@@ -440,7 +442,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
           }>
           <label className="field">
             <span className="sr-only">{t('settings.model')}</span>
-            {info.plugin ? <><Dropdown ariaLabel={t('settings.ai_model')} value={model} disabled={!!busy||info.unavailable} options={(info.models||[]).map(m=>({value:m.id,label:m.name}))} onChange={setModel}/><small className="muted">{t('plugins.provider_models_note')}</small></> : info.sdk ? (
+            {info.plugin ? <><Dropdown ariaLabel={t('settings.ai_model')} value={model} disabled={!!busy||info.unavailable} options={(info.models||[]).map(m=>({value:m.id,label:m.name}))} onChange={setModel}/><small className="muted">{t('plugins.extension_ai_models_note')}</small></> : info.sdk ? (
               <>
                 <Dropdown ariaLabel={t('settings.ai_model')} className="settings-model-picker" value={customModel ? '__custom__' : model} disabled={!!busy}
                   options={[
@@ -489,12 +491,12 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
 
         </SettingsPage>
         )}
-        {section === 'plugins' && <SettingsPage title={page.title} description={page.description}><PluginSettings commands={pluginCommands} /></SettingsPage>}
+        {section === 'plugins' && <SettingsPage title={page.title} description={page.description}><PluginSettings onAuthorExport={onAuthorExport} project={project} onReplaceDependency={onReplaceDependency} onApplyPack={onApplyPack} /></SettingsPage>}
         {section === 'external' && <SettingsPage title={page.title} description={page.description}><ExternalAgentSettings /></SettingsPage>}
         {section === 'mcp' && <SettingsPage title={page.title} description={page.description}><McpSettings saved={saved} onSaved={(st) => setSaved(st)} /></SettingsPage>}
         {section === 'speech' && (
           <SettingsPage title={page.title} description={page.description}>
-            <VoiceSettings saved={saved} onOpenService={openService} />
+            <VoiceSettings saved={saved} onOpenService={openService} onOpenPlugins={() => setSection('plugins')} />
           </SettingsPage>
         )}
         {section === 'language' && <SettingsPage title={page.title} description={page.description}><LanguageSettings saved={saved} onSaved={setSaved} /></SettingsPage>}
@@ -608,21 +610,21 @@ function McpSettings({ saved, onSaved }) {
   );
 }
 
-// Voice selection and the VoiceStudio connector remain here; external credentials live in API keys.
-function VoiceSettings({ saved, onOpenService }) {
+// Native controls consume the general extension UI and service registries.
+function VoiceSettings({ saved, onOpenService, onOpenPlugins }) {
   const [status, setStatus] = useState(null);
   const refresh = () => window.api.ttsStatus?.().then(setStatus).catch(() => {});
   useEffect(() => { refresh(); }, [JSON.stringify(saved.serviceKeys || {})]); // eslint-disable-line react-hooks/exhaustive-deps
   return <>
-    {status && <DefaultVoiceSettings status={status} onChanged={refresh} onOpenService={onOpenService} />}
-    {status && <VoiceStudioSettings status={status} onChanged={refresh} />}
+    {status && <DefaultVoiceSettings status={status} onChanged={refresh} onOpenService={onOpenService} onOpenPlugins={onOpenPlugins} />}
+    <ExtensionSettings location="settings.voice" onChanged={refresh} />
     <SettingsGroup label={t('settings.online_voice_services')} hint={t('settings.manage_credentials_in_settings_api_keys')}>
       {[['gemini-tts','Gemini','gemini-tts'],['elevenlabs','ElevenLabs','elevenlabs']].map(([id,label,target]) => <div key={id} className="service-key-link"><span>{label} <small className="muted">· {saved.serviceKeys?.[id] ? t('services.key_saved') : t('services.no_key_saved')}</small></span><button className="btn btn-sm" onClick={() => onOpenService(target)}>{saved.serviceKeys?.[id] ? t('settings.manage_key') : t('settings.add_key')}</button></div>)}
     </SettingsGroup>
   </>;
 }
 
-function DefaultVoiceSettings({ status, onChanged, onOpenService }) {
+function DefaultVoiceSettings({ status, onChanged, onOpenService, onOpenPlugins }) {
   const pref = status.voiceDefault || { engine: 'auto', voice: '' };
   const [eleven, setEleven] = useState(null);
   const usable = usableEngines(status), effective = defaultSpeech(status);
@@ -630,97 +632,36 @@ function DefaultVoiceSettings({ status, onChanged, onOpenService }) {
     if (pref.engine === 'eleven' && status.elevenKey && !eleven) window.api.ttsElevenVoices().then((r) => setEleven(r.voices || [])).catch(() => setEleven([]));
   }, [pref.engine, status.elevenKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (next) => { await window.api.settingsSetVoiceDefault(next); onChanged(); };
-  const voices = pref.engine === 'gemini' ? (status.gemini?.voices || []).map((v) => [v.id, `${v.name}${v.style ? ` · ${v.style}` : ''}`])
-    : pref.engine === 'voicestudio' ? studioVoicesOf(status).filter((v) => v.kind !== 'design').map((v) => [v.id, v.language ? `${v.name} · ${v.language}` : v.name])
-    : pref.engine === 'eleven' ? (eleven || []).map((v) => [v.id, v.name]) : [];
-  const engineOption = (id) => usable[id] ? ENGINE_NAMES[id]
-    : id === 'voicestudio' ? (status.studio?.enabled ? t('settings.engine_not_running', { engine: ENGINE_NAMES[id] }) : t('settings.engine_turn_it_on_below', { engine: ENGINE_NAMES[id] }))
-    : t('settings.engine_add_key_in_api_keys', { engine: ENGINE_NAMES[id] });
-  const now = effective.engine ? `${ENGINE_NAMES[effective.engine]}${effective.voice ? ` · ${(status.gemini?.voices || []).find((v) => v.id === effective.voice)?.name || studioVoicesOf(status).find((v) => v.id === effective.voice)?.name || (eleven || []).find((v) => v.id === effective.voice)?.name || effective.voice}` : ''}` : t('settings.none_set_up_yet');
+  const voices = (pref.engine === 'eleven' ? eleven || [] : engineVoices(status, pref.engine)).map((v) => [v.id, `${v.name}${v.style || v.language ? ` · ${v.style || v.language}` : ''}`]);
+  const name = (id) => voiceEngineName(status, id);
+  const engineOption = (id) => usable[id] ? name(id) : t(id==='gemini'||id==='eleven'?'settings.engine_add_key_in_api_keys':'settings.engine_not_running', { engine: name(id) });
+  const now = effective.engine ? `${name(effective.engine)}${effective.voice ? ` · ${engineVoices(status, effective.engine).find((v) => v.id === effective.voice)?.name || (eleven || []).find((v) => v.id === effective.voice)?.name || effective.voice}` : ''}` : t('settings.none_set_up_yet');
+  const saveChoice = (engine, voice) => save({ engine, voice, ...(engine !== 'auto' ? { label: name(engine) } : {}) });
   return (
     <SettingsGroup label={t('settings.default_voice')} hint={t('settings.used_by_craftai_and_as_text_to_speechs_first')}>
       <div className="set2-grid">
         <label className="field"><span>{t('settings.engine')}</span>
-          <select aria-label={t('settings.default_voice_engine')} value={pref.engine} onChange={(e) => save({ engine: e.target.value, voice: '' })}>
+          <select aria-label={t('settings.default_voice_engine')} value={pref.engine} onChange={(e) => saveChoice(e.target.value, '')}>
             <option value="auto">{t('settings.automatic')}</option>
-            {['gemini', 'voicestudio', 'eleven'].map((id) => <option key={id} value={id}>{engineOption(id)}</option>)}
+            {voiceEngines(status).map(({id}) => <option key={id} value={id}>{engineOption(id)}</option>)}
           </select>
         </label>
         {pref.engine !== 'auto' && (
           <label className="field"><span>{t('settings.voice')}</span>
-            <select aria-label={t('settings.default_voice')} value={effective.from === 'settings' ? effective.voice : pref.voice} disabled={!voices.length} onChange={(e) => save({ engine: pref.engine, voice: e.target.value })}>
-              {!voices.length && <option value="">{pref.engine === 'eleven' && status.elevenKey && !eleven ? t('settings.loading') : t('settings.no_voice_available')}</option>}
+            <select aria-label={t('settings.default_voice')} value={effective.from === 'settings' ? effective.voice : pref.voice} disabled={!voices.length} onChange={(e) => saveChoice(pref.engine, e.target.value)}>
+              {pref.voice && !voices.some(([id]) => id === pref.voice) && <option value={pref.voice}>{pref.voice} · {t('tts.extension_unavailable')}</option>}
+              {!voices.length && !pref.voice && <option value="">{pref.engine === 'eleven' && status.elevenKey && !eleven ? t('settings.loading') : t('settings.no_voice_available')}</option>}
               {voices.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
         )}
       </div>
       {['gemini','eleven'].includes(pref.engine) && !usable[pref.engine] && <button className="btn btn-sm" onClick={() => onOpenService(pref.engine === 'eleven' ? 'elevenlabs' : 'gemini-tts')}>{t('settings.add_api_key')}</button>}
+      {pref.engine.startsWith('extension:') && !usable[pref.engine] && <button className="btn btn-sm" onClick={onOpenPlugins}>{t('tts.manage_extensions')}</button>}
       <p className="set2-note" data-default-voice-note>{pref.engine === 'auto'
-        ? t('settings.gemini_when_it_has_a_key_otherwise_voicestudio', { now })
-        : effective.from === 'settings' ? t('settings.now_craftai_uses_it_unless_you_ask', { now })
+        ? t('settings.automatic_voice_order', { now })
+        : !effective.unavailable ? t('settings.now_craftai_uses_it_unless_you_ask', { now })
         : `${effective.note} ${t('settings.now', { now })}`}</p>
-    </SettingsGroup>
-  );
-}
-
-// The VoiceStudio connector (electron/audio/tts.cjs): VoiceStudio is a free, open-source voice app the user installs;
-// when the switch is on, ClipCraft speaks through its local API. The address is saved on blur or Enter; Test
-// tries the draft without saving it.
-function VoiceStudioSettings({ status, onChanged }) {
-  const studio = status.studio || { enabled: false, url: '' };
-  const [url, setUrl] = useState(studio.url || '');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState(null); // { ok, text }
-  useEffect(() => { setUrl(studio.url || ''); }, [studio.url]);
-  const save = async (patch) => {
-    setMessage(null);
-    const r = await window.api.settingsSetVoiceStudio(patch);
-    if (r?.error) return setMessage({ ok: false, text: r.error });
-    onChanged();
-  };
-  const saveUrl = () => { if (url.trim() !== (studio.url || '')) save({ url: url.trim() }); };
-  const test = async () => {
-    setBusy(true); setMessage(null);
-    const r = await window.api.ttsStudioTest(url.trim());
-    setBusy(false); setMessage(r);
-  };
-  const voices = studio.voices || [];
-  return (
-    <SettingsGroup label={t('settings.voicestudio_on_this_computer')} hint={t('settings.voicestudio_is_a_free_open_source_voice_app')}>
-      <label className="set2-switch-row">
-        <span className="set2-switch-text">
-          <b>{t('settings.use_voicestudio')}</b>
-          <small className="muted">{t('settings.when_on_text_to_speech_and_craftai_can_spea')}</small>
-        </span>
-        <input type="checkbox" className="switch" aria-label={t('settings.use_voicestudio')} checked={!!studio.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
-      </label>
-      {studio.enabled && <>
-        <div className="studio-address">
-          <label className="field"><span>{t('settings.address')}</span>
-            <input type="text" aria-label={t('settings.voicestudio_address')} value={url} spellCheck={false} placeholder="127.0.0.1:3900"
-              onChange={(e) => setUrl(e.target.value)} onBlur={saveUrl} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveUrl(); } }} />
-          </label>
-          <button className="btn btn-sm" type="button" disabled={busy} onClick={test}>{busy ? t('settings.testing') : t('settings.test_connection')}</button>
-        </div>
-        <div className={`result ${studio.running ? 'ok' : 'bad'}`} role="status" data-studio-state={studio.running ? 'running' : 'down'}>
-          {studio.running ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
-          <div className="result-body">
-            <span>{studio.running
-              ? t('settings.voicestudio_version_is_running_engine_count', { version: studio.version || '?', engine: studio.engine || 'VoiceStudio', count: voices.length })
-              : (studio.error || t('settings.voicestudio_is_not_running_open_it'))}</span>
-            {studio.running && voices.length > 0 && <span className="muted">{voices.map((v) => v.name).slice(0, 8).join(', ')}{voices.length > 8 ? '…' : ''}</span>}
-          </div>
-          {!studio.running && <button className="btn btn-sm" type="button" onClick={() => window.api.openHelp(VOICESTUDIO_URL)}><ExternalLink size={13} /> {t('tts.get_voicestudio')}</button>}
-        </div>
-        <p className="set2-note">{t('settings.voices_and_models_belong_to_voicestudio')}</p>
-      </>}
-      {message && (
-        <div className={`result ${message.ok ? 'ok' : 'bad'}`} role="status" data-studio-test>
-          {message.ok ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
-          <div className="result-body"><span>{message.text}</span></div>
-        </div>
-      )}
     </SettingsGroup>
   );
 }

@@ -66,13 +66,14 @@ export function verifyActionResults(p, actions, before) {
     if (a.type === 'delete' && lookup(p, a.track, a.id)) errors.push(`Clip ${a.id} was not deleted.`);
     if (a.type === 'addText') need('text', a.clipId);
     if (a.type === 'insertAudioClip') need('audio', a.clip.id);
-    if (a.type === 'replaceCaptionCues') {
+    if (a.type === 'replaceCaptionCues' || a.type === 'appendCaptionTrack') {
       for (const c of a.clips) {
         const actual = need('text', c.id);
         if (actual && ['text', 'start', 'duration', 'layer', 'words'].some(key => !equal(actual[key], c[key]))) errors.push(`Caption ${c.id} did not reach the requested content/timing/layer.`);
       }
-      for (const id of a.ids) if (!a.clips.some(c => c.id === id) && lookup(p, 'text', id)) errors.push(`Caption ${id} was not removed.`);
+      for (const id of a.ids || []) if (!a.clips.some(c => c.id === id) && lookup(p, 'text', id)) errors.push(`Caption ${id} was not removed.`);
     }
+    if (a.type === 'setMarkers' && !equal(p.markers,a.markers)) errors.push('The marker collection did not reach the requested state.');
     if (a.type === 'addEffectClip') need('effect', a.clipId);
     if (a.type === 'addOverlayClip') need('overlay', a.clipId);
     if (['split', 'duplicate'].includes(a.type)) need(a.track, a.newId);

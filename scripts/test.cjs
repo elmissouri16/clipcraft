@@ -4,6 +4,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const root = path.join(__dirname, '..');
+// Native runtime/media suites also need the platform-specific Electron executable.
+const childEnv={...process.env,ELECTRON_BIN:process.env.ELECTRON_BIN||require('electron')};
+// Several normal app workflows allow 300 seconds internally. Keep an outer
+// startup/cleanup margin so the battery cannot kill them before their deadline.
+const suiteTimeoutMs=360000;
 const walk = dir => fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry => entry.isDirectory()?walk(path.join(dir,entry.name)):[path.join(dir,entry.name)]);
 const args = process.argv.slice(2), filters = args.filter(arg=>arg!=='--list');
 const tests = walk(path.join(root,'tests','unit')).filter(file=>/test-.*\.(?:cjs|mjs)$/.test(file)).map(file=>path.relative(root,file)).sort().filter(file=>!filters.length||filters.some(filter=>file.includes(filter)));
@@ -15,13 +20,13 @@ const results=[];
 function run(file) {
   return new Promise(resolve=>{
     const log=path.join(output,path.basename(file)+'.log'),fd=fs.openSync(log,'w');
-    const child=spawn(process.execPath,[file],{cwd:root,stdio:['ignore',fd,fd],detached:process.platform!=='win32'});
+    const child=spawn(process.execPath,[file],{cwd:root,env:childEnv,stdio:['ignore',fd,fd],detached:process.platform!=='win32'});
     let timedOut=false, error;
     const timer=setTimeout(()=>{
       timedOut=true;
       if(process.platform==='win32')spawn('taskkill',['/pid',String(child.pid),'/T','/F'],{windowsHide:true}).on('error',()=>child.kill());
       else try{process.kill(-child.pid,'SIGKILL');}catch{child.kill();}
-    },120000);
+    },suiteTimeoutMs);
     child.on('error',value=>{error=value.message;});
     child.on('close',code=>{
       clearTimeout(timer);fs.closeSync(fd);

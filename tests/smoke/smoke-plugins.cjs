@@ -5,8 +5,8 @@ module.exports=async(win,app,dir)=>{
  const q=s=>win.webContents.executeJavaScript(s),wait=ms=>new Promise(r=>setTimeout(r,ms));
  const result={checks:[],errors:[]};
  const until=async s=>{for(let i=0;i<300;i++){if(await q(s))return;await wait(50);}throw Error('Timeout '+s);};
- const click=s=>q(`document.querySelector(${JSON.stringify(s)}).click()`);
- const button=(scope,text)=>q(`(()=>{const b=[...document.querySelectorAll(${JSON.stringify(scope+' button')})].find(b=>b.textContent.trim()===${JSON.stringify(text)});if(!b)throw Error('Missing button: '+${JSON.stringify(text)});b.click();})()`);
+ const click=require('./pluginSettingsUi.cjs')(win).click;
+ const button=async(scope,text)=>{await q(`(()=>{document.querySelectorAll('[data-smoke-click]').forEach(b=>b.removeAttribute('data-smoke-click'));const b=[...document.querySelectorAll(${JSON.stringify(scope+' button')})].find(b=>b.textContent.trim()===${JSON.stringify(text)});if(!b)throw Error('Missing button: '+${JSON.stringify(text)});b.setAttribute('data-smoke-click','');})()`);await click('[data-smoke-click]');};
  const check=(name,value)=>{assert.ok(value,name);result.checks.push(name);};
  win.webContents.setBackgroundThrottling(false);
  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)result.errors.push(message);});
@@ -15,7 +15,7 @@ module.exports=async(win,app,dir)=>{
   dialog.showSaveDialog=async()=>({canceled:false,filePath:savedFile});
   const restarting=process.env.FVE_PLUGIN_RESTART==='1';
   const archive=path.join(dir,'example.clipcraft-plugin.tgz');
-  await tar.c({file:archive,gzip:true,cwd:path.resolve(__dirname,'../../examples/plugins/review-copy')},['plugin.json']);
+  await tar.c({file:archive,gzip:true,cwd:path.resolve(__dirname,'../../examples/plugins/review-copy')},['plugin.json',JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../examples/plugins/review-copy/plugin.json'))).icon]);
   dialog.showOpenDialog=async()=>({canceled:false,filePaths:[archive]});
   await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');
   await click('.home-frame-card');await until('!!document.querySelector(".topbar")');await q('document.querySelector(".welcome-go")?.click()');
@@ -25,8 +25,9 @@ module.exports=async(win,app,dir)=>{
   if(process.env.CLIPCRAFT_DEV_EXAMPLES==='1') check('dev startup enables example without manual installation',await q('[...document.querySelectorAll(".plugin-row")].some(e=>e.textContent.includes("Review copy")&&e.textContent.includes("Enabled"))'));
   await button('.plugin-settings','Install package');
   await until(`[...document.querySelectorAll('.plugin-row')].some(e=>e.textContent.includes('Review copy'))&&!document.querySelector('.plugin-settings[aria-busy=true]')`);
-  check('package installs through Settings',true);await q('[...document.querySelectorAll(".plugin-row")].find(e=>e.textContent.includes("Review copy")).click()');
-  check('details show unverified publisher and permissions',await q('document.querySelector(".plugin-settings").textContent.includes("unverified")&&document.querySelector(".plugin-settings").textContent.includes("Permissions: none")'));
+  check('package installs through Settings',true);await require('./pluginSettingsUi.cjs')(win).show('installed');await q('[...document.querySelectorAll(".plugin-row")].find(e=>e.textContent.includes("Review copy")).click()');
+  await until('document.querySelector(".plugin-settings").textContent.includes("Creative content only. No extension code runs.")');
+  check('details show unverified publisher and permissions',await q('document.querySelector(".plugin-settings").textContent.includes("unverified")&&document.querySelector(".plugin-settings").textContent.includes("Creative content only. No extension code runs.")'));
   fs.writeFileSync(path.join(dir,'plugin-settings.png'),(await win.capturePage()).toPNG());
   await click('button[aria-label="Close settings"]');
   const source=path.join(dir,'source.png');require('node:child_process').execFileSync(ff.ffmpegPath,['-v','error','-y','-f','lavfi','-i','testsrc2=s=1280x720','-frames:v','1',source]);
@@ -46,7 +47,7 @@ module.exports=async(win,app,dir)=>{
   return app.exit(0);
   }
   check('inventory survives full app restart',await q(`(async()=>{const rows=await window.api.pluginsList();return rows.some(row=>row.enabled&&row.manifest?.id==='clipcraft-examples.review-copy');})()`));
-  await click('button[aria-label="Settings"]');await until('!!document.querySelector(".settings2")');await click('[data-section="plugins"]');await until('!!document.querySelector(".plugin-row")');await q('[...document.querySelectorAll(".plugin-row")].find(e=>e.textContent.includes("Review copy")).click()');
+  await click('button[aria-label="Settings"]');await until('!!document.querySelector(".settings2")');await click('[data-section="plugins"]');await until('!!document.querySelector(".plugin-row")');await require('./pluginSettingsUi.cjs')(win).show('installed');await q('[...document.querySelectorAll(".plugin-row")].find(e=>e.textContent.includes("Review copy")).click()');
   await button('.plugin-settings','Remove');await button('.plugin-settings','Remove this version');await until('![...document.querySelectorAll(".plugin-row")].some(e=>e.textContent.includes("Review copy"))');
   check('removal works through Settings',true);await click('button[aria-label="Close settings"]');
   const reopened=await q(`window.api.openProjectPath(${JSON.stringify(savedFile)})`);

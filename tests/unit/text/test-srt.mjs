@@ -4,13 +4,15 @@ import fs from 'fs';
 import { parseSRT, parseSrtTime, srtSegments } from "../../../src/features/text/subtitles.js";
 import { emptyProject, historyReducer } from "../../../src/state/store.js";
 
-// Fixture: the user's own captions file.
-const fixture = fs.readFileSync('/home/hatch/workspace/user/files/captions.srt', 'utf8');
+// Original repository-owned fixture; no private user files or machine-specific paths.
+const fixture = fs.readFileSync(new URL('../../fixtures/captions-import.srt', import.meta.url), 'utf8');
 const cues = parseSRT(fixture);
 assert.ok(cues.length >= 5, `fixture parses (${cues.length} cues)`);
 assert.equal(cues[0].start, 0.2);
 assert.equal(cues[0].end, 1.5);
 assert.ok(cues[0].text.length > 0, 'cue text kept');
+assert.equal(cues[2].text, 'Two lines,\none thought.');
+assert.equal(cues[4].text, 'حكاية جديدة', 'Unicode caption text survives parsing');
 
 // Time parsing: comma + dot millis, 1-3 digit fractions, missing hours.
 assert.equal(parseSrtTime('00:00:01,500'), 1.5);

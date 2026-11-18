@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {emptyProject,historyReducer,preparePluginEdits,pluginEditsApplied,prepareProjectAction,freeLen} from '../../../src/state/store.js';
 import {createEditorContext} from '../../../src/features/plugins/editorContext.js';
 import {clipTransaction} from '../../../shared/pluginEdits.mjs';
-import {validateManifest} from '../../../shared/pluginManifest.mjs';
+// Historical schema assertions are read-only; native edit planning remains in use.
+import {validateLegacyManifest as validateManifest} from '../../../shared/legacyPluginManifest.mjs';
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 const fixture=()=>{
  const project={...emptyProject(),videoClips:[{id:'main',gap:true,in:0,out:12}],media:[{id:'audio-media',type:'audio',duration:20},{id:'image',type:'image'}],

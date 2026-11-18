@@ -35,7 +35,7 @@ module.exports = async (win, app, dir) => {
     result.requests.push({ provider: cfg.provider, prompt: options.prompt, history: options.history, system: options.system });
     const complete = await options.onTool('complete_edit', {});
     assert.equal(JSON.parse(complete.content[0].text).ready, true);
-    assert.equal(await options.isComplete(), true);
+    assert.equal((await options.isComplete()).ready, true);
     return { text: 'Native reference received.' };
   };
   win.setSize(1440, 1000);win.webContents.setBackgroundThrottling(false);

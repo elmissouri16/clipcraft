@@ -5,6 +5,7 @@
 // A combo is a string like "Ctrl+Shift+S": modifiers in the order Ctrl, Alt,
 // Shift, then one key ("A"–"Z", "0"–"9", "Space", "ArrowLeft", "Delete"…).
 // On macOS, Cmd counts as Ctrl so the usual Mac keys work too.
+import shortcutContract from 'clipcraft/internal/shortcut-contract';
 import { t } from '../i18n/index.js';
 
 // The group names are also the headings of the Shortcuts settings, so they are translated once here.
@@ -59,24 +60,37 @@ export function comboFromEvent(e) {
   return [ctrl && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', key].filter(Boolean).join('+');
 }
 
-const VALID = /^(Ctrl\+)?(Alt\+)?(Shift\+)?[^+\s]+$|^(Ctrl\+)?(Alt\+)?(Shift\+)?\+$/;
-export const validCombo = combo => typeof combo === 'string' && combo.length <= 40 && VALID.test(combo) && !MODIFIER_KEYS.has(combo.split('+').at(-1));
+export const validCombo = shortcutContract.validCombo;
+let extensions=[],rawOverrides={},active,lookup=null;
+const subscribers=new Set();
+export const shortcutActions=()=>[...SHORTCUT_ACTIONS,...extensions];
+export const subscribeShortcuts=listener=>{subscribers.add(listener);return()=>subscribers.delete(listener);};
+const changed=()=>{active=resolveKeymap(rawOverrides,shortcutActions().filter(action=>action.enabled!==false));lookup=null;for(const listener of subscribers)listener();};
+export function setExtensionShortcuts(rows){
+ const next=rows.map(row=>({...row,label:row.title,group:'extension:'+row.extensionId}));
+ if(JSON.stringify(next)===JSON.stringify(extensions))return;
+ extensions=next;changed();
+}
+export const extensionShortcut=id=>extensions.find(action=>action.id===id&&action.enabled!==false);
+export const extensionShortcutCombos=()=>extensions.filter(action=>action.enabled!==false).flatMap(action=>active[action.id]||[]);
 
-// Defaults merged with the user's overrides ({ actionId: [combos] }); unknown
-// actions and invalid combos are ignored, and a combo belongs to one action.
-export function resolveKeymap(overrides = {}) {
-  const map = {};
-  for (const a of SHORTCUT_ACTIONS) map[a.id] = Array.isArray(overrides?.[a.id]) ? overrides[a.id].filter(validCombo).slice(0, 4) : [...a.keys];
-  const owner = new Map();
-  for (const a of SHORTCUT_ACTIONS) map[a.id] = map[a.id].filter(c => !owner.has(c) && owner.set(c, a.id));
-  return map;
+// Explicit user choices win over defaults. Core defaults precede extension
+// defaults; unavailable extension rows keep their displayed keys without owning
+// those keys. The active lookup contains only available actions.
+export function resolveKeymap(overrides = {}, actions=shortcutActions()) {
+ const map={};for(const action of actions)map[action.id]=Array.isArray(overrides?.[action.id])?[...new Set(overrides[action.id].filter(validCombo))].slice(0,4):[...action.keys];
+ const ordered=[...actions.filter(action=>Array.isArray(overrides?.[action.id])),...actions.filter(action=>!Array.isArray(overrides?.[action.id]))],owner=new Map();
+ for(const action of ordered)if(action.enabled!==false)map[action.id]=map[action.id].filter(combo=>!owner.has(combo)&&owner.set(combo,action.id));
+ return map;
 }
 
-// Only the actions that differ from their defaults are stored.
-export function overridesFor(map) {
-  const out = {};
-  for (const a of SHORTCUT_ACTIONS) if (JSON.stringify(map[a.id] || []) !== JSON.stringify(a.keys)) out[a.id] = [...(map[a.id] || [])];
-  return out;
+// Preserve overrides for temporarily absent or disabled extensions. Compare to
+// resolved defaults so a suppressed default does not become an accidental unbind.
+export function overridesFor(map,actions=shortcutActions(),previous={}) {
+ const defaults=resolveKeymap({},actions),known=new Set(actions.map(action=>action.id));
+ const out=Object.fromEntries(Object.entries(previous).filter(([id])=>!known.has(id)));
+ for(const action of actions)if(JSON.stringify(map[action.id]||[])!==JSON.stringify(defaults[action.id])||Object.hasOwn(previous,action.id)&&JSON.stringify(map[action.id])===JSON.stringify(previous[action.id]))out[action.id]=[...(map[action.id]||[])];
+ return out;
 }
 
 // Assign a combo to an action, taking it from whichever action had it.
@@ -89,14 +103,14 @@ export function assignCombo(map, actionId, combo) {
     if (id !== actionId && combos.includes(combo)) movedFrom = id;
     next[id] = id === actionId ? combos : combos.filter(c => c !== combo);
   }
+  if (!next[actionId]) return {map,movedFrom:null};
   if (!next[actionId].includes(combo)) next[actionId] = [...next[actionId], combo].slice(-4);
   return { map: next, movedFrom };
 }
 
 // Shared active keymap so every key handler sees the same mapping.
-let active = resolveKeymap();
-let lookup = null;
-export function setActiveKeymap(overrides) { active = resolveKeymap(overrides); lookup = null; return active; }
+active=resolveKeymap();
+export function setActiveKeymap(overrides) {rawOverrides=overrides||{};changed();return active;}
 export const activeKeymap = () => active;
 export function actionFor(e, map = active) {
   const combo = comboFromEvent(e);

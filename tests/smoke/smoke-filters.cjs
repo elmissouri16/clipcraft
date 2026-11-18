@@ -10,6 +10,10 @@ const { ffmpegPath, probe } = require("../../electron/media/ffmpeg.cjs");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = async function filtersSmoke(win, dir, result) {
+  const {app}=require('electron');result.userData=app.getPath('userData');result.noSandbox=app.commandLine.hasSwitch('no-sandbox');
+  // Other real-app suites can occlude this window. Keep its compositor active;
+  // a visible BrowserWindow alone does not imply a visible renderer page.
+  win.webContents.setBackgroundThrottling(false);
   const q = (js) => win.webContents.executeJavaScript(js);
   const until = async (js, ms) => { for (let t = 0; t < ms; t += 500) { if (await q(js)) return true; await wait(500); } return false; };
   // Mean colour and mean chroma (max(r,g,b) - min(r,g,b)) of the middle of the player.
@@ -19,7 +23,7 @@ module.exports = async function filtersSmoke(win, dir, result) {
     // all-black frame. An all-black crop is retried a few times before it counts as the picture.
     let stats = null;
     for (let attempt = 0; attempt < 8; attempt++) {
-      const shot = await win.capturePage();
+      const shot = await win.capturePage({}, { stayHidden:true, stayAwake:true });
       const k = shot.getSize().width / (await q('window.innerWidth')); // device pixels per CSS pixel
       const img = shot.crop({ x: Math.round(r.x * k), y: Math.round(r.y * k), width: Math.round(r.width * k), height: Math.round(r.height * k) });
       fs.writeFileSync(path.join(dir, `player-crop-${playerStats.n = (playerStats.n || 0) + 1}.png`), img.toPNG());
@@ -27,7 +31,9 @@ module.exports = async function filtersSmoke(win, dir, result) {
       const s = [0, 0, 0]; let c = 0;
       for (let i = 0; i < bmp.length; i += 4) { const B = bmp[i], G = bmp[i + 1], R = bmp[i + 2]; s[0] += R; s[1] += G; s[2] += B; c += Math.max(R, G, B) - Math.min(R, G, B); }
       const n = bmp.length / 4;
-      stats = { mean: s.map((v) => Math.round(v / n)), chroma: Math.round(c / n), attempt };
+      const renderer = await q(`(() => { const cv=[...document.querySelectorAll('.stage .slot .keyed')].find(c=>c.style.display==='block'&&c.parentElement.parentElement.style.visibility!=='hidden');let canvas=null;if(cv){const data=cv.getContext('2d').getImageData(Math.round(cv.width*.35),Math.round(cv.height*.35),Math.round(cv.width*.3),Math.round(cv.height*.3)).data;let sum=0;for(let i=0;i<data.length;i+=4)sum+=Math.max(data[i],data[i+1],data[i+2])-Math.min(data[i],data[i+1],data[i+2]);canvas={width:cv.width,height:cv.height,chroma:Math.round(sum/(data.length/4)),error:cv.dataset.renderError};}return {visibility:document.visibilityState,intensity:window.__fve.rawProject().videoClips[0]?.filterIntensity,canvas};})()`);
+      stats = { mean: s.map((v) => Math.round(v / n)), chroma: Math.round(c / n), attempt,renderer,window:{visible:win.isVisible(),focused:win.isFocused()} };
+      fs.writeFileSync(path.join(dir,'player-capture-last.json'),JSON.stringify(stats,null,2));
       if (s[0] + s[1] + s[2] > 0) break;
       await wait(400);
     }
@@ -75,6 +81,13 @@ module.exports = async function filtersSmoke(win, dir, result) {
   result.clip50 = await q(`window.__fve.exportData().project.videoClips[0].filterIntensity`);
   check(result.clip50 === 50, `the intensity slider writes filterIntensity (${result.clip50})`);
   check(result.at50.chroma > result.before.chroma * 0.3 && result.at50.chroma < result.before.chroma * 0.7, `50% intensity shows half the effect: chroma ${result.at50.chroma} of ${result.before.chroma}`);
+  // Exercise background capture deliberately as well as the foreground checks.
+  // Parallel app tests may occlude the window at any point in the workflow.
+  win.hide();await setIntensity(100);result.hidden100=await playerStats();
+  check(!win.isVisible()&&result.hidden100.chroma<result.before.chroma*.1,'background capture observes a newly committed full-strength filter');
+  await setIntensity(50);result.hidden50=await playerStats();
+  check(!win.isVisible()&&result.hidden50.chroma>result.before.chroma*.3&&result.hidden50.chroma<result.before.chroma*.7,'background capture observes a newly committed half-strength filter');
+  win.showInactive();
   await setIntensity(100);
 
   // Whole video: the content on an overlay over a main clip without a filter (the common layout: a

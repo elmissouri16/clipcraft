@@ -1,0 +1,18 @@
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
+(async()=>{
+ const root=path.resolve(__dirname,'../../..'),dir=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-extension-inspection-ui-')),source=path.join(dir,'source');await fs.mkdir(path.join(source,'src'),{recursive:true});
+ await require('../../../scripts/build-plugin-sdk.cjs').buildSdk();const sdk=require('../../../packages/plugin-sdk/dist/authoring.cjs');
+ await fs.writeFile(path.join(source,'plugin.json'),JSON.stringify({id:'studio.inspection',name:'Document inspection proof',publisher:'ClipCraft tests',version:'0.1.0',apiVersion:1,main:'dist/extension.cjs',contributes:{commands:[{id:'inspect',name:'Inspect document'}]}}));
+ await fs.writeFile(path.join(source,'src/extension.ts'),`import type {ExtensionContext,InspectionRequest,InspectionSection,InspectionValueRequest,ClipTransaction} from '@clipcraft/plugin-sdk/extension';
+export async function activate(c:ExtensionContext){
+ await c.commands.register('inspect',(input:InspectionRequest<InspectionSection>)=>c.workspace.inspect(input));
+ await c.commands.register('value',(input:InspectionValueRequest)=>c.workspace.readValue(input));
+ await c.commands.register('focus',(input:{clipIds:string[]})=>c.editor.read(input));
+ await c.commands.register('snapshot',()=>c.editor.read());
+ await c.commands.register('apply',(input:ClipTransaction)=>c.editor.apply(input));
+ await c.commands.register('edit-tail',async()=>{const first=await c.workspace.inspect({section:'clips',lane:'text',limit:200});let page=first,clip=first.items[0];while(true){for(const row of page.items)if(!clip||row.start_sec>clip.start_sec)clip=row;if(page.next===null)break;page=await c.workspace.inspect({section:'clips',lane:'text',cursor:page.next,documentId:first.documentId,projectRevision:first.projectRevision,limit:200});}if(!clip)throw Error('No text clip');const snapshot=await c.editor.read({clipIds:[clip.id]});return c.editor.apply({documentId:snapshot.documentId,revision:snapshot.revision,operations:[{type:'set-text',clipId:clip.id,partnerClipId:null,text:'Edited through paged inspection',measuredWords:'invalidate'}]});});
+ await c.ui.registerAction({id:'edit-tail-button',title:'Edit last inspected caption',location:'toolbar',command:'edit-tail'});
+}`.replace(',ClipTransaction}',"}").replace("from '@clipcraft/plugin-sdk/extension';", "from '@clipcraft/plugin-sdk/extension';\nimport type {ClipTransaction} from '@clipcraft/plugin-sdk';"));
+ const built=await sdk.buildPlugin(source),archive=path.join(dir,'inspection.tgz');await sdk.packPlugin(built.directory,archive);await fs.writeFile(path.join(dir,'fixtures.json'),JSON.stringify({archive}));await fs.mkdir(path.join(dir,'settings-test'));await fs.writeFile(path.join(dir,'settings-test/settings.json'),JSON.stringify({language:'en',firstRun:{tourSeen:true,packPromptSeen:true}}));
+ const child=spawn(require('electron'),[root],{cwd:root,env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'extension-inspection',FVE_SMOKE_QUIET:'1',VITE_DEV_SERVER_URL:'',CLIPCRAFT_DEV_EXAMPLES:'0'},stdio:['ignore','pipe','pipe']});let log='';child.stdout.on('data',d=>log+=d);child.stderr.on('data',d=>log+=d);const timer=setTimeout(()=>child.kill('SIGKILL'),120000),code=await new Promise(resolve=>child.once('exit',resolve));clearTimeout(timer);await fs.writeFile(path.join(dir,'runtime.log'),log);const result=JSON.parse(await fs.readFile(path.join(dir,'result.json')));assert.equal(code,0,result.error||log);assert.ok(result.ok);console.log('Native full document inspection passed: '+dir);
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -3,10 +3,11 @@
 // Groq, OpenRouter, xAI, Mistral, DeepSeek, Custom), anthropic, gemini and ollama; native agents
 // (Codex, Claude, OpenCode) are runtimes, not APIs. Adding an OpenAI-compatible service is one row.
 const PRESETS = require('../../shared/providers.json');
-let pluginRows=[];
-const isPlugin=id=>typeof id==='string'&&id.startsWith('plugin-provider:');
-const all=()=>[...PRESETS,...pluginRows];
-const setPluginProviders=rows=>{pluginRows=rows;};
+let extensionRows=[];
+const isRetired=id=>typeof id==='string'&&id.startsWith('plugin-provider:');
+const all=()=>[...PRESETS,...extensionRows];
+const isExtension=id=>require('./extensionAi.cjs').isExtension(id);
+const setExtensionProviders=rows=>{extensionRows=rows;};
 const byId = (id) => all().find((p) => p.id === id) || null;
 const ids = () => all().map((p) => p.id);
 const protocolOf = (id) => byId(id)?.protocol || null;
@@ -23,4 +24,4 @@ const shortNames = () => Object.fromEntries(all().map((p) => [p.id, p.short || p
 const headers = (id) => ({ ...(byId(id)?.headers || {}) });
 // Where the reasoning effort goes in an OpenAI-style body: the flat field, or OpenRouter's nested one.
 const reasoningField = (id) => byId(id)?.reasoningField || 'reasoning_effort';
-module.exports = { PRESETS,all,isPlugin,setPluginProviders, byId, ids, protocolOf, openAiLike, baseUrlOf, defaultModels, keyed, toolProviders, shortNames, headers, reasoningField };
+module.exports = { PRESETS,all,isRetired,isExtension,setExtensionProviders, byId, ids, protocolOf, openAiLike, baseUrlOf, defaultModels, keyed, toolProviders, shortNames, headers, reasoningField };

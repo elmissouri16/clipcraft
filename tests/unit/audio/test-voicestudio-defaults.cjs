@@ -1,0 +1,13 @@
+// The plugin owns its address default, including empty historical settings.
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
+(async()=>{
+ const root=path.resolve(__dirname,'../../..'),dir=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-voicestudio-defaults-'));await require('../../../scripts/build-plugin-sdk.cjs').buildSdk();const sdk=require('../../../packages/plugin-sdk/dist/authoring.cjs'),source=path.join(dir,'source');await fs.cp(path.join(root,'examples/extensions/voicestudio'),source,{recursive:true,filter:file=>!['dist','node_modules','.clipcraft-build.json','.clipcraft-build.lock'].includes(path.basename(file))});const built=await sdk.buildPlugin(source),extension=require(path.join(built.directory,'dist/extension.cjs')),{ExtensionUi}=require('../../../electron/plugins/extensionUi.cjs'),defaultAddress=require('../../../examples/extensions/voicestudio/src/studio.cjs').STUDIO_URL,checks=[],failures=[];
+ for(const [name,saved,expected,writes] of [['missing',undefined,defaultAddress,1],['empty legacy','',defaultAddress,1],['whitespace',' \t ',defaultAddress,1],['already default',defaultAddress,defaultAddress,0],['custom','http://127.0.0.1:4800/custom','http://127.0.0.1:4800/custom',0]]){
+  try{
+   const values=new Map([['address',saved],['enabled',true]]),updates=[],job={key:'fixture',generation:name,state:'running',manifest:built.manifest},runtime={active:new Map([['fixture',job]]),storage:async(_job,method,key)=>values.get(key)},ui=new ExtensionUi(runtime);
+   await extension.activate({configuration:{get:async key=>values.get(key),update:async input=>{updates.push(input);values.set(input.key,input.value);return true;}},commands:{register:async()=>{}},services:{register:async()=>{}},ui:{registerSettings:async input=>ui.register(job,'settings',input),registerAction:async()=>{},registerIntegration:async()=>{}}});
+   assert.equal(values.get('address'),expected,'persisted address');assert.equal((await ui.settings('clipcraft.voicestudio.settings')).address,expected,'native field');assert.equal(updates.length,writes,'only empty addresses are initialized');assert.equal(values.get('enabled'),true);checks.push(name);console.log('PASS',name);
+  }catch(error){failures.push({name,error:error.stack});console.error('FAIL',name,error.message);}
+ }
+ await fs.writeFile(path.join(dir,'result.json'),JSON.stringify({ok:!failures.length,checks,failures,typecheck:built.typecheck},null,2)+'\n');console.log('VoiceStudio defaults evidence: '+dir);assert.equal(failures.length,0);
+})().catch(error=>{console.error(error);process.exitCode=1;});

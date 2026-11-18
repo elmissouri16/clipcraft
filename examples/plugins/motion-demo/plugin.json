@@ -1,0 +1,76 @@
+{
+  "id": "clipcraft-examples.motion-demo",
+  "name": "Motion demo",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Source-time pan/zoom curves and entrance/exit examples. Select a picture clip, preview, then Apply; Undo restores its previous motion.",
+  "contributes": {
+    "motionPresets": [
+      {
+        "id": "push",
+        "name": "Slow push in",
+        "curves": {
+          "scale": [
+            {
+              "at": 0,
+              "value": 1
+            },
+            {
+              "at": 1,
+              "value": 1.25,
+              "ease": "smooth"
+            }
+          ]
+        }
+      },
+      {
+        "id": "pan",
+        "name": "Drift across frame",
+        "transform": {
+          "scale": 1.2,
+          "x": 0,
+          "y": 0,
+          "rot": 0
+        },
+        "curves": {
+          "x": [
+            {
+              "at": 0,
+              "value": -0.08
+            },
+            {
+              "at": 1,
+              "value": 0.08,
+              "ease": "smooth"
+            }
+          ]
+        }
+      },
+      {
+        "id": "entrance",
+        "name": "Slide in and fade out",
+        "animation": {
+          "in": {
+            "type": "slide_up_smooth",
+            "duration": 0.6
+          },
+          "out": {
+            "type": "fade_out",
+            "duration": 0.5
+          }
+        }
+      },
+      {
+        "id": "pulse",
+        "name": "Gentle pulse",
+        "animation": {
+          "combo": {
+            "type": "pulse"
+          }
+        }
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

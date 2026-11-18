@@ -225,6 +225,7 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     refreshConfig();
   }, [refreshConfig, settingsVersion, open]);
   useEffect(()=>window.api.onPluginsChanged?.(()=>refreshConfig()),[refreshConfig]);
+  useEffect(()=>{let previous='';return window.api.onExtensionState?.(state=>{const signature=JSON.stringify(state.map(job=>[job.key,job.generation,job.state]));if(signature!==previous){previous=signature;refreshConfig();}});},[refreshConfig]);
   useEffect(() => {
     mounted.current = true;
     window.addEventListener('pagehide', flushDraft);

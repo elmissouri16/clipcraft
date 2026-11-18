@@ -1,0 +1,21 @@
+{
+  "id": "clipcraft-examples.local-ai",
+  "name": "Local AI provider",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "An ordinary Node service connects a configured local OpenAI-compatible endpoint to CraftAI. No requests on install or activation.",
+  "activationEvents": [
+    "ui:ai.engines"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "test-connection",
+        "name": "Test local AI connection"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

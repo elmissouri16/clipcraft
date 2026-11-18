@@ -20,9 +20,9 @@ const {spawn,execFileSync}=require('node:child_process'),net=require('node:net')
  try{
   let ready=false;for(let i=0;i<100;i++){try{ready=(await fetch(url)).ok;}catch{}if(ready)break;await new Promise(r=>setTimeout(r,50));}assert.ok(ready,'Vite starts');
   const bin=process.env.ELECTRON_BIN||require('electron');
-  electron=spawn(bin,['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'filters',VITE_DEV_SERVER_URL:url}});
+  const launcher=path.join(dir,'launcher'),userData=path.join(dir,'user-data');fs.mkdirSync(launcher);fs.mkdirSync(userData);fs.writeFileSync(path.join(launcher,'package.json'),JSON.stringify({name:'clipcraft-filter-test',version:require('../../../package.json').version,main:'main.cjs'}));fs.writeFileSync(path.join(launcher,'main.cjs'),`const {app}=require('electron');app.setPath('userData',${JSON.stringify(userData)});require(${JSON.stringify(path.join(root,'electron/main.cjs'))});`);electron=spawn(bin,[launcher],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'filters',VITE_DEV_SERVER_URL:url}});
   const code=await new Promise(resolve=>{const timer=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},300000);electron.once('exit',code=>{clearTimeout(timer);resolve(code);});});
-  const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json')));assert.equal(code,0,result.error);assert.ok(!result.error,result.error);
+  const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json')));assert.equal(code,0,result.error);assert.ok(!result.error,result.error);assert.equal(result.userData,userData);assert.equal(result.noSandbox,false);
   console.log(`Real-app filters passed (${result.checks.length} checks: player chroma ${result.before.chroma} -> ${result.bw.chroma}, export ${result.sourceChroma} -> ${result.export.chroma}); evidence: ${dir}`);
  }finally{electron?.kill();vite.kill();fs.closeSync(fd);}
 })().catch(error=>{console.error(error);process.exitCode=1;});

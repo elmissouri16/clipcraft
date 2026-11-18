@@ -38,12 +38,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
   await fs.rm(path.join(root,'.panel-storage',other),{recursive:true,force:true});await fs.symlink(root,path.join(root,'.panel-storage',other));assert.equal((await op('set',{key:'x',value:1},other)).ok,false);check('symlink namespace is rejected',()=>{});
   check('operations repeatedly verify their live owner',()=>assert.ok(verifyCalls>10));
   // Real manager lifecycle: disabling retains data, exact-version removal deletes it.
-  const example=path.resolve(__dirname,'../../../examples/plugins/project-dashboard');await manager.install(example,true);const row=(await manager.panels()).find(p=>p.id==='dashboard');
-  const approved=()=>manager.panelBundle(row.key,row.id);
-  assert.equal((await store.execute(row.key,row.id,'set',{key:'note',value:'retained'},approved)).ok,true);await manager.setEnabled(row.key,false);
-  assert.equal((await store.execute(row.key,row.id,'get',{key:'note'},approved)).ok,false);await manager.setEnabled(row.key,true);assert.equal((await store.execute(row.key,row.id,'get',{key:'note'},approved)).value,'retained');check('disabled versions retain data but lose access',()=>{});
-  await manager.clearPanelStorage(row.key);assert.equal((await store.execute(row.key,row.id,'get',{key:'note'},approved)).value,null);checks++;
-  await store.execute(row.key,row.id,'set',{key:'note',value:'removed'},approved);await manager.remove(row.key);await assert.rejects(fs.stat(path.join(root,'.panel-storage',row.key)),{code:'ENOENT'});check('removing a version deletes its namespace',()=>{});
+  const example=path.resolve(__dirname,'../../../tests/fixtures/plugins/legacy/project-dashboard');const [row]=await manager.install(example,true),legacyPanel='dashboard';
+  await store.execute(row.key,legacyPanel,'set',{key:'note',value:'retained'},async()=>{});assert.equal(row.enabled,false);assert.equal(manager.panelBundle,undefined);assert.equal((await store.execute(row.key,legacyPanel,'get',{key:'note'},async()=>{})).value,'retained');check('retired package retains data without an execution bridge',()=>{});
+  await manager.clearPanelStorage(row.key);assert.equal((await store.execute(row.key,legacyPanel,'get',{key:'note'},async()=>{})).value,null);checks++;
+  await store.execute(row.key,legacyPanel,'set',{key:'note',value:'removed'},async()=>{});await manager.remove(row.key);await assert.rejects(fs.stat(path.join(root,'.panel-storage',row.key)),{code:'ENOENT'});check('removing a version deletes its namespace',()=>{});
   console.log(JSON.stringify({ok:true,checks}));
  }finally{await fs.rm(root,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

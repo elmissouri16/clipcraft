@@ -1,0 +1,21 @@
+{
+  "id": "clipcraft-examples.reviewed-gif-upload",
+  "name": "Reviewed GIF upload",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Create a local GIF, then separately review one HTTPS PUT upload implemented in the extension.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "export-gif",
+        "name": "Export GIF and review upload"
+      }
+    ]
+  },
+  "activationEvents": [
+    "ui:export"
+  ],
+  "icon": "assets/icon.png"
+}

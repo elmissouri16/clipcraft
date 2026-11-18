@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {editorSnapshot,editorChanges,EDITOR_LIMITS} from '../../../shared/pluginEditor.mjs';
 import {createEditorContext} from '../../../src/features/plugins/editorContext.js';
 import {emptyProject,videoLayout} from '../../../src/state/store.js';
-import {validateManifest} from '../../../shared/pluginManifest.mjs';
+// Historical schema assertions are read-only; native edit planning remains in use.
+import {validateLegacyManifest as validateManifest} from '../../../shared/legacyPluginManifest.mjs';
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 const project={...emptyProject(),id:'/private/project',name:'private name',media:[{id:'secret-media',path:'/private/movie.mp4'}],
  videoClips:[{id:'/private/raw-clip',mediaId:'secret-media',in:2,out:6},{id:'second',in:0,out:4,transition:{type:'fade',duration:1}}],

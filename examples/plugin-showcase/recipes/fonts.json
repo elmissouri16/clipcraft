@@ -1,0 +1,37 @@
+{
+  "id": "clipcraft-examples.font-demo",
+  "name": "Font pack demo",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Two unchanged OFL font families from ClipCraft's existing Fontsource dependencies. The builder embeds their original license text. Pack font identities stay separate from the built-in font identities.",
+  "contributes": {
+    "fonts": [
+      {
+        "id": "display",
+        "name": "Anton (pack demo)",
+        "license": "@builder:anton-license",
+        "faces": [
+          {
+            "file": "assets/anton.woff2",
+            "weight": 400,
+            "style": "normal"
+          }
+        ]
+      },
+      {
+        "id": "serif",
+        "name": "Abril Fatface (pack demo)",
+        "license": "@builder:abril-license",
+        "faces": [
+          {
+            "file": "assets/abril.woff2",
+            "weight": 400,
+            "style": "normal"
+          }
+        ]
+      }
+    ]
+  },
+  "icon": "assets/font-demo.png"
+}

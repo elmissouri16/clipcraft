@@ -1,3 +1,5 @@
+import {fontDependency} from '../fonts.js';
+import {packTextTemplates,useCreativePacks} from '../../plugins/creativeRegistry.js';
 import React, { useMemo, useState } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, Bold, CaseUpper, Italic, Search, Star, Underline } from 'lucide-react';
 import Slider from "../../../components/ui/Slider.jsx";
@@ -34,6 +36,7 @@ function loadFavs() {
 }
 
 export function TemplateGrid({ onPick, activeId, captionOnly, sampleText, draggable, category }) {
+  useCreativePacks();
   const [ownCat, setCat] = useState(captionOnly ? 'Captions' : 'All');
   const cat = category || ownCat;
   const [q, setQ] = useState('');
@@ -50,8 +53,8 @@ export function TemplateGrid({ onPick, activeId, captionOnly, sampleText, dragga
       // Favorites are a convenience; ignore storage failures.
     }
   };
-  const list = TEXT_TEMPLATES.filter((tp) => {
-    if (captionOnly && !tp.caption && cat === 'Captions') return false;
+  const list = [...TEXT_TEMPLATES,...packTextTemplates()].filter((tp) => {
+    if (captionOnly && !tp.caption) return false;
     if (cat === 'Favorites') return favs.has(tp.id);
     if (cat !== 'All' && !tp.tags.includes(cat)) return false;
     // The search matches the shown (translated) name and the English catalog name alike.
@@ -64,15 +67,15 @@ export function TemplateGrid({ onPick, activeId, captionOnly, sampleText, dragga
         <input type="text" placeholder={t('text.search_text_templates')} value={q} onChange={(e) => setQ(e.target.value)} />
       </label>
       {!category && <div className="chips scroll-x" onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY; }}>
-        {TEMPLATE_CATEGORIES.map((c) => (
-          <button key={c} className={`chip ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{catalogLabel('text_cat', c)}</button>
+        {[...TEMPLATE_CATEGORIES,...(packTextTemplates().length?['Plugins']:[])].map((c) => (
+          <button key={c} className={`chip ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c==='Plugins'?t('plugins.title'):catalogLabel('text_cat', c)}</button>
         ))}
       </div>}
       <div className="tpl-grid">
         {list.map((tp) => (
           <div key={tp.id} className={`tpl-item ${activeId === tp.id ? 'on' : ''}`}
             onMouseEnter={() => setHover(tp.id)} onMouseLeave={() => setHover(null)}>
-            <button className="tpl-btn" onClick={() => onPick(tp)} title={catalogName('text_template', tp)}
+            <button className="tpl-btn" onClick={() => onPick(tp)} title={tp.pluginName?`${tp.name} — ${tp.pluginName}`:catalogName('text_template', tp)}
               {...(draggable ? dragProps({ kind: 'text', patch: { ...tp.patch, template: tp.id } }) : {})}>
               <TextPreview style={tp.caption ? { ...tp.patch, caption: true } : tp.patch} text={sampleText || tp.previewText} hover={hover === tp.id} width={128} height={72} />
             </button>
@@ -194,7 +197,7 @@ export default function TextInspector({ clip, dispatch, project = null }) {
           </label>
           <div className="field">
             <span>{t('text.font')}</span>
-            <FontPicker value={st.font} onChange={(font) => set({ font })} />
+            <FontPicker value={st.font} onChange={(font) => set({ font,fontDependency:fontDependency(font) })} />
           </div>
           <div className="toggle-row">
             <Toggle label={t('text.bold')} on={st.bold} onClick={() => set({ bold: !st.bold })}><Bold size={15} /></Toggle>

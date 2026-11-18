@@ -1,0 +1,24 @@
+{
+  "id": "clipcraft-examples.preference-workbench",
+  "name": "Preference workbench",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "A sandboxed view with Node-owned configuration that stays separate from project data.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "open",
+        "name": "Open preference workbench"
+      }
+    ],
+    "views": [
+      {
+        "id": "preferences",
+        "name": "Preference workbench"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

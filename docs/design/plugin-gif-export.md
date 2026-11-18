@@ -1,5 +1,11 @@
 # Stage 4a: bounded GIF jobs
 
+> Historical executable recipe design. Its runtime/SDK declarations are retired.
+> Use the [general Node host](plugin-extension-host.md) and
+> [migration rules](plugin-legacy-retirement.md). Creative pack and private edit
+> validation contracts remain where referenced by the current host.
+
+
 An executable package may request `export.gif`, optionally with `project.read`.
 Export cannot be combined with editor writes, caption reading or AI permissions.
 The command declares the standard `start_sec`, `end_sec`, `max_size` and `fps`
@@ -35,3 +41,10 @@ CraftAI receives verified artifact metadata, never a plugin's file-success claim
 Later slices: more output formats and independent render adapters, richer job
 queueing and explicit replacement policy. Arbitrary FFmpeg arguments, upload,
 network and filesystem access remain outside this capability.
+
+
+The pre-v1 [destination job contract](plugin-media-jobs.md) adds explicit
+`export.upload` staging with declared HTTPS origins and separate host URL/token
+review. It uploads only this run's verified GIF, preserves local publication on
+refusal/failure/cancellation, and never treats a server response body as a trusted
+artifact URL. Provider-specific upload protocols remain separate work.

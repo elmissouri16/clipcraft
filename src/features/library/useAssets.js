@@ -8,7 +8,8 @@ let cache = null;
 let pending = null;
 const subs = new Set();
 
-function load() {
+function load(refresh=false) {
+  if(refresh&&pending)return pending.then(()=>load());
   if (!pending) {
     pending = window.api.assetsList()
       .then((lib) => { cache = lib; pending = null; subs.forEach((fn) => fn(lib)); return lib; })
@@ -20,10 +21,11 @@ function load() {
 export function useAssets() {
   const [lib, setLib] = useState(cache);
   useEffect(() => {
-    if (cache) { setLib(cache); return undefined; }
     subs.add(setLib);
+    if(cache)setLib(cache);
     load();
-    return () => subs.delete(setLib);
+    const off=window.api.onPluginsChanged?.(()=>{cache=null;load(true);});
+    return () => {subs.delete(setLib);off?.();};
   }, []);
   return lib;
 }

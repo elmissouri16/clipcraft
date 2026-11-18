@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict'),{EventEmitter}=require('node:events'),{ExtensionMessages,messageInput}=require('../../../electron/plugins/extensionMessages.cjs');
+(async()=>{
+ const makeOwner=()=>({isDestroyed:()=>false,webContents:Object.assign(new EventEmitter(),{isDestroyed:()=>false})}),owner=makeOwner(),other=makeOwner();let current=owner;
+ const job={manifest:{id:'fixture.messages',name:'Message fixture'},state:'running'},next={...job};let active=job;
+ const messages=new ExtensionMessages({getWindow:()=>current,isActive:value=>value===active&&value.state==='running'});let changes=0;messages.onChanged=()=>changes++;
+ for(const input of [{message:''},{message:'a\0b'},{message:'x',kind:'toast'},{message:'x',actions:Array(1)},{message:'x',actions:[{id:'a',title:'A'},{id:'a',title:'B'}]},{message:'x',actions:[{id:'a',title:''}]},{message:'x',timeoutMs:999},{message:'x',detail:{bad:true}}])assert.throws(()=>messageInput(input));
+ const pending=messages.show(job,{message:'Choose',actions:[{id:'confirm',title:'Confirm'}]},'1'),id=messages.list().items[0].id;
+ assert.equal(messages.list(other).items.length,0);assert.equal(messages.finish(id,'confirm',other),false);assert.equal(messages.finish(id,'forged',owner),false);assert.equal(messages.finish(id,'confirm',owner),true);assert.equal(await pending,'confirm');assert.equal(messages.finish(id),false);assert.equal(owner.webContents.listenerCount('destroyed'),0);
+ const one=messages.show(job,{message:'One'},'2'),two=messages.show(job,{message:'Two'},'3'),three=messages.show(job,{message:'Three'},'4');assert.throws(()=>messages.show(job,{message:'Four'},'5'),/Too many/);assert.equal(messages.dismiss(next,'2'),false);messages.dismiss(job,'2');assert.equal(await one,undefined);owner.webContents.emit('did-start-navigation',{},'app://reload',false,true);await Promise.all([two,three]);assert.equal(messages.list().items.length,0);assert.equal(messages.owners.size,0);
+ const stopped=messages.show(job,{message:'Stop'},'6');active=next;messages.prune();assert.equal(await stopped,undefined);assert.throws(()=>messages.show(job,{message:'Stale'},'7'),/stopped/);active=job;
+ const gone=messages.show(job,{message:'Renderer gone'},'8');owner.webContents.emit('render-process-gone');assert.equal(await gone,undefined);assert.equal(messages.pending.size,0);
+ const timeout=messages.show(job,{message:'Expires',timeoutMs:1000},'9');await new Promise(resolve=>setTimeout(resolve,1100));assert.equal(await timeout,undefined);
+ const all=[];for(let i=0;i<12;i++){const value={manifest:job.manifest,state:'running'};messages.isActive=()=>true;current=other;all.push(messages.show(value,{message:'Global bound'},String(i)));}assert.throws(()=>messages.show(next,{message:'Overflow'},'20'),/Too many/);messages.dispose();await Promise.all(all);assert.equal(messages.owners.size,0);
+ current=owner;for(let i=0;i<30;i++){const pending=messages.show(next,{message:'Rate limit'},String(i));messages.dismiss(next,String(i));await pending;}assert.throws(()=>messages.show(next,{message:'Flood'},'99'),/rate exceeded/);assert.ok(changes>30);
+ console.log('Native message validation, routing, action IDs, bounded queues/rate, expiry and lifecycle cleanup passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

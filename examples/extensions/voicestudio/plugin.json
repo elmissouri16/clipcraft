@@ -1,0 +1,38 @@
+{
+  "id": "clipcraft.voicestudio",
+  "name": "VoiceStudio",
+  "publisher": "ClipCraft",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Optional connector for a separately installed VoiceStudio service.",
+  "activationEvents": [
+    "service:clipcraft.voicestudio.speech",
+    "ui:voice.engines",
+    "ui:settings.voice"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "clone-voice",
+        "name": "VoiceStudio: clone a reference voice",
+        "description": "Clone a voice using VoiceStudio (also called VoiceBox / voice box). Required JSON: name, transcript (exact words in the uploaded reference), and exactly one reference_clip_id (get_project clip ID), reference_media_id (library ID), or reference_path (external audio). Use timeline IDs directly; never ask for a path when the clip exists. First transcribe the selected clip with transcribe clip_ids:[id]; use only words matching the reference sample. Optional reference_offset_sec and reference_duration_sec (0.1–30; default first 15 source seconds inside the clip range), language (Auto). Choose a complete utterance and matching transcript; never use the new narration as reference text. Returns voiceId for add_voiceover engine extension:clipcraft.voicestudio.speech. Use clone-and-voiceover when narration is also requested."
+      },
+      {
+        "id": "clone-and-voiceover",
+        "name": "VoiceStudio: clone voice and add voiceover",
+        "description": "Clone reference speech and insert new narration through VoiceStudio (VoiceBox / voice box). Required JSON: name, transcript (exact reference words), text (new narration), and exactly one reference_clip_id, reference_media_id, or reference_path. First get_project then transcribe clip_ids:[id]; use existing IDs without asking for paths. Optional reference_offset_sec, reference_duration_sec (0.1–30; default first 15 source seconds), language (Auto), start_sec (0), speed (0.5–2), style. Match transcript to the exact reference window; do not substitute narration. Omit style unless requested; OmniVoice accepts speaker attributes, not free-form tone or pacing prose. Creates a saved profile and one Undo-able audio clip. After any post-clone failure reuse the returned voiceId with add_voiceover; never clone again just to retry speech."
+      },
+      {
+        "id": "set-voice-transcript",
+        "name": "VoiceStudio: set reference transcript",
+        "description": "Update an existing VoiceStudio profile using PUT /profiles/{id}, without creating another clone. Required JSON: voice_id (exact ID from list_voices) and transcript (exact words in that profile’s reference audio, not the requested new narration). Use when a saved clone lacks ref_text. Transcribe its known reference clip first; do not guess which audio belongs to an existing profile. Then reuse voiceId with add_voiceover engine extension:clipcraft.voicestudio.speech. Changes the external saved profile, not the timeline."
+      },
+      {
+        "id": "test-connection",
+        "name": "VoiceStudio: test connection"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

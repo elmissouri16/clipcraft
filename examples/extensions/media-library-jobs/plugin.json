@@ -1,0 +1,18 @@
+{
+  "id": "clipcraft-examples.media-library-jobs",
+  "name": "Local media library jobs",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Choose a local source and run image, audio or video processing in the extension using managed host tools. Preview and insert verified results.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "process",
+        "name": "Choose and process local media"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

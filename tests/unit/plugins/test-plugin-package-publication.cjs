@@ -1,0 +1,27 @@
+// SDK/native writers publish one complete bounded snapshot without overwriting
+// another writer's output. The repository helper follows the same SDK policy.
+const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),{promisify}=require('node:util'),{execFile}=require('node:child_process');
+const {readArchive,validateIntake}=require('../../../electron/plugins/package.cjs'),{writePackage}=require('../../../electron/plugins/packageWriter.cjs'),sdk=require('../../../packages/plugin-sdk/src/authoring.cjs');
+(async()=>{
+ const root=path.resolve(__dirname,'../../..'),directory=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-package-publication-')),source=path.join(directory,'source'),checks=[],stages=[],makeTemp=fs.mkdtemp,entry=path.join(source,'dist/extension.cjs'),original=Buffer.from('exports.activate=()=>{throw Error("Packaging must not activate code")};');
+ const check=name=>{checks.push(name);console.log('PASS',name);},absent=async file=>assert.rejects(fs.lstat(file),{code:'ENOENT'}),run=promisify(execFile);
+ await fs.mkdir(path.dirname(entry),{recursive:true});await fs.mkdir(path.join(source,'assets'));await fs.writeFile(entry,original);await fs.writeFile(path.join(source,'plugin.json'),JSON.stringify({id:'test.publication',name:'Publication fixture',publisher:'Original test',version:'0.1.0',apiVersion:1,main:'dist/extension.cjs'}));
+ const bundle=await validateIntake(await require('../../../electron/plugins/package.cjs').readFolder(source),'2.0.0'),output=path.join(directory,'snapshot.tar.gz');
+ // Mutate the author file at staging creation, strictly after bundle capture.
+ fs.mkdtemp=async(...args)=>{const result=await makeTemp(...args);if(String(args[0]).includes('clipcraft-pack-write-')){stages.push(result);await fs.writeFile(entry,'exports.activate=()=>"changed";');}return result;};
+ let packed;try{packed=await sdk.packPlugin(source,output);}finally{fs.mkdtemp=makeTemp;}
+ const exact=await validateIntake(await readArchive(output),'2.0.0');assert.equal(packed.key,bundle.key);assert.equal(exact.key,bundle.key);assert.deepEqual(exact.files.get('dist/extension.cjs'),original);await fs.writeFile(entry,original);check('SDK packs captured bytes despite author mutation and preserves arbitrary output suffix support');
+ const link=fs.link,raced=path.join(directory,'raced.tgz'),sentinel=Buffer.from('Another writer owns this file');let intercepted=false;
+ fs.link=async(from,to)=>{if(to===raced){intercepted=true;await absent(raced);const staged=await validateIntake(await readArchive(from),'2.0.0');assert.equal(staged.key,bundle.key,'Only a complete valid archive reaches publication');await fs.writeFile(raced,sentinel,{flag:'wx'});}return link(from,to);};
+ try{await assert.rejects(sdk.packPlugin(source,raced),{code:'OUTPUT_EXISTS'});}finally{fs.link=link;}
+ assert.ok(intercepted);assert.deepEqual(await fs.readFile(raced),sentinel);assert.ok(!(await fs.readdir(directory)).some(name=>name.startsWith('.clipcraft-pack-')));check('destination stays absent until complete, and a publication race preserves the competing file');
+ const before=await fs.readFile(output);await assert.rejects(sdk.packPlugin(source,output),{code:'OUTPUT_EXISTS'});assert.deepEqual(await fs.readFile(output),before);check('existing SDK output stays byte-for-byte intact');
+ const controller=new AbortController();controller.abort();const canceled=path.join(directory,'canceled.tgz');await assert.rejects(writePackage(bundle,canceled,{signal:controller.signal}),error=>error.name==='AbortError');await absent(canceled);await assert.rejects(writePackage(bundle,path.join(directory,'native.zip')),/\.tgz/);check('native writer cancellation publishes nothing and keeps its tgz filename policy');
+ const helper=path.join(root,'scripts/plugin-package.cjs'),repositoryOutput=path.join(directory,'repository.tgz');await run(process.execPath,[helper,'pack',source,repositoryOutput],{cwd:root});assert.equal((await sdk.validatePlugin(repositoryOutput)).key,bundle.key);await run(process.execPath,[helper,'validate',repositoryOutput],{cwd:root});const legacy=path.join(root,'tests/fixtures/plugins/legacy/project-dashboard'),retired=path.join(directory,'retired.tgz');await assert.rejects(run(process.execPath,[helper,'pack',legacy,retired],{cwd:root}),error=>/historical executable|retired|Node extension/.test(error.stderr));await absent(retired);check('repository packaging uses current SDK validation and refuses retired executable authoring');
+ // Two individually valid 32 MiB files exceed the 64 MiB compressed limit once
+ // incompressible bytes and tar/gzip overhead are counted. No fake lowered cap.
+ for(let i=0;i<2;i++)await fs.writeFile(path.join(source,'assets/payload-'+i+'.wasm'),crypto.randomBytes(32*1024*1024));
+ const large=path.join(directory,'too-large.tgz');await assert.rejects(sdk.packPlugin(source,large),/Compressed pack exceeds 64 MiB/);await absent(large);assert.ok(!(await fs.readdir(directory)).some(name=>name.startsWith('.clipcraft-pack-')));check('actual compressed byte overflow rejects without a visible or private partial output');
+ for(const stage of stages)await absent(stage);
+ await fs.writeFile(path.join(directory,'result.json'),JSON.stringify({ok:true,checks,compressedPayloadBytes:64*1024*1024},null,2));console.log('Evidence: '+directory);
+})().catch(error=>{console.error(error);process.exitCode=1;});

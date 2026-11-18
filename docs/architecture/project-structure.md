@@ -63,6 +63,28 @@ preloads stay together. Frame inspection has its own agent preload and renderer
 entry component. Treat paths relative to the owning module, not the process's
 working directory, unless an API explicitly takes an application root.
 
+`electron/plugins/extensionViews.cjs` owns native workbench view lifetimes.
+`extensionViewSessions.cjs` owns its bounded, exclusive private-session leases and
+fail-closed cleanup before reuse; it does not expose session objects to extensions.
+
+`shared/pluginLifecycle.mjs` validates bounded public clip/track lifecycle
+proposals. Private preparation and commit tokens remain in `src/state/store.js`.
+`shared/pluginProperties.mjs` similarly validates static typed clip properties.
+`shared/pluginAutomation.mjs` validates fixed-duration speed, source-time curves
+and existing effect-resource operations. The SDK build bundles these canonical validators.
+
+`shared/pluginLocal.mjs` validates the curated local-adapter declarations and fixed
+recipes. `electron/plugins/localTools.cjs` owns model/tool setup and native jobs;
+`electron/plugins/authoring.cjs` owns temporary provider/export test lifetimes.
+
+Pure rendering projection, layer sound/visibility and main-track timing live in
+`shared/projectRender.mjs`. The store re-exports the same functions for existing
+renderer callers. Host services import the shared module directly: `src/` is
+absent from the release payload. `npm run test:runtime-deps` checks literal
+Electron/shared imports against `build.files`; `test:structure` includes it.
+Computed resource paths, dependency pruning and ASAR/installer execution still
+need their separate distribution checks.
+
 Test code belongs under `tests/`, outside the packaged Electron services. The
 main process loads the smoke dispatcher only when `FVE_SMOKE` is set. Runtime
 code must not import unit tests or fixtures. Add tests to the corresponding
@@ -74,6 +96,7 @@ feature directory; the runner discovers them recursively.
 npm run dev                  # Renderer + Electron, watching nested services
 npm run dev:renderer         # Renderer only
 npm run test:structure       # Static imports and folder boundaries
+npm run sdk:verify           # SDK suites and candidate tarball in new temp output
 npm test -- --list           # List standalone suites
 npm test -- agents           # Run one feature's tests
 npm test                     # Run all standalone suites; retain failure logs
@@ -114,3 +137,60 @@ DOM/preload/IPC/worker checks still run in Electron. The panel runner explicitly
 skips native Tab/Shift-Tab host-focus assertions in quiet mode; hidden child-view
 capture may fail with `UnknownVizError` and never triggers a foreground fallback.
 Set `FVE_SMOKE_QUIET=0` only when an interactive focus/layout check is needed.
+
+`src/features/plugins/components/PluginCommandFields.jsx` renders the shared
+native command fields for Settings, dialogs and `PluginInspector`. `PluginToolbar`
+uses the same verified action catalog and `usePluginActions` command owner.
+
+`shared/pluginMediaJobs.mjs` defines fixed picked-source recipes and HTTPS
+origin/review schemas. `electron/plugins/mediaJobs.cjs` owns captured sources and
+single-use adoption records; `uploadJobs.cjs` owns digest-checked snapshots and
+bounded HTTPS PUT transport. `uploadReview.cjs` and the host `PluginUploadReview`
+collect per-request destination/credential consent outside plugin renderers.
+
+`shared/pluginContent.mjs` owns creative-pack asset definitions, path/byte limits
+and structural checks. The package reader fingerprints declared asset buffers;
+the manager supplies retained fonts and owns durable sound copies. Renderer
+integration uses the existing audio-library and text-font modules.
+
+Creative catalogs live in `shared/{fontCatalog,textCatalog,filterCatalog,motionCatalog}.mjs`
+so host/SDK validation and renderer controls use the same original IDs. Renderer
+modules re-export their historical paths. `pluginStyles`, `pluginColor`,
+`pluginMotion` and `pluginDependencies` contain bounded data contracts and explicit
+replacement plans. `cubeLut.mjs` owns the shared renderer parser.
+
+`electron/plugins/packBuilder.cjs` owns draft snapshots and associated font/LUT
+copies; `packageWriter.cjs` publishes validated bytes exclusively.
+`src/features/plugins/packCandidates.js` strips source words/timing into reusable
+appearance snapshots. The native creator and project-dependency components live
+with the other plugin UI. Decoder font discovery is test-only in
+`tests/fixtures/pack-fonts.cjs`; runtime modules never import it.
+
+
+`shared/pluginBrowser.mjs` owns stable favorites/filtering; `pluginBrowserApply.mjs`
+prepares typed ordinary editor actions from a freshly verified contribution.
+`electron/plugins/{browserPreferences,contentPreview,preferenceMigration,previewCache}.cjs`
+own the private host browsing data, bounded sample inputs, reviewed preference
+copying and disposable sound-preview files/leases. Matching renderer components
+live under `src/features/plugins/components/`. The preview renderer accepts pure
+validated data directly and never registers development dependencies with project
+render catalogs. Existing audio-library previews share the host cache service.
+
+
+`examples/plugin-showcase/recipes` holds text-only sound/font builder inputs;
+`examples/plugins` remains directly valid payloads. `scripts/create-plugin-showcase.cjs`
+uses the public SDK to prepare archives and a sample project outside the checkout,
+with original media generated by `plugin-showcase-assets.cjs`. The development-only
+`launch-plugin-showcase.cjs` supplies an isolated Electron user-data directory and
+uses the guarded `plugin-showcase` smoke mode for verification or a visible demo.
+
+`shared/pluginIcon.mjs` validates optional local PNG identity artwork, including
+byte and pixel bounds. Icons participate in immutable package fingerprints and
+the SDK asset build. The read-only native icon endpoint rechecks installed bytes;
+`PluginIdentityIcon` supplies a bounded image cache and monogram fallback.
+
+`shared/extensionServices.cjs` owns bounded portable service schemas and runtime
+validation, shared by host, worker and published SDK helpers.
+`shared/extensionCapabilities.cjs` owns feature revisions.
+`shared/extensionConfiguration.mjs` validates project-owned extension namespaces
+and prepares anchored settings actions; writes use ordinary editor/draft commits.

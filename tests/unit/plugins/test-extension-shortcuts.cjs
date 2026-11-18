@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),{shortcut,validCombo}=require('../../../shared/pluginShortcuts.cjs'),{ExtensionUi}=require('../../../electron/plugins/extensionUi.cjs');
+(async()=>{
+ const keymap=await import('../../../src/app/keymap.js'),{validateManifest}=await import('../../../shared/pluginManifest.mjs');
+ for(const key of ['S','Ctrl+Shift+U','Alt+ArrowLeft','Ctrl++'])assert.ok(validCombo(key),key);
+ for(const key of ['s','Ctrl+s','Ctrl+','Meta','Shift','Control','Alt+Ctrl+S','a b','A\0','Tab','Shift+Tab','Spacebar','Ctrl+Esc'])assert.equal(validCombo(key),false,key);
+ for(const input of [{id:'bad',title:'Bad',command:'run',keys:Array(1)},{id:'bad',title:'Bad',command:'run',keys:['S','S']},{id:'bad',title:'Bad',command:'run',keys:['S'],scope:'global'}])assert.throws(()=>shortcut(input));
+ const manifest={id:'fixture.shortcuts',name:'Shortcut fixture',publisher:'Fixture',version:'0.1.0',apiVersion:1,main:'dist/extension.cjs',contributes:{commands:[{id:'run',name:'Run'}],shortcuts:[{id:'run-key',name:'Run command',command:'run',keys:['S']}]}};
+ const normalized=validateManifest(manifest);assert.equal(normalized.contributes.shortcuts[0].scope,'editor');assert.throws(()=>validateManifest({...manifest,contributes:{...manifest.contributes,shortcuts:[{...manifest.contributes.shortcuts[0],command:'unknown'}]}}),/declared command/);
+ const id='extension:fixture.shortcuts.run-key',action={id,title:'Run command',extensionId:'fixture.shortcuts',extensionName:'Shortcut fixture',command:'fixture.shortcuts.run',keys:['S'],scope:'editor',enabled:true};
+ keymap.setExtensionShortcuts([action]);keymap.setActiveKeymap({});assert.equal(keymap.actionFor({key:'S'}),'split');assert.deepEqual(keymap.activeKeymap()[id],[]);
+ keymap.setActiveKeymap({[id]:['S']});assert.equal(keymap.actionFor({key:'S'}),id);assert.equal(keymap.actionFor({key:'b',ctrlKey:true}),'split');
+ const stored={'extension:missing.package.hidden':['Ctrl+K'],[id]:['S']},map=keymap.resolveKeymap(stored);assert.deepEqual(keymap.overridesFor(map,keymap.shortcutActions(),stored)['extension:missing.package.hidden'],['Ctrl+K']);
+ keymap.setExtensionShortcuts([{...action,enabled:false}]);keymap.setActiveKeymap({});assert.equal(keymap.actionFor({key:'S'}),'split');assert.equal(keymap.extensionShortcut(id),undefined);
+ const disabled=keymap.resolveKeymap({[id]:['S']});assert.deepEqual(keymap.overridesFor(disabled,keymap.shortcutActions(),{[id]:['S']})[id],['S']);
+ keymap.setExtensionShortcuts([]);keymap.setActiveKeymap({});
+ const job={key:'fingerprint',generation:'one',manifest:normalized,state:'running'},rows=[{key:job.key,manifest:normalized,enabled:true}];let trusted=false,starts=0;
+ const runtime={manager:{list:async()=>rows},trustData:async()=>trusted?{[job.key]:true}:{},active:new Map([[job.key,job]]),suspended:new Set(),start:async()=>{starts++;return true;},execute:async command=>command},ui=new ExtensionUi(runtime);
+ assert.equal((await ui.shortcuts())[0].reason,'untrusted');await assert.rejects(ui.executeShortcut(id),/unavailable/);assert.equal(starts,0);
+ ui.register(job,'shortcut',{id:'dynamic',title:'Dynamic command',command:'run',keys:['Ctrl+J']});assert.equal((await ui.shortcuts()).length,1);trusted=true;assert.equal((await ui.shortcuts()).length,2);assert.equal(await ui.executeShortcut(id),'fixture.shortcuts.run');
+ runtime.suspended.add(job.key);assert.equal((await ui.shortcuts())[0].reason,'stopped');await assert.rejects(ui.executeShortcut(id),/unavailable/);runtime.suspended.clear();
+ let finish;runtime.start=()=>new Promise(resolve=>{finish=resolve;});const pending=ui.executeShortcut(id);for(let i=0;i<10&&!finish;i++)await Promise.resolve();assert.ok(finish);rows[0].enabled=false;finish(true);await assert.rejects(pending,/changed or stopped/);assert.equal((await ui.shortcuts())[0].reason,'disabled');
+ rows[0].enabled=true;ui.remove(job,'shortcut','dynamic');assert.equal((await ui.shortcuts()).length,1);
+ console.log('Shortcut declarations, canonical keys, conflict priority, remap preservation, trust, stop and activation races passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

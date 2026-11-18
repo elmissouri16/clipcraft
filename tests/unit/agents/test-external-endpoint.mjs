@@ -52,8 +52,9 @@ async function agent(name, token = TOKEN, retry = true) {
   return client;
 }
 const text = (r) => r.content.map((c) => c.text).join('\n');
-const raw = (headers) => new Promise((resolve) => {
-  const req = http.request({ host: '127.0.0.1', port, path: '/mcp', method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers } }, (res) => { res.resume(); resolve(res.statusCode); });
+const raw = (headers) => new Promise((resolve, reject) => {
+  const req = http.request({ host: '127.0.0.1', port, path: '/mcp', method: 'POST', agent:false, headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers } }, (res) => { res.resume(); resolve(res.statusCode); });
+  req.once('error',reject);
   req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'raw', version: '1' } } }));
 });
 
@@ -163,12 +164,17 @@ try {
   // (test clients only; agents run their own clients).
   process.on('unhandledRejection', (error) => { if (!/fetch failed/.test(error?.message || '')) throw error; });
   await check('after a restart old sessions are gone and a new session works', async () => {
+    const previous = new Set(endpoint.sessions.keys());
     const a = await agent('Restarted');
+    const staleId = [...endpoint.sessions.keys()].find(id => !previous.has(id));
+    assert.ok(staleId, 'capture the real initialized session');
     await endpoint.stop();
     await assert.rejects(() => a.callTool({ name: 'echo', arguments: { text: 'x' } }));
     endpoint = makeEndpoint();
     await endpoint.start();
-    await assert.rejects(() => a.callTool({ name: 'echo', arguments: { text: 'x' } }), /Session not found|404/);
+    // Assert routing on a fresh connection. The old client's fetch pool can
+    // still contain closed sockets; that transport error does not exercise 404.
+    assert.equal(await raw({ authorization: `Bearer ${TOKEN}`, 'mcp-session-id':staleId }),404);
     const fresh = await agent('Restarted');
     assert.equal(text(await fresh.callTool({ name: 'echo', arguments: { text: 'ok' } })), 'echo:ok:Restarted');
   });

@@ -8,10 +8,22 @@
   "description": "Adds a 720p review export using the existing H.264 encoder.",
   "permissions": [],
   "contributes": {
-    "exportPresets": [{
-      "id": "review-720p",
-      "name": "Review copy · 720p",
-      "settings": { "mode": "crf", "crf": 23, "bitrateMbps": 4, "encoderPreset": "fast", "audioKbps": 128, "resCap": 720, "fps": 0, "codec": "h264" }
-    }]
-  }
+    "exportPresets": [
+      {
+        "id": "review-720p",
+        "name": "Review copy · 720p",
+        "settings": {
+          "mode": "crf",
+          "crf": 23,
+          "bitrateMbps": 4,
+          "encoderPreset": "fast",
+          "audioKbps": 128,
+          "resCap": 720,
+          "fps": 0,
+          "codec": "h264"
+        }
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
 }

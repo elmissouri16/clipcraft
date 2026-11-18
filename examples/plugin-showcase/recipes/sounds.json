@@ -1,0 +1,34 @@
+{
+  "id": "clipcraft-examples.sound-demo",
+  "name": "Sound pack demo",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Three original procedural demo sounds, supplied as WAV, MP3 and OGG. Preview and Add through Browse creative packs or Audio → Library. These small demonstration signals are not a production sound library.",
+  "contributes": {
+    "sounds": [
+      {
+        "id": "sweep",
+        "name": "Air sweep (WAV)",
+        "file": "assets/air-sweep.wav",
+        "kind": "sfx",
+        "license": "Original procedural ClipCraft demonstration signal. CC0-1.0."
+      },
+      {
+        "id": "click",
+        "name": "Small click (MP3)",
+        "file": "assets/small-click.mp3",
+        "kind": "sfx",
+        "license": "Original procedural ClipCraft demonstration signal. CC0-1.0."
+      },
+      {
+        "id": "chime",
+        "name": "Soft chime (OGG)",
+        "file": "assets/soft-chime.ogg",
+        "kind": "sfx",
+        "license": "Original procedural ClipCraft demonstration signal. CC0-1.0."
+      }
+    ]
+  },
+  "icon": "assets/sound-demo.png"
+}

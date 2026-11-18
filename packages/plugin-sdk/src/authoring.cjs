@@ -1,16 +1,18 @@
-const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
-const {readFolder,readArchive,validateFiles}=require('../../../electron/plugins/package.cjs');
+const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
+const {readFolder,readArchive,readRegularFile,validateFiles,validateIntake}=require('../../../electron/plugins/package.cjs');
+const {assertExtensionPaths,extensionDirectory,EXTENSION_LIMITS}=require('../../../shared/pluginExtensionFiles.cjs');
 const {templateFiles}=require('./templates.cjs');
 const schema=import('../../../shared/pluginManifest.mjs');
 const SDK_ROOT=path.resolve(__dirname,'..'),APP_VERSION='2.0.0';
-const TEMPLATES=['panel','command','effect','transition','export-preset','ai-provider'];
+const TEMPLATES=['extension','effect','transition','export-preset','content-pack','text-style-pack','color-pack','motion-pack'];
 class ToolError extends Error {constructor(code,message,details){super(message);this.code=code;if(details)this.details=details;}}
 const fail=(code,message,details)=>{throw new ToolError(code,message,details);};
 const regular=async file=>{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink())fail('INVALID_FILE','Expected a regular file: '+file);return stat;};
-const readJson=async file=>{try{const stat=await regular(file);if(stat.size>256*1024)fail('VALIDATION_FAILED','JSON exceeds 256 KiB.');return JSON.parse(await fs.readFile(file,'utf8'));}catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED','Cannot read JSON: '+file);}};
+const readJson=async file=>{try{const bytes=await readRegularFile(file,256*1024,'JSON');return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED','Cannot read JSON: '+file,error.message);}};
 async function workspace(directory){const root=path.resolve(directory);if(!(await fs.lstat(root)).isDirectory())fail('CONFIG_INVALID','Workspace must be a regular directory.');return root;}
 async function manifestAt(root,appVersion=APP_VERSION){try{const input=await readJson(path.join(root,'plugin.json'));(await schema).validateManifest(input,appVersion);return input;}catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED',error.message);}}
-async function createPlugin(directory,{id,name,publisher,template='panel'}={}){
+async function createPlugin(directory,{id,name,publisher,template='extension'}={}){
+ if(['panel','command','ai-provider','local-tool'].includes(template))fail('MIGRATION_REQUIRED','Executable recipes are retired. Use the extension template and general APIs.');
  if(!TEMPLATES.includes(template))fail('INVALID_ARGUMENT','Choose template: '+TEMPLATES.join(', '));
  const root=path.resolve(directory),sdkDependency=require('node:url').pathToFileURL(await fs.realpath(SDK_ROOT)).href;
  const files=templateFiles({id,name,publisher,template,sdkDependency});
@@ -21,64 +23,52 @@ async function createPlugin(directory,{id,name,publisher,template='panel'}={}){
  return {directory:root,template,id};
 }
 async function analyzeBundle(bundle){
- for(const name of ['commands.js','panel.js'])if(bundle.files.has(name)){
-  const code=bundle.files.get(name).toString('utf8');standalone(code,name);
-  await require('esbuild').transform(code,{loader:'js',target:'es2022',logLevel:'silent'});
- }
- if(bundle.code){const result=await require('esbuild').build({stdin:{contents:bundle.code,sourcefile:'commands.js'},write:false,metafile:true,format:'esm',platform:'browser',logLevel:'silent'});if(!Object.values(result.metafile.outputs)[0].exports.includes('run'))fail('MISSING_EXPORT','commands.js must export run.');}
+ if(bundle.manifest.legacyExecutable)fail('MIGRATION_REQUIRED','This historical executable package cannot be authored or run. Rebuild it as a Node extension.');
+ if(bundle.manifest.main){const source=bundle.files.get(bundle.manifest.main).toString('utf8');await require('esbuild').transform(source,{loader:'js',platform:'node',target:'node20',logLevel:'silent'});}
  return bundle;
+}
+async function inspectPlugin(source,{appVersion=APP_VERSION}={}){
+ try{const stat=await fs.lstat(source),bundle=await validateFiles(await(stat.isDirectory()?readFolder(source):readArchive(source)),appVersion);if(!bundle.manifest.legacyExecutable)await analyzeBundle(bundle);return {key:bundle.key,manifest:bundle.manifest,files:[...bundle.files.keys()],migrationRequired:!!bundle.manifest.legacyExecutable};}catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED',error.message);}
 }
 async function validatePlugin(source,{appVersion=APP_VERSION}={}){
  try{
   const stat=await fs.lstat(source),files=await(stat.isDirectory()?readFolder(source):readArchive(source));
-  const bundle=await analyzeBundle(await validateFiles(files,appVersion));
+  const bundle=await analyzeBundle(await validateIntake(files,appVersion));
   return {key:bundle.key,manifest:bundle.manifest,files:[...bundle.files.keys()]};
  }catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED',error.message);}
 }
 async function checkPlugin(directory,{appVersion=APP_VERSION}={}){
- const root=await workspace(directory),manifest=await manifestAt(root,appVersion),entries=[...(manifest.entry?['commands.ts']:[]),...(manifest.contributes.panels?.[0]?.script?['panel.ts']:[])];
- if(!entries.length)return {manifest,typecheck:'not-needed'};
- for(const name of entries)await regular(path.join(root,'src',name));
- const compilerPackage=require.resolve('typescript/package.json');
- const tsc=path.resolve(path.dirname(compilerPackage),require(compilerPackage).bin.tsc);
- for(const entry of entries){
-  const result=await new Promise((resolve,reject)=>{
-   const child=spawn(process.execPath,[tsc,'--ignoreConfig','--noEmit','--pretty','false','--strict','--target','ES2022','--module','ESNext','--moduleResolution','Bundler','--lib',entry==='commands.ts'?'ES2022,WebWorker':'ES2022,DOM',path.join(root,'src',entry)],{cwd:root,stdio:['ignore','pipe','pipe']});
-   let text='';const record=chunk=>{text=(text+chunk).slice(0,16000);};child.stdout.on('data',record);child.stderr.on('data',record);const timeout=setTimeout(()=>child.kill('SIGKILL'),30000);child.on('error',error=>{clearTimeout(timeout);reject(error);});child.on('close',code=>{clearTimeout(timeout);resolve({code,text});});
-  });
-  if(result.code!==0)fail('TYPECHECK_FAILED','TypeScript check failed for '+entry+'.',result.text);
- }
- return {manifest,typecheck:'passed'};
+ const root=await workspace(directory),manifest=await manifestAt(root,appVersion);
+ try{assertExtensionPaths(['plugin.json',...(await import('../../../shared/pluginContent.mjs')).contentAssets(manifest).keys()]);}catch(error){fail('VALIDATION_FAILED',error.message);}
+ if(manifest.main){await regular(path.join(root,'src/extension.ts'));const result=await require('./nodeCheck.cjs').checkNodeExtension(root,__dirname);if(result.code!==0)fail('TYPECHECK_FAILED','TypeScript check failed for extension.ts.',result.text);return {manifest,typecheck:'passed'};}
+ return {manifest,typecheck:'not-needed'};
 }
-function standalone(source,name){
- // TypeScript 7 no longer exposes the legacy JavaScript parser API.
- const ast=require('acorn').parse(source,{ecmaVersion:'latest',sourceType:'module',sourceFile:name});
- const visit=node=>{
-  if(node.type==='ImportDeclaration'||node.type==='ImportExpression'||(node.type==='ExportNamedDeclaration'||node.type==='ExportAllDeclaration')&&node.source||node.type==='CallExpression'&&node.callee.type==='Identifier'&&node.callee.name==='require')fail('UNSUPPORTED_IMPORT','Installed scripts must be standalone; bundle all imports first.');
-  for(const value of Object.values(node)){
-   if(Array.isArray(value)){for(const child of value)if(child&&typeof child.type==='string')visit(child);}
-   else if(value&&typeof value.type==='string')visit(value);
-  }
- };visit(ast);
-}
-async function bundleSource(root,name,format){
- const esbuild=require('esbuild');await regular(path.join(root,'src',name+'.ts'));
- let result;try{result=await esbuild.build({entryPoints:[path.join(root,'src',name+'.ts')],bundle:true,write:false,metafile:true,format,platform:'browser',target:'es2022',minify:true,legalComments:'none',logLevel:'silent'});}catch(error){fail('BUILD_FAILED',`Cannot bundle ${name}.ts.`,error.errors?.map(e=>({text:e.text,location:e.location})));}
- const output=Object.values(result.metafile.outputs)[0];
- if(result.warnings.length||output.imports.length)fail('UNSUPPORTED_IMPORT','Plugin code must bundle completely without external or unresolved dynamic imports.',result.warnings.map(w=>w.text));
- if(name==='commands'&&!output.exports.includes('run'))fail('MISSING_EXPORT','commands.ts must export run.');
- const source=result.outputFiles[0].text;standalone(source,name+'.js');return Buffer.from(source);
+async function collectNodeAssets(root,files){
+ const base=path.join(root,'src','assets');let stat;try{stat=await fs.lstat(base);}catch(error){if(error.code==='ENOENT')return;throw error;}if(!stat.isDirectory()||stat.isSymbolicLink())fail('INVALID_FILE','Node assets must be a regular directory.');
+ const {extensionFile}=await import('../../../shared/pluginExtension.mjs'),{CONTENT_LIMITS}=await import('../../../shared/pluginContent.mjs');let bytes=[...files.values()].reduce((n,value)=>n+value.length,0),count=files.size,visited=assertExtensionPaths(files.keys())+1;
+ const pending=[{directory:base,prefix:'assets'}];while(pending.length){const {directory,prefix}=pending.pop();for await(const entry of await fs.opendir(directory)){
+  if(++visited>EXTENSION_LIMITS.nodes)fail('BUILD_FAILED','Node assets exceed directory resource limits');
+  const file=path.join(directory,entry.name),name=prefix+'/'+entry.name;
+  if(entry.isDirectory()){if(!extensionDirectory(name))fail('INVALID_FILE','Unsupported Node asset directory: '+name);pending.push({directory:file,prefix:name});continue;}
+  if(!extensionFile(name))fail('INVALID_FILE','Unsupported Node asset: '+name);await regular(file);
+  if(++count>EXTENSION_LIMITS.files||bytes>CONTENT_LIMITS.total)fail('BUILD_FAILED','Node assets exceed package limits');
+  let captured;try{captured=await readRegularFile(file,Math.min(EXTENSION_LIMITS.file,CONTENT_LIMITS.total-bytes),'Node asset');}catch(error){fail('BUILD_FAILED','Node assets exceed package limits: '+error.message);}
+  bytes+=captured.length;files.set(name,captured);
+ }}
 }
 async function collect(directory,appVersion){
  const root=await workspace(directory),{manifest,typecheck}=await checkPlugin(root,{appVersion});
  const files=new Map([['plugin.json',Buffer.from(JSON.stringify(manifest,null,2)+'\n')]]);
- if(manifest.entry)files.set('commands.js',await bundleSource(root,'commands','esm'));
- const panel=manifest.contributes.panels?.[0];
- if(panel){
-  for(const name of [panel.entry,panel.style].filter(Boolean)){const file=path.join(root,'src',name);const stat=await regular(file);if(stat.size>64*1024)fail('BUILD_FAILED','Panel source is too large.');files.set(name,await fs.readFile(file));}
-  if(panel.script)files.set('panel.js',await bundleSource(root,'panel','iife'));
+ if(manifest.main){const result=await require('esbuild').build({absWorkingDir:await fs.realpath(root),entryPoints:['src/extension.ts'],bundle:true,write:false,platform:'node',format:'cjs',target:'node20',sourcemap:'inline',sourcesContent:true,logLevel:'silent'});files.set(manifest.main,result.outputFiles[0].contents);await collectNodeAssets(root,files);}
+ const {contentAssets,CONTENT_LIMITS}=await import('../../../shared/pluginContent.mjs');let bytes=[...files.values()].reduce((n,value)=>n+value.length,0);
+ for(const [name,kind] of contentAssets(manifest)){
+  if(files.has(name))continue; // Node assets already have one coherent captured snapshot.
+  const directory=path.join(root,'src','assets');if(!(await fs.lstat(directory)).isDirectory())fail('INVALID_FILE','assets must be a regular directory.');const file=path.join(root,'src',name);await regular(file);
+  if(bytes>CONTENT_LIMITS.total)fail('BUILD_FAILED','Content assets exceed package limits');
+  let captured;try{captured=await readRegularFile(file,Math.min(CONTENT_LIMITS[kind],CONTENT_LIMITS.total-bytes),'Content asset');}catch(error){fail('BUILD_FAILED',error.message);}
+  bytes+=captured.length;files.set(name,captured);
  }
- try{const bundle=await validateFiles(files,appVersion);return {root,bundle,typecheck};}catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED',error.message);}
+ try{const bundle=await validateIntake(files,appVersion);return {root,bundle,typecheck};}catch(error){if(error instanceof ToolError)throw error;fail('VALIDATION_FAILED',error.message);}
 }
 async function publishPlugin(directory,{appVersion=APP_VERSION}={}){
  const {root,bundle,typecheck}=await collect(directory,appVersion),output=path.join(root,'dist'),marker=path.join(root,'.clipcraft-build.json');
@@ -90,7 +80,7 @@ async function publishPlugin(directory,{appVersion=APP_VERSION}={}){
  }
  const stage=await fs.mkdtemp(path.join(root,'.clipcraft-stage-')),backup=path.join(root,'.clipcraft-backup-'+crypto.randomUUID());let moved=false,published=false;
  try{
-  for(const [file,bytes] of bundle.files)await fs.writeFile(path.join(stage,file),bytes,{flag:'wx'});
+  for(const [file,bytes] of bundle.files){await fs.mkdir(path.dirname(path.join(stage,file)),{recursive:true});await fs.writeFile(path.join(stage,file),bytes,{flag:'wx'});}
   if(exists){await fs.rename(output,backup);moved=true;}
   try{await fs.rename(stage,output);published=true;}catch(error){if(moved)await fs.rename(backup,output);throw error;}
   const temp=marker+'.'+crypto.randomUUID()+'.tmp';try{await fs.writeFile(temp,JSON.stringify({version:1,key:bundle.key})+'\n',{flag:'wx'});await fs.rename(temp,marker);}finally{await fs.rm(temp,{force:true});}
@@ -103,16 +93,11 @@ async function buildPlugin(directory,options={}){
  try{await handle.writeFile(JSON.stringify({pid:process.pid})+'\n');return await publishPlugin(root,options);}finally{await handle.close();await fs.rm(lock,{force:true});}
 }
 async function packPlugin(source,output,{appVersion=APP_VERSION}={}){
- const fsSync=require('node:fs'),tar=require('tar'),{pipeline}=require('node:stream/promises');
- const bundle=await analyzeBundle(await validateFiles(await readFolder(source),appVersion));
- // Archive the exact validated buffers, never re-read mutable author files during packaging.
- const temp=await fs.mkdtemp(path.join(require('node:os').tmpdir(),'clipcraft-pack-'));
- let handle;try{
-  for(const [name,bytes] of bundle.files)await fs.writeFile(path.join(temp,name),bytes,{flag:'wx'});
-  try{handle=await fs.open(output,'wx');}catch(error){if(error.code==='EEXIST')fail('OUTPUT_EXISTS','Package output already exists.');throw error;}
-  try{await pipeline(tar.c({cwd:temp,gzip:true,portable:true},[...bundle.files.keys()]),fsSync.createWriteStream(output,{fd:handle.fd,autoClose:false}));}
-  catch(error){await fs.rm(output,{force:true});throw error;}
- }finally{await handle?.close();await fs.rm(temp,{recursive:true,force:true});}
+ const bundle=await analyzeBundle(await validateIntake(await readFolder(source),appVersion));
+ // Share the host's compressed-byte cap, captured buffers and exclusive atomic
+ // publication. Keep the SDK's existing support for arbitrary output suffixes.
+ try{await require('../../../electron/plugins/packageWriter.cjs').writePackage(bundle,path.resolve(output),{requireTgz:false});}
+ catch(error){if(error.code==='EEXIST')fail('OUTPUT_EXISTS','Package output already exists.');throw error;}
  return {file:path.resolve(output),key:bundle.key,id:bundle.manifest.id,version:bundle.manifest.version};
 }
-module.exports={ToolError,TEMPLATES,createPlugin,validatePlugin,checkPlugin,buildPlugin,packPlugin};
+module.exports={ToolError,TEMPLATES,createPlugin,validatePlugin,inspectPlugin,checkPlugin,buildPlugin,packPlugin};

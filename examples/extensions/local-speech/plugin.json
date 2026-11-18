@@ -1,0 +1,38 @@
+{
+  "id": "clipcraft-examples.local-speech",
+  "name": "Local speech transcript",
+  "publisher": "ClipCraft examples",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Manage a pinned local speech model, transcribe picked media with a chosen CLI and review/save SRT using general Node APIs.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "configure-tool",
+        "name": "Choose local speech executable"
+      },
+      {
+        "id": "import-model",
+        "name": "Import selected speech model"
+      },
+      {
+        "id": "download-model",
+        "name": "Download selected speech model"
+      },
+      {
+        "id": "remove-model",
+        "name": "Remove selected speech model"
+      },
+      {
+        "id": "transcribe",
+        "name": "Transcribe picked audio"
+      },
+      {
+        "id": "status",
+        "name": "Inspect local speech setup"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

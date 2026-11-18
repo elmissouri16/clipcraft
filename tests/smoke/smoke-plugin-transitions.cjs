@@ -6,7 +6,7 @@ module.exports=async(win,app,dir)=>{
  const {dialog}=require('electron'),originalSave=dialog.showSaveDialog,originalOpen=dialog.showOpenDialog;
  const check=(name,value)=>{assert.ok(value,name);result.checks.push(name);};
  const until=async s=>{for(let i=0;i<400;i++){if(await q(s))return;await wait(40);}throw Error('Timeout '+s);};
- const click=s=>q(`document.querySelector(${JSON.stringify(s)}).click()`);
+ const click=require('./pluginSettingsUi.cjs')(win).click;
  const close=()=>q('[...document.querySelectorAll(".modal-backdrop button")].find(b=>["Close","OK"].includes(b.textContent.trim()))?.click()');
  win.webContents.setBackgroundThrottling(false);win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)result.errors.push(message);});
  try{
@@ -58,7 +58,7 @@ module.exports=async(win,app,dir)=>{
   fs.writeFileSync(path.join(dir,'transition-inspector.png'),(await win.capturePage()).toPNG());
   const cover=await q('window.api.exportCoverFrame(window.__fve.rawProject(),0.75)');check('hidden composition receives transition definitions',cover.ok===true);
   const newer=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../examples/plugins/diagonal-reveal/plugin.json'),'utf8'));newer.version='1.1.0';newer.contributes.transitions[0].name='Diagonal reveal next';
-  const updateFolder=path.join(dir,'update');fs.mkdirSync(updateFolder);fs.writeFileSync(path.join(updateFolder,'plugin.json'),JSON.stringify(newer));dialog.showOpenDialog=async()=>({canceled:false,filePaths:[updateFolder]});
+  const updateFolder=path.join(dir,'update');fs.mkdirSync(updateFolder);fs.cpSync(path.resolve(__dirname,'../../examples/plugins/diagonal-reveal/assets'),path.join(updateFolder,'assets'),{recursive:true});fs.writeFileSync(path.join(updateFolder,'plugin.json'),JSON.stringify(newer));dialog.showOpenDialog=async()=>({canceled:false,filePaths:[updateFolder]});
   await q('window.api.pluginsInstall(true)');await wait(120);
   check('new package leaves project pinned to old version',await q(`window.__fve.rawProject().videoClips[1].transition.type===${JSON.stringify(id)}`));
   await until(`[...document.querySelectorAll('.plugin-transition-controls button')].some(b=>b.textContent==='Upgrade transition to installed version')`);
@@ -74,7 +74,7 @@ module.exports=async(win,app,dir)=>{
   check('explicit crossfade bypass exports',(await q('window.__fve.exportNow()')).ok===true);await close();
   // Restore the old example and exercise a short overlap of exactly three frames.
   dialog.showOpenDialog=async()=>({canceled:false,filePaths:[path.resolve(__dirname,'../../examples/plugins/diagonal-reveal')]});await q('window.api.pluginsInstall(true)');await wait(100);
-  const short=structuredClone(project);short.videoClips=short.videoClips.map(c=>({...c,out:.25}));await q(`window.__fve.load(${JSON.stringify(short)})`);
+  const short=structuredClone(project);short.videoClips=short.videoClips.map(c=>({...c,out:.25}));await q(`window.__fve.load(${JSON.stringify(short)})`);await until('window.__fve.rawProject().videoClips.length===2&&window.__fve.rawProject().videoClips.every(clip=>clip.out===.25)&&Math.abs(window.__fve.duration()-.375)<1e-8');
   check('short transition exports',(await q('window.__fve.exportNow()')).ok===true);const metadata=await ff.probe(path.join(dir,'ui-export.mp4'));
   result.shortOutput={duration:metadata.duration,fps:metadata.fps};check('short overlap keeps clamped timeline duration',Math.abs(metadata.duration-.375)<1/24);await close();
   // Change parameters to avoid a cache hit and inject an export-only GPU failure.

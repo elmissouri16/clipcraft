@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {createRequire} from 'node:module';
+import {validateTextStyleContributions,textStylePatch} from '../../../shared/pluginStyles.mjs';
+import {validateManifest} from '../../../shared/pluginManifest.mjs';
+const require=createRequire(import.meta.url),{PluginManager}=require('../../../electron/plugins/manager.cjs');
+const checks=[],check=(name,fn)=>{fn();checks.push(name);},base={id:'lower',name:'Lower third',kind:'lower-third',sampleText:'Original title',duration:3,style:{font:'montserrat',color:'#ffffff',x:.25,y:.8,animIn:{id:'slideUp',dur:.3,unit:'whole'}}};
+check('reusable title/lower third styles use existing text renderer capabilities',()=>assert.equal(validateTextStyleContributions([base])[0].style.animIn.id,'slideUp'));
+const manifest={id:'studio.titles',name:'Titles',publisher:'Studio',version:'0.1.0',apiVersion:1,contributes:{textStyles:[base]}};
+check('text-only pack requires no executable entry or permissions',()=>assert.deepEqual(validateManifest(manifest).permissions,[]));
+for(const mutate of [v=>delete v.id,v=>v.id=2,v=>v.kind='script',v=>v.style.dispatch={type:'delete'},v=>v.style.text='overwrite caption',v=>v.style.start=0,v=>v.style.words=[],v=>v.style.size=Infinity,v=>v.style.animIn.id='external-code',v=>v.style.animIn.unit='line',v=>v.style.animIn.dur=20,v=>v.style.bg={on:'true'},v=>v.style.font='pack:missing',v=>v.duration=0,v=>v.sampleText='\0']){const copy=structuredClone(base);mutate(copy);check('reject unsafe, malformed or unsupported style',()=>assert.throws(()=>validateTextStyleContributions([copy])));}
+check('reject duplicate contribution IDs',()=>assert.throws(()=>validateTextStyleContributions([base,base])));
+check('reject arbitrary saved digest as authored font reference',()=>assert.throws(()=>validateTextStyleContributions([{...base,style:{font:'pack-font:'+'a'.repeat(64)+':face'}}])));
+check('permit declared same-package font only',()=>assert.equal(validateTextStyleContributions([{...base,style:{font:'pack:face'}}],['face'])[0].style.font,'pack:face'));
+const row={...base,pluginId:'studio.titles',digest:'a'.repeat(64),version:'0.1.0'};const patch=textStylePatch(row);
+check('style application snapshots values and exact provenance without timing/text writes',()=>{assert.equal(patch.font,'montserrat');assert.equal(patch.packStyle.digest,row.digest);assert.equal(patch.text,undefined);assert.equal(patch.start,undefined);assert.equal(patch.words,undefined);});
+const dir=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-text-packs-')),source=path.join(dir,'source');await fs.mkdir(source);await fs.writeFile(path.join(source,'plugin.json'),JSON.stringify(manifest));const manager=new PluginManager(path.join(dir,'installed'),'2.0.0');let rows=await manager.install(source,true),catalog=await manager.creative();assert.equal(catalog.textStyles.length,1);checks.push('installed pure style pack contributes to creative catalog');
+manifest.version='0.2.0';await fs.writeFile(path.join(source,'plugin.json'),JSON.stringify(manifest));await manager.install(source,true);catalog=await manager.creative();assert.equal(catalog.textStyles.length,2);assert.equal(catalog.textStyles.filter(s=>s.preferred).length,1);checks.push('style catalog retains provenance versions and selects one preferred version');
+for(const r of await manager.list())if(r.enabled)await manager.setEnabled(r.key,false);assert.equal((await manager.creative()).textStyles.length,0);assert.equal(patch.font,'montserrat');checks.push('disable removes choices without destroying already copied builtin-font styles');
+await fs.writeFile(path.join(dir,'result.json'),JSON.stringify({ok:true,checks},null,2));console.log(checks.length+' text style checks passed; evidence: '+dir);

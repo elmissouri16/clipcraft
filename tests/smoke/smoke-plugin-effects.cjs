@@ -6,7 +6,7 @@ module.exports=async(win,app,dir)=>{
  const check=(name,ok)=>{assert.ok(ok,name);result.checks.push(name);};
  const until=async s=>{for(let n=0;n<400;n++){if(await q(s))return;await wait(40);}throw Error('Timeout '+s);};
  const ff=require('../../electron/media/ffmpeg.cjs'),{dialog,BrowserWindow}=require('electron'),saveDialog=dialog.showSaveDialog,openDialog=dialog.showOpenDialog;
- const click=s=>q(`document.querySelector(${JSON.stringify(s)}).click()`);
+ const click=require('./pluginSettingsUi.cjs')(win).click;
  const close=()=>q('[...document.querySelectorAll(".modal-backdrop button")].find(b=>["Close","OK"].includes(b.textContent.trim()))?.click()');
  win.webContents.setBackgroundThrottling(false);win.webContents.on('console-message',(_e,level,message)=>{if(level>=3&&!message.includes('Fixture GPU rendering failure'))result.errors.push(message);});
  try {
@@ -54,7 +54,7 @@ module.exports=async(win,app,dir)=>{
   // Updating the package keeps existing project rendering pinned until an explicit upgrade.
   const newer=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../examples/plugins/color-pulse/plugin.json'),'utf8'));
   newer.version='1.1.0';newer.contributes.effects[0].name='Color pulse next';
-  const updateFolder=path.join(dir,'effect-update');fs.mkdirSync(updateFolder);fs.writeFileSync(path.join(updateFolder,'plugin.json'),JSON.stringify(newer));
+  const updateFolder=path.join(dir,'effect-update');fs.mkdirSync(updateFolder);fs.cpSync(path.resolve(__dirname,'../../examples/plugins/color-pulse/assets'),path.join(updateFolder,'assets'),{recursive:true});fs.writeFileSync(path.join(updateFolder,'plugin.json'),JSON.stringify(newer));
   dialog.showOpenDialog=async()=>({canceled:false,filePaths:[updateFolder]});
   await q('window.api.pluginsInstall(true)');await wait(120);
   await q(`window.__fve.select({track:'effect',id:${JSON.stringify('video|v|'+fx)}})`);

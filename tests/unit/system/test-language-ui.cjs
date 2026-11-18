@@ -11,10 +11,10 @@ const {spawn}=require('node:child_process'),net=require('node:net');
  try{
   let ready=false;for(let i=0;i<100;i++){try{ready=(await fetch(url)).ok;}catch{}if(ready)break;await new Promise(r=>setTimeout(r,50));}assert.ok(ready,'Vite starts');
   const bin=process.env.ELECTRON_BIN||require('electron');
-  electron=spawn(bin,['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'language',FVE_UI_LANGUAGE:process.env.FVE_UI_LANGUAGE||'fr',VITE_DEV_SERVER_URL:url}});
+  const launcher=path.join(dir,'launcher'),userData=path.join(dir,'user-data');fs.mkdirSync(launcher);fs.mkdirSync(userData);fs.writeFileSync(path.join(launcher,'package.json'),JSON.stringify({name:'clipcraft-language-test',version:require('../../../package.json').version,main:'main.cjs'}));fs.writeFileSync(path.join(launcher,'main.cjs'),`const {app}=require('electron');app.setPath('userData',${JSON.stringify(userData)});require(${JSON.stringify(path.join(root,'electron/main.cjs'))});`);electron=spawn(bin,[launcher],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'language',FVE_UI_LANGUAGE:process.env.FVE_UI_LANGUAGE||'fr',VITE_DEV_SERVER_URL:url}});
   const code=await new Promise(resolve=>{const timer=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},120000);electron.once('exit',code=>{clearTimeout(timer);resolve(code);});});
   const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json')));
-  assert.equal(code,0,result.error);assert.ok(!result.error,result.error);
+  assert.equal(code,0,result.error);assert.ok(!result.error,result.error);assert.equal(result.userData,userData);assert.equal(result.noSandbox,false);
   assert.ok(result.ok,'French UI: '+JSON.stringify({lang:result.lang,homeActions:result.homeActions,expected:result.expectedActions,newProject:result.newProject,railLanguage:result.railLanguage,railGeneral:result.railGeneral,selected:result.selected,englishLeft:result.englishLeft}));
   console.log((process.env.FVE_UI_LANGUAGE||'fr')+' UI in the real app passed; evidence: '+dir);
  }finally{electron?.kill();vite.kill();fs.closeSync(fd);}

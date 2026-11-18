@@ -1,9 +1,22 @@
+import {AUTOMATION_OPERATIONS} from '../../shared/pluginAutomation.mjs';
+import {effectParameters} from '../../shared/pluginEffects.mjs';
+import {PROPERTY_OPERATIONS} from '../../shared/pluginProperties.mjs';
+import {resolveStyle} from '../features/text/style.js';
+import {LIFECYCLE_OPERATIONS} from '../../shared/pluginLifecycle.mjs';
+import {
+  newGap, clipLen, layerOf, LAYER_STATE_DEFAULTS, layerKey, layerStateOf,
+  isLayerLocked, AUDIO_LANES, anySolo, layerSounds, transitionDur, videoLayout,
+  exportDuration, renderable,
+} from '../../shared/projectRender.mjs';
+export {
+  newGap, clipLen, layerOf, LAYER_STATE_DEFAULTS, layerKey, layerStateOf,
+  isLayerLocked, AUDIO_LANES, anySolo, layerSounds, transitionDur, videoLayout,
+  exportDuration, renderable,
+};
 import {clipTransaction,EDITABLE_LANES} from '../../shared/pluginEdits.mjs';
-import {uniqueCommandMarkers} from '../../shared/pluginCommands.mjs';
-import {translationSnapshot,translationProposal,translationLanguage,sourceTrack} from '../../shared/pluginAi.mjs';
 import {TEXT_TEMPLATES} from '../features/text/catalog.js';
 import {isPluginTransition,pluginTransitionInstance} from '../features/plugins/transitionRegistry.js';
-import {isPluginEffect,pluginEffectInstance} from '../features/plugins/effectRegistry.js';
+import {isPluginEffect,pluginEffectInstance,pluginEffectDefinition,pluginEffectsRevision} from '../features/plugins/effectRegistry.js';
 // Project model + reducer (with undo/redo).
 //
 // The main (video) track plays clips back to back, so a clip's timeline position is derived from order.
@@ -12,13 +25,14 @@ import {isPluginEffect,pluginEffectInstance} from '../features/plugins/effectReg
 // their magnet snaps drags to neighbours and closes the gap after a delete or trim (ripple).
 // Overlay clips (picture-in-picture) are videos / photos with a free `start` drawn above the main track.
 
-import { RATIOS, sizeFor } from "../features/effects/effects.js";
+import { RATIOS, sizeFor, EFFECTS, FILTERS } from "../features/effects/effects.js";
 import { cleanPins } from "../features/timeline/track.js";
 import { normalizeChatSessions } from "../features/agent/chatSessions.js";
 import { editWordTiming, cropWordTiming, captionWordTiming } from "../features/text/timing.js";
 import { sliceFades } from "../features/audio/fades.js";
 import { markProjectSnapshot } from './projectIdentity.js';
 
+import {validateExtensionSettings} from '../../shared/extensionConfiguration.mjs';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 export const MIN_CLIP = 0.1;
 
@@ -55,6 +69,7 @@ export function validateProject(p) {
   const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const invalid = (field) => { throw new Error(`Invalid project field: ${field}`); };
   if (!record(p)) invalid('project');
+  validateExtensionSettings(p.extensionSettings);
   const nullable = new Set(['overlayClips', 'effectClips', 'markers']);
   for (const key of ['media', 'videoClips', 'audioClips', 'textClips', ...nullable]) {
     const list = p[key];
@@ -113,8 +128,6 @@ export function normalizeProject(p) {
   };
 }
 
-export const newGap = (id, len) => ({ id, gap: true, in: 0, out: len, speed: 1 });
-
 // Merges neighbouring gaps, drops empty ones and removes a trailing gap (nothing plays after it).
 function normalizeGaps(list, { keepTrailing = false } = {}) {
   const out = [];
@@ -138,13 +151,11 @@ function normalizeGaps(list, { keepTrailing = false } = {}) {
 // constant speed like picture clips do (a detached clip follows its video's speed).
 export const freeLen = (track, c) => (track === 'audio' ? (c.out - c.in) / (c.speed || 1) : track === 'overlay' ? (c.out - c.in) / (c.speed || 1) : c.duration);
 
-export const clipLen = (c) => (c.out - c.in) / (c.speed || 1);
-
 // Layers: every clip of a free track sits on a layer, 0 being the one next to the main track.
 // Clips of one layer never overlap; a clip that would is moved to the first free layer. A higher overlay, text or
 // layer is drawn above a lower one. Layers stay when they become empty (project.layers counts them).
 export const LAYERED = { overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' };
-export const layerOf = (c) => c.layer ?? 0;
+
 
 export function layerCount(p, track) {
   const used = (p[LAYERED[track]] || []).reduce((n, c) => Math.max(n, layerOf(c) + 1), 1);
@@ -161,13 +172,6 @@ export function layerName(p, track, layer) {
 // The main track is the single layer video:0; the Effects lane (not a layered lane in the
 // model) is effect:0. Lanes whose clips can carry sound — and therefore answer to mute /
 // solo — are video (its clips' own sound), overlay (picture clips with sound) and audio.
-export const LAYER_STATE_DEFAULTS = { locked: false, hidden: false, muted: false, solo: false };
-export const layerKey = (track, layer) => `${track}:${layer}`;
-export function layerStateOf(p, track, layer) {
-  return { ...LAYER_STATE_DEFAULTS, ...((p.layerState || {})[layerKey(track, layer)] || {}) };
-}
-export const isLayerLocked = (p, track, layer) => layerStateOf(p, track, layer).locked;
-export const AUDIO_LANES = { video: true, overlay: true, audio: true };
 // The layer a clip sits on: layered lanes read clip.layer; every other track has layer 0.
 export const clipLayer = (track, c) => (LAYERED[track] ? layerOf(c) : 0);
 export const clipLocked = (p, track, c) => !!c && isLayerLocked(p, track, clipLayer(track, c));
@@ -183,19 +187,6 @@ export function lockedMediaUse(p, mediaId) {
   }
   return null;
 }
-// True when any audio-capable layer is soloed (solo then decides what sounds at all).
-export function anySolo(p) {
-  const ls = p.layerState || {};
-  return Object.entries(ls).some(([k, s]) => s && s.solo && AUDIO_LANES[k.split(':')[0]]);
-}
-// Does this layer's sound reach the mix? Mute silences it; once anything is soloed,
-// only soloed layers sound.
-export function layerSounds(p, track, layer) {
-  const st = layerStateOf(p, track, layer);
-  if (st.muted) return false;
-  return !anySolo(p) || st.solo;
-}
-
 // Remaps the layerState keys of one track through fn(oldLayer) -> newLayer | null (drop),
 // the same permutation a layer operation applies to the clips and their names.
 function remapLayerState(p, track, fn) {
@@ -267,28 +258,6 @@ function placeLayers(p, previous) {
   return out;
 }
 
-// Transition length into clip i, limited to half of either neighbouring clip.
-export function transitionDur(clips, i) {
-  const t = clips[i]?.transition;
-  if (!t || i === 0 || t.type === 'none') return 0;
-  // Range edits preserve the retained overlap, even when a surviving piece is
-  // shorter than twice that overlap. Ordinary UI transitions retain their cap.
-  if (Number.isFinite(t.timelineOverlap)) return Math.max(0, Math.min(t.timelineOverlap, clipLen(clips[i]), clipLen(clips[i - 1])));
-  return Math.max(0, Math.min(t.duration, clipLen(clips[i]) / 2, clipLen(clips[i - 1]) / 2));
-}
-
-// Clips overlap by the length of the transition into them (FFmpeg xfade).
-export function videoLayout(videoClips) {
-  let end = 0;
-  return videoClips.map((c, i) => {
-    const td = transitionDur(videoClips, i);
-    const start = Math.max(0, end - td);
-    const item = { clip: c, index: i, start, end: start + clipLen(c), trans: td };
-    end = item.end;
-    return item;
-  });
-}
-
 export function projectDuration(p) {
   const v = videoLayout(p.videoClips);
   const ends = [v.length ? v[v.length - 1].end : 0];
@@ -296,17 +265,6 @@ export function projectDuration(p) {
   p.audioClips.forEach((c) => ends.push(c.start + freeLen('audio', c)));
   (p.overlayClips || []).forEach((c) => ends.push(c.start + freeLen('overlay', c)));
   return Math.max(0, ...ends);
-}
-
-// Total duration of what gets exported (the video track drives the output length).
-// This is THE shared duration basis for everything export-facing: it mirrors, step for
-// step, the total electron/media/ffmpeg.cjs accumulates in buildExportArgs (each clip starts
-// at the previous end minus its clamped transition overlap). The text rasterizer
-// (src/features/export/exportText.js) and the Export dialog's Duration + size estimate both read this
-// function — never projectDuration(), which also counts text/audio/overlay ends.
-export function exportDuration(p) {
-  const v = videoLayout(p.videoClips);
-  return v.length ? v[v.length - 1].end : 0;
 }
 
 export function videoClipAt(p, t) {
@@ -335,27 +293,20 @@ export function canvasFor(p, m) {
 
 function reduceProjectInner(p, a) {
   switch (a.type) {
-    case 'addCaptionTranslation': {
-      try{
-        const source=sourceTrack(a.sourceTrack),cues=translationSnapshot(p,projectDuration(p),source),proposal=translationProposal(a.translation,cues,a.translation?.language);
-        const layer=layerCount(p,'text');
-        if(layer>=128||isLayerLocked(p,'text',layer)||!Array.isArray(a.ids)||a.ids.length!==cues.length||new Set(a.ids).size!==a.ids.length||a.ids.some(id=>typeof id!=='string'||!id||p.textClips.some(c=>c.id===id)))return p;
-        const style=TEXT_TEMPLATES.find(t=>t.id==='cap-classic').patch;
-        const clips=cues.map((cue,index)=>({...style,id:a.ids[index],caption:true,source:'plugin-translation',language:proposal.language,text:proposal.translations[index].text,start:cue.start_sec,duration:cue.end_sec-cue.start_sec,layer,y:.8,size:Math.round(Math.min(p.width,p.height)*.075),template:'cap-classic',word_timing:'unavailable'}));
-        return {...p,textClips:[...p.textClips,...clips],layers:{...p.layers,text:layer+1},layerNames:{...p.layerNames,text:{...p.layerNames?.text,[layer]:`Captions · ${translationLanguage(proposal.language).label}`}},layerState:{...p.layerState,[`text:${layer}`]:{hidden:true}}};
-      }catch{return p;}
-    }
     case 'batch':
       // Internal, synchronous compound edits (e.g. a frame hold or caption merge).
       // History, placement, link synchronization and validation see one result.
       if (!Array.isArray(a.actions) || a.actions.length > 512 || a.actions.some(x => !x || ![
         'update', 'updateMany', 'split', 'delete', 'insertAudioClip', 'addText', 'addMedia', 'addToTimeline',
         'addOverlayClip', 'addEffectClip', 'setCaptions', 'renameLayer', 'addLayer', 'removeLayer', 'moveLayer',
-        'deleteLayer', 'addMarker', 'removeMarker', 'removeMedia', 'extendVideoTo', 'preparedPluginClips',
+        'deleteLayer', 'addMarker', 'removeMarker', 'removeMedia', 'extendVideoTo', 'preparedPluginClips', 'setExtensionSettings',
       ].includes(x.type))) return p;
       return a.actions.reduce((next, action) => reduceProject(next, action), p);
     case 'load':
       return normalizeProject(a.project);
+    case 'setExtensionSettings':
+      validateExtensionSettings(a.settings);
+      return { ...p, extensionSettings: a.settings };
     case 'setProject':
       return Object.entries(a.patch || {}).every(([key,value]) => JSON.stringify(p[key]) === JSON.stringify(value)) ? p : { ...p, ...a.patch };
     case 'addMedia':
@@ -560,6 +511,12 @@ function reduceProjectInner(p, a) {
     case 'updateMany':
       // Several clips changed together (one undo step): updates [{ track, id, patch }].
       return a.updates.reduce((q, u) => reduceProject(q, { type: 'update', ...u }), p);
+    case 'appendCaptionTrack': {
+      const layer=layerCount(p,'text');
+      if(a.layer!==layer||layer>=128||isLayerLocked(p,'text',layer)||Object.values(layerStateOf(p,'text',layer)).some(Boolean)||typeof a.name!=='string'||!a.name.trim()||a.name.length>160||/[\u0000-\u001f\u007f]/.test(a.name)||typeof a.hidden!=='boolean'||!Array.isArray(a.clips)||!a.clips.length||p.textClips.length+a.clips.length>10000||new Set(a.clips.map(c=>c?.id)).size!==a.clips.length||a.clips.some(c=>!c?.id||!c.caption||c.layer!==layer||p.textClips.some(existing=>existing.id===c.id)))return p;
+      const layerState={...p.layerState};if(a.hidden)layerState['text:'+layer]={hidden:true};
+      return {...p,textClips:[...p.textClips,...a.clips],layers:{...p.layers,text:layer+1},layerNames:{...p.layerNames,text:{...p.layerNames?.text,[layer]:a.name.trim()}},layerState};
+    }
     case 'replaceCaptionCues': {
       // Atomic caption repair/import. Removing cues here never ripples the Text
       // magnet or temporarily relocates the remaining cue to another layer.
@@ -624,7 +581,7 @@ function reduceProjectInner(p, a) {
       }));
       // Imported .srt subtitles (source: 'srt') are the user's own files: regenerating the
       // auto captions must not delete them, so imported and translated caption tracks are preserved.
-      return { ...p, textClips: [...p.textClips.filter((c) => !c.caption || c.source === 'srt' || c.source === 'plugin-translation'), ...caps] };
+      return { ...p, textClips: [...p.textClips.filter((c) => !c.caption || c.source === 'srt' || c.source === 'plugin-translation' || c.source === 'extension'), ...caps] };
     }
     case 'importSrtCaptions': {
       // Subtitles parsed from an .srt file: exact file timings and text, styled with the
@@ -750,6 +707,8 @@ function reduceProjectInner(p, a) {
       return { ...p, markers: [...p.markers, { id: a.id, time: Math.max(0, a.time), label: a.label || '' }].sort((x, y) => x.time - y.time) };
     case 'removeMarker':
       return { ...p, markers: p.markers.filter((m) => m.id !== a.id) };
+    case 'setMarkers':
+      return { ...p, markers: a.markers };
     default:
       return p;
   }
@@ -1313,6 +1272,7 @@ function splitTimed(x, t, newId) {
 export function actionLocked(p, a) {
   const clipOf = (track, id) => findClipIn(p, track, id);
   switch (a.type) {
+    case 'appendCaptionTrack': return a.layer!==layerCount(p,'text')||isLayerLocked(p,'text',a.layer);
     case 'replaceCaptionCues': return !Array.isArray(a.ids) || !Array.isArray(a.clips)
       || a.ids.some(id => clipLocked(p, 'text', clipOf('text', id)))
       || a.clips.some(c => !c || typeof c !== 'object' || isLayerLocked(p, 'text', layerOf(c)));
@@ -1437,7 +1397,7 @@ function picStarts(p) {
   };
 }
 
-function syncLinked(prev, next) {
+function syncLinked(prev, next, preservedLinks) {
   const before = linkPairs(prev);
   const after = linkPairs(next);
   if (!before.size && !after.size) return next;
@@ -1445,6 +1405,9 @@ function syncLinked(prev, next) {
   let out = next;
   const put = (track, id, patch) => { out = mapClip(out, track, id, (c) => ({ ...c, ...patch })); };
   for (const [linkId, pair] of after) {
+    // Complete host-planned pairs already preserve their source windows and
+    // offsets. Re-deriving them here can introduce floating-point source drift.
+    if (preservedLinks?.has(linkId)) continue;
     const was = before.get(linkId);
     if (!pair.pic || !pair.aud) {
       // A member was deleted: the survivor becomes a normal, independent clip — but only
@@ -1506,6 +1469,9 @@ function followLayerState(cur, restored) {
   if (!Object.keys(ls).length) return restored.layerState;
   let out = { ...ls };
   for (const track of Object.keys(LAYERED)) {
+    // Structural layer reducers replace this lane's names map even when empty.
+    // Moving individual clips leaves track identity and its toggles unchanged.
+    if(cur.layerNames?.[track]===restored.layerNames?.[track])continue;
     const key = LAYERED[track];
     const curById = new Map((cur[key] || []).map((c) => [c.id, layerOf(c)]));
     const map = new Map(); // current layer -> restored layer
@@ -1527,10 +1493,13 @@ function followLayerState(cur, restored) {
     }
     out = next;
   }
+  // An appended layer disappears on Undo. Its later toggles cannot survive as
+  // invisible locks on a future layer with the same numeric position.
+  for(const key of Object.keys(out)){const [track,raw]=key.split(':');if(LAYERED[track]&&Number(raw)>=layerCount(restored,track))delete out[key];}
   // Translation creates a hidden layer as part of its document edit. Its initial
   // state follows the layer's existence, without changing toggles on old layers.
-  for(const clip of cur.textClips||[])if(clip.source==='plugin-translation'&&layerOf(clip)>=layerCount(restored,'text'))delete out[layerKey('text',layerOf(clip))];
-  for(const clip of restored.textClips||[])if(clip.source==='plugin-translation'&&layerOf(clip)>=layerCount(cur,'text')){
+  for(const clip of cur.textClips||[])if((clip.source==='plugin-translation'||clip.source==='extension'&&clip.captionTrackCreated===true)&&layerOf(clip)>=layerCount(restored,'text'))delete out[layerKey('text',layerOf(clip))];
+  for(const clip of restored.textClips||[])if((clip.source==='plugin-translation'||clip.source==='extension'&&clip.captionTrackCreated===true)&&layerOf(clip)>=layerCount(cur,'text')){
     const key=layerKey('text',layerOf(clip));if(restored.layerState?.[key])out[key]=restored.layerState[key];
   }
   return out;
@@ -1573,6 +1542,12 @@ export function prepareProjectAction(project, action) {
 // Only trusted host planning can mint these tokens; plugin-authored actions cannot.
 const pluginEditPlans=new WeakMap(),pluginClipArrays=new WeakMap();
 export const pluginEditsApplied=(history,action)=>!!action?.token&&!!history?.pluginEditReceipts?.includes(action.token);
+// Only the renderer's validated extension planner receives this function. Public
+// extension requests contain operations, never reducer actions or plan tokens.
+export function prepareExtensionCommit(history,next,verify,agentToken,source){
+ const token={};pluginEditPlans.set(token,{base:history.present,next,history,actions:[],verify,source});
+ return {type:'pluginClipEdits',base:history.present,token,...(agentToken?{agentToken}:{})};
+}
 // Range edits preserve the timeline clock. They never call the UI's magnet/gap
 // normalizer or linked-edit helpers. All new IDs are host-owned and private.
 function planPluginMainRange(main,id,op,allocateId){
@@ -1621,6 +1596,19 @@ function planPluginMainRange(main,id,op,allocateId){
  for(const [key,wanted] of expected){const actual=byId.get(key);if(!actual||Math.abs(actual.start-wanted.start)>epsilon||Math.abs(actual.end-wanted.end)>epsilon)throw Error('Main edit timing could not be preserved.');}
  return list;
 }
+function planPluginMainReorder(main,id,anchor,transitions){
+ const prior=new Map(main.map((c,i)=>[c.id,i?main[i-1].id:null])),next=[...main],index=next.findIndex(c=>c.id===id);
+ if(index<0||id===anchor||next[index].gap)throw Error('Invalid main reorder target.');
+ const [clip]=next.splice(index,1),at=anchor===null?next.length:next.findIndex(c=>c.id===anchor);
+ if(at<0)throw Error('Invalid main reorder anchor.');
+ next.splice(at,0,clip);
+ const result=next.map((c,i)=>{
+  if(prior.get(c.id)===(i?next[i-1].id:null)||!c.transition||c.transition.type==='none')return c;
+  if(transitions==='reject')throw Error('Reorder changes an incoming transition. Choose clear-boundaries explicitly.');
+  return {...c,transition:null};
+ });
+ return result.every((c,i)=>c===main[i])?main:result;
+}
 function pluginArraysLocked(project,token){
  const plan=pluginClipArrays.get(token);if(!plan)return true;
  for(const [track,key] of Object.entries(TRACKS))if(Object.hasOwn(plan.arrays,key)){
@@ -1630,7 +1618,7 @@ function pluginArraysLocked(project,token){
  }
  return false;
 }
-function pluginLinkedPair(project,linkId){
+function pluginLinkedPair(project,linkId,aligned=true){
  const members=[];for(const track of [...Object.keys(TRACKS),'sticker'])for(const clip of project[`${track}Clips`]||[])if(clip.linkId===linkId)members.push({track,clip});
  const picture=members.find(m=>['video','overlay'].includes(m.track)),sound=members.find(m=>m.track==='audio');
  if(typeof linkId!=='string'||!linkId||members.length!==2||!picture||!sound||members.some(m=>m.clip.gap))throw Error('Linked edits need exactly one picture and one audio partner.');
@@ -1638,8 +1626,32 @@ function pluginLinkedPair(project,linkId){
  const v=picture.clip,a=sound.clip,sp=v.speed||1;
  picture.start=picture.track==='video'?videoLayout(project.videoClips).find(l=>l.clip.id===v.id)?.start:v.start;
  picture.end=picture.start+(v.out-v.in)/sp;sound.start=a.start;sound.end=a.start+(a.out-a.in)/(a.speed||1);
- if(!Number.isFinite(picture.start)||picture.start<0||!Number.isFinite(sound.start)||Math.abs(picture.start-sound.start)>1e-8||Math.abs(picture.end-sound.end)>1e-8||Math.abs(sp-(a.speed||1))>1e-8||!Number.isFinite(a.linkOff??0)||Math.abs(a.linkOff||0)>1e-8||!Number.isFinite(a.linkInOff??0)||Math.abs(a.in-v.in-(a.linkInOff||0))>1e-8)throw Error('Linked partners must have aligned ranges, equal speed and consistent source offsets.');
+ if(!Number.isFinite(picture.start)||picture.start<0||!Number.isFinite(sound.start)||sound.start<0||Math.abs((picture.end-picture.start)-(sound.end-sound.start))>1e-8||Math.abs(sp-(a.speed||1))>1e-8||!Number.isFinite(a.linkOff??0)||Math.abs(sound.start-picture.start-(a.linkOff||0))>1e-8||aligned&&Math.abs(a.linkOff||0)>1e-8||!Number.isFinite(a.linkInOff??0)||Math.abs(a.in-v.in-(a.linkInOff||0))>1e-8)throw Error('Linked partners must have aligned ranges, equal speed and consistent source offsets.');
  return {picture,sound};
+}
+// Move only into empty main-track time. Other pictures, transitions and the
+// timeline clock remain fixed; the vacated picture becomes an explicit gap.
+function planPluginLinkedMove(main,id,start,allocateId){
+ const before=videoLayout(main),source=before.find(l=>l.clip.id===id),epsilon=1e-8;
+ if(!source||source.clip.gap)throw Error('Invalid linked main target.');
+ if(Math.abs(source.start-start)<epsilon)return main;
+ const hasTransition=c=>!!c?.transition&&c.transition.type!=='none';
+ if(hasTransition(source.clip)||hasTransition(main[source.index+1]))throw Error('Linked movement touches a transition.');
+ const length=source.end-source.start,end=start+length;
+ const vacated=main.map(c=>c.id===id?newGap(allocateId(),length):c),layout=videoLayout(vacated);
+ const first=layout.findIndex(l=>l.clip.gap&&l.start<=start+epsilon&&l.end>start+epsilon);
+ if(first<0)throw Error('Main linked movement needs an explicit empty gap.');
+ let last=first;while(layout[last].end<end-epsilon&&layout[last+1]?.clip.gap)last++;
+ if(layout[last].end<end-epsilon||hasTransition(vacated[last+1]))throw Error('Main linked movement would overwrite a clip or transition.');
+ const head=start-layout[first].start,tail=layout[last].end-end,replacement=[];
+ if(head>epsilon)replacement.push(newGap(allocateId(),head));
+ replacement.push(source.clip);
+ if(tail>epsilon)replacement.push(newGap(allocateId(),tail));
+ const next=[...vacated];next.splice(first,last-first+1,...replacement);
+ const after=new Map(videoLayout(next).map(l=>[l.clip.id,l]));
+ for(const l of before.filter(l=>!l.clip.gap)){const actual=after.get(l.clip.id),wanted=l.clip.id===id?start:l.start;if(!actual||Math.abs(actual.start-wanted)>epsilon||Math.abs(actual.end-wanted-(l.end-l.start))>epsilon)throw Error('Linked movement would retime another picture.');}
+ if(Math.abs(videoLayout(next).at(-1).end-before.at(-1).end)>epsilon)throw Error('Linked movement would change the main clock.');
+ return next;
 }
 function planPluginFreeRange(clip,start,end,op,newId){
  const length=end-start,speed=clip.speed||1,split=op.type==='split',from=split?0:op.start_sec-start,to=split?length:op.end_sec-start;
@@ -1650,13 +1662,411 @@ function planPluginFreeRange(clip,start,end,op,newId){
  if(clip.anim){const {in:enter,out:leave,...rest}=clip.anim;patch.anim={...rest,...(head<1e-8&&enter?{in:enter}:{}),...(tail<1e-8&&leave?{out:leave}:{})};}
  return [{...clip,...patch}];
 }
+function preparePluginClipPlan(project,expected,clipsChanged,preservedLinks,tracksChanged=0,verify){
+ if(clipsChanged>64)throw Error('A clip transaction may affect at most 64 clips.');
+ if(!clipsChanged&&!tracksChanged)return {action:null,clipsChanged:0};
+ const arrays=Object.fromEntries(Object.values(TRACKS).filter(key=>expected[key]!==project[key]).map(key=>[key,expected[key]])),arrayToken={};
+ if(expected.layers!==project.layers)arrays.layers=expected.layers;
+ pluginClipArrays.set(arrayToken,{base:project,arrays,preservedLinks});
+ const actions=[{type:'preparedPluginClips',token:arrayToken}],prepared=prepareProjectAction(project,{type:'batch',actions});
+ if(JSON.stringify(prepared.project)!==JSON.stringify(expected))throw Error('Clip edit would cause an unsupported collateral change.');
+ const token={};pluginEditPlans.set(token,{base:project,next:prepared.project,actions,verify});
+ return {action:{type:'pluginClipEdits',base:project,token},clipsChanged,...(tracksChanged?{tracksChanged}:{})};
+}
+function pluginPropertyTargets(project,context,bindings){
+ const epsilon=1e-8,layout=videoLayout(project.videoClips),main=new Map(layout.map(l=>[l.clip.id,l])),publicClips=new Map(context.timeline.clips.map(c=>[c.id,c]));
+ const lookup=handle=>{
+  const binding=bindings.get(handle),pub=publicClips.get(handle),clip=binding&&project[TRACKS[binding.track]]?.find(c=>c.id===binding.id);
+  if(!binding||!pub||!clip||project[TRACKS[binding.track]].filter(c=>c.id===binding.id).length!==1||clip.gap||pub.gap||pub.trackId!==`${binding.track}:${clipLayer(binding.track,clip)}`||!!pub.link!==!!clip.linkId||clip.linkId&&(binding.linkId!==clip.linkId||binding.linkGroup!==pub.link.groupId))throw Error('Property target context changed.');
+  const l=binding.track==='video'?main.get(clip.id):null,at=l?.start??clip.start,length=binding.track==='video'?clipLen(clip):freeLen(binding.track,clip);
+  if(!Number.isFinite(at)||!Number.isFinite(length)||length<=0||Math.abs(pub.start_sec-at)>epsilon||Math.abs(pub.end_sec-at-length)>epsilon||clipLocked(project,binding.track,clip))throw Error('Property target timing changed or its track is locked.');
+  if(l&&(!pub.main||context.timeline.main_total!==layout.length||pub.main.index!==l.index||pub.main.transition!==(!!clip.transition&&clip.transition.type!=='none')||Math.abs(pub.main.overlap_sec-l.trans)>epsilon))throw Error('Property main target metadata changed.');
+  if(['video','overlay','audio'].includes(binding.track)){
+   const m=project.media.find(m=>m.id===clip.mediaId),speed=clip.speed??1;
+   if(!m||!Number.isFinite(clip.in)||!Number.isFinite(clip.out)||clip.in<0||clip.out<=clip.in||!Number.isFinite(speed)||speed<=0||m.type!=='image'&&(!Number.isFinite(m.duration)||clip.out>m.duration+epsilon)||binding.track==='audio'&&m.type!=='audio'&&m.hasAudio!==true||['video','overlay'].includes(binding.track)&&!['video','image'].includes(m.type))throw Error('Property target has an invalid media resource or source window.');
+  }
+  return {...binding,clip,length};
+ };
+ return {lookup,layout};
+}
+function preparePluginProperties(project,context,bindings,operations){
+ const {lookup}=pluginPropertyTargets(project,context,bindings),epsilon=1e-8,originals=new Map(),updates=new Map(),preservedLinks=new Set();
+ const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b),key=t=>JSON.stringify([t.track,t.id]);
+ for(const op of operations){
+  const target=lookup(op.clipId),id=key(target);originals.set(id,target);
+  if(target.clip.linkId){
+   const partner=lookup(op.partnerClipId),pair=pluginLinkedPair(project,target.clip.linkId,false);
+   if(partner.clip.linkId!==target.clip.linkId||![pair.picture,pair.sound].every(m=>[target,partner].some(t=>t.track===m.track&&t.id===m.clip.id)))throw Error('Property edits need the exact whole private pair.');
+  }else if(op.partnerClipId!==null)throw Error('Unexpected property partner.');
+  const clip=updates.get(id)||target.clip;let next=clip;const patch={};
+  const assign=(field,value,effective=clip[field])=>{if(!equal(value,effective))patch[field]=value;};
+  const rejectKeys=fields=>{if(fields.some(k=>clip.keyframes?.[k]?.length))throw Error('A static property edit cannot override existing keyframes.');};
+  if(op.type==='set-text'){
+   if(op.text!==clip.text){if(clip.words?.length&&op.measuredWords==='reject')throw Error('Changing measured caption text requires explicit invalidation.');Object.assign(patch,editWordTiming(clip,{text:op.text}));}
+  }else if(op.type==='set-text-style'){
+   const style=resolveStyle(clip);
+   for(const [field,value] of Object.entries(op.style)){
+    if(['stroke','shadow','bg'].includes(field)){const merged={...style[field],...value};assign(field,merged,style[field]);}
+    else assign(field,value,style[field]);
+   }
+   rejectKeys(Object.keys(patch));
+  }else if(op.type==='set-transform'){
+   const current={scale:1,scaleX:1,scaleY:1,uniform:true,x:0,y:0,rot:0,...clip.transform},changed=Object.keys(op.transform).filter(k=>!equal(current[k],op.transform[k]));
+   if(changed.length){rejectKeys(changed);patch.transform={...clip.transform,...op.transform};}
+  }else if(op.type==='set-opacity'){
+   assign('opacity',op.opacity,clip.opacity??1);if(Object.hasOwn(patch,'opacity'))rejectKeys(['opacity']);
+  }else{
+   const media=project.media.find(m=>m.id===clip.mediaId);
+   if(media?.type!=='audio'&&media?.hasAudio!==true)throw Error('Audio properties need an actual sound-capable media resource.');
+   for(const [field,value] of Object.entries(op.audio)){
+    if(field==='volume')assign('volume',value,clip.volume??1);
+    else if(field==='muted')assign('muted',value,clip.muted??false);
+    else{
+     const name=field==='fadeIn_sec'?'fadeIn':'fadeOut';
+     if(value>target.length+epsilon)throw Error('Audio fade exceeds the clip duration.');
+     assign(name,value,clip[name]??0);if(!equal(clip[name+'Offset']??0,0))patch[name+'Offset']=0;
+    }
+   }
+  }
+  if(Object.keys(patch).length)next={...clip,...patch};updates.set(id,next);
+ }
+ const expected={...project},changed=new Set();let clipsChanged=0;
+ for(const [id,clip] of updates){const target=originals.get(id);if(equal(clip,target.clip))continue;changed.add(clip.id);clipsChanged++;const list=TRACKS[target.track];expected[list]=expected[list].map(c=>c.id===target.id?clip:c);}
+ for(const track of [...Object.keys(TRACKS),'sticker'])for(const clip of project[`${track}Clips`]||[]){
+  if(clip.pin?.to&&(changed.has(clip.id)||changed.has(clip.pin.to)))throw Error('Property edit affects a motion-pin dependency.');
+  if(clip.linkId)preservedLinks.add(clip.linkId);
+ }
+ return preparePluginClipPlan(project,expected,clipsChanged,preservedLinks);
+}
+function preparePluginAutomation(project,context,bindings,operations){
+ const {lookup,layout}=pluginPropertyTargets(project,context,bindings),effectRevision=pluginEffectsRevision(),epsilon=1e-8,equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);let expected={...project};
+ const current=t=>expected[TRACKS[t.track]].find(c=>c.id===t.id),put=(t,c)=>{if(!equal(current(t),c))expected[TRACKS[t.track]]=expected[TRACKS[t.track]].map(v=>v.id===t.id?c:v);};
+ const hasSound=c=>{const m=project.media.find(m=>m.id===c.mediaId);return m?.type==='audio'||m?.hasAudio===true;};
+ const effectRef=(fx,instance,params,enable=true)=>{
+  if(!isPluginEffect(fx)){
+   if(!EFFECTS.some(e=>e.id===fx)&&!(fx.startsWith('filter:')&&FILTERS.some(f=>f.id===fx.slice(7))))throw Error('Unknown built-in effect resource.');
+   if(Object.keys(params).length)throw Error('Built-in effect resources support strength, not arbitrary numeric parameters.');return undefined;
+  }
+  if(!enable&&!Object.keys(params).length)return instance;
+  const def=pluginEffectDefinition(fx);
+  if(!def||!instance||['pluginId','contributionId','version','digest'].some(k=>instance[k]!==def[k]))throw Error('Effect resource needs its exact available package version.');
+  const values=effectParameters(def,{...instance.params,...params});
+  return {...instance,params:values,...(instance.disabled?{disabled:false}:{})};
+ };
+ const effects=c=>{const list=c.effects||[];if(!Array.isArray(list)||list.length>32||new Set(list).size!==list.length||list.some(v=>typeof v!=='string'))throw Error('Effect slots are invalid or ambiguous.');return list;};
+ const remove=(c,index)=>{const list=effects(c),fx=list[index];if(!fx)throw Error('Effect slot is unavailable.');const patch={effects:list.filter((_,i)=>i!==index)};for(const k of ['pluginEffects','fxStrength','fxRegions'])if(c[k]&&Object.hasOwn(c[k],fx)){const map={...c[k]};delete map[fx];patch[k]=map;}return {...c,...patch};};
+ for(const op of operations){
+  const target=lookup(op.clipId);let clip=current(target),pair;
+  if(clip.linkId){
+   const partner=lookup(op.partnerClipId);pair=pluginLinkedPair(expected,clip.linkId,false);
+   if(![pair.picture,pair.sound].every(m=>[target,partner].some(t=>t.track===m.track&&t.id===m.clip.id)))throw Error('Automation needs the exact whole private pair.');
+  }else if(op.partnerClipId!==null)throw Error('Unexpected automation partner.');
+  if(op.type==='set-speed'){
+   const members=pair?[pair.picture,pair.sound]:[{track:target.track,clip}],length=pair?pair.picture.end-pair.picture.start:target.length;
+   if(members.every(m=>(m.clip.speed??1)===op.speed))continue;
+   const patches=members.map(m=>{
+    const c=m.clip,media=project.media.find(v=>v.id===c.mediaId),out=c.in+length*op.speed;
+    if(!media||!['video','audio'].includes(media.type)||media.graphic||c.enhance?.on||!Number.isFinite(media.duration)||out>media.duration+epsilon||out<=c.in)throw Error('Speed change exceeds media bounds or requires an unsupported processed/graphic source.');
+    return [{track:m.track,id:c.id},{...c,speed:op.speed,out}];
+   });
+   for(const [t,c] of patches)put(t,c);
+  }else if(op.type==='set-keyframes'){
+   if(op.property==='volume'&&!hasSound(clip))throw Error('Volume automation needs an actual sound-capable resource.');
+   if(op.points.some(p=>p.source_sec<clip.in-epsilon||p.source_sec>clip.out+epsilon))throw Error('Curve points must stay inside the current source window.');
+   const old=op.property==='volume'?clip.volumeKeys:clip.keyframes?.[op.property];
+   const points=op.points.map(p=>({t:p.source_sec,v:p.value,...(op.property!=='volume'&&p.easing!=='linear'?{e:p.easing}:{})}));
+   const canonical=list=>(list||[]).map(p=>({t:p.t,v:p.v,e:op.property==='volume'?'linear':p.e??'linear'}));
+   if(equal(canonical(old),canonical(points)))continue;
+   if(op.property==='volume')put(target,{...clip,volumeKeys:points.length?points:undefined});
+   else{const keys={...clip.keyframes};if(points.length)keys[op.property]=points;else delete keys[op.property];put(target,{...clip,keyframes:Object.keys(keys).length?keys:undefined});}
+  }else if(op.type==='attach-effect'){
+   const resource=lookup(op.sourceClipId),source=current(resource),list=effects(clip);
+   if(resource.track!=='effect'||source.linkId||typeof source.fx!=='string'||list.length>=32||op.beforeIndex>list.length||list.includes(source.fx))throw Error('Effect attachment needs a distinct returned resource and an available explicit slot.');
+   const ref=effectRef(source.fx,source.pluginEffect,op.params),next=[...list];next.splice(op.beforeIndex,0,source.fx);
+   const c={...clip,effects:next,fxStrength:{...clip.fxStrength,[source.fx]:op.strength}};
+   if(ref)c.pluginEffects={...clip.pluginEffects,[source.fx]:ref};put(target,c);
+  }else if(op.type==='remove-effect')put(target,remove(clip,op.effectIndex));
+  else if(op.type==='move-effect'){
+   const list=effects(clip);if(!list[op.effectIndex]||op.beforeIndex>=list.length)throw Error('Effect reorder needs valid current slots.');
+   if(op.effectIndex===op.beforeIndex)continue;const next=[...list],[fx]=next.splice(op.effectIndex,1);next.splice(op.beforeIndex,0,fx);put(target,{...clip,effects:next});
+  }else{
+   if(target.track==='effect'){
+    if(typeof clip.fx!=='string')throw Error('Missing effect resource.');
+    const ref=effectRef(clip.fx,clip.pluginEffect,op.params,op.enabled),patch={};
+    if((clip.disabled??false)!==!op.enabled)patch.disabled=!op.enabled;
+    if((clip.strength??1)!==op.strength)patch.strength=op.strength;
+    if(ref&&!equal(ref,clip.pluginEffect))patch.pluginEffect=ref;if(Object.keys(patch).length)put(target,{...clip,...patch});
+   }else{
+    const list=effects(clip),fx=list[op.effectIndex];if(!fx)throw Error('Effect slot is unavailable.');
+    const ref=effectRef(fx,clip.pluginEffects?.[fx],op.params,op.enabled),strength=op.enabled?op.strength:0,patch={};
+    if((clip.fxStrength?.[fx]??1)!==strength)patch.fxStrength={...clip.fxStrength,[fx]:strength};
+    if(ref&&!equal(ref,clip.pluginEffects?.[fx]))patch.pluginEffects={...clip.pluginEffects,[fx]:ref};
+    if(Object.keys(patch).length)put(target,{...clip,...patch});
+   }
+  }
+ }
+ const after=new Map(videoLayout(expected.videoClips).map(l=>[l.clip.id,l]));
+ for(const l of layout){const n=after.get(l.clip.id);if(!n||Math.abs(n.start-l.start)>epsilon||Math.abs(n.end-l.end)>epsilon||Math.abs(n.trans-l.trans)>epsilon)throw Error('Source automation would change the main clock or transition overlap.');}
+ const changed=new Set(),preservedLinks=new Set();let clipsChanged=0;
+ for(const [track,list] of Object.entries(TRACKS))for(const c of expected[list]){
+  const old=project[list].find(v=>v.id===c.id);if(equal(old,c))continue;
+  if(clipLocked(project,track,old))throw Error('Source automation touches a locked clip.');
+  if(['video','overlay','audio'].includes(track)){
+   const media=project.media.find(m=>m.id===c.mediaId),length=clipLen(c),oldLength=clipLen(old);
+   if(!Number.isFinite(length)||Math.abs(length-oldLength)>epsilon||media?.type!=='image'&&c.out>media.duration+epsilon)throw Error('Source automation changes duration or exceeds media.');
+  }
+  changed.add(c.id);clipsChanged++;
+ }
+ for(const track of [...Object.keys(TRACKS),'sticker'])for(const c of project[`${track}Clips`]||[]){
+  if(c.pin?.to&&(changed.has(c.id)||changed.has(c.pin.to)))throw Error('Source automation affects a motion-pin dependency.');if(c.linkId)preservedLinks.add(c.linkId);
+ }
+ for(const id of preservedLinks)if(Object.values(TRACKS).some(list=>expected[list].some(c=>c.linkId===id&&changed.has(c.id))))pluginLinkedPair(expected,id,false);
+ return preparePluginClipPlan(project,expected,clipsChanged,preservedLinks,0,operations.some(o=>o.type.includes('effect'))?()=>pluginEffectsRevision()===effectRevision:undefined);
+}
+function preparePluginLifecycle(project,context,bindings,operations,allocateId){
+ const epsilon=1e-8,mainBefore=videoLayout(project.videoClips),mainById=new Map(mainBefore.map(l=>[l.clip.id,l])),pub=new Map(context.timeline.clips.map(c=>[c.id,c]));
+ let expected={...project},tracksChanged=0;const changedIds=new Set(),preservedLinks=new Set();
+ const lookup=handle=>{
+  const b=bindings.get(handle),c=pub.get(handle),original=b&&project[TRACKS[b.track]]?.find(v=>v.id===b.id);
+  if(!b||!c||!original||original.gap||c.gap||c.trackId!==`${b.track}:${clipLayer(b.track,original)}`||!!c.link!==!!original.linkId||original.linkId&&(b.linkId!==original.linkId||b.linkGroup!==c.link.groupId))throw Error('Lifecycle private target context changed.');
+  const layout=b.track==='video'?mainById.get(b.id):null,start=layout?.start??original.start,length=b.track==='video'?clipLen(original):freeLen(b.track,original);
+  if(!Number.isFinite(start)||Math.abs(c.start_sec-start)>epsilon||Math.abs(c.end_sec-start-length)>epsilon||b.track==='video'&&(!c.main||c.main.index!==layout.index||context.timeline.main_total!==mainBefore.length||c.main.transition!==(!!original.transition&&original.transition.type!=='none')||Math.abs(c.main.overlap_sec-layout.trans)>epsilon))throw Error('Lifecycle target timing changed.');
+  const clip=expected[TRACKS[b.track]].find(v=>v.id===b.id);if(!clip||clip.gap||clipLocked(expected,b.track,clip))throw Error('Lifecycle source was removed or locked.');
+  return {...b,clip};
+ };
+ const destination=(id,lane)=>{
+  const match=/^(video|overlay|audio|text|effect):(0|[1-9][0-9]{0,2})$/.exec(id||'');
+  if(!match||match[1]!==lane)throw Error('Lifecycle destination lane changed.');
+  const layer=Number(match[2]),count=LAYERED[lane]?layerCount(expected,lane):1;
+  if(layer>=count||layer>=128||isLayerLocked(expected,lane,layer)||!context.timeline.tracks.some(t=>t.id===id)&&!(LAYERED[lane]&&layer>=layerCount(project,lane)))throw Error('Name a returned or explicitly created unlocked destination track.');
+  return layer;
+ };
+ const source=(track,c)=>{
+  const len=track==='video'?clipLen(c):freeLen(track,c);if(!Number.isFinite(len)||len<MIN_CLIP-1e-9)throw Error('Lifecycle source must retain at least 0.1 seconds.');
+  if(['video','overlay','audio'].includes(track)){
+   const media=expected.media.find(m=>m.id===c.mediaId),speed=c.speed??1;
+   if(!media||!Number.isFinite(c.in)||!Number.isFinite(c.out)||c.in<0||c.out<=c.in||!Number.isFinite(speed)||speed<=0||track==='audio'&&media.type!=='audio'&&media.hasAudio!==true||['video','overlay'].includes(track)&&!['video','image'].includes(media.type)||media.type!=='image'&&(!Number.isFinite(media.duration)||c.out>media.duration+epsilon))throw Error('Lifecycle resource or source window is invalid.');
+  }
+  return len;
+ };
+ const transition=c=>!!c?.transition&&c.transition.type!=='none';
+ const erase=(track,c)=>{
+  if(track==='video'){
+   const layout=videoLayout(expected.videoClips),hit=layout.find(l=>l.clip.id===c.id);
+   if(!hit||transition(c)||transition(expected.videoClips[hit.index+1]))throw Error('Lifecycle deletion touches a transition boundary.');
+   expected.videoClips=expected.videoClips.map(v=>v.id===c.id?newGap(allocateId(),hit.end-hit.start):v);
+  }else expected[TRACKS[track]]=expected[TRACKS[track]].filter(v=>v.id!==c.id);
+ };
+ const insert=(track,clip,start,layer)=>{
+  const len=track==='video'?clipLen(clip):freeLen(track,clip),end=start+len;
+  if(!Number.isFinite(start)||start<0||end>projectDuration(project)+epsilon||len<MIN_CLIP-1e-9)throw Error('Lifecycle clip must stay inside the captured project.');
+  if(track!=='video'){expected[TRACKS[track]]=[...expected[TRACKS[track]],{...clip,start,...(LAYERED[track]?{layer}:{})}];return;}
+  const layout=videoLayout(expected.videoClips),first=layout.findIndex(l=>l.clip.gap&&l.start<=start+epsilon&&l.end>start+epsilon);let last=first;
+  if(first<0)throw Error('Main creation or placement needs explicit empty gap time.');
+  while(layout[last].end<end-epsilon&&layout[last+1]?.clip.gap)last++;
+  if(layout[last].end<end-epsilon||layout.slice(first,last+1).some(l=>transition(l.clip))||transition(expected.videoClips[last+1]))throw Error('Main placement would overwrite a clip or transition boundary.');
+  const head=start-layout[first].start,tail=layout[last].end-end;
+  if(head>epsilon&&head<MIN_CLIP-1e-9||tail>epsilon&&tail<MIN_CLIP-1e-9)throw Error('Main placement cannot retain a gap piece shorter than 0.1 seconds.');
+  const {start:unused,layer:oldLayer,...picture}=clip,replacement=[...(head>epsilon?[newGap(allocateId(),head)]:[]),picture,...(tail>epsilon?[newGap(allocateId(),tail)]:[])];
+  expected.videoClips=[...expected.videoClips.slice(0,first),...replacement,...expected.videoClips.slice(last+1)];
+ };
+ const pairOf=op=>{
+  const a=lookup(op.clipId),b=lookup(op.partnerClipId);if(!a.clip.linkId||a.clip.linkId!==b.clip.linkId)throw Error('Lifecycle pair membership changed.');
+  const pair=pluginLinkedPair(expected,a.clip.linkId,false);
+  if(![pair.picture,pair.sound].every(m=>[a,b].some(t=>t.track===m.track&&t.id===m.clip.id)))throw Error('Lifecycle needs the whole private pair.');
+  for(const m of [pair.picture,pair.sound])source(m.track,m.clip);return pair;
+ };
+ for(const op of operations){
+  if(op.type==='create-track'){
+   const [lane,raw]=op.trackId.split(':'),layer=Number(raw),count=layerCount(expected,lane);
+   if(!LAYERED[lane]||layer!==count||count>=128||tracksChanged>=8||Object.keys(TRACKS).reduce((sum,t)=>sum+(LAYERED[t]?layerCount(expected,t):1),0)>=128||Object.values(layerStateOf(expected,lane,layer)).some(Boolean))throw Error('Append at most eight explicit default layers within the track limit.');
+   expected.layers={...expected.layers,[lane]:count+1};tracksChanged++;continue;
+  }
+  if(op.type==='create-text'){
+   const layer=destination(op.trackId,'text');insert('text',{id:allocateId(),text:op.text,duration:op.duration_sec,y:.5},op.start_sec,layer);continue;
+  }
+  if(op.type==='create-media'||op.type==='create-effect'){
+   const t=lookup(op.sourceClipId),lane=op.trackId.split(':')[0],layer=destination(op.trackId,lane);source(t.track,t.clip);
+   if(op.type==='create-effect'){
+    if(t.track!=='effect'||!t.clip.fx)throw Error('Missing effect resource.');
+    insert('effect',{id:allocateId(),fx:t.clip.fx,duration:op.duration_sec,...(t.clip.pluginEffect?{pluginEffect:t.clip.pluginEffect}:{})},op.start_sec,layer);
+   }else{
+    const len=freeLen(t.track,t.clip),speed=t.clip.speed||1;
+    if(op.offset_sec+op.duration_sec>len+epsilon)throw Error('New media must remain inside the returned source window.');
+    const media=project.media.find(m=>m.id===t.clip.mediaId),id=allocateId(),inside=t.clip.in+op.offset_sec*speed,out=inside+op.duration_sec*speed;
+    const clip=lane==='audio'?{id,mediaId:media.id,in:inside,out,speed,volume:1,fadeIn:0,fadeOut:0}:{...newVideoClip(id,media),in:inside,out,speed,...(lane==='overlay'?{transform:{scale:media.graphic?1:.5,x:0,y:0}}:{})};
+    if(lane==='video'&&media.graphic)throw Error('Motion graphics belong on overlay tracks.');insert(lane,clip,op.start_sec,layer);
+   }continue;
+  }
+  if(op.type.endsWith('-linked')){
+   const pair=pairOf(op),picture=pair.picture,sound=pair.sound;
+   if(op.type==='delete-linked'){erase(picture.track,picture.clip);erase('audio',sound.clip);continue;}
+   const pl=destination(op.pictureTrackId,picture.track),al=destination(op.audioTrackId,'audio');
+   if(op.type==='place-linked'&&Math.abs(op.start_sec-picture.start)<epsilon&&pl===clipLayer(picture.track,picture.clip)&&al===clipLayer('audio',sound.clip))continue;
+   if(picture.clip.pin?.to||sound.clip.pin?.to||transition(picture.clip))throw Error('Lifecycle cannot copy or place pinned clips or transition records.');
+   const linkId=op.type==='duplicate-linked'?allocateId():picture.clip.linkId;
+   const pic={...picture.clip,...(op.type==='duplicate-linked'?{id:allocateId()}:{}),linkId},audio={...sound.clip,...(op.type==='duplicate-linked'?{id:allocateId()}:{}),linkId};
+   if(op.type==='place-linked'){erase(picture.track,picture.clip);erase('audio',sound.clip);}
+   insert(picture.track,pic,op.start_sec,pl);insert('audio',audio,op.start_sec+(sound.clip.linkOff||0),al);preservedLinks.add(linkId);continue;
+  }
+  const t=lookup(op.clipId);if(t.clip.linkId)throw Error('Lifecycle needs an explicit pair operation.');source(t.track,t.clip);
+  if(op.type==='delete-clip'){erase(t.track,t.clip);continue;}
+  const layer=destination(op.trackId,t.track),start=t.track==='video'?videoLayout(expected.videoClips).find(l=>l.clip.id===t.id).start:t.clip.start;
+  if(op.type==='place-clip'&&Math.abs(start-op.start_sec)<epsilon&&layer===clipLayer(t.track,t.clip))continue;
+  if(t.clip.pin?.to||transition(t.clip))throw Error('Lifecycle cannot copy or place pinned clips or transition records.');
+  const clip={...t.clip,...(op.type==='duplicate-clip'?{id:allocateId()}:{})};
+  if(op.type==='place-clip')erase(t.track,t.clip);insert(t.track,clip,op.start_sec,layer);
+ }
+ const afterMain=new Map(videoLayout(expected.videoClips).map(l=>[l.clip.id,l]));
+ // Main lifecycle preserves every surviving original picture and the main clock.
+ for(const l of mainBefore.filter(l=>!l.clip.gap))if(afterMain.has(l.clip.id)){
+  const n=afterMain.get(l.clip.id),placed=operations.some(o=>o.type.startsWith('place-')&&[o.clipId,o.partnerClipId].some(h=>bindings.get(h)?.id===l.clip.id));
+  if(!placed&&(Math.abs(n.start-l.start)>epsilon||Math.abs(n.end-l.end)>epsilon))throw Error('Lifecycle retimes an unnamed main picture.');
+ }
+ if(Math.abs((videoLayout(expected.videoClips).at(-1)?.end||0)-(mainBefore.at(-1)?.end||0))>epsilon)throw Error('Lifecycle changes the main clock.');
+ let clipsChanged=0;
+ for(const [track,list] of Object.entries(TRACKS)){
+  if(LAYERED[track])expected[list]=expected[list].map((c,i)=>[c,i]).sort((a,b)=>clipLayer(track,a[0])-clipLayer(track,b[0])||a[1]-b[1]).map(([c])=>c);
+  const old=new Map(project[list].map(c=>[c.id,c])),next=new Map(expected[list].map(c=>[c.id,c]));
+  if(old.size!==project[list].length||next.size!==expected[list].length)throw Error('Ambiguous lifecycle clip IDs.');
+  for(const id of new Set([...old.keys(),...next.keys()])){
+   const a=old.get(id),b=next.get(id),before=track==='video'?mainById.get(id):null,after=track==='video'?afterMain.get(id):null;
+   if(a&&b&&JSON.stringify(a)===JSON.stringify(b)&&(!before||Math.abs(before.start-after.start)<epsilon&&Math.abs(before.end-after.end)<epsilon))continue;
+   if(a&&clipLocked(project,track,a)||b&&clipLocked(expected,track,b))throw Error('Lifecycle touches a locked clip.');changedIds.add(id);clipsChanged++;
+  }
+  if(expected[list].length===project[list].length&&expected[list].every((c,i)=>c===project[list][i]))expected[list]=project[list];
+ }
+ if(clipsChanged+tracksChanged>64)throw Error('Lifecycle may affect at most 64 clip and track records.');
+ for(const lane of [...Object.keys(TRACKS),'sticker'])for(const c of project[`${lane}Clips`]||[]){
+  if(c.pin?.to&&(changedIds.has(c.id)||changedIds.has(c.pin.to)))throw Error('Lifecycle affects a motion-pin dependency.');
+  if(c.linkId)preservedLinks.add(c.linkId);
+ }
+ for(const track of EDITABLE_LANES)for(const clip of expected[TRACKS[track]])if(changedIds.has(clip.id)){
+  const len=source(track,clip),end=clip.start+len;if(!Number.isFinite(clip.start)||clip.start<0||end>projectDuration(project)+epsilon)throw Error('Lifecycle range exceeds the project.');
+  for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<end-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Lifecycle placement overlaps another clip.');
+ }
+ for(const id of preservedLinks){const members=Object.keys(TRACKS).flatMap(t=>expected[TRACKS[t]].filter(c=>c.linkId===id));if(members.some(c=>changedIds.has(c.id)))pluginLinkedPair(expected,id,false);}
+ return preparePluginClipPlan(project,expected,clipsChanged,preservedLinks,tracksChanged);
+}
+function preparePluginRipple(project,context,bindings,op,allocateId){
+ const epsilon=1e-8,layout=videoLayout(project.videoClips),mainById=new Map(layout.map(l=>[l.clip.id,l])),mainEnd=layout.at(-1)?.end||0;
+ if(!layout.length||mainById.size!==layout.length||context.timeline.main_total!==layout.length||op.end_sec>mainEnd+epsilon||isLayerLocked(project,'video',0))throw Error('Ripple needs a valid unlocked main clock and an interval inside it.');
+ const start=op.start_sec,end=Math.min(op.end_sec,mainEnd),delta=end-start,mapped=t=>t-Math.max(0,Math.min(t,end)-start),publicClips=new Map(context.timeline.clips.map(c=>[c.id,c]));
+ const lookup=handle=>{
+  const binding=bindings.get(handle),pub=publicClips.get(handle),clip=binding&&project[TRACKS[binding.track]]?.find(c=>c.id===binding.id);
+  if(!binding||!pub||!clip||!!pub.link!==!!clip.linkId||clip.linkId&&(binding.linkId!==clip.linkId||binding.linkGroup!==pub.link.groupId))throw Error('Ripple private target context changed.');
+  const at=binding.track==='video'?mainById.get(clip.id)?.start:clip.start,to=at+(binding.track==='video'?clipLen(clip):freeLen(binding.track,clip));
+  if(pub.trackId!==`${binding.track}:${clipLayer(binding.track,clip)}`||Math.abs(pub.start_sec-at)>epsilon||Math.abs(pub.end_sec-to)>epsilon)throw Error('Ripple target timing changed.');
+  if(binding.track==='video'){const l=mainById.get(clip.id);if(!pub.main||pub.main.index!==l.index||pub.main.transition!==(!!clip.transition&&clip.transition.type!=='none')||Math.abs(pub.main.overlap_sec-l.trans)>epsilon)throw Error('Ripple main target metadata changed.');}
+  if(clipLocked(project,binding.track,clip))throw Error('A ripple target is locked.');
+  return {...binding,clip};
+ };
+ const key=(track,id)=>JSON.stringify([track,id]),selected=new Set(),pairs=new Map(),pairedAudio=new Map();
+ for(const handle of op.clipIds){const t=lookup(handle);if(!EDITABLE_LANES.includes(t.track)||t.clip.linkId||t.clip.gap)throw Error('Ripple free targets must be unlinked free-track clips.');selected.add(key(t.track,t.id));}
+ for(const spec of op.linkedPairs){
+  const a=lookup(spec.clipId),b=lookup(spec.partnerClipId);
+  if(!a.clip.linkId||a.clip.linkId!==b.clip.linkId)throw Error('Ripple pair membership changed.');
+  const pair=pluginLinkedPair(project,a.clip.linkId,false);
+  if(![pair.picture,pair.sound].every(m=>[a,b].some(t=>t.track===m.track&&t.id===m.clip.id))||pairs.has(key(pair.picture.track,pair.picture.clip.id)))throw Error('Invalid or repeated private ripple pair.');
+  pairs.set(key(pair.picture.track,pair.picture.clip.id),pair);pairedAudio.set(pair.sound.clip.id,pair);selected.add(key(pair.picture.track,pair.picture.clip.id));
+ }
+ const records=new Map(),lists={},preservedLinks=new Set();
+ const sourceValid=(track,c)=>{
+  const length=track==='video'||track==='overlay'||track==='audio'?clipLen(c):freeLen(track,c);
+  if(!Number.isFinite(length)||length<=0||!Number.isFinite(c.speed||1)||(c.speed||1)<=0)throw Error('Ripple source timing is invalid.');
+  if(['video','overlay','audio'].includes(track)){
+   if(!Number.isFinite(c.in)||!Number.isFinite(c.out)||c.in<0||c.out<=c.in)throw Error('Ripple source window is invalid.');
+   const media=project.media.find(m=>m.id===c.mediaId);if(!c.gap&&media?.type!=='image'&&Number.isFinite(media?.duration)&&c.out>media.duration+epsilon)throw Error('Ripple source exceeds media bounds.');
+  }
+ };
+ const slice=(track,clip,at,to,enabled)=>{
+  if(!Number.isFinite(at)||!Number.isFinite(to)||at<0||to<=at)throw Error('Ripple clip timing is invalid.');
+  let spans=[[at,to]];
+  if(enabled&&start<to-epsilon&&end>at+epsilon)spans=[...(start>at+epsilon?[[at,Math.min(start,to)]]:[]),...(end<to-epsilon?[[Math.max(end,at),to]]:[])];
+  const parts=spans.map(([from,until],index)=>{
+   const target=enabled?mapped(from):from,whole=Math.abs(from-at)<epsilon&&Math.abs(until-to)<epsilon,changed=!whole||Math.abs(target-at)>epsilon;
+   if(!changed)return {clip,start:at,end:to,from,to:until,original:clip};
+   sourceValid(track,clip);
+   if(clipLocked(project,track,clip))throw Error('Ripple touches a locked clip.');
+   if(!whole&&until-from<MIN_CLIP-1e-9)throw Error('Ripple must retain at least 0.1 seconds in every sliced piece.');
+   let next=clip;
+   if(!whole){
+    if(['video','overlay','audio'].includes(track))next=planPluginFreeRange(clip,at,to,{type:'trim',start_sec:from,end_sec:until},null)[0];
+    else{
+     const patch=track==='text'?cropWordTiming(clip,from-at,until-at):{};
+     if(clip.caption&&clip.words?.length&&patch.words?.length===0)throw Error('Ripple would retain a caption piece with no measured words.');
+     next={...clip,duration:until-from,...patch};
+     if(clip.anim){const {in:enter,out:leave,...rest}=clip.anim;next.anim={...rest,...(Math.abs(from-at)<epsilon&&enter?{in:enter}:{}),...(Math.abs(until-to)<epsilon&&leave?{out:leave}:{})};}
+    }
+   }
+   if(track==='video'){
+    if(!whole&&Object.hasOwn(next,'start')){const {start:unused,...rest}=next;next=Object.hasOwn(clip,'start')?{...rest,start:clip.start}:rest;}
+    if(index)next={...next,id:allocateId(),transition:null};
+   }else next={...next,start:target,...(index?{id:allocateId()}: {})};
+   return {clip:next,start:target,end:enabled?mapped(until):until,from,to:until,original:clip};
+  });
+  if(!parts.length){sourceValid(track,clip);if(clipLocked(project,track,clip))throw Error('Ripple would remove a locked clip.');}
+  records.set(key(track,clip.id),parts);return parts;
+ };
+ lists.video=layout.flatMap(l=>slice('video',l.clip,l.start,l.end,true));
+ for(const l of layout)if(l.clip.linkId){const parts=records.get(key('video',l.clip.id));if((parts.length!==1||parts[0].clip!==l.clip||Math.abs(parts[0].start-l.start)>epsilon||Math.abs(parts[0].end-l.end)>epsilon)&&!pairs.has(key('video',l.clip.id)))throw Error('Name every affected linked main pair for ripple removal.');}
+ for(const track of EDITABLE_LANES)lists[track]=project[TRACKS[track]].flatMap(c=>track==='audio'&&pairedAudio.has(c.id)?[]:slice(track,c,c.start,c.start+freeLen(track,c),selected.has(key(track,c.id))));
+ for(const pair of pairs.values()){
+  const pic=pair.picture,audio=pair.sound.clip,pieces=records.get(key(pic.track,pic.clip.id)),sounds=[];
+  pieces.forEach((piece,index)=>{
+   if(piece.clip===pic.clip&&Math.abs(piece.start-pic.start)<epsilon){sounds.push({clip:audio,start:audio.start,end:pair.sound.end,from:pic.start,to:pic.end,original:audio});return;}
+   const linkId=index?allocateId():pic.clip.linkId;
+   if(index)piece.clip={...piece.clip,linkId};
+   const whole=Math.abs(piece.from-pic.start)<epsilon&&Math.abs(piece.to-pic.end)<epsilon;
+   const sound=whole?{...audio}:planPluginFreeRange(audio,pic.start,pic.end,{type:'trim',start_sec:piece.from,end_sec:piece.to},null)[0];
+   sound.start=piece.start+(audio.linkOff||0);if(index)sound.id=allocateId();sound.linkId=linkId;
+   sounds.push({clip:sound,start:sound.start,end:sound.start+clipLen(sound),from:piece.from,to:piece.to,original:audio});preservedLinks.add(linkId);
+  });
+  records.set(key('audio',audio.id),sounds);
+ }
+ lists.audio=project.audioClips.flatMap(c=>records.get(key('audio',c.id)));
+ // Existing transition boundaries must survive without implicit activation,
+ // clearing or overlap clamping. Only new internal slice joins have no transition.
+ for(const l of layout)if(l.clip.transition&&l.clip.transition.type!=='none'){
+  const parts=records.get(key('video',l.clip.id)),head=parts[0],index=lists.video.indexOf(head),previous=lists.video[index-1],oldPrevious=layout[l.index-1];
+  if(!head||Math.abs(head.from-l.start)>epsilon||l.index===0&&index!==0||l.index>0&&(!previous||previous.original!==oldPrevious.clip||Math.abs(previous.to-oldPrevious.end)>epsilon))throw Error('Ripple affects an existing transition boundary.');
+ }
+ const expected={...project};
+ for(const [track,list] of Object.entries(lists)){const next=list.map(item=>item.clip),old=project[TRACKS[track]];expected[TRACKS[track]]=next.length===old.length&&next.every((c,i)=>c===old[i])?old:next;}
+ const afterMain=videoLayout(expected.videoClips),afterById=new Map(afterMain.map(l=>[l.clip.id,l]));
+ for(const item of lists.video){const actual=afterById.get(item.clip.id);if(!actual||Math.abs(actual.start-item.start)>epsilon||Math.abs(actual.end-item.end)>epsilon)throw Error('Ripple would alter retained transition overlap or main timing.');}
+ const affected=new Set();let clipsChanged=0;
+ for(const [track,listName] of Object.entries(TRACKS)){
+  const old=new Map(project[listName].map(c=>[c.id,c])),next=new Map(expected[listName].map(c=>[c.id,c]));
+  if(old.size!==project[listName].length||next.size!==expected[listName].length)throw Error('Ripple clip IDs are ambiguous.');
+  for(const id of new Set([...old.keys(),...next.keys()])){
+   const a=old.get(id),b=next.get(id),before=track==='video'?mainById.get(id):null,after=track==='video'?afterById.get(id):null;
+   if(a&&b&&JSON.stringify(a)===JSON.stringify(b)&&(!before||before.index===after.index&&Math.abs(before.start-after.start)<epsilon&&Math.abs(before.end-after.end)<epsilon))continue;
+   if(a&&clipLocked(project,track,a)||b&&clipLocked(expected,track,b))throw Error('Ripple changes a locked clip.');
+   affected.add(id);clipsChanged++;
+  }
+ }
+ if(clipsChanged>64)throw Error('A clip transaction may affect at most 64 clips.');
+ for(const track of [...Object.keys(TRACKS),'sticker'])for(const clip of project[`${track}Clips`]||[]){
+  if(clip.pin?.to&&(affected.has(clip.id)||affected.has(clip.pin.to)))throw Error('Ripple affects a motion-pin dependency.');
+  // Untouched groups must not acquire implicit source-window repairs either.
+  if(clip.linkId)preservedLinks.add(clip.linkId);
+ }
+ for(const pair of pairs.values())for(const item of records.get(key(pair.picture.track,pair.picture.clip.id)))pluginLinkedPair(expected,item.clip.linkId,false);
+ for(const track of EDITABLE_LANES)for(const clip of expected[TRACKS[track]])if(affected.has(clip.id)){
+  const to=clip.start+freeLen(track,clip);sourceValid(track,clip);
+  if(!Number.isFinite(clip.start)||clip.start<0||!Number.isFinite(to)||to>projectDuration(project)+epsilon)throw Error('Ripple clip range exceeds the original project.');
+  for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<to-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Ripple would overlap another clip.');
+ }
+ return preparePluginClipPlan(project,expected,clipsChanged,preservedLinks);
+}
 export function preparePluginEdits(project,context,targets,value,permissions=['clips.write']){
  const transaction=clipTransaction(value,context,projectDuration(project),permissions);
  if(!Array.isArray(targets)||targets.length!==context.timeline.clips.length)throw Error('Invalid private edit targets.');
  const bindings=new Map(targets.map(t=>[t.handle,t]));
  if(bindings.size!==targets.length)throw Error('Duplicate private edit targets.');
  const originals=new Map(),updated=new Map();
- let main=project.videoClips,overlay=project.overlayClips,audio=project.audioClips;const approvedLinked=new Map();const beforeMain=videoLayout(main),mainById=new Map(beforeMain.map(l=>[l.clip.id,l]));
+ let main=project.videoClips,overlay=project.overlayClips,audio=project.audioClips;const approvedLinked=new Map(),managedTargets=new Set(),shiftedLinks=new Set(),movedMain=new Set(),reorderedLinked=new Set(),reorderedAudio=new Set();const beforeMain=videoLayout(main),mainById=new Map(beforeMain.map(l=>[l.clip.id,l]));
  const usedIds=new Set([...Object.values(TRACKS).flatMap(key=>(project[key]||[]).map(c=>c.id)),...(project.media||[]).map(m=>m.id),...(project.markers||[]).map(m=>m.id),...(project.stickerClips||[]).flatMap(c=>[c.id,c.linkId]),...Object.values(TRACKS).flatMap(key=>(project[key]||[]).map(c=>c.linkId))]);
  const allocateId=()=>{for(let i=0;i<32;i++){const id='plugin-'+uid();if(!usedIds.has(id)){usedIds.add(id);return id;}}throw Error('Could not allocate a unique clip ID.');};
  const mainTarget=handle=>{
@@ -1666,6 +2076,14 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
  };
  const model=()=>({...project,videoClips:main,overlayClips:overlay,audioClips:audio});
  const approvePair=pair=>{for(const m of [pair.picture,pair.sound])approvedLinked.set(JSON.stringify([m.track,m.clip.id]),m.clip);};
+ const pairTarget=handle=>{
+  const binding=bindings.get(handle),publicClip=context.timeline.clips.find(c=>c.id===handle),original=binding&&project[TRACKS[binding.track]]?.find(c=>c.id===binding.id);
+  if(!binding||!original||original.gap||!['video','overlay','audio'].includes(binding.track)||!publicClip||!!publicClip.link!==!!original.linkId||original.linkId&&(binding.linkGroup!==publicClip.link.groupId||binding.linkId!==original.linkId))throw Error('Private pair target context changed.');
+  if(binding.track==='video')mainTarget(handle);
+  else if(publicClip.trackId!==`${binding.track}:${clipLayer(binding.track,original)}`||Math.abs(original.start-publicClip.start_sec)>1e-8||Math.abs(original.start+freeLen(binding.track,original)-publicClip.end_sec)>1e-8)throw Error('Pair target timing changed.');
+  if(clipLocked(project,binding.track,original))throw Error('A pair target is locked.');
+  return binding;
+ };
  const linkedTarget=handle=>{
   const binding=bindings.get(handle),publicClip=context.timeline.clips.find(c=>c.id===handle),original=binding&&project[TRACKS[binding.track]]?.find(c=>c.id===binding.id);
   if(!binding||!original||!publicClip?.link||binding.linkGroup!==publicClip.link.groupId||binding.linkId!==original.linkId)throw Error('Private linked target context changed.');
@@ -1673,11 +2091,49 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
   else if(publicClip.trackId!==`${binding.track}:${clipLayer(binding.track,original)}`||Math.abs(original.start-publicClip.start_sec)>1e-8||Math.abs(original.start+freeLen(binding.track,original)-publicClip.end_sec)>1e-8)throw Error('Linked target timing changed.');
   return binding;
  };
+ if(AUTOMATION_OPERATIONS.includes(transaction.operations[0]?.type))return preparePluginAutomation(project,context,bindings,transaction.operations);
+ if(PROPERTY_OPERATIONS.includes(transaction.operations[0]?.type))return preparePluginProperties(project,context,bindings,transaction.operations);
+ if(LIFECYCLE_OPERATIONS.includes(transaction.operations[0]?.type))return preparePluginLifecycle(project,context,bindings,transaction.operations,allocateId);
+ if(transaction.operations[0]?.type==='ripple-remove')return preparePluginRipple(project,context,bindings,transaction.operations[0],allocateId);
  for(const op of transaction.operations){
+  if(['link','unlink','move-linked'].includes(op.type)){
+   const a=pairTarget(op.clipId),b=pairTarget(op.partnerClipId),current=model();
+   if(a.track===b.track||![a,b].some(t=>t.track==='audio')||![a,b].some(t=>['video','overlay'].includes(t.track)))throw Error('Choose one picture and one audio clip.');
+   for(const t of [a,b])if(originals.has(JSON.stringify([t.track,t.id])))throw Error('Pair management cannot mix ordinary edits on the same members.');
+   const v=[a,b].find(t=>t.track!=='audio'),s=[a,b].find(t=>t.track==='audio'),picture=current[TRACKS[v.track]].find(c=>c.id===v.id),sound=audio.find(c=>c.id===s.id);
+   let pair;
+   if(op.type==='link'){
+    if(picture.linkId||sound.linkId)throw Error('Link targets must both be unlinked.');
+    const linkId=allocateId(),start=v.track==='video'?videoLayout(main).find(l=>l.clip.id===v.id).start:picture.start;
+    const p={...picture,linkId},au={...sound,linkId,linkOff:sound.start-start,linkInOff:sound.in-picture.in};
+    const candidate={...current,[TRACKS[v.track]]:current[TRACKS[v.track]].map(c=>c.id===v.id?p:c),audioClips:audio.map(c=>c.id===s.id?au:c)};
+    pair=pluginLinkedPair(candidate,linkId,false);
+    if(v.track==='video')main=candidate.videoClips;else overlay=candidate.overlayClips;audio=candidate.audioClips;
+   }else{
+    if(!picture.linkId||picture.linkId!==sound.linkId)throw Error('Targets must identify one existing complete pair.');
+    pair=pluginLinkedPair(current,picture.linkId,false);
+    if(pair.picture.clip.id!==v.id||pair.sound.clip.id!==s.id)throw Error('Linked partner membership changed.');
+    if(op.type==='unlink'){
+     const clear=c=>{const {linkId,linkOff,linkInOff,...rest}=c;return rest;};
+     if(v.track==='video')main=main.map(c=>c.id===v.id?clear(c):c);else overlay=overlay.map(c=>c.id===v.id?clear(c):c);
+     audio=audio.map(c=>c.id===s.id?clear(c):c);
+    }else{
+     const delta=op.start_sec-pair.picture.start;
+     if(Math.abs(delta)<1e-8)continue;
+     if(v.track==='video'){main=planPluginLinkedMove(main,v.id,op.start_sec,allocateId);movedMain.add(v.id);}
+     else overlay=overlay.map(c=>c.id===v.id?{...c,start:op.start_sec}:c);
+     audio=audio.map(c=>c.id===s.id?{...c,start:op.start_sec+(c.linkOff||0)}:c);
+     pair=pluginLinkedPair(model(),picture.linkId,false);
+    }
+   }
+   for(const t of [a,b]){managedTargets.add(t.id);approvedLinked.delete(JSON.stringify([t.track,t.id]));}
+   if(op.type!=='unlink'){approvePair(pair);shiftedLinks.add(pair.picture.clip.linkId);}
+   continue;
+  }
   if(['split-linked','trim-linked'].includes(op.type)){
    const a=linkedTarget(op.clipId),b=linkedTarget(op.partnerClipId);
    if(a.linkId!==b.linkId)throw Error('Linked targets belong to different groups.');
-   const originalPair=pluginLinkedPair(project,a.linkId),pair=pluginLinkedPair(model(),a.linkId);
+   const originalPair=pluginLinkedPair(project,a.linkId,false),pair=pluginLinkedPair(model(),a.linkId,false);
    if(![pair.picture,pair.sound].every(m=>[a,b].some(t=>t.track===m.track&&t.id===m.clip.id))||originalPair.picture.track!==pair.picture.track)throw Error('Linked partner membership changed.');
    const split=op.type==='split-linked',range={...op,type:split?'split':'trim-main'},pic=pair.picture,sound=pair.sound;
    if(!split&&Math.abs(op.start_sec-pic.start)<1e-8&&Math.abs(op.end_sec-pic.end)<1e-8)continue;
@@ -1689,40 +2145,70 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
     picPieces=planPluginFreeRange(pic.clip,pic.start,pic.end,{...range,type:split?'split':'trim'},split?allocateId():null);
     overlay=overlay.flatMap(c=>c.id===pic.clip.id?picPieces:[c]);
    }
-   const sourceOffset=sound.clip.linkInOff||0,pictureStarts=pic.track==='video'?new Map(videoLayout(main).map(l=>[l.clip.id,l.start])):null;
-   // Anchor sound to the exact picture arithmetic used by link synchronization.
-   // Independent floating-point slices can otherwise trigger a hidden repair.
-   const audioPieces=planPluginFreeRange(sound.clip,sound.start,sound.end,{...range,type:split?'split':'trim'},split?allocateId():null).map((c,i)=>({...c,start:pictureStarts?pictureStarts.get(picPieces[i].id):picPieces[i].start,in:picPieces[i].in+sourceOffset,out:picPieces[i].out+sourceOffset,speed:picPieces[i].speed||1}));
-   if(split){const linkId=allocateId();picPieces[1]={...picPieces[1],linkId};audioPieces[1]={...audioPieces[1],linkId,linkOff:0,linkInOff:sourceOffset};
+   const sourceOffset=sound.clip.linkInOff||0,timelineOffset=sound.clip.linkOff||0,pictureStarts=pic.track==='video'?new Map(videoLayout(main).map(l=>[l.clip.id,l.start])):null;
+   // Public times always refer to the picture, even for audio-initiated calls.
+   // Slice both sources on that relative clock, then place sound at its offset.
+   // Adding/subtracting the offset first would introduce avoidable source drift.
+   // Keep aligned pairs' existing exact source arithmetic. Shifted pairs retain
+   // their independently sliced audio source windows in the private plan.
+   const audioPieces=planPluginFreeRange(sound.clip,pic.start,pic.end,{...range,type:split?'split':'trim'},split?allocateId():null).map((c,i)=>({...c,start:(pictureStarts?pictureStarts.get(picPieces[i].id):picPieces[i].start)+timelineOffset,...(timelineOffset===0?{in:picPieces[i].in+sourceOffset,out:picPieces[i].out+sourceOffset}:{}),speed:picPieces[i].speed||1}));
+   if(split){const linkId=allocateId();picPieces[1]={...picPieces[1],linkId};audioPieces[1]={...audioPieces[1],linkId,linkOff:timelineOffset,linkInOff:sourceOffset};
     if(pic.track==='video')main=main.map(c=>c.id===picPieces[1].id?picPieces[1]:c);else overlay=overlay.map(c=>c.id===picPieces[1].id?picPieces[1]:c);
    }
    audio=audio.flatMap(c=>c.id===sound.clip.id?audioPieces:[c]);
-   approvePair(pluginLinkedPair(model(),a.linkId));if(split)approvePair(pluginLinkedPair(model(),picPieces[1].linkId));
+   approvePair(pluginLinkedPair(model(),a.linkId,false));shiftedLinks.add(a.linkId);
+   if(split){approvePair(pluginLinkedPair(model(),picPieces[1].linkId,false));shiftedLinks.add(picPieces[1].linkId);}
    continue;
   }
 
-  if(['split','trim-main','reorder'].includes(op.type)){
+  if(['split','trim-main','reorder','reorder-linked'].includes(op.type)){
    if(mainById.size!==project.videoClips.length||beforeMain.some(l=>!Number.isFinite(l.start)||!Number.isFinite(l.end)||l.start<0||l.end<=l.start||!Number.isFinite(l.clip.in)||!Number.isFinite(l.clip.out)||l.clip.in<0||l.clip.out<=l.clip.in||!Number.isFinite(l.clip.speed||1)||(l.clip.speed||1)<=0)||isLayerLocked(project,'video',0))throw Error('Main sequence is invalid or locked.');
   }
   if(['split','trim-main'].includes(op.type)){
    main=planPluginMainRange(main,mainTarget(op.clipId),op,allocateId);continue;
   }
+  if(op.type==='reorder-linked'){
+   const declared=new Map();
+   for(const spec of [{clipId:op.clipId,partnerClipId:op.partnerClipId},...op.companions]){
+    const a=linkedTarget(spec.clipId),b=linkedTarget(spec.partnerClipId);
+    if(a.linkId!==b.linkId)throw Error('Linked reorder targets belong to different groups.');
+    const pair=pluginLinkedPair(model(),a.linkId,false);
+    if(pair.picture.track!=='video'||![a,b].some(t=>t.track==='video'&&t.id===pair.picture.clip.id)||![a,b].some(t=>t.track==='audio'&&t.id===pair.sound.clip.id))throw Error('Linked reorder needs a complete main-picture/audio pair.');
+    if([a,b].some(t=>originals.has(JSON.stringify([t.track,t.id]))))throw Error('Linked reorder cannot mix ordinary edits on the same partners.');
+    declared.set(pair.picture.clip.id,pair);
+   }
+   const source=bindings.get(op.clipId).track==='video'?bindings.get(op.clipId):bindings.get(op.partnerClipId),anchor=op.beforeClipId===null?null:mainTarget(op.beforeClipId);
+   const previous=videoLayout(main),next=planPluginMainReorder(main,source.id,anchor,op.transitions),layout=new Map(videoLayout(next).map(l=>[l.clip.id,l])),affected=[];
+   // This per-operation check prevents an earlier explicit edit from granting
+   // blanket permission to retime linked neighbours in later operations.
+   for(const old of previous)if(old.clip.linkId){
+    const now=layout.get(old.clip.id);
+    if(old.index===now.index&&old.clip===now.clip&&Math.abs(old.start-now.start)<=1e-8&&Math.abs(old.end-now.end)<=1e-8)continue;
+    const pair=declared.get(old.clip.id);if(!pair)throw Error('Name every affected linked main pair as an explicit companion.');
+    affected.push(pair);
+   }
+   main=next;
+   for(const pair of affected){
+    const id=pair.sound.clip.id,start=layout.get(pair.picture.clip.id).start+(pair.sound.clip.linkOff||0);
+    audio=audio.map(c=>c.id===id&&Math.abs(c.start-start)>1e-8?{...c,start}:c);
+    const current=pluginLinkedPair(model(),pair.picture.clip.linkId,false);approvePair(current);
+    shiftedLinks.add(current.picture.clip.linkId);reorderedLinked.add(current.picture.clip.id);reorderedAudio.add(id);
+    managedTargets.add(current.picture.clip.id);managedTargets.add(id);
+   }
+   continue;
+  }
   if(op.type==='reorder'){
    const id=mainTarget(op.clipId),anchor=op.beforeClipId===null?null:mainTarget(op.beforeClipId);
-   const prior=new Map(main.map((c,i)=>[c.id,i?main[i-1].id:null])),next=[...main],index=next.findIndex(c=>c.id===id),[clip]=next.splice(index,1);
-   const at=anchor===null?next.length:next.findIndex(c=>c.id===anchor);if(index<0||at<0||!clip||clip.gap)throw Error('Invalid main reorder target.');
-   next.splice(at,0,clip);
-   main=next.map((c,i)=>{
-    if(prior.get(c.id)===(i?next[i-1].id:null)||!c.transition||c.transition.type==='none')return c;
-    if(op.transitions==='reject')throw Error('Reorder changes an incoming transition. Choose clear-boundaries explicitly.');
-    return {...c,transition:null};
-   });
+   if(main.find(c=>c.id===id)?.linkId)throw Error('Reordering linked clips needs reorder-linked.');
+   const previous=videoLayout(main),next=planPluginMainReorder(main,id,anchor,op.transitions),layout=new Map(videoLayout(next).map(l=>[l.clip.id,l]));
+   for(const old of previous)if(old.clip.linkId&&reorderedLinked.has(old.clip.id)){const now=layout.get(old.clip.id);if(old.index!==now.index||old.clip!==now.clip||Math.abs(old.start-now.start)>1e-8||Math.abs(old.end-now.end)>1e-8)throw Error('Reordering linked neighbours needs reorder-linked.');}
+   main=next;
    continue;
   }
   const binding=bindings.get(op.clipId),publicClip=context.timeline.clips.find(c=>c.id===op.clipId);
   if(!binding||!publicClip||!EDITABLE_LANES.includes(binding.track))throw Error('Unknown clip edit target.');
   const key=TRACKS[binding.track],original=project[key]?.find(c=>c.id===binding.id);
-  if(!original||original.gap||original.linkId||clipLocked(project,binding.track,original))throw Error('Clip is unavailable, linked or locked.');
+  if(!original||original.gap||original.linkId||managedTargets.has(original.id)||clipLocked(project,binding.track,original))throw Error('Clip is unavailable, linked or locked.');
   if(publicClip.trackId!==`${binding.track}:${clipLayer(binding.track,original)}`||Math.abs(original.start-publicClip.start_sec)>1e-8||Math.abs(original.start+freeLen(binding.track,original)-publicClip.end_sec)>1e-8)throw Error('Clip target context changed.');
   const privateKey=JSON.stringify([binding.track,binding.id]);
   if(!originals.has(privateKey))originals.set(privateKey,{binding,original});
@@ -1741,6 +2227,8 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
   }
   updated.set(privateKey,{...current,...patch});
  }
+ // Restore unchanged managed main records so link/unlink round trips are no-ops.
+ if(managedTargets.size){main=main.map(c=>{const original=mainById.get(c.id)?.clip;if(!managedTargets.has(c.id)||!original||JSON.stringify(c)!==JSON.stringify(original))return c;if(approvedLinked.has(JSON.stringify(['video',c.id])))approvedLinked.set(JSON.stringify(['video',c.id]),original);return original;});if(main.length===project.videoClips.length&&main.every((c,i)=>c===project.videoClips[i]))main=project.videoClips;}
  for(const [key,clip] of updated){const {binding}=originals.get(key);if(binding.track==='overlay')overlay=overlay.map(c=>c.id===binding.id?clip:c);if(binding.track==='audio')audio=audio.map(c=>c.id===binding.id?clip:c);}
  const expected={...project,videoClips:main,overlayClips:overlay,audioClips:audio};
  for(const [key,clip] of updated){const {binding}=originals.get(key);if(!['overlay','audio'].includes(binding.track))expected[TRACKS[binding.track]]=expected[TRACKS[binding.track]].map(c=>c.id===binding.id?clip:c);}
@@ -1751,65 +2239,67 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
  if(reordered){
   // Inserting a split half or gap does not itself edit every later clip. Compare
   // relative order of original records separately from their absolute indices.
+  const survivors=new Set(main.map(c=>c.id)),oldRanks=new Map(beforeMain.filter(l=>survivors.has(l.clip.id)).map((l,i)=>[l.clip.id,i]));
   const originalRanks=new Map(main.filter(c=>mainById.has(c.id)).map((c,i)=>[c.id,i]));
+  for(const l of beforeMain)if(!survivors.has(l.clip.id))affectedMain.add(l.clip.id);
   for(const l of videoLayout(main)){
    const old=mainById.get(l.clip.id);
    if(!Number.isFinite(l.start)||!Number.isFinite(l.end)||l.start<0||l.end<=l.start||l.end>1e9)throw Error('Invalid edited main timing.');
-   if(!old||old.index!==originalRanks.get(l.clip.id)||old.clip!==l.clip||Math.abs(old.start-l.start)>1e-8||Math.abs(old.end-l.end)>1e-8){
-    if(l.clip.linkId&&old&&old.index!==originalRanks.get(l.clip.id))throw Error('Reordering linked clips needs a separate explicit contract.');
+   // Moving through empty time can pass another picture without editing it.
+   // Its relative rank changes, but its exact record and absolute range do not.
+   if(movedMain.size&&old&&old.clip===l.clip&&Math.abs(old.start-l.start)<=1e-8&&Math.abs(old.end-l.end)<=1e-8)continue;
+   if(!old||oldRanks.get(l.clip.id)!==originalRanks.get(l.clip.id)||old.clip!==l.clip||Math.abs(old.start-l.start)>1e-8||Math.abs(old.end-l.end)>1e-8){
+    if(l.clip.linkId&&old&&oldRanks.get(l.clip.id)!==originalRanks.get(l.clip.id)&&!movedMain.has(l.clip.id)&&!reorderedLinked.has(l.clip.id))throw Error('Reordering linked clips needs a separate explicit contract.');
     if(l.clip.linkId&&approvedLinked.get(JSON.stringify(['video',l.clip.id]))!==l.clip)throw Error('Main edit would retime or change an unapproved linked main clip.');
     affectedMain.add(l.clip.id);
    }
   }
   for(const lane of ['video','overlay','audio','text','effect'])for(const clip of project[TRACKS[lane]]||[])if(clip.pin?.to&&(affectedMain.has(clip.pin.to)||lane==='video'&&affectedMain.has(clip.id)))throw Error('Main edit would affect a motion-pin dependency.');
  }
- const dependencyIds=new Set([...affectedMain,...freeChanges.filter(({clip})=>clip.linkId).map(({clip})=>clip.id)]);
+ const dependencyIds=new Set([...affectedMain,...managedTargets,...freeChanges.filter(({clip})=>clip.linkId).map(({clip})=>clip.id)]);
  for(const track of Object.keys(TRACKS))for(const c of project[TRACKS[track]])if(c.pin?.to&&(dependencyIds.has(c.pin.to)||dependencyIds.has(c.id)))throw Error('Linked edit would affect a motion-pin dependency.');
- for(const c of approvedLinked.values())pluginLinkedPair(expected,c.linkId);
+ for(const c of approvedLinked.values())pluginLinkedPair(expected,c.linkId,!shiftedLinks.has(c.linkId));
  const clipsChanged=freeChanges.length+affectedMain.size;
  if(clipsChanged>64)throw Error('A clip transaction may affect at most 64 clips.');
  if(!clipsChanged)return {action:null,clipsChanged:0};
  for(const {track,clip} of freeChanges){
   const end=clip.start+freeLen(track,clip);
-  if(!Number.isFinite(end)||clip.start<0||end>projectDuration(project)+1e-8)throw Error('Clip range exceeds the project.');
+  const limit=track==='audio'&&reorderedAudio.has(clip.id)?Math.max(projectDuration(project),videoLayout(main).at(-1)?.end||0):projectDuration(project);
+  if(!Number.isFinite(end)||clip.start<0||end>limit+1e-8)throw Error('Clip range exceeds the project.');
   if(['audio','overlay'].includes(track)){const media=project.media.find(m=>m.id===clip.mediaId);if(!Number.isFinite(clip.in)||!Number.isFinite(clip.out)||clip.in<0||clip.out<=clip.in||(media?.type!=='image'&&Number.isFinite(media?.duration)&&clip.out>media.duration+1e-8))throw Error('Clip edit exceeds source bounds.');}
   for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<end-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Clip edit would overlap another clip.');
  }
- const arrays=Object.fromEntries(Object.values(TRACKS).filter(key=>expected[key]!==project[key]).map(key=>[key,expected[key]])),arrayToken={};pluginClipArrays.set(arrayToken,{base:project,arrays});
- const actions=[{type:'preparedPluginClips',token:arrayToken}];
- const prepared=prepareProjectAction(project,{type:'batch',actions});
- if(JSON.stringify(prepared.project)!==JSON.stringify(expected))throw Error('Clip edit would cause an unsupported collateral change.');
- const token={};pluginEditPlans.set(token,{base:project,next:prepared.project,actions});
- return {action:{type:'pluginClipEdits',base:project,token},clipsChanged};
+ return preparePluginClipPlan(project,expected,clipsChanged,shiftedLinks);
 }
 
-export function historyReducer(state, a, preview = false) {
+const historyOrigins=new WeakMap(),initialHistoryOrigin=Object.freeze({sequence:0,cacheSequence:0,source:{kind:'system'},reason:'open'});
+export const historyOrigin=state=>historyOrigins.get(state)||initialHistoryOrigin;
+export function historyReducer(state,a,preview=false){
+ const previous=historyOrigin(state),plan=a.type==='pluginClipEdits'?pluginEditPlans.get(a.token):null,next=reduceHistoryAction(state,a,preview);
+ if(next!==state){
+  const before=state.present,after=next.present,keys=new Set([...Object.keys(before||{}),...Object.keys(after||{})]),changed=[...keys].some(key=>key!=='craftAI'&&before?.[key]!==after?.[key]);
+  if(!changed)historyOrigins.set(next,previous);
+  else if(['mediaVisuals','projectVisuals'].includes(a.type))historyOrigins.set(next,{...previous,cacheSequence:previous.cacheSequence+1});
+  else{
+   const source=plan?.source||(a.agentToken||a.type.startsWith('agent')?{kind:'agent'}:a.type.startsWith('plugin')?{kind:'extension'}:a.type==='load'?{kind:'system'}:{kind:'user'});
+   historyOrigins.set(next,{sequence:previous.sequence+1,cacheSequence:previous.cacheSequence,source,reason:['undo','redo'].includes(a.type)?a.type:a.type==='load'?'open':'edit'});
+  }
+ }
+ return next;
+}
+function reduceHistoryAction(state, a, preview = false) {
   let editToken;
   if(a.type==='pluginClipEdits'){
     const plan=pluginEditPlans.get(a.token);
     const sameBase=state.present===a.base||a.agentToken&&a.base&&[...new Set([...Object.keys(state.present),...Object.keys(a.base)])].every(key=>key==='craftAI'||state.present[key]===a.base[key]);
-    if(!plan||pluginEditsApplied(state,a)||plan.base!==a.base||!sameBase||state.gestureStart||(a.agentToken?state.agentEdit?.token!==a.agentToken:state.agentEdit))return state;
+    if(!plan||plan.history&&plan.history!==state||pluginEditsApplied(state,a)||plan.base!==a.base||!sameBase||state.gestureStart||(a.agentToken?state.agentEdit?.token!==a.agentToken:state.agentEdit)||plan.verify&&!plan.verify())return state;
     editToken=a.token;
     const next=state.present===plan.base?plan.next:{...plan.next,craftAI:state.present.craftAI};
     const preparedAction={},action={type:'batch',actions:plan.actions};
     preparedActions.set(preparedAction,{base:state.present,next,action});
-    a={...action,preparedAction,...(a.agentToken?{agentToken:a.agentToken}:{})};
+    a={...action,preparedAction,...(a.agentToken?{agentToken:a.agentToken}:{}),...(a.coverExport?{coverExport:true}:{})};
   }
-  if(a.type==='pluginMarkers'||a.type==='pluginCaptionTrack'){
-    // CraftAI saves chat/progress while awaiting a command. Only that field may
-    // differ from its captured object; queued document changes still refuse it.
-    const sameBase=state.present===a.base||a.agentToken&&a.base&&[...new Set([...Object.keys(state.present),...Object.keys(a.base)])].every(key=>key==='craftAI'||state.present[key]===a.base[key]);
-    if(!sameBase||state.gestureStart||(a.agentToken?state.agentEdit?.token!==a.agentToken:state.agentEdit))return state;
-    if(a.type==='pluginCaptionTrack')a={type:'addCaptionTranslation',sourceTrack:a.sourceTrack,translation:a.translation,ids:a.ids,...(a.agentToken?{agentToken:a.agentToken}:{})};
-    else {
-    const proposals=uniqueCommandMarkers(state.present,a.markers,projectDuration(state.present));
-    if(!proposals.length)return state;
-    if(!Array.isArray(a.ids)||a.ids.length!==proposals.length||new Set(a.ids).size!==a.ids.length||a.ids.some(id=>typeof id!=='string'||!id||state.present.markers?.some(m=>m.id===id)))return state;
-    a={type:'batch',...(a.agentToken?{agentToken:a.agentToken}:{}),actions:proposals.map((m,i)=>({type:'addMarker',id:a.ids[i],...m}))};
-    }
-  }
-
-  let next = reduceHistory(state, a);
+  let next = reduceHistory(state, a,!!editToken);
   const receipts=a.type==='load'?[]:state.pluginEditReceipts||[];
   if(!preview&&editToken&&next.present!==state.present)next={...next,pluginEditReceipts:[...receipts,editToken].slice(-256)};
   else if(next!==state&&receipts.length)next={...next,pluginEditReceipts:receipts};
@@ -1820,7 +2310,7 @@ export function historyReducer(state, a, preview = false) {
   return next;
 }
 
-function reduceHistory(state, a) {
+function reduceHistory(state, a,extensionEdit=false) {
   if (a.type === 'beginAgentEdit') {
     if (typeof a.token !== 'string' || !a.token || state.agentEdit || state.gestureStart) return state;
     return { ...state, agentInterruption: undefined, agentEdit: { token: a.token, base: state.present, steps: [], future: state.future } };
@@ -1927,7 +2417,7 @@ function reduceHistory(state, a) {
     && Object.keys(prepared.action).every(key => prepared.action[key] === a[key])
     && Object.keys(a).every(key => key === 'preparedAction' || key === 'agentToken' || Object.hasOwn(prepared.action, key));
   let reduced = reuse ? prepared.next : a.type === 'trimClip' ? trimClip(state.gestureStart || state.present, a) : reduceProject(state.present, a);
-  if (!reuse && a.coverExport && reduced !== state.present) {
+  if ((!reuse || extensionEdit) && a.coverExport && reduced !== state.present) {
     // This tail is coverage for free-track content, not a user-authored gap.
     // Recompute it after intermediate insert/trim actions so importing a whole
     // song and then choosing a short range cannot leave an unwanted long tail.
@@ -1955,7 +2445,11 @@ function reduceHistory(state, a) {
   let next = reuse ? reduced : placeLayers(reduced, state.present);
   if (next !== state.present && placementBlocked(state.present, next, a)) return state;
   if (!reuse && next !== state.present) {
-    next = syncLinked(state.present, next);
+    // Only an exact private prepared batch can preserve already validated
+    // complete pairs. JSON actions and unrelated reducer paths cannot opt in.
+    const clipPlan=a.type==='batch'&&a.actions.length===1&&a.actions[0].type==='preparedPluginClips'?pluginClipArrays.get(a.actions[0].token):null;
+    const preserved=clipPlan?.base===state.present&&Object.entries(clipPlan.arrays).every(([key,value])=>next[key]===value)?clipPlan.preservedLinks:null;
+    next = syncLinked(state.present, next, preserved);
     // Older projects can contain drift. Loading or unrelated edits must not
     // freeze them; reject only a newly introduced or worsened mismatch.
     if (a.type !== 'load') {
@@ -2082,31 +2576,6 @@ export function formatTime(t) {
 export const ATTRIBUTE_KEYS = ['filter', 'filterIntensity', 'adjust', 'grade', 'effects', 'pluginEffects', 'transform', 'opacity', 'blend', 'chroma', 'mask', 'crop', 'customMask', 'enhance', 'speed', 'volume'];
 export function pickAttributes(c) {
   return Object.fromEntries(ATTRIBUTE_KEYS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]]));
-}
-
-// What plays and exports: deactivated main clips become gaps (black, silent), other deactivated clips are left out.
-// Layer state applies here too — this is the one project both the preview and the export
-// pipeline read, so a hidden layer vanishes from both and a muted / non-solo layer is
-// silent in both: hidden picture layers are dropped (the main track leaves gaps), a
-// silenced picture layer keeps its picture with clip.muted set, silenced audio clips go.
-export function renderable(p) {
-  const hasOff = [p.videoClips, p.overlayClips || [], p.audioClips, p.textClips, p.effectClips || []].some((l) => l.some((c) => c.disabled));
-  const ls = p.layerState || {};
-  const hasLayerFx = Object.values(ls).some((s) => s && (s.hidden || s.muted || s.solo));
-  if (!hasOff && !hasLayerFx) return p;
-  const hidden = (track, layer) => layerStateOf(p, track, layer).hidden;
-  const kept = (track) => (l) => l.filter((c) => !c.disabled && !hidden(track, layerOf(c)));
-  return {
-    ...p,
-    videoClips: p.videoClips.map((c) => (c.disabled || hidden('video', 0)
-      ? { ...newGap(c.id, clipLen(c)), transition: c.transition }
-      : (!layerSounds(p, 'video', 0) && !c.muted ? { ...c, muted: true } : c))),
-    overlayClips: kept('overlay')(p.overlayClips || [])
-      .map((c) => (!layerSounds(p, 'overlay', layerOf(c)) && !c.muted ? { ...c, muted: true } : c)),
-    audioClips: (p.audioClips || []).filter((c) => !c.disabled && !hidden('audio', layerOf(c)) && layerSounds(p, 'audio', layerOf(c))),
-    textClips: kept('text')(p.textClips),
-    effectClips: (p.effectClips || []).filter((c) => !c.disabled && !hidden('effect', 0)),
-  };
 }
 
 // Effects as timeline objects for the Effects lane: free effects (their own id, movable and trimmable) and

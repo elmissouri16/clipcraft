@@ -11,6 +11,7 @@ import {emptyProject,historyReducer,normalizeProject} from '../../../src/state/s
 import {pixelPasses,pixelEffectRanges} from '../../../src/features/effects/apply.js';
 const {PluginManager}=createRequire(import.meta.url)('../../../electron/plugins/manager.cjs');
 const sample=JSON.parse(await fs.readFile(new URL('../../../examples/plugins/color-pulse/plugin.json',import.meta.url)));
+delete sample.icon; // These minimal admission/render fixtures intentionally contain no artwork.
 const definition=validateManifest(sample).contributes.effects[0];
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 check('effect-only manifest accepted',()=>assert.equal(definition.id,'color-pulse'));

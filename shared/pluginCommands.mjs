@@ -1,7 +1,7 @@
 // Public command schemas and the bounded editor mutation contract. No platform imports.
 export const COMMAND_CODE_LIMIT=64*1024;
-export const COMMAND_PERMISSIONS=['clips.linked','timeline.edit','timeline.reorder','clips.write','editor.read','project.read','markers.write','captions.read','ai.chapters','captions.write','ai.translateCaptions','export.gif'];
-export const COMMAND_PERMISSION_LABELS={'clips.linked':'plugins.permission_clips_linked','timeline.edit':'plugins.permission_timeline_edit','timeline.reorder':'plugins.permission_timeline_reorder','clips.write':'plugins.permission_clips_write','editor.read':'plugins.permission_editor_read','project.read':'plugins.permission_project_read','markers.write':'plugins.permission_markers_write','captions.read':'plugins.permission_captions_read','ai.chapters':'plugins.permission_ai_chapters','captions.write':'plugins.permission_captions_write','ai.translateCaptions':'plugins.permission_ai_translate','export.gif':'plugins.permission_export_gif'};
+export const COMMAND_PERMISSIONS=['local.run','media.import','media.process','export.upload','clips.retime','clips.automation','clips.effects','clips.properties','clips.manage','tracks.write','timeline.ripple','clips.links','clips.linked','timeline.edit','timeline.reorder','clips.write','editor.read','project.read','markers.write','captions.read','ai.chapters','captions.write','ai.translateCaptions','export.gif'];
+export const COMMAND_PERMISSION_LABELS={'local.run':'plugins.permission_local_run','media.import':'plugins.permission_media_import','media.process':'plugins.permission_media_process','export.upload':'plugins.permission_export_upload','clips.retime':'plugins.permission_clips_retime','clips.automation':'plugins.permission_clips_automation','clips.effects':'plugins.permission_clips_effects','clips.properties':'plugins.permission_clips_properties','clips.manage':'plugins.permission_clips_manage','tracks.write':'plugins.permission_tracks_write','timeline.ripple':'plugins.permission_timeline_ripple','clips.links':'plugins.permission_clips_links','clips.linked':'plugins.permission_clips_linked','timeline.edit':'plugins.permission_timeline_edit','timeline.reorder':'plugins.permission_timeline_reorder','clips.write':'plugins.permission_clips_write','editor.read':'plugins.permission_editor_read','project.read':'plugins.permission_project_read','markers.write':'plugins.permission_markers_write','captions.read':'plugins.permission_captions_read','ai.chapters':'plugins.permission_ai_chapters','captions.write':'plugins.permission_captions_write','ai.translateCaptions':'plugins.permission_ai_translate','export.gif':'plugins.permission_export_gif'};
 export const MAX_COMMAND_MARKERS=500;
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const keys=(value,allowed)=>{if(!object(value)||Object.keys(value).some(k=>!allowed.includes(k)))throw Error('Invalid command fields.');};
@@ -14,8 +14,9 @@ export function validateCommand(value){
   if(!Array.isArray(parameters)||parameters.length>8)throw Error('Commands support up to eight parameters.');
   const ids=new Set();
   const validated=parameters.map(p=>{
-    keys(p,p?.type==='enum'?['id','name','type','options','default']:['id','name','min','max','step','default','integer']);
+    keys(p,p?.type==='boolean'?['id','name','type','default']:p?.type==='enum'?['id','name','type','options','default']:['id','name','min','max','step','default','integer']);
     if(typeof p.id!=='string'||!/^[a-z][a-z0-9_-]{0,63}$/.test(p.id)||ids.has(p.id)||!text(p.name,160)||!p.name.trim())throw Error('Invalid command parameter.');ids.add(p.id);
+    if(p.type==='boolean'){if(typeof p.default!=='boolean')throw Error('Invalid boolean default.');return {id:p.id,name:p.name,type:'boolean',default:p.default};}
     if(p.type==='enum'){
       if(!Array.isArray(p.options)||!p.options.length||p.options.length>32)throw Error('Enum parameters need 1–32 options.');
       const values=new Set();
@@ -33,13 +34,14 @@ export function validateCommand(value){
 export function commandInput(command,input={}){
   if(!object(input)||Object.keys(input).some(k=>!command.parameters.some(p=>p.id===k)))throw Error('Unknown command input.');
   const out={};for(const p of command.parameters){const value=Object.hasOwn(input,p.id)?input[p.id]:p.default;
+    if(p.type==='boolean'){if(typeof value!=='boolean')throw Error(`Invalid parameter ${p.name}.`);out[p.id]=value;continue;}
     if(p.type==='enum'){if(typeof value!=='string'||!p.options.some(o=>o.value===value))throw Error(`Invalid parameter ${p.name}.`);out[p.id]=value;continue;}
     if(!Number.isFinite(value)||value<p.min||value>p.max||(p.integer&&!Number.isInteger(value)))throw Error(`Invalid parameter ${p.name}.`);out[p.id]=value;}
   return out;
 }
-export function commandSnapshot(value){
+export function commandSnapshot(value,{allowEmpty=false}={}){
   keys(value,['duration_sec','fps','markers','markers_total']);
-  if(!Number.isFinite(value.duration_sec)||value.duration_sec<=0||value.duration_sec>1e9||!Number.isFinite(value.fps)||value.fps<=0||value.fps>1000||!Array.isArray(value.markers)||value.markers.length>1000||!Number.isInteger(value.markers_total)||value.markers_total<value.markers.length)throw Error('Invalid command project summary.');
+  if(!Number.isFinite(value.duration_sec)||(allowEmpty?value.duration_sec<0:value.duration_sec<=0)||value.duration_sec>1e9||!Number.isFinite(value.fps)||value.fps<=0||value.fps>1000||!Array.isArray(value.markers)||value.markers.length>1000||!Number.isInteger(value.markers_total)||value.markers_total<value.markers.length)throw Error('Invalid command project summary.');
   const markers=value.markers.map(m=>{keys(m,['time','label']);if(!Number.isFinite(m.time)||m.time<0||!text(m.label,80))throw Error('Invalid summary marker.');return {time:m.time,label:m.label};});
   return {duration_sec:value.duration_sec,fps:value.fps,markers,markers_total:value.markers_total};
 }

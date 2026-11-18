@@ -1,0 +1,28 @@
+{
+  "id": "clipcraft-examples.project-dashboard",
+  "name": "Project dashboard",
+  "publisher": "ClipCraft examples",
+  "version": "1.2.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "A sandboxed workbench view connected to a trusted Node extension: live statistics, chapter edits and extension preferences.",
+  "contributes": {
+    "commands": [
+      {
+        "id": "open",
+        "name": "Open project dashboard"
+      },
+      {
+        "id": "add-chapter-markers",
+        "name": "Add chapter markers"
+      }
+    ],
+    "views": [
+      {
+        "id": "dashboard",
+        "name": "Project dashboard"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

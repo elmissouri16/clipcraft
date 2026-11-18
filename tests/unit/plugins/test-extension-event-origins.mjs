@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {emptyProject,historyReducer,historyOrigin,prepareExtensionCommit} from '../../../src/state/store.js';
+let state={past:[],present:{...emptyProject(),media:[{id:'source',path:'/source.mp4',type:'video'}]},future:[]};
+state=historyReducer(state,{type:'setProject',patch:{name:'User change'},source:{kind:'extension',extensionId:'forged'}});const user=historyOrigin(state);assert.equal(user.source.kind,'user');assert.equal(user.sequence,1);
+state=historyReducer(state,{type:'setProject',patch:{craftAI:{sessions:[]}}});assert.equal(historyOrigin(state).sequence,1);
+state=historyReducer(state,{type:'mediaVisuals',path:'/source.mp4',patch:{poster:'/poster.jpg'}});assert.equal(historyOrigin(state).sequence,1);assert.equal(historyOrigin(state).cacheSequence,1);assert.equal(historyOrigin(state).source.kind,'user');
+state=historyReducer(state,{type:'beginAgentEdit',token:'private-owner'});state=historyReducer(state,{type:'setProject',patch:{name:'Agent change'},agentToken:'private-owner'});assert.equal(historyOrigin(state).source.kind,'agent');assert.equal(historyOrigin(state).sequence,2);state=historyReducer(state,{type:'endAgentEdit',token:'private-owner'});
+const action=prepareExtensionCommit(state,{...state.present,name:'Extension change'},()=>true,undefined,{kind:'extension',extensionId:'fixture.writer',operationId:'public-operation'});const next=historyReducer(state,action),origin=historyOrigin(next);assert.equal(origin.source.extensionId,'fixture.writer');assert.equal(origin.source.operationId,'public-operation');assert.equal(origin.sequence,historyOrigin(state).sequence+1);assert.ok(!JSON.stringify(origin).includes('private-owner'));assert.ok(!Object.keys(next).some(key=>key.toLowerCase().includes('origin')));
+const rejected=prepareExtensionCommit(next,{...next.present,name:'Rejected'},()=>false,undefined,{kind:'extension',extensionId:'forged'});assert.equal(historyReducer(next,rejected),next);assert.equal(historyOrigin(next),origin);
+const undo=historyReducer(next,{type:'undo'});assert.equal(historyOrigin(undo).source.kind,'user');assert.equal(historyOrigin(undo).reason,'undo');assert.equal(historyOrigin(undo).sequence,origin.sequence+1);
+console.log('Private edit origins distinguish user/agent/validated extension writes, preserve cache metadata and expose no ownership tokens');

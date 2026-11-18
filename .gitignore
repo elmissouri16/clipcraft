@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.clipcraft-build.json
 public/preview/*.jpg
 public/preview/*.part
 release/

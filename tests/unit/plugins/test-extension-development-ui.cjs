@@ -1,0 +1,22 @@
+const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
+(async()=>{
+ const root=path.resolve(__dirname,'../../..'),dir=await fs.mkdtemp(path.join(os.tmpdir(),'clipcraft-extension-development-ui-')),source=path.join(dir,'source');await fs.mkdir(path.join(source,'src'),{recursive:true});await fs.mkdir(path.join(source,'src/assets'));
+ await require('../../../scripts/build-plugin-sdk.cjs').buildSdk();const sdk=require('../../../packages/plugin-sdk/dist/authoring.cjs');
+ const manifest={id:'fixture.development',name:'Development proof',publisher:'ClipCraft tests',version:'0.1.0',apiVersion:1,main:'dist/extension.cjs',activationEvents:['event:project.changed'],contributes:{commands:[{id:'status',name:'Inspect activation'},{id:'edit',name:'Add caption'}],views:[{id:'preview',name:'Development preview'}]}};
+ await fs.writeFile(path.join(source,'plugin.json'),JSON.stringify(manifest));await fs.writeFile(path.join(source,'src/assets/view.html'),'<!doctype html><html><body><h1>Development preview</h1></body></html>');
+ for(const revision of ['A','B']){
+  await fs.writeFile(path.join(source,'src/extension.ts'),`import type {ExtensionContext} from '@clipcraft/plugin-sdk/extension';import fs from 'node:fs';
+   const revision='${revision}';export async function activate(c:ExtensionContext){fs.appendFileSync(${JSON.stringify(path.join(dir,'activations.log'))},revision);const count=Number(await c.configuration.get('count')||0)+1;await c.configuration.update({key:'count',value:count});if(!await c.secrets.get('token'))await c.secrets.store({key:'token',value:'session-secret'});await c.log('Activated '+revision);
+    await c.commands.register('status',async()=>({revision,count,waiting:await c.configuration.get('waiting'),secret:await c.secrets.get('token'),cwd:process.cwd(),pid:process.pid}));
+    const edit=async()=>{const editor=await c.editor.read();return c.captions.write({documentId:editor.documentId,revision:editor.revision,mode:'append',cues:[{text:'Caption '+revision,start_sec:0,end_sec:1}]});};await c.commands.register('edit',edit);
+    await c.commands.register('late',async()=>{await c.configuration.update({key:'waiting',value:true});await new Promise(resolve=>setTimeout(resolve,2000));return edit();});
+    await c.commands.register('crash',()=>{setTimeout(()=>process.exit(7),30);return true;});
+    await c.commands.register('background',async()=>{const child=await c.processes.spawn({file:${JSON.stringify(process.execPath)},args:['-e','setInterval(()=>{},1000)']});return {pid:child.pid};});
+    await c.services.register('echo',{read:()=>revision});await c.commands.register('service',()=>c.services.call('fixture.development.echo','read',{}));
+    await c.ui.registerAction({id:'edit',title:'Add '+revision+' caption',location:'toolbar',command:'edit'});await c.ui.registerView({id:'preview',title:'Development preview',entry:'assets/view.html'});
+   }export function deactivate(){fs.appendFileSync(${JSON.stringify(path.join(dir,'activations.log'))},'!${revision}');}`);
+  const built=await sdk.buildPlugin(source);await fs.cp(built.directory,path.join(dir,'snapshot-'+revision.toLowerCase()),{recursive:true});
+ }
+ await fs.rm(path.join(source,'dist'),{recursive:true});await fs.cp(path.join(dir,'snapshot-a'),path.join(source,'dist'),{recursive:true});await fs.writeFile(path.join(dir,'fixtures.json'),JSON.stringify({source,manifest}));await fs.mkdir(path.join(dir,'settings-test'));await fs.writeFile(path.join(dir,'settings-test/settings.json'),JSON.stringify({language:'en',firstRun:{tourSeen:true,packPromptSeen:true}}));
+ const child=spawn(require('electron'),[root],{cwd:root,env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_MODE:'extension-development',FVE_SMOKE_QUIET:'1',VITE_DEV_SERVER_URL:'',CLIPCRAFT_DEV_EXAMPLES:'0'},stdio:['ignore','pipe','pipe']});let log='';child.stdout.on('data',value=>log+=value);child.stderr.on('data',value=>log+=value);const timer=setTimeout(()=>child.kill('SIGKILL'),180000),code=await new Promise(resolve=>child.once('exit',resolve));clearTimeout(timer);await fs.writeFile(path.join(dir,'runtime.log'),log);const result=await fs.readFile(path.join(dir,'result.json')).then(JSON.parse).catch(()=>({error:log||'App exited before UI evidence'}));assert.equal(code,0,result.error||log);assert.ok(result.ok,result.error||log);console.log('Native source-folder extension development verified: '+dir);
+})().catch(error=>{console.error(error);process.exitCode=1;});

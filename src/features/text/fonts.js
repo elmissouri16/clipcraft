@@ -94,92 +94,8 @@ import '@fontsource/readex-pro/700.css';
 import { createFontLoader, textFontRequests } from './fontLoading.js';
 import { t } from '../../i18n/index.js';
 
-// bold: weight used when the clip is bold (null = the font has a single weight).
-const SYSTEM_IDS = new Set(['arialblack','impact','showcard','cooper','stencil','broadway','georgia','garamond','times','brush','segoescript','inkfree','majalla','tahoma','arial','segoe','segoeblack','bahnschrift','calibri','verdana','trebuchet','comic','consolas']);
-const F = (id, name, family, group, bold = 700, regular = 400) => ({ id, name, family, group, bold, regular, source: SYSTEM_IDS.has(id) ? 'system' : 'bundled' });
-
-export const FONT_LIST = [
-  F('montserrat', 'Montserrat', 'Montserrat', 'Popular', 900),
-  F('poppins', 'Poppins', 'Poppins', 'Popular', 900),
-  F('anton', 'Anton', 'Anton', 'Popular', null),
-  F('bebas', 'Bebas Neue', 'Bebas Neue', 'Popular', null),
-  F('oswald', 'Oswald', 'Oswald', 'Popular'),
-  F('arialblack', 'Arial Black', 'Arial Black', 'Popular', null),
-  F('impact', 'Impact', 'Impact', 'Popular', null),
-  F('roboto', 'Roboto', 'Roboto', 'Popular', 900),
-  F('rubik', 'Rubik', 'Rubik', 'Popular', 900),
-  F('kanit', 'Kanit', 'Kanit', 'Popular', 900),
-  F('archivoblack', 'Archivo Black', 'Archivo Black', 'Popular', null),
-  F('barlowcond', 'Barlow Condensed', 'Barlow Condensed', 'Popular', 800),
-  F('lilita', 'Lilita One', 'Lilita One', 'Popular', null),
-  F('fredoka', 'Fredoka', 'Fredoka', 'Popular'),
-  F('bangers', 'Bangers', 'Bangers', 'Display', null),
-  F('luckiest', 'Luckiest Guy', 'Luckiest Guy', 'Display', null),
-  F('marker', 'Permanent Marker', 'Permanent Marker', 'Display', null),
-  F('righteous', 'Righteous', 'Righteous', 'Display', null),
-  F('pixel', 'Press Start 2P', 'Press Start 2P', 'Display', null),
-  F('showcard', 'Showcard Gothic', 'Showcard Gothic', 'Display', null),
-  F('cooper', 'Cooper Black', 'Cooper Black', 'Display', null),
-  F('stencil', 'Stencil', 'Stencil', 'Display', null),
-  F('broadway', 'Broadway', 'Broadway', 'Display', null),
-  F('titan', 'Titan One', 'Titan One', 'Display', null),
-  F('russo', 'Russo One', 'Russo One', 'Display', null),
-  F('blackops', 'Black Ops One', 'Black Ops One', 'Display', null),
-  F('bungee', 'Bungee', 'Bungee', 'Display', null),
-  F('creepster', 'Creepster', 'Creepster', 'Display', null),
-  F('monoton', 'Monoton', 'Monoton', 'Display', null),
-  F('orbitron', 'Orbitron', 'Orbitron', 'Display', 900),
-  F('audiowide', 'Audiowide', 'Audiowide', 'Display', null),
-  F('chewy', 'Chewy', 'Chewy', 'Display', null),
-  F('playfair', 'Playfair Display', 'Playfair Display', 'Elegant', 900),
-  F('georgia', 'Georgia', 'Georgia', 'Elegant'),
-  F('garamond', 'Garamond', 'Garamond', 'Elegant'),
-  F('times', 'Times New Roman', 'Times New Roman', 'Elegant'),
-  F('cinzel', 'Cinzel', 'Cinzel', 'Elegant', 900),
-  F('abril', 'Abril Fatface', 'Abril Fatface', 'Elegant', null),
-  F('dmserif', 'DM Serif Display', 'DM Serif Display', 'Elegant', null),
-  F('cormorant', 'Cormorant Garamond', 'Cormorant Garamond', 'Elegant'),
-  F('pacifico', 'Pacifico', 'Pacifico', 'Script', null),
-  F('lobster', 'Lobster', 'Lobster', 'Script', null),
-  F('dancing', 'Dancing Script', 'Dancing Script', 'Script'),
-  F('caveat', 'Caveat', 'Caveat', 'Script'),
-  F('brush', 'Brush Script', 'Brush Script MT', 'Script', null),
-  F('segoescript', 'Segoe Script', 'Segoe Script', 'Script'),
-  F('inkfree', 'Ink Free', 'Ink Free', 'Script', null),
-  F('greatvibes', 'Great Vibes', 'Great Vibes', 'Script', null),
-  F('kaushan', 'Kaushan Script', 'Kaushan Script', 'Script', null),
-  F('satisfy', 'Satisfy', 'Satisfy', 'Script', null),
-  F('shadows', 'Shadows Into Light', 'Shadows Into Light', 'Script', null),
-  F('sacramento', 'Sacramento', 'Sacramento', 'Script', null),
-  F('yellowtail', 'Yellowtail', 'Yellowtail', 'Script', null),
-  F('cairo', 'Cairo (Arabic)', 'Cairo', 'Arabic', 900),
-  F('tajawal', 'Tajawal (Arabic)', 'Tajawal', 'Arabic', 900),
-  F('lalezar', 'Lalezar (Arabic)', 'Lalezar', 'Arabic', null),
-  F('amiri', 'Amiri (Arabic)', 'Amiri', 'Arabic'),
-  F('rakkas', 'Rakkas (Arabic)', 'Rakkas', 'Arabic', null),
-  F('majalla', 'Sakkal Majalla', 'Sakkal Majalla', 'Arabic'),
-  F('tahoma', 'Tahoma', 'Tahoma', 'Arabic'),
-  F('almarai', 'Almarai (Arabic)', 'Almarai', 'Arabic', 800),
-  F('changa', 'Changa (Arabic)', 'Changa', 'Arabic', 800),
-  F('elmessiri', 'El Messiri (Arabic)', 'El Messiri', 'Arabic'),
-  F('reemkufi', 'Reem Kufi (Arabic)', 'Reem Kufi', 'Arabic'),
-  F('arefruqaa', 'Aref Ruqaa (Arabic)', 'Aref Ruqaa', 'Arabic'),
-  F('marhey', 'Marhey (Arabic)', 'Marhey', 'Arabic'),
-  F('lemonada', 'Lemonada (Arabic)', 'Lemonada', 'Arabic'),
-  F('notokufi', 'Noto Kufi (Arabic)', 'Noto Kufi Arabic', 'Arabic', 900),
-  F('notonaskh', 'Noto Naskh (Arabic)', 'Noto Naskh Arabic', 'Arabic'),
-  F('baloo', 'Baloo Bhaijaan (Arabic)', 'Baloo Bhaijaan 2', 'Arabic', 800),
-  F('readex', 'Readex Pro (Arabic)', 'Readex Pro', 'Arabic'),
-  F('arial', 'Arial', 'Arial', 'Basic'),
-  F('segoe', 'Segoe UI', 'Segoe UI', 'Basic'),
-  F('segoeblack', 'Segoe UI Black', 'Segoe UI Black', 'Basic', null),
-  F('bahnschrift', 'Bahnschrift', 'Bahnschrift', 'Basic'),
-  F('calibri', 'Calibri', 'Calibri', 'Basic'),
-  F('verdana', 'Verdana', 'Verdana', 'Basic'),
-  F('trebuchet', 'Trebuchet MS', 'Trebuchet MS', 'Basic'),
-  F('comic', 'Comic Sans', 'Comic Sans MS', 'Basic'),
-  F('consolas', 'Consolas', 'Consolas', 'Basic'),
-];
+import {F,FONT_LIST} from '../../../shared/fontCatalog.mjs';
+export {FONT_LIST} from '../../../shared/fontCatalog.mjs';
 
 const BY_ID = Object.fromEntries(FONT_LIST.map((f) => [f.id, f]));
 // Ids used by older projects.
@@ -200,17 +116,19 @@ export function onFontsChanged(fn) {
   return () => listeners.delete(fn);
 }
 // Every font: yours first, then the built-in ones.
-export const allFonts = () => [...custom, ...FONT_LIST];
+export const allFonts = () => [...custom.filter(f=>f.source!=='pack'||f.preferred), ...FONT_LIST];
 
 const faces = {};
 let loader;
+let customSignature;
 async function loadCustom(list) {
+  const signature=JSON.stringify(list);if(signature===customSignature)return;customSignature=signature;
   Object.keys(faces).filter((id) => !list.some((f) => f.id === id)).forEach((id) => {
-    faces[id].then(face => document.fonts.delete(face), () => {});
+    faces[id].then(list => list.forEach(face=>document.fonts.delete(face)), () => {});
     delete faces[id];
     loader?.invalidate(id);
   });
-  custom = list.map(({id,name}) => ({ ...F(id,name,`ClipCraft ${id}`,CUSTOM_GROUP),source:'custom' }));
+  custom = list.map(font => {const {id,name}=font;if(font.source!=='pack')return {...F(id,name,`ClipCraft ${id}`,CUSTOM_GROUP),source:'custom'};const weights=font.faces.map(f=>f.weight),regular=weights.reduce((a,b)=>Math.abs(a-400)<=Math.abs(b-400)?a:b),bold=weights.reduce((a,b)=>Math.abs(a-700)<=Math.abs(b-700)?a:b);return {...F(id,name,`ClipCraft ${id}`,'Plugins'),...font,family:`ClipCraft ${id}`,group:'Plugins',regular,bold};});
   changed();
 }
 
@@ -219,22 +137,34 @@ function fontLoader() {
     fontSet: document.fonts,
     localFace: family => new FontFace('ClipCraft local font probe', `local(${JSON.stringify(family)})`),
     customFace: async font => {
-      if (!faces[font.id]) faces[font.id] = (async () => {
-        const data = await window.api.fontData(font.id);
-        if (!data) throw Error('Font data is unavailable.');
-        const face = await new FontFace(font.family, data).load();
-        document.fonts.add(face);
-        return face;
-      })().catch(error => { delete faces[font.id];throw error; });
+      if (!faces[font.id]) {const job = (async () => {
+        const loaded=[];
+        try{for(const [index,descriptor] of (font.faces||[{}]).entries()){
+          const data = await window.api.fontData(font.id,index);
+          if (!data) throw Error('Font data is unavailable.');
+          const face = await new FontFace(font.family, data, font.source==='pack'?{weight:String(descriptor.weight),style:descriptor.style}:{}).load();
+          loaded.push(face);
+        }
+        // A package may be disabled while a decoder is still loading.
+        if(!custom.some(f=>f.id===font.id))throw Error('Font pack became unavailable.');
+        loaded.forEach(face=>document.fonts.add(face));return loaded;
+        }catch(error){loaded.forEach(face=>document.fonts.delete(face));throw error;}
+      })().catch(error => { if(faces[font.id]===job)delete faces[font.id];throw error; });faces[font.id]=job;}
       await faces[font.id];
     },
     onChange: () => listeners.forEach(fn => fn()),
   });
 }
 
-let customReady = null;
+let customReady = null, watchingPacks=false,fontRequest=0,latestFontRequest=Promise.resolve();
+function refreshCustom({clearOnError=false}={}){
+  if(!window.api?.fontsList)return Promise.resolve();const request=++fontRequest;
+  const job=window.api.fontsList().then(list=>request===fontRequest?loadCustom(list):latestFontRequest).catch(async error=>{if(request!==fontRequest)return latestFontRequest;if(clearOnError)await loadCustom([]);throw error;});
+  latestFontRequest=job;return job;
+}
 function customFonts() {
-  if (!customReady) customReady = window.api?.fontsList ? window.api.fontsList().then(loadCustom).catch(() => {}) : Promise.resolve();
+  if(!watchingPacks){watchingPacks=true;window.api?.onPluginsChanged?.(()=>{customReady=refreshCustom({clearOnError:true}).catch(()=>{});});}
+  if (!customReady) customReady = refreshCustom().catch(() => {});
   return customReady;
 }
 
@@ -243,19 +173,21 @@ export async function importFonts(files) {
   const res = await window.api.fontsImport(files || null);
   if (res.error) return res;
   await customFonts();
-  await loadCustom(res.list);
+  await refreshCustom();
   return res;
 }
 
 export async function removeFont(id) {
   const res = await window.api.fontsRemove(id);
-  if (res.list) await loadCustom(res.list);
+  if (res.list) await refreshCustom();
   return res;
 }
 
 export function fontById(id) {
   return BY_ID[id] || custom.find((f) => f.id === id) || BY_ID[LEGACY[id]] || BY_ID.arial;
 }
+
+export function fontDependency(id){const font=fontById(id);return font.source==='pack'?{pluginId:font.pluginId,digest:font.digest,version:font.version,id:font.localId,name:font.name}:undefined;}
 
 export function fontStatus(id) {
   const font = BY_ID[id] || custom.find(f => f.id === id) || BY_ID[LEGACY[id]];
@@ -271,6 +203,8 @@ export function cssFont(fontId, sizePx, bold, italic) {
 // Only the requested faces and actual text subsets; callers choose preview fallback or strict export.
 export async function fontsReady(clips = [], { strict = false } = {}) {
   await customFonts();
+  // Export checks refresh availability even in long-lived offscreen renderers.
+  if(strict)await refreshCustom();
   const missing = new Set();
   await Promise.all(textFontRequests(clips).map(async request => {
     const font = BY_ID[request.font] || custom.find(f => f.id === request.font) || BY_ID[LEGACY[request.font]];

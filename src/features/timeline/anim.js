@@ -64,59 +64,9 @@ const COMBOS = {
 };
 
 // The catalog shown in the Animation tab. move: entry of MOVES (in / out) or COMBOS (combo).
-export const ANIMATIONS = {
-  in: [
-    { id: 'fade_in', name: 'Fade In', move: 'fade', cat: 'Basic' },
-    { id: 'zoom_in', name: 'Zoom In', move: 'grow', cat: 'Basic' },
-    { id: 'zoom_out_in', name: 'Zoom Out', move: 'shrink', cat: 'Basic' },
-    { id: 'slide_left', name: 'Slide Left', move: 'fromRight', cat: 'Slide' },
-    { id: 'slide_right', name: 'Slide Right', move: 'fromLeft', cat: 'Slide' },
-    { id: 'slide_up', name: 'Slide Up', move: 'fromBottom', cat: 'Slide' },
-    { id: 'slide_down', name: 'Slide Down', move: 'fromTop', cat: 'Slide' },
-    { id: 'slide_up_smooth', name: 'Slide Up Smooth', move: 'smoothFromBottom', cat: 'Slide' },
-    { id: 'slide_down_smooth', name: 'Slide Down Smooth', move: 'smoothFromTop', cat: 'Slide' },
-    { id: 'slide_left_smooth', name: 'Slide Left Smooth', move: 'smoothFromRight', cat: 'Slide' },
-    { id: 'slide_right_smooth', name: 'Slide Right Smooth', move: 'smoothFromLeft', cat: 'Slide' },
-    { id: 'spin_in', name: 'Spin In', move: 'spin', cat: 'Spin' },
-    { id: 'twist_in', name: 'Twist', move: 'twist', cat: 'Spin' },
-    { id: 'pop_in', name: 'Pop', move: 'pop', cat: 'Bounce' },
-    { id: 'drop_in', name: 'Drop', move: 'drop', cat: 'Bounce' },
-    { id: 'swing_in', name: 'Swing', move: 'swing', cat: 'Vibration' },
-    { id: 'shake_in', name: 'Shake', move: 'shake', cat: 'Vibration' },
-    { id: 'rock_in', name: 'Rock Vertically', move: 'rock', cat: 'Vibration' },
-  ],
-  out: [
-    { id: 'fade_out', name: 'Fade Out', move: 'fade', cat: 'Basic' },
-    { id: 'zoom_out', name: 'Zoom Out', move: 'grow', cat: 'Basic' },
-    { id: 'zoom_in_out', name: 'Zoom In', move: 'shrink', cat: 'Basic' },
-    { id: 'slide_left_out', name: 'Slide Left', move: 'fromLeft', cat: 'Slide' },
-    { id: 'slide_right_out', name: 'Slide Right', move: 'fromRight', cat: 'Slide' },
-    { id: 'slide_up_out', name: 'Slide Up', move: 'fromTop', cat: 'Slide' },
-    { id: 'slide_down_out', name: 'Slide Down', move: 'fromBottom', cat: 'Slide' },
-    { id: 'slide_up_smooth_out', name: 'Slide Up Smooth', move: 'smoothFromTop', cat: 'Slide' },
-    { id: 'slide_down_smooth_out', name: 'Slide Down Smooth', move: 'smoothFromBottom', cat: 'Slide' },
-    { id: 'slide_left_smooth_out', name: 'Slide Left Smooth', move: 'smoothFromLeft', cat: 'Slide' },
-    { id: 'slide_right_smooth_out', name: 'Slide Right Smooth', move: 'smoothFromRight', cat: 'Slide' },
-    { id: 'spin_out', name: 'Spin Out', move: 'spin', cat: 'Spin' },
-    { id: 'twist_out', name: 'Twist', move: 'twist', cat: 'Spin' },
-    { id: 'pop_out', name: 'Pop', move: 'pop', cat: 'Bounce' },
-    { id: 'swing_out', name: 'Swing', move: 'swing', cat: 'Vibration' },
-    { id: 'shake_out', name: 'Shake', move: 'shake', cat: 'Vibration' },
-    { id: 'rock_out', name: 'Rock Vertically', move: 'rock', cat: 'Vibration' },
-  ],
-  combo: [
-    { id: 'pulse', name: 'Pulse', move: 'pulse', cat: 'Loop' },
-    { id: 'heartbeat', name: 'Heartbeat', move: 'heartbeat', cat: 'Loop' },
-    { id: 'wobble', name: 'Wobble', move: 'wobble', cat: 'Loop' },
-    { id: 'sway', name: 'Sway', move: 'sway', cat: 'Loop' },
-    { id: 'vibrate', name: 'Vibrate', move: 'vibrate', cat: 'Loop' },
-    { id: 'bounce', name: 'Bounce', move: 'bounce', cat: 'Loop' },
-    { id: 'kenburns', name: 'Slow Zoom In', move: 'kenburns', cat: 'Camera' },
-    { id: 'pullback', name: 'Slow Zoom Out', move: 'pullback', cat: 'Camera' },
-    { id: 'drift', name: 'Pan Right', move: 'driftRight', cat: 'Camera' },
-    { id: 'orbit', name: 'Orbit', move: 'orbit', cat: 'Camera' },
-  ],
-};
+import {ANIMATIONS} from '../../../shared/motionCatalog.mjs';
+export {ANIMATIONS} from '../../../shared/motionCatalog.mjs';
+
 export const DEFAULT_ANIM_DURATION = 0.5;
 export const animById = (kind, id) => ANIMATIONS[kind].find((a) => a.id === id) || null;
 

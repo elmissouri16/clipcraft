@@ -8,15 +8,32 @@
   "description": "A soft diagonal reveal between two styled clips, with adjustable tilt and edge softness.",
   "permissions": [],
   "contributes": {
-    "transitions": [{
-      "id": "diagonal-reveal",
-      "name": "Diagonal reveal",
-      "duration": 0.5,
-      "expression": "st(0,clip((P*(1+{{tilt}}+{{softness}})-{{tilt}}/2-{{softness}}/2-(X/W+{{tilt}}*(Y/H-0.5)))/{{softness}}+0.5,0,1));A(X,Y)*(1-ld(0))+B(X,Y)*ld(0)",
-      "parameters": [
-        {"id":"tilt","name":"Tilt","min":0,"max":1,"step":0.01,"default":0.5},
-        {"id":"softness","name":"Edge softness","min":0.01,"max":0.4,"step":0.01,"default":0.12}
-      ]
-    }]
-  }
+    "transitions": [
+      {
+        "id": "diagonal-reveal",
+        "name": "Diagonal reveal",
+        "duration": 0.5,
+        "expression": "st(0,clip((P*(1+{{tilt}}+{{softness}})-{{tilt}}/2-{{softness}}/2-(X/W+{{tilt}}*(Y/H-0.5)))/{{softness}}+0.5,0,1));A(X,Y)*(1-ld(0))+B(X,Y)*ld(0)",
+        "parameters": [
+          {
+            "id": "tilt",
+            "name": "Tilt",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "default": 0.5
+          },
+          {
+            "id": "softness",
+            "name": "Edge softness",
+            "min": 0.01,
+            "max": 0.4,
+            "step": 0.01,
+            "default": 0.12
+          }
+        ]
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
 }

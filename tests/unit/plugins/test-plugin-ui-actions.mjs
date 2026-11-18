@@ -1,13 +1,14 @@
+// Native edit planning and read-only historical metadata regression.
 import assert from 'node:assert/strict';
-import {validateManifest} from '../../../shared/pluginManifest.mjs';
+import {validateLegacyManifest as validateManifest} from '../../../shared/legacyPluginManifest.mjs';
 import {validateAction,actionState,actionCatalog} from '../../../shared/pluginActions.mjs';
-import {actionSelection,actionSelectionKey} from '../../../src/features/plugins/actionContext.js';
+import {actionSelection,actionSelectionKey} from '../../fixtures/plugins/legacySelection.mjs';
 import {emptyProject} from '../../../src/state/store.js';
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 const action={id:'shift',commandId:'run',label:'Shift clips',icon:'layers',locations:['plugins-menu','clip-menu'],when:{selection:'single',lanes:['text','overlay']}};
 const manifest={id:'studio.ui',name:'Studio UI',publisher:'Studio',version:'1.0.0',apiVersion:1,entry:'commands.js',permissions:['editor.read','clips.write'],contributes:{commands:[{id:'run',name:'Run',parameters:[]}],actions:[action]}};
 check('schema accepts data-only registrations referring to an existing command',()=>assert.deepEqual(validateManifest(manifest).contributes.actions,[action]));
-for(const edit of [a=>a.id='../ui',a=>a.commandId='missing',a=>a.label='bad\nlabel',a=>a.label='x'.repeat(81),a=>a.label='Spoof\u202eaction',a=>a.icon='data:image/svg+xml,bad',a=>a.locations=['toolbar'],a=>a.locations=['clip-menu','clip-menu'],a=>a.when='selection == 1',a=>a.when={selection:'one'},a=>a.when={lanes:['shell']},a=>a.when={selection:'none',lanes:['text']},a=>a.html='<script/>']){
+for(const edit of [a=>a.id='../ui',a=>a.commandId='missing',a=>a.label='bad\nlabel',a=>a.label='x'.repeat(81),a=>a.label='Spoof\u202eaction',a=>a.icon='data:image/svg+xml,bad',a=>a.locations=['untrusted-html'],a=>a.locations=['clip-menu','clip-menu'],a=>a.when='selection == 1',a=>a.when={selection:'one'},a=>a.when={lanes:['shell']},a=>a.when={selection:'none',lanes:['text']},a=>a.html='<script/>']){
  const m=structuredClone(manifest);edit(m.contributes.actions[0]);check('unsafe or unsupported action metadata is rejected',()=>assert.throws(()=>validateManifest(m)));
 }
 check('package-local action IDs must be unique',()=>assert.throws(()=>validateManifest({...manifest,contributes:{...manifest.contributes,actions:[action,action]}})));

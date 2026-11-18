@@ -84,6 +84,7 @@ export function actionTargets(actions = [], after = {}) {
       case 'moveToOverlay': touch('video', a.id); make('overlay', a.id); break;
       case 'moveToMain': touch('overlay', a.id); make('video', a.id); break;
       case 'paste': list(a.newIds).forEach((id) => make(a.track, id)); break;
+      case 'appendCaptionTrack': list(a.clips).forEach(c=>make('text',c.id)); break;
       case 'replaceCaptionCues': { const kept = new Set(list(a.ids)); list(a.ids).forEach((id) => touch('text', id)); list(a.clips).forEach((c) => { if (c?.id && !kept.has(c.id)) make('text', c.id); }); break; }
       case 'setCaptions': case 'styleCaptions': case 'importSrtCaptions': case 'styleSrtCaptions': case 'removeSrtCaptions': captions = true; break;
       default: break;

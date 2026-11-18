@@ -1,0 +1,63 @@
+{
+  "id": "clipcraft-examples.workbench",
+  "name": "Workbench views",
+  "publisher": "ClipCraft",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Two independent sandboxed views connected to an ordinary Node extension.",
+  "contributes": {
+    "shortcuts": [
+      {
+        "id": "overview-key",
+        "name": "Open project overview",
+        "command": "overview",
+        "keys": [
+          "Ctrl+Shift+U"
+        ]
+      },
+      {
+        "id": "message-key",
+        "name": "Show a workspace message",
+        "command": "message",
+        "keys": [
+          "Ctrl+Alt+N"
+        ],
+        "scope": "app"
+      }
+    ],
+    "views": [
+      {
+        "id": "overview",
+        "name": "Project overview"
+      },
+      {
+        "id": "notes",
+        "name": "Session notes"
+      }
+    ],
+    "commands": [
+      {
+        "id": "message",
+        "name": "Show a workspace message"
+      },
+      {
+        "id": "render",
+        "name": "Render the current project"
+      },
+      {
+        "id": "changes",
+        "name": "Inspect the last project event"
+      },
+      {
+        "id": "overview",
+        "name": "Open project overview"
+      },
+      {
+        "id": "notes",
+        "name": "Open session notes"
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

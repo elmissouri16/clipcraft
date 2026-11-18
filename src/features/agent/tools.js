@@ -10,7 +10,7 @@ import { motionQuality } from '../timeline/motionQuality.js';
 import { stateAtPinned } from '../timeline/track.js';
 import { BLEND_MODES, cropOf, frameCrop, framingPatch, transformOf, opacityOf } from "../preview/visual.js";
 import { MOTION_GUIDE, MOTION_TOPICS } from './motionGuide.js';
-import { ENGINE_NAMES, defaultSpeech, studioProblem, studioVoicesOf } from '../audio/voiceDefault.js';
+import { defaultSpeech, engineVoices, extensionEnginesOf, resolveSpeechEngine, engineProblem, usableEngines, voiceEngineName } from '../audio/voiceDefault.js';
 import { projectRevision, audioRevision } from './context.js';
 import { regroupSegments } from "../text/subtitles.js";
 import { validateAgentProject, verifyActionResults } from './validation.js';
@@ -68,10 +68,7 @@ const TEXT_LOOK = {
   bubble: S, bubble_color: S,
 };
 
-// VoiceStudio is a separate app on the user's computer, reached through a connector in Settings > Voice.
-const STUDIO_MISSING = (st) => !st?.studio?.enabled ? 'VoiceStudio is off. Ask the user to turn on the VoiceStudio connector in Settings > Voice (VoiceStudio is a free app they install); do not retry voicestudio until then.'
-  : !st.studio.running ? `VoiceStudio is not running${st.studio.error ? ` (${st.studio.error})` : ''}. Ask the user to open VoiceStudio, then retry voicestudio.`
-  : 'VoiceStudio lists no voice. Ask the user to create a voice profile in VoiceStudio.';
+
 
 export const TOOL_DECLARATIONS = [
   ...PLUGIN_DECLARATIONS,
@@ -105,7 +102,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'get_project',
-    description: 'Read live project ids/times. Reuse a previous read when its revision matches. scope: all (default), overview, main, overlay, audio, text, captions, effects, media. clip_ids selects exact clips; offset/limit page lists (default 30, max 100). details true returns exact clip fields (also automatic for clip_ids). if_revision skips data only when the caller already has that scope. Read affected tracks after cuts or manual edits.',
+    description: 'Read live ids/times; reuse matching revisions. scope: all(default)/overview/main/overlay/audio/text/captions/effects/media. clip_ids selects clips; offset/limit page(30 default,100 max). details or clip_ids gives exact fields. if_revision requires a previous read of that scope. Re-read affected tracks after edits.',
     parameters: { type: 'OBJECT', properties: { scope: S, details: B, clip_ids: { type: 'ARRAY', items: S }, offset: { type: 'INTEGER' }, limit: { type: 'INTEGER' }, if_revision: S } },
   },
   {
@@ -241,8 +238,8 @@ export const TOOL_DECLARATIONS = [
   {
     name: 'add_voiceover',
     description: 'Generate one speech clip on the audio track. First list_voices (Gemini default voice Kore). text verbatim, max 5000 chars.',
-    parameters: { type: 'OBJECT', properties: { text: S, voice_id: S, engine: { ...S, description: 'gemini (default if set up), voicestudio, elevenlabs' }, model: S,
-      style: { ...S, description: 'Gemini tone, accent, pacing; not spoken.' },
+    parameters: { type: 'OBJECT', properties: { text: S, voice_id: S, engine: { ...S, description: 'Engine ID from list_voices: gemini, elevenlabs, or an installed extension service ID' }, model: S,
+      style: { ...S, description: 'Requested style only; follow list_voices.' },
       start_sec: N, speed: { ...N, description: 'Not Gemini (use style).' }, volume: N }, required: ['text'] },
   },
   {
@@ -669,7 +666,7 @@ export function createToolRunner(ctx) {
     const l = res.limit;
     if (!l) return { error: res.error };
     const next = l.kind === 'daily'
-      ? `Do not call Gemini TTS with ${l.model || model || 'this model'} again in this request: it is out of requests until ${l.resets}. ${l.other_model ? `Retry the missing lines with model "${l.other_model}" (its own limit), passing retry_of. ` : ''}If that fails too, finish the rest of the edit and tell the user which lines are missing and when the limit resets. Use voicestudio or elevenlabs only if a different voice is acceptable, and say so.`
+      ? `Do not call Gemini TTS with ${l.model || model || 'this model'} again in this request: it is out of requests until ${l.resets}. ${l.other_model ? `Retry the missing lines with model "${l.other_model}" (its own limit), passing retry_of. ` : ''}If that fails too, finish the rest of the edit and tell the user which lines are missing and when the limit resets. Use another available engine from list_voices only if a different voice is acceptable, and say so.`
       : 'Gemini is over its per-minute request limit even after waiting. Do other edits first, then send the remaining lines together in one add_narration call.';
     return { error: res.error, provider_limit: l, next };
   };
@@ -860,7 +857,12 @@ export function createToolRunner(ctx) {
   const referenceTools = createReferenceTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled });
   const discoveryTools = createDiscoveryTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, editActive: ctx.editActive,
     onProgress: ctx.onToolProgress, place, dispatch, settle: ctx.settle, after, analysisScope: ctx.analysisScope });
-  const pluginTools = createPluginTools({api:ctx.api,allowPluginCommands:ctx.allowPluginCommands,getProject:project,dispatch,settle:ctx.settle,isCanceled:ctx.isCanceled,editActive:ctx.editActive,pluginCommandReady:ctx.pluginCommandReady,getPluginEditorContext:ctx.getPluginEditorContext,getPluginEditContext:ctx.getPluginEditContext,pluginEditApplied:ctx.pluginEditApplied,onProgress:ctx.onToolProgress});
+  const pluginTools = createPluginTools({runExtensionCommand:(input)=>ctx.runExtensionCommand(input,{onProgress:ctx.onToolProgress,commit:(action,next,publish)=>{
+    if(ctx.isCanceled?.()||ctx.editActive?.()===false||!operation)throw Error('Editing stopped.');
+    const before=project();if(!operation.wrote&&projectRevision(before)!==operation.revision)throw Error('The project changed before this extension edit.');
+    const existing=new Set(validate(before).issues),issues=validate(next).issues.filter(issue=>!existing.has(issue));if(issues.length)throw Error('Edit validation failed: '+issues.join(' '));
+    publish(next);operation.actions.push(action);operation.wrote=true;operation.extensionExpected=projectRevision(next);
+  }}),api:ctx.api,allowPluginCommands:ctx.allowPluginCommands,getProject:project,dispatch,settle:ctx.settle,isCanceled:ctx.isCanceled,editActive:ctx.editActive,pluginCommandReady:ctx.pluginCommandReady,getPluginEditorContext:ctx.getPluginEditorContext,getPluginEditContext:ctx.getPluginEditContext,pluginEditApplied:ctx.pluginEditApplied,onProgress:ctx.onToolProgress});
   const tools = {
     ...pluginTools,
     ...discoveryTools,
@@ -1285,14 +1287,12 @@ export function createToolRunner(ctx) {
 
     async list_voices() {
       const st = await api.ttsStatus();
-      const studio = studioVoicesOf(st), fallback = defaultSpeech(st);
+      const fallback = defaultSpeech(st);
       // The user's default (Settings > Voice), or the automatic order when none is chosen or it is not set up.
       const out = { default_engine: fallback.engine === 'eleven' ? 'elevenlabs' : fallback.engine, default_voice: fallback.voice || null, default_from: fallback.from,
         ...(fallback.note ? { default_note: fallback.note } : {}),
-        voicestudio: studio.length ? { active_engine: st.studio.engine || 'VoiceStudio',
-          voices: studio.map((v) => ({ voice_id: v.id, name: v.name, ...(v.language ? { language: v.language } : {}), kind: v.kind,
-            ...(v.kind === 'design' ? { style_required: 'builds the voice from the style text: who speaks, how they feel, how fast (for example: a sad woman, almost crying, speaking slowly)' } : {}),
-            ...(v.kind === 'default' && st.studio.activeEngine === 'omnivoice' ? { style: 'voice-design tags only: gender, age, pitch, accent, whisper; no emotions' } : {}) })) } : STUDIO_MISSING(st),
+        extensions: extensionEnginesOf(st).map((entry) => ({ engine: entry.id, name: entry.name, available: entry.available, error: entry.error,
+          voices: entry.voices.map((v) => ({ voice_id: v.id, name: v.name, language: v.language, style_required: v.styleRequired, description: v.description })), supports_style: entry.supportsStyle, supports_speed: entry.supportsSpeed })),
         gemini: st.geminiKey ? { models: st.gemini?.models || [], default_voice: st.gemini?.defaultVoice || 'Kore',
           voices: (st.gemini?.voices || []).map((v) => ({ voice_id: v.id, name: v.name, delivery: v.style })),
           language: 'Detected from the spoken text. Put accent and pacing instructions in style.' }
@@ -1307,15 +1307,15 @@ export function createToolRunner(ctx) {
     async add_voiceover({ text, voice_id, engine, model, style, start_sec = 0, speed = 1, volume = 1 }) {
       if (!String(text || '').trim()) return { error: 'text is empty.' };
       const st = await api.ttsStatus();
-      const studio = studioVoicesOf(st), fallback = defaultSpeech(st);
+      const fallback = defaultSpeech(st);
       const chosen = engine || fallback.engine;
-      if (!chosen) return { error: `No speech engine is set up. ${STUDIO_MISSING(st)} Or add a Gemini or ElevenLabs key in Settings.` };
-      const normalized = chosen === 'elevenlabs' ? 'eleven' : chosen;
-      if (!['gemini', 'eleven', 'voicestudio'].includes(normalized)) return { error: 'engine must be gemini, voicestudio or elevenlabs.' };
-      if (normalized === 'voicestudio' && !studio.length) return { error: STUDIO_MISSING(st) };
-      if (normalized === 'voicestudio' && voice_id && !studio.some((v) => v.id === voice_id)) return { error: `VoiceStudio has no voice ${voice_id}. Its voices: ${studio.map((v) => `${v.id} (${v.name})`).join(', ')}. Voices are created in VoiceStudio itself.` };
-      if (normalized === 'voicestudio' && voice_id && studio.find((v) => v.id === voice_id)?.kind === 'design' && !String(style || '').trim()) return { error: `${voice_id} builds the voice from style: describe who speaks, how they feel and how fast, then retry.` };
-      const voiceId = voice_id || (normalized === fallback.engine && fallback.voice) || (normalized === 'gemini' ? st.gemini?.defaultVoice || 'Kore' : normalized === 'voicestudio' ? studio[0].id : undefined);
+      if (!chosen) return { error: 'No speech engine is set up. Install and enable an extension, or add a Gemini or ElevenLabs key in Settings.' };
+      const normalized = resolveSpeechEngine(st, chosen);
+      if (!usableEngines(st)[normalized]) return { error: engineProblem(st, normalized) };
+      const voices = engineVoices(st, normalized);
+      const voiceId = voice_id || (normalized === fallback.engine && fallback.voice) || (normalized === 'gemini' ? st.gemini?.defaultVoice || 'Kore' : voices[0]?.id);
+      if (normalized !== 'eleven' && !voices.some((v) => v.id === voiceId)) return { error: `Voice ${voiceId} is unavailable in ${voiceEngineName(st, normalized)}. Choose a voice from list_voices.` };
+      if (voices.find((v) => v.id === voiceId)?.styleRequired && !String(style || '').trim()) return { error: `${voiceId} requires style: describe the voice, then retry.` };
       if (normalized === 'eleven' && !voiceId) return { error: 'Pick an ElevenLabs voice_id from list_voices.' };
       const res = await api.ttsSpeak({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), engine: normalized, voiceId, voiceName: voiceId, text: String(text), speed: Number(speed) || 1, model, style });
       if (res.error) return speechFailure(res, model);
@@ -1330,10 +1330,10 @@ export function createToolRunner(ctx) {
       if (list.length < 2) return { error: 'Give at least two lines; use add_voiceover for one.' };
       if (list.some((l) => !String(l.text || '').trim())) return { error: 'Every line needs text.' };
       const st = await api.ttsStatus();
-      if (!st.geminiKey) return { error: 'add_narration uses Gemini TTS, which has no key in Settings > API keys > Google Gemini (Voice generation). Use add_voiceover per line with voicestudio or elevenlabs.' };
+      if (!st.geminiKey) return { error: 'add_narration uses Gemini TTS, which has no key in Settings > API keys > Google Gemini (Voice generation). Use add_voiceover per line with an available engine from list_voices.' };
       // add_narration is Gemini only: a different default chosen in Settings wins.
       const fallback = defaultSpeech(st);
-      if (fallback.from === 'settings' && fallback.engine !== 'gemini') return { error: `The user's default voice (Settings > Voice) is ${ENGINE_NAMES[fallback.engine]}. Speak each line with add_voiceover (it uses that default); use Gemini only if the user asks for it.` };
+      if (fallback.from === 'settings' && fallback.engine !== 'gemini') return { error: `The user's default voice (Settings > Voice) is ${voiceEngineName(st, fallback.engine)}. Speak each line with add_voiceover (it uses that default); use Gemini only if the user asks for it.` };
       const res = await api.ttsSpeakLines({ ...(ctx.requestId ? { requestId: ctx.requestId } : {}), lines: list.map((l) => String(l.text).trim()), voiceId: voice_id || (fallback.engine === 'gemini' ? fallback.voice : undefined), model, style });
       if (res.error) return speechFailure(res, model);
       const gap = clamp(gap_sec, 0, 10, 0.3), clips = [];
@@ -1674,7 +1674,7 @@ export function createToolRunner(ctx) {
       await ctx.settle();
       const now = project(), nextRevision = projectRevision(now), changed = active.wrote && revision !== nextRevision;
       if (!result.error) {
-        const errors = verifyActionResults(now, active.actions, before);
+        const errors = active.extensionExpected ? projectRevision(now)===active.extensionExpected?[]:['The extension result changed before verification.'] : verifyActionResults(now, active.actions, before);
         if (errors.length) result = { ...result, error: errors.join(' ') };
       }
       const validation = changed ? active.validation.get(now) || validateAgentProject(now) : null;

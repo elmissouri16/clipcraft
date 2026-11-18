@@ -22,6 +22,8 @@ function settingsFile() {
 // Getters are called often (several per preview request); the file is read again only when it
 // changed on disk. Each read still parses its own object: callers edit what they get.
 let cached = null; // { file, mtimeMs, size, text }
+const changeListeners=new Set(),PUBLIC_CHANGE_GROUPS=['ai','externalAgents','language','mcpServers','perfMode','proxy','quality','services','shortcuts','voiceDefault'];
+function onChanged(listener){if(typeof listener!=='function')throw Error('Settings listener must be a function');changeListeners.add(listener);return ()=>changeListeners.delete(listener);}
 function read() {
   try {
     const file = settingsFile(), st = fs.statSync(file);
@@ -36,6 +38,7 @@ function read() {
 }
 
 function write(data) {
+  const previous=changeListeners.size?read():null;
   const file = settingsFile();
   const tmp = `${file}.${randomUUID()}.part`;
   let fd;
@@ -54,6 +57,8 @@ function write(data) {
     if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
     if (owned) { try { fs.unlinkSync(tmp); } catch {} }
   }
+  cached=null;
+  if(previous){const keys=PUBLIC_CHANGE_GROUPS.filter(key=>JSON.stringify(previous[key])!==JSON.stringify(data[key]));if(keys.length)for(const listener of changeListeners)try{listener({keys});}catch{}}
 }
 
 // ---- Keychain policy ----
@@ -124,31 +129,19 @@ const subagentConcurrencyOf = (ai, provider) => Number.isInteger(ai.subagentConc
   ? ai.subagentConcurrency[provider] : SUBAGENT_LIMITS.concurrent;
 
 // What the renderer may see.
-function pluginProviderApproved(provider){return read().ai?.pluginProviderConsents?.[provider]===true;}
-function approvePluginProvider(provider){
- const row=providerPresets.byId(provider);if(!row?.plugin)throw Error('Plugin provider is unavailable.');
- const data=read();data.ai={...(data.ai||{}),pluginProviderConsents:{...(data.ai?.pluginProviderConsents||{}),[provider]:true},pluginProviderLabels:{...(data.ai?.pluginProviderLabels||{}),[provider]:row.name}};write(data);
-}
-function assertPluginProvider(provider,model,baseUrl){
- if(!providerPresets.isPlugin(provider))return;
- const row=providerPresets.byId(provider);
- if(!row?.plugin)throw Error('This plugin provider is unavailable. Enable its exact installed version in Settings.');
- if(!pluginProviderApproved(provider))throw Error('Approve this plugin provider in Settings before using it.');
- if(model&&!row.models.some(m=>m.id===model))throw Error('Choose a model declared by this plugin provider.');
- if(baseUrl&&baseUrl!==row.baseUrl)throw Error('Plugin provider endpoints cannot be overridden.');
-}
+function assertRetiredProvider(provider){if(providerPresets.isRetired(provider))throw Error('This provider recipe is retired. Install its rebuilt Node extension and select its service in Settings.');}
 function pluginProviderPublic(ai){
- const rows=providerPresets.all().filter(p=>p.plugin).map(p=>({...p,approved:ai.pluginProviderConsents?.[p.id]===true}));
- const missing=new Set([ai.provider,...Object.keys(ai.keys||{})].filter(id=>providerPresets.isPlugin(id)&&!rows.some(p=>p.id===id)));
- for(const id of missing)rows.push({id,name:ai.pluginProviderLabels?.[id]||'Unavailable plugin provider',short:ai.pluginProviderLabels?.[id]||'Unavailable plugin provider',plugin:true,unavailable:true,needsKey:true,models:[],defaultModel:'',baseUrl:''});
+ const rows=providerPresets.all().filter(p=>p.plugin).map(p=>({...p,approved:p.extension?!p.unavailable:ai.pluginProviderConsents?.[p.id]===true}));
+ const missing=new Set([ai.provider,...Object.keys(ai.keys||{})].filter(id=>(providerPresets.isRetired(id)||providerPresets.isExtension(id))&&!rows.some(p=>p.id===id)));
+ for(const id of missing)rows.push({id,name:ai.pluginProviderLabels?.[id]||'Unavailable plugin provider',short:ai.pluginProviderLabels?.[id]||'Unavailable plugin provider',plugin:true,extension:providerPresets.isExtension(id),retired:providerPresets.isRetired(id),unavailable:true,needsKey:false,models:[],defaultModel:'',baseUrl:''});
  return rows;
 }
 function getPublic() {
   const ai = read().ai || {};
   const keys = {};
-  for (const p of [...providerIds(),...Object.keys(ai.keys||{}).filter(providerPresets.isPlugin)]) if (ai.keys && ai.keys[p]) keys[p] = ai.keys[p].hint;
+  for (const p of [...providerIds(),...Object.keys(ai.keys||{}).filter(providerPresets.isRetired)]) if (ai.keys && ai.keys[p]) keys[p] = ai.keys[p].hint;
   return {
-    provider: providerIds().includes(ai.provider)||providerPresets.isPlugin(ai.provider) ? ai.provider : 'gemini',
+    provider: providerIds().includes(ai.provider)||providerPresets.isRetired(ai.provider)||providerPresets.isExtension(ai.provider) ? ai.provider : 'gemini',
     models: { ...defaultModels(), ...(ai.models || {}) },
     baseUrls: ai.baseUrls || {},
     executablePaths: ai.executablePaths || {},
@@ -166,7 +159,6 @@ function getPublic() {
     mcpServers: getMcpServers(),
     externalAgents: getExternalAgents(),
     voiceDefault: getVoiceDefault(),
-    voiceStudio: getVoiceStudio(),
     shortcuts: getShortcuts(),
     language: getLanguagePreference(),
   };
@@ -183,18 +175,19 @@ function setLanguagePreference(value) {
 
 // ---- Keyboard shortcuts: only the user's changes from the defaults ----
 // { actionId: ["Ctrl+B", "S"] }; the renderer owns the action list and defaults.
-const COMBO = /^(Ctrl\+)?(Alt\+)?(Shift\+)?([^+\s]+|\+)$/;
+const {validCombo}=require('../../shared/pluginShortcuts.cjs');
 function cleanShortcuts(value) {
   const out = {};
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
-  for (const [id, combos] of Object.entries(value).slice(0, 100)) {
-    if (!/^[A-Za-z][\w-]{0,40}$/.test(id) || !Array.isArray(combos)) continue;
-    out[id] = [...new Set(combos.filter((c) => typeof c === 'string' && c.length <= 40 && COMBO.test(c)))].slice(0, 4);
+  for (const [id, combos] of Object.entries(value).slice(0, 4096)) {
+    if (!(/^[A-Za-z][\w-]{0,40}$/.test(id)||/^extension:[a-z][\w.-]{0,255}$/.test(id)) || !Array.isArray(combos)) continue;
+    out[id] = [...new Set(combos.filter((c) => validCombo(c)))].slice(0, 4);
   }
   return out;
 }
 const getShortcuts = () => cleanShortcuts(read().shortcuts);
 function setShortcuts(value) {
+  if(value&&typeof value==='object'&&Object.keys(value).length>4096)throw Error('Too many shortcut overrides');
   const data = read();
   data.shortcuts = cleanShortcuts(value);
   write(data);
@@ -221,32 +214,21 @@ function setMcpServers(list) {
 }
 
 // ---- Default voice (Settings > Voice): the speech engine and voice used when none is named, by CraftAI and
-// as Text to speech's starting choice. 'auto' keeps the built-in order (Gemini, then VoiceStudio, then ElevenLabs).
-const VOICE_ENGINES = ['auto', 'gemini', 'voicestudio', 'eleven'];
+// as Text to speech's starting choice. Installed integrations join the engine catalog.
+const validVoiceEngine=engine=>['auto','gemini','eleven'].includes(engine)||typeof engine==='string'&&/^extension:[a-z][\w.-]{1,159}$/.test(engine);
 function getVoiceDefault() {
-  const v = read().voiceDefault || {};
-  return { engine: VOICE_ENGINES.includes(v.engine) ? v.engine : 'auto', voice: typeof v.voice === 'string' ? v.voice.trim().slice(0, 100) : '' };
+  const v = require('../plugins/extensionMigrations.cjs').voiceDefault(read().voiceDefault || {});
+  return {engine:validVoiceEngine(v.engine)?v.engine:'auto',voice:typeof v.voice==='string'?v.voice.trim().slice(0,160):'',...(typeof v.label==='string'?{label:v.label.slice(0,160)}:{})};
 }
 function setVoiceDefault(value) {
   const data = read();
-  data.voiceDefault = { engine: VOICE_ENGINES.includes(value?.engine) ? value.engine : 'auto', voice: typeof value?.voice === 'string' ? value.voice.trim().slice(0, 100) : '' };
+  const next=require('../plugins/extensionMigrations.cjs').voiceDefault(value||{});if(!validVoiceEngine(next.engine))throw Error('Choose an available voice engine');data.voiceDefault={engine:next.engine,voice:typeof next.voice==='string'?next.voice.trim().slice(0,160):'',...(typeof next.label==='string'?{label:next.label.slice(0,160)}:{})};
   write(data);
   return getPublic();
 }
 
-// ---- VoiceStudio connector (Settings > Voice): off by default. When on, ClipCraft speaks through the VoiceStudio
-// app running on this computer at `url` (empty: its default address, electron/audio/tts.cjs).
-function getVoiceStudio() {
-  const v = read().voiceStudio || {};
-  return { enabled: v.enabled === true, url: typeof v.url === 'string' ? v.url.trim().slice(0, 200) : '' };
-}
-function setVoiceStudio(patch) {
-  const data = read(), current = getVoiceStudio();
-  data.voiceStudio = { enabled: typeof patch?.enabled === 'boolean' ? patch.enabled : current.enabled,
-    url: typeof patch?.url === 'string' ? patch.url.trim().slice(0, 200) : current.url };
-  write(data);
-  return getPublic();
-}
+function getExtensionMigrations(){return require('../plugins/extensionMigrations.cjs').settingsSeeds(read());}
+
 
 // ---- External agents (docs/design/external-agent-mcp.md): off by default; the MCP port; the agents
 // (by the name their MCP client reports) the user allowed to edit once. The token outside agents
@@ -303,7 +285,7 @@ function clearServiceKey(name) {
 // Manage credentials without changing the selected assistant, its model or endpoint.
 function saveProviderKey(provider, value) {
   if (!providerPresets.keyed().includes(provider)) throw new Error(t('main.provider_does_not_use_api_key'));
-  if(providerPresets.isPlugin(provider))assertPluginProvider(provider);
+  if(providerPresets.isRetired(provider))assertRetiredProvider(provider);
   const key = String(value || '').trim();
   if (!key) throw new Error(t('main.paste_a_key_first'));
   if (!encryptionAvailable()) throw new Error(t('main.secure_storage_not_available'));
@@ -316,15 +298,16 @@ function saveProviderKey(provider, value) {
 // Active configuration for the main process, including the decrypted key.
 function getActive(providerOverride) {
   const ai = read().ai || {};
-  const provider = providerOverride || (providerIds().includes(ai.provider)||providerPresets.isPlugin(ai.provider) ? ai.provider : 'gemini');
+  const provider = providerOverride || (providerIds().includes(ai.provider)||providerPresets.isRetired(ai.provider)||providerPresets.isExtension(ai.provider) ? ai.provider : 'gemini');
+  if(providerPresets.isExtension(provider)&&!providerPresets.byId(provider))throw Error('This AI extension is unavailable. Enable its package in Plugins.');
   const model = (ai.models && ai.models[provider]) || defaultModels()[provider];
-  assertPluginProvider(provider,model);
+  assertRetiredProvider(provider,model);
   const effort = ai.reasoningEfforts?.[provider]?.[model];
-  const apiKey = decryptEntry(ai.keys && ai.keys[provider]); // '' when saved under another account or corrupted
+  const apiKey = providerPresets.isExtension(provider)?'':decryptEntry(ai.keys && ai.keys[provider]); // '' when saved under another account or corrupted
   return {
     provider,
     model,
-    baseUrl: providerPresets.isPlugin(provider)?providerPresets.byId(provider).baseUrl:(ai.baseUrls && ai.baseUrls[provider]) || '',
+    baseUrl: providerPresets.isExtension(provider)?'':(ai.baseUrls && ai.baseUrls[provider]) || '',
     apiKey,
     executablePath: (ai.executablePaths && ai.executablePaths[provider]) || '',
     reasoningEffort: typeof effort === 'string' ? effort : '',
@@ -339,12 +322,15 @@ function getActive(providerOverride) {
 function save(patch) {
   const data = read();
   const ai = data.ai || {};
-  if(providerPresets.isPlugin(patch.provider)&&!providerPresets.byId(patch.provider))throw Error('Plugin provider is unavailable.');
+  assertRetiredProvider(patch.provider);
   const provider = providerIds().includes(patch.provider) ? patch.provider : ai.provider || 'gemini';
-  assertPluginProvider(provider, (patch.model||'').trim()||defaultModels()[provider],patch.baseUrl);
+  if(providerPresets.isExtension(patch.provider)&&(!providerPresets.byId(patch.provider)||providerPresets.byId(patch.provider).unavailable))throw Error('AI extension is unavailable.');
+  if(providerPresets.isExtension(provider)&&(patch.apiKey?.trim()||patch.baseUrl?.trim()))throw Error('Configure this connection in the extension’s Plugins settings.');
+  if(providerPresets.isExtension(provider)){const row=providerPresets.byId(provider);if(!row.models.some(model=>model.id===((patch.model||'').trim()||row.defaultModel)))throw Error('Choose an available extension model.');ai.pluginProviderLabels={...(ai.pluginProviderLabels||{}),[provider]:row.name};}
+  assertRetiredProvider(provider, (patch.model||'').trim()||defaultModels()[provider],patch.baseUrl);
   ai.provider = provider;
   ai.models = { ...(ai.models || {}), [provider]: (patch.model || '').trim() || defaultModels()[provider] };
-  ai.baseUrls = { ...(ai.baseUrls || {}), [provider]: providerPresets.isPlugin(provider)?providerPresets.byId(provider).baseUrl:(patch.baseUrl || '').trim().replace(/\/+$/, '') };
+  ai.baseUrls = { ...(ai.baseUrls || {}), [provider]: providerPresets.isExtension(provider)?'':(patch.baseUrl || '').trim().replace(/\/+$/, '') };
   if (['codex-sdk', 'claude-agent-sdk'].includes(provider) && patch.executablePath !== undefined) {
     ai.executablePaths = { ...(ai.executablePaths || {}), [provider]: String(patch.executablePath || '').trim() };
   }
@@ -378,8 +364,8 @@ function setModel(provider, model) {
   if (!providerIds().includes(provider) || typeof model !== 'string') throw new Error(t('main.invalid_ai_model_selection'));
   const data = read();
   const ai = data.ai || {};
-  assertPluginProvider(provider,model);
-  const active = providerIds().includes(ai.provider)||providerPresets.isPlugin(ai.provider) ? ai.provider : 'gemini';
+  assertRetiredProvider(provider,model);
+  const active = providerIds().includes(ai.provider)||providerPresets.isRetired(ai.provider)||providerPresets.isExtension(ai.provider) ? ai.provider : 'gemini';
   if (active !== provider) throw new Error(t('main.ai_provider_changed'));
   ai.models = { ...(ai.models || {}), [provider]: model.trim() || defaultModels()[provider] };
   data.ai = ai;
@@ -468,4 +454,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, setSubagents, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getVoiceStudio, setVoiceStudio, getFirstRun, setFirstRun, pluginProviderApproved,approvePluginProvider,get PROVIDERS(){return providerIds();},get DEFAULT_MODELS(){return defaultModels();} };
+module.exports = { onChanged,warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, setSubagents, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getExtensionMigrations, getFirstRun, setFirstRun, get PROVIDERS(){return providerIds();},get DEFAULT_MODELS(){return defaultModels();} };

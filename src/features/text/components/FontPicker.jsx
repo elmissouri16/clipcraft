@@ -17,7 +17,7 @@ const isFontFile = (f) => /\.(ttf|otf|woff2?)$/i.test(f.name);
 // Group names are ids (fonts.js compares them); these are their labels.
 const GROUP_LABELS = {
   All: t('library.all_2'), Favorites: t('library.favorites'), Arabic: t('text.arabic'), Basic: t('clip.basic'), Display: t('text.display'),
-  Elegant: t('text.elegant'), Popular: t('text.popular'), Script: t('text.script'), [CUSTOM_GROUP]: t('text.your_fonts'),
+  Elegant: t('text.elegant'), Popular: t('text.popular'), Script: t('text.script'), [CUSTOM_GROUP]: t('text.your_fonts'), Plugins:t('plugins.title'),
 };
 
 // Font picker: every name drawn in its own font, search, groups and favorites (kept on this PC).

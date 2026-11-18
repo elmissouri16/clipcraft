@@ -8,7 +8,7 @@ import { t } from '../../../i18n/index.js';
 // Watches a media item from the Media panel before it is on the timeline: click a card and it
 // plays in the player at its own shape (tall stays tall, wide stays wide). Space plays / pauses, ← / → step a
 // frame, Esc or × goes back to the project.
-export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
+export default function MediaPeek({ m, fps = 30, onClose, onAdd, autoplay = true }) {
   const el = useRef(null);
   const scrubRef = useRef(null);
   const tcRef = useRef(null);
@@ -19,7 +19,7 @@ export default function MediaPeek({ m, fps = 30, onClose, onAdd }) {
 
   useEffect(() => {
     setAt(0);
-    setPlaying(!still);
+    setPlaying(autoplay && !still);
   }, [m.id]);
   useEffect(() => {
     const v = el.current;

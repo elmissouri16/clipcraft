@@ -2,6 +2,64 @@
 
 Architecture and public contract: [plugin system](plugin-system.md).
 
+The current executable model is the [general Node host](plugin-extension-host.md).
+Historical completed recipe stages below record earlier implementation work;
+their public runtime/SDK declarations have now been
+[retired](plugin-legacy-retirement.md). Creative packs and validated private
+editing contracts remain supported. Current regression/release gates remain open.
+
+## Current pre-v1 scope
+
+The maintainer's current direction is to finish the missing SDK capabilities
+before v1, without incrementing the SDK or application versions during this work.
+Keep SDK 0.8.0, host API 1 and application 2.0.0. Earlier stage text saying
+"later" or "deferred" records the original sequence; it does not move the
+following requirements outside v1. Production release remains blocked on the
+[release gates](plugin-release-readiness.md) as well as the unfinished scope.
+
+- [x] Extend linked split/trim to consistent shifted picture/audio pairs.
+- [x] Add explicit linked reordering with per-operation companion allowlists.
+- [x] Add [bounded ripple removal](plugin-ripple.md) with explicit affected-clip/pair scope and gap rules.
+- [x] Add [bounded clip creation/deletion/duplication, track creation and
+  cross-layer placement](plugin-lifecycle.md) contracts.
+- [x] Add [bounded static text/style, picture transform/opacity, volume/mute and
+  edge-fade editing](plugin-properties.md).
+- [x] Add [bounded fixed-duration speed, source-time curves and effect-slot
+  editing](plugin-automation.md).
+- [x] Add [native toolbar and scoped inspector extension contracts](plugin-native-controls.md).
+- [x] Add [host-reviewed panel AI, caption and GIF actions](plugin-panel-reviewed-actions.md).
+- [x] Add [picked media import/processing and reviewed host destination/upload jobs](plugin-media-jobs.md).
+- [x] Add and verify [creative sound, font, effect and transition packs](plugin-content-packs.md) as installable extensions.
+- [x] Finish all six [creator-facing pack additions](plugin-creative-expansion.md): titles/captions, LUT/color, motion, in-app creation, project recovery and more formats.
+- [x] Add [permissioned managed local speech tools/models](plugin-local-tools.md) with platform checks.
+- [x] Add [isolated live rendering author previews](plugin-usability-expansion.md) without saved ephemeral dependencies.
+- [x] Add [temporary provider/export-preset author tests](plugin-development.md) without saved ephemeral dependencies.
+- [x] Add [reviewed panel-preference copying across package versions](plugin-usability-expansion.md).
+- [x] Add [creative pack search, tags, favorites and actual previews](plugin-usability-expansion.md).
+- [x] Add [reviewed unused preview-cache cleanup](plugin-usability-expansion.md) that protects project-owned media.
+- [x] Add [versioned feature discovery, typed service contracts, project configuration and local debugger attach](plugin-sdk-general-contracts.md).
+- [ ] Finalize capability/version support, reconcile author documentation and
+  verify the complete supported SDK against the release/platform matrix.
+
+Current compatibility, retained-data and author migration rules are documented
+in [SDK compatibility](plugin-sdk-compatibility.md). Discovery/lifecycle hardening
+and reproducible local fixtures are recorded in
+[stabilization](plugin-extension-stabilization.md). The combined release item
+above stays open until the supported installed/platform matrix is complete.
+
+The [SDK validation command and CI workflow](plugin-sdk-validation.md) now provide
+repeatable development checks and candidate checksums. Exact Node 20.19.0 and
+24.22.2 pass locally on macOS; the remote six-job matrix has not run. This does
+not close the combined capability/release item above.
+
+Additional AI-provider wire formats are optional expansion, not a v1 requirement.
+Only add one for a named provider/use case that the current OpenAI-compatible
+provider contract cannot support; no unspecified adapter work blocks v1.
+
+Each required item needs its own bounded contract, implementation and retained verification.
+No checkbox authorizes arbitrary reducer patches, direct shell/filesystem access,
+installation-time execution, SDK publication or a public release.
+
 ## Stage 0 — Contracts
 
 - [x] Record architecture, versioning, permissions and UI design rules.
@@ -90,9 +148,10 @@ First slice: [bounded GIF export jobs](plugin-gif-export.md).
 - [x] Exact-version destination consent, scoped encrypted credentials, model/vision metadata and host request isolation.
 - [x] Settings/CraftAI integration and an original local provider example.
 - [x] Record final first-slice verification evidence below.
-- [ ] Expand provider protocols after their separate compatibility checks.
-- [ ] Add host-owned export action jobs and explicitly permitted destination uploads.
-- [ ] Keep output selection, overwrite rules, actual results, errors and cancellation in the host.
+Additional provider wire formats require a concrete use case and separate
+compatibility checks; they are optional and do not block v1.
+- [x] Add [bounded GIF destination jobs and explicitly reviewed HTTPS PUT uploads](plugin-media-jobs.md).
+- [x] Keep output selection, local overwrite protection, actual results, upload uncertainty and cancellation in the host.
 
 Gate: original provider and export-destination examples demonstrate correct tool behavior, scoped credentials, cancellation, failure recovery and no unexpected uploads. Finalize job/provider interfaces before implementation.
 
@@ -107,15 +166,21 @@ Gate: original provider and export-destination examples demonstrate correct tool
 - [x] Add local watch diagnostics, recovery and immutable-version warnings.
 - [x] Verify clean SDK installation, types, package parity and hidden real-app integration.
 - [x] Add explicit command/panel developer sessions, same-version reload, optional build watching and bounded runtime logs ([contract](plugin-development.md)).
-- [ ] Add temporary rendering/provider development workflows without saving ephemeral dependencies.
+- [x] Add isolated live rendering development previews without saving ephemeral dependencies.
+- [x] Add temporary provider/export-preset development tests without saving ephemeral dependencies.
 - [x] Add permission-gated [read-only editor context](plugin-editor-context.md), typed snapshots and panel events.
 - [x] Add bounded [clip move/trim transactions](plugin-edit-transactions.md) with atomic Undo and native commit authorization.
 - [x] Add [main-track reordering](plugin-main-reorder.md) with explicit gap/transition rules, separate permission and atomic Undo.
 - [x] Add [main-track split/trim](plugin-main-ranges.md) with source continuity, explicit gaps, retained overlaps and atomic Undo.
 - [x] Add [explicit linked picture/audio split and trim](plugin-linked-edits.md) with bounded opaque metadata and atomic Undo.
-- [ ] Add ripple editing, shifted-pair edits and link creation/removal contracts.
+- [x] Add [link creation/removal and explicit pair movement](plugin-link-management.md), including stored audio offsets and non-ripple main-gap placement.
+- [x] Extend linked split/trim to shifted pairs using picture-relative ranges,
+  stored audio offsets and private complete-pair plans, without a version bump.
+- [x] Add [explicit linked reordering](plugin-linked-reorder.md) with combined grants,
+  bounded companion declarations, source/offset preservation and atomic Undo.
+- [x] Add [bounded ripple interval removal](plugin-ripple.md) with a separate grant and explicit scope.
 - [x] Add [declarative Plugins/clip menu registrations](plugin-ui-actions.md) with host controls and scoped command invocation.
-- [ ] Add toolbar and inspector registration contracts as separate surfaces.
+- [x] Add [native toolbar and inspector registration contracts](plugin-native-controls.md) as separate surfaces.
 - [ ] Publish/distribute a reviewed SDK release when explicitly requested.
 
 ## Stage 5 — Panels and managed local jobs
@@ -139,8 +204,8 @@ additional provider protocols remain deferred Stage 4 work.
 
 ### Stage 5b — Managed local jobs
 
-- [ ] Add host-approved local model/tool adapters with permissions, download and platform checks.
-- [ ] Review native runtime isolation separately; do not introduce unrestricted shell access.
+- [x] Add host-approved local speech adapters with permissions, pinned model download/import and platform checks.
+- [x] Review native runtime isolation separately; approved host tools run fixed recipes, with no plugin shell access.
 
 Gate: panel/runtime failure preserves the document; managed jobs enforce resource access, cancellation and platform availability. Define panel embedding and native-job contracts before implementation.
 
@@ -408,3 +473,421 @@ document comparison ignores only derived `media.wave` updates. Full-battery,
 packaged-runtime and other-platform checks remain outstanding.
 [Retained evidence](plugin-validation.json) includes results and paths.
 No installer, publication, commit or push was made.
+
+
+### Explicit link management and pair movement outcome
+
+SDK 0.8.0 adds `clips.links`, separately from the existing aligned split/trim
+grant. Commands can link two explicit unlinked picture/audio handles, unlink
+one complete pair or move both members while retaining their source windows and
+stored audio offset. Overlay moves remain on their original layers; main moves
+use explicit empty gaps, leave gaps behind and preserve the main clock. Source
+and destination transition boundaries, collisions, locks, incomplete groups,
+source bounds and motion-pin dependencies reject the atomic batch. Consumed
+gaps count toward the existing affected-clip limit. Native approval, single-use
+commit authorization, owner/stale guards, receipts and one-step Undo remain in
+force. Private complete-pair plans preserve exact fractional source windows
+without allowing generic link synchronization to introduce floating-point drift.
+
+Validation on macOS: 82 link-management contract checks,
+37 native staging/authorization checks and all
+25 focused plugin/state/export suites passed. Clean SDK
+installation, public types, canonical packaging parity and authoring passed
+39 checks. The SDK-generated package passed 39 hidden real-app
+checks through Settings, menus, panels and CraftAI, including link/unlink,
+ordered transactions, shifted main/overlay movement, Undo/Redo, native project
+persistence, permission refusal, stale edits, Stop and revocation.
+
+Preview and actual export agree on the moved blue picture and vacated black
+time. Exported sound retains the stored offset and is silent both in vacated
+time and before its shifted start. The original main duration is retained.
+Existing free-edit, linked split/trim and UI-action hidden regressions passed
+25, 44, 46 checks respectively. No test windows were shown. Renderer compilation,
+structure and whitespace checks passed. [Retained evidence](plugin-validation.json)
+contains measured results and artifact paths. Native approvals are scripted;
+document comparisons ignore only derived waveform updates. Full-battery,
+packaged runtime, physical OS focus and Windows/Linux remain unverified.
+Ripple, shifted-pair split/trim and linked reorder remain future work.
+No installer, SDK publication, commit or push was made.
+
+### Shifted-pair split and trim pre-v1 outcome
+
+The existing `clips.linked` split/trim operations now accept consistent positive
+and negative stored audio offsets. Public times always refer to the picture,
+including audio-initiated calls. Each source is cropped at the same relative
+position; main gaps, unrelated clips/markers and the original timeline clock
+remain fixed. Complete private plans retain stored source/timeline offsets and
+reject inconsistent pairs, source violations, locks and unsupported topology.
+
+SDK 0.8.0, API 1 and application 2.0.0 remain unchanged. Verification: 91 contract
+checks, 49 native checks, 39 SDK checks and all 60 selected suites passed.
+The SDK-built package passed 62 hidden real-app checks, including Settings,
+menus, panels, CraftAI and actual picture/audio exports for both offset signs.
+Moving-media mixed transactions passed 18 checks plus 12 after a real restart.
+Renderer build, structure and whitespace checks passed. Details and limitations:
+[linked contract](plugin-linked-edits.md#shifted-pair-pre-v1-verification) and
+`shiftedLinkedEdits` in [validation](plugin-validation.json).
+
+All remaining items in the current pre-v1 checklist must still be completed
+before SDK 1.0. No installer, SDK publication, commit, push or version bump occurred.
+
+### Explicit linked reorder pre-v1 outcome
+
+`reorder-linked` requires both existing `timeline.reorder` and `clips.links` grants.
+The source and every affected linked main neighbour must be explicit complete
+pairs; a per-operation companion allowlist cannot grant future implicit edits.
+Named sound follows its picture with exact source windows and stored offsets.
+Gap identities and unrelated free-track/marker times stay fixed. Transition
+rejection/clearing, resulting-clock limits, collisions, locks, motion pins and
+the shared operation/affected-clip budgets remain guarded. Ordinary reordering
+retains its linked-target restrictions and valid legacy atomic permutations.
+
+The strengthened new suite passed 71 checks including 324 independent-oracle
+cases, with three final focused cases for shared audio layers and mixed Undo.
+All 61 selected plugin/project/history suites passed. The expanded SDK-built
+reorder fixture passed 61 hidden real-app checks plus 11 after a real process
+restart, covering Settings, menus, panels, CraftAI, native persistence, moving
+picture parity and distinct exported source/companion tones. SDK/renderer builds,
+structure and whitespace checks passed. Detailed evidence and limitations:
+[linked reorder contract](plugin-linked-reorder.md#verification-outcome) and
+`linkedReorder` in [validation](plugin-validation.json).
+
+SDK 0.8.0, host API 1 and application 2.0.0 remain unchanged; package and lock
+version files were unchanged. One standalone suite was added, bringing discovery
+to 287 suites; this was selected verification, not a new full-battery release pass.
+Ripple is the next outstanding editing capability. The remaining pre-v1 checklist
+and release/platform gates must still be completed before SDK 1.0. No installer,
+SDK publication, version increment, commit or push was made.
+
+
+### Bounded ripple removal pre-v1 outcome
+
+`timeline.ripple` now stages one `ripple-remove` interval. All affected linked
+main pairs must be explicitly named; `clips.links` covers named pairs and
+`clips.write` covers named unlinked free clips. Unlisted free tracks and markers
+stay at absolute time. Retained gap pieces, source slices and shifted pair
+offsets are preserved. Existing transition boundaries must survive unchanged;
+collisions, locks, pins, source bounds and the 64-affected-record limit reject
+atomically. Main gaps are supported menu targets only with the new permission.
+
+The standalone contract suite passed 102 checks, including 600 independent-oracle
+cuts. All 66 selected plugin/project/history/agent/i18n suites passed; the native
+edit runtime suite passed 64 checks. The SDK-built fixture passed 34 hidden
+real-app checks plus 11 in a fresh process, including Settings, menus, panels,
+CraftAI, exact Undo/Redo, save/reopen and moving-picture/tone exports. SDK and
+renderer builds, structure and whitespace checks passed. Evidence and limits:
+[ripple contract](plugin-ripple.md#verification-outcome) and `rippleEditing` in
+[validation](plugin-validation.json).
+
+SDK 0.8.0, API 1 and application 2.0.0 stay unchanged; all package/lock version
+files are byte-for-byte unchanged from the start of this work. Two standalone
+suite files bring discovery to 289; the 66-suite run is selected regression
+coverage, not a new full-battery release pass. Earlier ripple deferrals above
+are historical. Clip creation/deletion/duplication and track/layer placement
+are the next missing editing contracts. The remaining pre-v1 scope and
+release/platform gates still block v1. No installer, publication, commit or push
+was made.
+
+
+### Bounded clip lifecycle and track placement pre-v1 outcome
+
+`clips.manage` now authorizes explicit creation, duplication and deletion, with
+`tracks.write` for appending layers and placing clips. Linked variants also need
+`clips.links` and both returned handles. New media uses returned source windows;
+text uses bounded plain content and effects reuse existing references. Main edits
+consume or leave explicit gap time. Existing clock, markers, source offsets,
+track states and unlisted clips stay fixed. No implicit relayering or ripple is
+granted. Track-only changes produce actual track receipts and one Undo step.
+
+The fixed-candidate selected run passed 71 suites. The contract suite
+passed 59 checks including 108 independent source/placement oracle cases; native
+runtime passed 75 checks, and panel receipt validation passed 31. The SDK-built
+fixture passed 37 hidden real-app checks plus 11 in a fresh process, including
+Settings, menus, panels, CraftAI, track-only receipts, save/reopen and actual
+picture/tone exports. SDK/renderer builds, structure and whitespace passed.
+Evidence: [lifecycle contract](plugin-lifecycle.md) and `clipLifecycle` in
+[validation](plugin-validation.json). The earlier selected run's dev-reload
+interruption and fixture corrections are retained with the final results.
+
+Two new standalone suites bring discovery to 291. This is selected macOS
+regression coverage, not a full-battery release pass. SDK 0.8.0, host API 1 and
+application 2.0.0 stay unchanged; all package/lock version files are byte-for-byte
+unchanged. Earlier lifecycle deferrals above are historical. Bounded text,
+transform, speed, volume, keyframe and effect property edits are next. Remaining
+pre-v1 scope and release/platform gates still block v1. No installer, publication,
+commit or push was made.
+
+
+### Static clip property pre-v1 outcome
+
+`clips.properties` now stages typed text/style, picture transforms/opacity and
+volume/mute/fade writes. Linked targets also require `clips.links` and both
+handles, with both locks and whole private group checks. Caption wording has an
+explicit measured-word policy; static writes cannot silently replace curves.
+Only requested fade offsets reset. Defaults/no-ops, pins, private tokens and
+actual changed-record receipts remain guarded before one Undo step.
+
+The fixed-source selected run passed 78 suites. Contract checks passed
+43 cases including 240 independent audio/geometry oracle combinations; native
+runtime passed 86 checks. The SDK-built real-app fixture passed 36 checks plus
+13 after restart, covering Settings, menus, panels, CraftAI, exact Undo,
+measured caption invalidation, actual preview pixels and rendered text/geometry/
+volume/fades/mute. SDK/renderer builds and structure/whitespace checks passed.
+Evidence: [property contract](plugin-properties.md) and `staticProperties` in
+[validation](plugin-validation.json).
+
+Real export acceptance reproduced an existing free-audio mute bug: the muted
+clip still sounded in export. Shared projection and both raw export mixers now
+omit it; measured video and audio-only regressions retain an audible control
+tone. Screenshot comparisons convert the native Display P3 profile to sRGB;
+no pixel or audio threshold was relaxed.
+
+The former combined property checklist item is split to retain unfinished speed,
+keyframe and effect work. Two new standalone suites bring discovery to
+293. SDK 0.8.0, host API 1 and application 2.0.0 remain unchanged, with
+all package/lock version files byte-for-byte unchanged. Remaining pre-v1 and
+release/platform gates still block v1; no installer, publication, commit or push
+was made.
+
+
+### Bounded source automation pre-v1 outcome
+
+Separate `clips.retime`, `clips.automation` and `clips.effects` grants now
+authorize fixed-duration speed, source-time picture/volume curves and existing
+effect-resource attachment, slot order, removal, strength and validated plugin
+parameters. Linked targets require both handles and `clips.links`; speed updates
+both source windows while keeping timeline/source offsets and duration fixed.
+Effects require exact dependencies and a private catalog-revision commit guard.
+Old static/lifecycle grants retain their prior restrictions.
+
+The fixed-source selected regression passed 83 suites. The new contract
+suite passed 55 checks including 135 independent source-window/interpolation
+combinations; native runtime passed 119 checks. The SDK-built real-app fixture
+passed 38 checks plus 12 after a real process restart, including Settings,
+menus, panels, CraftAI, exact Undo/Redo, catalog/command revocation and actual
+source-frame, opacity/motion, tone/volume and parameterized-effect exports. The
+command stays disabled on restart while its separate rendering dependency stays
+enabled. SDK/renderer builds and structure/whitespace checks passed. Evidence:
+[contract](plugin-automation.md) and `sourceAutomation` in
+[validation](plugin-validation.json).
+
+Two standalone suites bring discovery to 295. This remains selected macOS
+coverage, not a new full-battery release pass. SDK 0.8.0, host API 1 and app
+2.0.0 remain unchanged; package/lock version files are byte-for-byte unchanged.
+Toolbar and inspector extension contracts are next. Other unchecked pre-v1
+capabilities and release/platform gates still block v1. No installer, publication,
+commit or push was made.
+
+
+### Native toolbar and inspector pre-v1 outcome
+
+The shared declarative action catalog now supports toolbar buttons/overflow and
+host-rendered inspector command drafts. Inspector scope is explicit; selection,
+project and load changes discard drafts. Apply captures exact inputs, uses fresh
+native consent, and retains normal validation, staged execution and one Undo.
+Strict boolean parameters join numeric/enum fields in Settings, dialogs and the
+inspector; CraftAI accepts exact typed toggle pairs. Inspector closure cancels
+only its own unfinished action, preserving toolbar/menu ownership.
+
+The final fixed-source selected regression passed 85 suites with no failures.
+The new contract suite passed 31 checks; the SDK-built Electron fixture
+passed 27 checks and 6 after a fresh process restart. Coverage includes native
+input dispatch, actual receipts, Undo, consent refusal, locks, selection/load
+cancellation, inspector/toolbar ownership, disable/re-enable/removal, narrow
+menu reachability, saved values and reset defaults. SDK/renderer builds and
+structure/whitespace checks passed; the captured native surface was inspected.
+The shared field refactor preserves existing numeric accessibility labels, and
+existing GIF/translation/UI regressions passed. Evidence: [contract](plugin-native-controls.md)
+and `nativeControls` in [validation](plugin-validation.json).
+
+Two new standalone suites bring discovery to 297. SDK 0.8.0, host API 1 and
+app 2.0.0 remain unchanged. This is selected macOS evidence, not a full release
+battery. Host-reviewed panel AI/caption/GIF actions are next; other unchecked
+pre-v1 capabilities and release/platform gates still block v1. No installer,
+publication, commit or push was made.
+
+
+### Reviewed panel AI, caption and GIF pre-v1 outcome
+
+Panel command allowlists now support the existing chapter AI, caption
+translation/write and native GIF contracts. Each run retains a trusted click,
+fresh native consent, mandatory host review for proposed chapters/captions, exact
+panel lifetime checks and validated inputs/results. Captions require final panel
+authorization and document/load/ownership rechecks before one atomic Undo commit.
+GIF publication rechecks the live panel at the native exclusive-publication
+boundary and records actual completion before returning a path-free metadata
+receipt. Published files remain after closure; export consent now says so.
+
+The final fixed-source selected regression passed 87 suites with no failures.
+The new broker contract suite passed 21 checks; three public-SDK-built
+packages passed 41 Electron checks and 7 after a fresh process restart.
+Coverage includes review/denial, single-opening denial, private source-track
+sharing, actual marker/caption receipts and Undo, malformed and late model results,
+authorization/closure races, locks, disable/re-enable, real GIF pixels/frame count/
+duration, exclusive destinations, cancellation, saved captions and package removal.
+AI responses are deterministic stubs; the actual worker, host reviews, reducer,
+renderer/encoder and save/restart paths are real. SDK/renderer builds and
+structure/whitespace checks passed; host captures were inspected. Evidence:
+[contract](plugin-panel-reviewed-actions.md) and `reviewedPanelActions` in
+[validation](plugin-validation.json).
+
+Two new suites bring discovery to 299. This is selected macOS evidence,
+not installed-release, native OS focus, live-provider or cross-platform
+certification. SDK 0.8.0, host API 1 and app 2.0.0 remain unchanged; version files
+are byte-for-byte unchanged. Media import/processing and host-owned destination
+jobs/uploads are next. Other unchecked pre-v1 capabilities and release/platform
+gates still block v1. No installer, publication, commit or push was made.
+
+
+### Picked media and reviewed destination jobs pre-v1 outcome
+
+`media.import` and separate `media.process` now stage one user-picked source into
+a verified library item, with fixed PNG resize, PCM WAV extraction and bounded
+H.264/AAC video trim. The host owns capture, codecs/arguments, limits, processing,
+source verification and single-use adoption. Empty editor timelines are supported
+for media jobs; one library membership change is undoable and its owned source
+remains available for Redo, saved projects and plugin removal. No implicit clip
+insertion or arbitrary source paths are granted.
+
+`export.upload` now stages a reviewed HTTPS PUT of the same run's native GIF,
+using declared origins, a user-entered exact-origin URL and optional transient
+Bearer token. The host verifies a digest-checked private snapshot, pins public DNS
+addresses, retains TLS verification, follows no redirects, bounds transfer and
+returns actual acknowledgment/uncertainty metadata. Local artifact publication is
+preserved on upload refusal, cancellation or failure. Closing the current panel
+retains the truthful completed artifact in the host dock instead of a false
+no-changes receipt. Two original examples document the supported recipes and an
+explicitly unconfigured destination placeholder.
+
+The final fixed-source selected regression passed 90 suites with no failures.
+Media/native contract checks passed 37; the real local HTTPS transport fixture
+passed 28. Three public-SDK-built packages passed 30 Electron app checks
+plus 4 after a fresh process restart, including source processing, private
+path-free receipts, empty-timeline import, atomic Undo, CraftAI ownership, stale
+picker/authorization cancellation, denied processing, real GIF bytes, upload review,
+exact-origin enforcement, retained local output and removal-safe saved sources.
+App transport is stubbed; actual HTTPS transfer is tested separately with a local
+TLS server. SDK/renderer builds, localization, structure and whitespace passed.
+The final host capture was inspected. Evidence: [contract](plugin-media-jobs.md)
+and `mediaAndDestinationJobs` in [validation](plugin-validation.json).
+
+Three suites bring discovery to 302. SDK 0.8.0, host API 1 and app 2.0.0
+remain unchanged; version files are byte-for-byte unchanged. This remains selected
+macOS evidence, not release certification or live destination compatibility.
+Additional reviewed provider protocols are next. Remaining pre-v1 scope and
+release/platform gates still block v1. No installer, publication, commit or push
+was made.
+
+
+### Provider scope correction
+
+The maintainer rejected the unspecified additional-provider-protocol requirement.
+It referred to extra AI-provider wire formats, not a missing plugin SDK protocol.
+The existing OpenAI-compatible declarative provider contract remains supported.
+Additional formats are optional integrations justified by a named unsupported
+provider/use case. They are removed from the current pre-v1 requirements, without
+being marked implemented. Earlier outcome text naming them as next is historical.
+Remaining SDK requirements and production verification gates remain open; no runtime
+or version change was made.
+
+
+### Managed local tools/models and temporary service authoring outcome
+
+The curated `speech.whisper` adapter now stages fixed, permissioned local speech
+recipes through the public SDK. Settings owns explicit tool approval and pinned
+model download/import/removal. Real native inference produces a reviewed,
+exclusively saved SRT without changing project state. Models and binaries are
+verified before execution; cancellation, ownership and package/generation
+revocation prevent late publication. Native programs are separately approved
+host tools running as the desktop user, not arbitrary plugin code in an OS sandbox.
+
+Temporary provider tests use fresh destination consent, manually entered transient
+keys and bounded OpenAI-compatible text requests. Temporary export presets render
+a short detached project snapshot and recheck the author generation at native
+publication. Neither joins installed registries or saves ephemeral identities.
+
+Final fixed-source selected regression: 98 PASS / 0 FAIL; discovery: 319 suites.
+The four new suites verify contracts and actual hidden Electron workflows,
+including real Base-model inference and real short video encoding. A tampered-
+package UI guard and missing translation wrappers were corrected; earlier failed
+results are retained. Implementation hashes stayed unchanged throughout the final
+run. SDK/renderer builds, structure and whitespace checks passed.
+
+Evidence and exact limits: `managedLocalAndAuthoring` in
+[validation](plugin-validation.json), [local tools](plugin-local-tools.md) and
+[development sessions](plugin-development.md). CLI installation remains a separate
+user prerequisite; current inference proof is macOS/Base, and provider requests
+use loopback fixtures. Full compatibility/documentation reconciliation and the
+release/platform/accessibility/performance gates remain open. SDK 0.8.0, host API 1
+and app 2.0.0 remain unchanged. No installer, commit, push or publication was made.
+
+
+## Trusted Node migration checkpoint
+
+The general extension host is replacing fixed executable recipes. Native views,
+messages, shortcuts, document inspection, managed media/processes/services,
+save/export preparation and general video export are implemented. The optional
+workbench example demonstrates a native managed render command. Versions remain
+app 2.0.0, SDK 0.8.0 and host API 1. This checkpoint does not retire the historical
+command/panel contracts described above. Current remaining scope and focused
+verification are recorded in [extension-host status](plugin-extension-host.md) and
+`plugin-validation.json.extensionHostVideoExports`. The full accepted migration
+remains active.
+
+
+## Trusted event checkpoint
+
+The general Node host now includes typed core events and namespaced custom
+topics, bounded acknowledged delivery, replay/readiness/disposal, actual edit
+provenance and callback revocation at native commit. Native editor, utility,
+view/stream compatibility and the frozen focused selection passed. Details and
+remaining scope are in [event contracts](plugin-extension-events.md) and
+[extension-host status](plugin-extension-host.md); exact evidence is under
+`plugin-validation.json.extensionHostEvents`. The accepted migration remains
+active and versions are unchanged.
+
+## Node development checkpoint
+
+Built source folders now support native session-scoped trust, captured Node
+generations, isolated settings/secrets, stop/commit/resource ordering on reload,
+compiled watch and retained runtime diagnostics in Settings. See
+[development contracts](plugin-extension-development.md) and
+`plugin-validation.json.extensionHostDevelopment` for verification. Legacy
+executable migration, release reconciliation, ASAR, full regression and other
+platform gates remain open. App 2.0.0, SDK 0.8.0 and host API 1 are unchanged.
+
+## General document/tool migration checkpoint
+
+Node extensions now have revision-scoped marker transactions, native file pickers
+and bundled tool discovery. Five replacement source projects are verified in the
+real app: chapter markers, dashboard, preferences, clip controls and local media.
+The old recipes remain until the remaining AI/caption/transcription/GIF sources
+and integrations migrate and legacy execution is retired. See
+[API contracts](plugin-extension-document-tools.md),
+[Node source examples](../../examples/extensions/README.md) and
+`plugin-validation.json.extensionHostDocumentTools` for exact scope and evidence.
+Versions remain unchanged and the accepted goal remains active.
+
+
+## Managed jobs and output examples checkpoint
+
+General Node replacements now cover GIF export, reviewed HTTPS upload and local speech setup/transcription/SRT output. The host adds scoped native job cancellation and verified file publication, without specialized executable extension kinds. The focused selection passed 73 suites; the final style-only adjustment passed 4 affected native UI suites. Native output verification passed 26 checks. Versions remain unchanged. See [managed jobs/files](plugin-extension-jobs-files.md), [migration status](plugin-extension-host.md) and `plugin-validation.json.extensionHostJobsFilesOutputExamples` for source hashes, failures/corrections and limits. The last AI/caption source migrations, legacy runtime retirement and release/platform gates remain open.
+
+
+## Ordinary AI service checkpoint
+
+Core CraftAI now consumes general services through `ai.engines`; the local AI Node replacement owns transport and credentials. Native model choice/refresh, actual tool calls/results, Undo, cancellation and missing-engine restart behavior passed. The frozen focused selection passed 89 suites with 0 failures; the completed native workflow passed 19 checks. A final fixture-only capture wait was reverified without product changes. See [AI service contract](plugin-extension-ai.md) and `plugin-validation.json.extensionHostAiServiceIntegration`. Versions are unchanged. The last chapter/translation source migrations, general selected-AI access, legacy executable retirement and release/platform gates remain pending.
+
+## General Node runtime retirement
+
+- [x] Retire executable recipes and specialized executable manifest declarations;
+  preserve immutable creative assets and explicitly identify historical packages.
+- [x] Keep same-version historical/Node payloads distinct, require fresh Node trust
+  and retain creative dependency availability through replacement removal.
+- [x] Replace fixed GIF controls with general export actions and expose globally
+  cancellable managed jobs.
+- [x] Verify native migration, current SDK clean installation, mixed-pack export,
+  private preparation drafts and the Node utility worker under ASAR.
+- [ ] Close the remaining [release prerequisites and platform gates](plugin-legacy-retirement.md).
+
+App 2.0.0, SDK 0.8.0, host API 1 and example versions remain unchanged.

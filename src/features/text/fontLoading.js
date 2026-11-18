@@ -16,7 +16,7 @@ export function textFontRequests(clips = []) {
 }
 
 export function createFontLoader({ fontSet, localFace, customFace, onChange = () => {} }) {
-  const jobs = new Map(), availability = new Map();
+  const jobs = new Map(), availability = new Map(),epochs=new Map();
   const status = id => availability.get(id);
   const setStatus = (id, value) => {
     if (availability.get(id) === value) return;
@@ -25,10 +25,11 @@ export function createFontLoader({ fontSet, localFace, customFace, onChange = ()
   };
   const load = (font, { text = 'Aa', bold = false, italic = false } = {}) => {
     const weight = bold ? font.bold ?? font.regular : font.regular;
-    const key = JSON.stringify([font.id, weight, italic, [...new Set(text)].sort().join('')]);
+    const epoch=epochs.get(font.id)||0;
+    const key = JSON.stringify([font.id, epoch, weight, italic, [...new Set(text)].sort().join('')]);
     if (jobs.has(key)) return jobs.get(key);
     const job = (async () => {
-      if (font.source === 'custom') await customFace(font);
+      if (['custom','pack'].includes(font.source)) await customFace(font);
       else if (font.source === 'system') {
         // check() also returns true for nonexistent families. A local face must decode.
         await localFace(font.family).load();
@@ -37,8 +38,8 @@ export function createFontLoader({ fontSet, localFace, customFace, onChange = ()
       }
       await fontSet.load(`${italic ? 'italic ' : ''}${weight} 32px ${JSON.stringify(font.family)}`, text);
       return true;
-    })().then(() => { setStatus(font.id, true);return true; }, () => {
-      jobs.delete(key);setStatus(font.id, false);return false;
+    })().then(() => {if((epochs.get(font.id)||0)!==epoch)return false;setStatus(font.id, true);return true; }, () => {
+      jobs.delete(key);if((epochs.get(font.id)||0)===epoch)setStatus(font.id, false);return false;
     });
     jobs.set(key, job);
     // Bound retained text keys without interrupting pending loads.
@@ -46,7 +47,7 @@ export function createFontLoader({ fontSet, localFace, customFace, onChange = ()
     return job;
   };
   return { load, status, invalidate(id) {
-    availability.delete(id);
+    epochs.set(id,(epochs.get(id)||0)+1);availability.delete(id);
     for (const key of jobs.keys()) if (JSON.parse(key)[0] === id) jobs.delete(key);
   } };
 }

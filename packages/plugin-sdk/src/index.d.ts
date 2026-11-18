@@ -1,50 +1,37 @@
-/** ClipCraft SDK 0.7.0; permission and runtime validation remain host-owned. */
-export declare const SDK_VERSION: '0.7.0';
-export declare const HOST_API_VERSION: 1;
-export type ErrorCode='MANIFEST_INVALID'|'INVALID_ARGUMENT'|'UNKNOWN_COMMAND'|'HOST_UNAVAILABLE'|'API_MISMATCH'|'PERMISSION_DENIED'|'HOST_REJECTED'|'DISPOSED'|'BUSY';
+/** ClipCraft SDK 0.8.0. Trusted Node extensions and declarative creative packs. */
+export declare const SDK_VERSION:'0.8.0';
+export declare const HOST_API_VERSION:1;
+export type ErrorCode='MANIFEST_INVALID'|'INVALID_ARGUMENT';
 export declare class PluginError extends Error {readonly code:ErrorCode;constructor(code:ErrorCode,message:string,options?:ErrorOptions);}
 export type JsonValue=null|boolean|number|string|JsonValue[]|{[key:string]:JsonValue};
-export type CommandPermission='clips.linked'|'timeline.edit'|'timeline.reorder'|'clips.write'|'editor.read'|'project.read'|'markers.write'|'captions.read'|'ai.chapters'|'captions.write'|'ai.translateCaptions'|'export.gif';
-export type PanelPermission='editor.read'|'project.read'|'storage.local';
 export interface NumericParameter {id:string;name:string;min:number;max:number;step:number;default:number;integer?:boolean;}
-export interface EnumParameter {id:string;name:string;type:'enum';options:{value:string;label:string}[];default:string;}
-export type CommandParameter=NumericParameter|EnumParameter;
-export type CommandInput=Readonly<Record<string,number|string>>;
-export interface CommandDefinition {id:string;name:string;description?:string;parameters?:CommandParameter[];}
-export type ActionIcon='command'|'sparkles'|'scissors'|'export'|'text'|'audio'|'layers'|'info';
-export interface ActionDefinition {id:string;commandId:string;label:string;icon?:ActionIcon;locations:('plugins-menu'|'clip-menu')[];when?:{selection?:'any'|'none'|'single'|'multiple';lanes?:EditorLane[]};}
+export interface CommandDefinition {id:string;name:string;description?:string;}
 export interface EffectDefinition {id:string;name:string;expression:string;parameters?:Omit<NumericParameter,'integer'>[];}
 export interface TransitionDefinition extends EffectDefinition {duration?:number;}
 export interface ExportSettings {mode:'crf'|'bitrate';crf:number;bitrateMbps:number;encoderPreset:'ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow';audioKbps:96|128|192|256|320;resCap:0|480|720|1080|1440|2160;fps:0|24|25|30|50|60;codec:'h264'|'h265';}
 export interface ExportPreset {id:string;name:string;settings:ExportSettings;}
-export interface PanelDefinition {id:string;name:string;entry:'panel.html';script?:'panel.js';style?:'panel.css';permissions?:PanelPermission[];commands?:string[];}
-export interface AiProviderDefinition {id:string;name:string;description?:string;protocol:'openai';baseUrl:string;needsKey:boolean;models:{id:string;name:string;vision:boolean}[];defaultModel:string;}
-export interface PluginManifest {id:string;name:string;publisher:string;version:string;apiVersion:1;minClipcraftVersion?:string;description?:string;entry?:'commands.js';permissions?:CommandPermission[];contributes:{actions?:ActionDefinition[];commands?:CommandDefinition[];panels?:PanelDefinition[];effects?:EffectDefinition[];transitions?:TransitionDefinition[];exportPresets?:ExportPreset[];aiProviders?:AiProviderDefinition[];};}
+export interface SoundContribution {id:string;name:string;license:string;file:string;kind:'music'|'sfx';}
+export interface FontContribution {id:string;name:string;license:string;faces:{file:string;weight:number;style:'normal'|'italic'}[];}
+export type PackBuiltinFont='montserrat'|'poppins'|'anton'|'bebas'|'oswald'|'arialblack'|'impact'|'roboto'|'rubik'|'kanit'|'archivoblack'|'barlowcond'|'lilita'|'fredoka'|'bangers'|'luckiest'|'marker'|'righteous'|'pixel'|'showcard'|'cooper'|'stencil'|'broadway'|'titan'|'russo'|'blackops'|'bungee'|'creepster'|'monoton'|'orbitron'|'audiowide'|'chewy'|'playfair'|'georgia'|'garamond'|'times'|'cinzel'|'abril'|'dmserif'|'cormorant'|'pacifico'|'lobster'|'dancing'|'caveat'|'brush'|'segoescript'|'inkfree'|'greatvibes'|'kaushan'|'satisfy'|'shadows'|'sacramento'|'yellowtail'|'cairo'|'tajawal'|'lalezar'|'amiri'|'rakkas'|'majalla'|'tahoma'|'almarai'|'changa'|'elmessiri'|'reemkufi'|'arefruqaa'|'marhey'|'lemonada'|'notokufi'|'notonaskh'|'baloo'|'readex'|'arial'|'segoe'|'segoeblack'|'bahnschrift'|'calibri'|'verdana'|'trebuchet'|'comic'|'consolas';
+export interface PackTextStyle extends Omit<ClipTextStyle,'font'> {font?:PackBuiltinFont|`pack:${string}`;color2?:string;glowColor?:string;bubbleColor?:string;effect?:'none'|'glow'|'neon'|'gradient'|'chrome'|'fire'|'ice'|'shadow3d'|'retro'|'double'|'hollow'|'glitch'|'soft'|'emboss';bubble?:'none'|'rounded'|'pill'|'speech'|'thought'|'tag'|'ribbon'|'sticky'|'frame'|'marker'|'underline'|'brackets';highlight?:{mode?:'none'|'color'|'box'|'scale'|'karaoke'|'marker'|'reveal'|'single';color?:string;bg?:string};animIn?:{id?:'none'|'fade'|'pop'|'zoomIn'|'zoomOut'|'slideUp'|'slideDown'|'slideLeft'|'slideRight'|'blurIn'|'drop'|'rotateIn'|'stretch'|'flip'|'typewriter'|'wordPop'|'wordRise'|'waveIn'|'flicker'|'glitchIn'|'slideUpSmooth'|'slideDownSmooth'|'slideLeftSmooth'|'slideRightSmooth'|'slideUpBlur'|'slideDownBlur'|'zoomBlur'|'blurPop'|'softFade'|'elasticPop'|'bounceUp'|'flipSide'|'tiltIn'|'spinIn'|'trackingIn'|'fadeUp'|'fadeDown'|'fadeLeft'|'fadeRight'|'glideUp'|'settleUp'|'scaleTrack'|'growCenter'|'slideRotate'|'charSlideUp'|'charSlideDown'|'charFade'|'decode';dur?:number;unit?:'whole'|'word'|'char'};animOut?:{id?:'none'|'fade'|'pop'|'zoomIn'|'zoomOut'|'slideUp'|'slideDown'|'slideLeft'|'slideRight'|'blurIn'|'rotateIn'|'stretch'|'typewriter'|'wordPop'|'flicker'|'glitchIn'|'slideUpSmooth'|'slideDownSmooth'|'slideLeftSmooth'|'slideRightSmooth'|'slideUpBlur'|'slideDownBlur'|'zoomBlur'|'blurPop'|'softFade'|'elasticPop'|'bounceUp'|'drop'|'flip'|'flipSide'|'tiltIn'|'spinIn'|'trackingIn'|'wordRise'|'waveIn'|'fadeUp'|'fadeDown'|'fadeLeft'|'fadeRight'|'glideUp'|'settleUp'|'scaleTrack'|'growCenter'|'slideRotate'|'charSlideUp'|'charSlideDown'|'charFade'|'decode';dur?:number;unit?:'whole'|'word'|'char'};animLoop?:{id?:'none'|'pulse'|'heartbeat'|'float'|'swing'|'shake'|'wave'|'jelly'|'blink'|'rainbow'|'glitch';speed?:number};}
+export interface TextStyleContribution {id:string;name:string;kind:'title'|'caption'|'lower-third';style:PackTextStyle;sampleText?:string;duration?:number;}
+export interface LutContribution {id:string;name:string;license:string;file:string;}
+export interface PackColorSettings {filterLut?:string;filter?:string;filterIntensity?:number;adjust?:{brightness?:number;contrast?:number;saturation?:number;hue?:number;blur?:number};grade?:Partial<Record<'temp'|'tint'|'saturation'|'exposure'|'contrast'|'highlight'|'shadow'|'whites'|'blacks'|'brilliance'|'sharpen'|'clarity'|'particles'|'fade'|'vignette',number>>&{hsl?:Partial<Record<'red'|'orange'|'yellow'|'green'|'cyan'|'blue'|'purple'|'magenta',{h?:number;s?:number;l?:number}>>;curves?:Partial<Record<'master'|'r'|'g'|'b',[number,number][]>>};lut?:string;lutIntensity?:number;}
+export interface ColorPresetContribution {id:string;name:string;settings:PackColorSettings;}
+export type PackMotionEase='continuous'|'linear'|'in'|'out'|'inout'|'spring'|'back'|'smooth'|'easeIn'|'easeOut'|'snapIn'|'snapOut'|'overshoot'|{p1x:number;p1y:number;p2x:number;p2y:number};
+export type PackMotionInId='fade_in'|'zoom_in'|'zoom_out_in'|'slide_left'|'slide_right'|'slide_up'|'slide_down'|'slide_up_smooth'|'slide_down_smooth'|'slide_left_smooth'|'slide_right_smooth'|'spin_in'|'twist_in'|'pop_in'|'drop_in'|'swing_in'|'shake_in'|'rock_in';
+export type PackMotionOutId='fade_out'|'zoom_out'|'zoom_in_out'|'slide_left_out'|'slide_right_out'|'slide_up_out'|'slide_down_out'|'slide_up_smooth_out'|'slide_down_smooth_out'|'slide_left_smooth_out'|'slide_right_smooth_out'|'spin_out'|'twist_out'|'pop_out'|'swing_out'|'shake_out'|'rock_out';
+export type PackMotionComboId='pulse'|'heartbeat'|'wobble'|'sway'|'vibrate'|'bounce'|'kenburns'|'pullback'|'drift'|'orbit';
+export interface MotionPresetContribution {id:string;name:string;transform?:ClipPictureTransform;opacity?:number;animation?:{in?:{type:PackMotionInId;duration?:number};out?:{type:PackMotionOutId;duration?:number};combo?:{type:PackMotionComboId}};curves?:Partial<Record<'scale'|'x'|'y'|'rot'|'opacity',{at:number;value:number;ease?:PackMotionEase}[]>>;}
+export interface CreativeContributions {motionPresets?:MotionPresetContribution[];luts?:LutContribution[];colorPresets?:ColorPresetContribution[];textStyles?:TextStyleContribution[];sounds?:SoundContribution[];fonts?:FontContribution[];effects?:EffectDefinition[];transitions?:TransitionDefinition[];exportPresets?:ExportPreset[]}
+export type PluginManifest={permissions?:[];id:string;name:string;publisher:string;version:string;apiVersion:1;minClipcraftVersion?:string;description?:string;/** Local static PNG, at most 256 KiB and 1024×1024. */icon?:string}&(
+ {main:'dist/extension.cjs';activationEvents?:string[];contributes:CreativeContributions&{commands?:CommandDefinition[];views?:{id:string;name:string}[];shortcuts?:{id:string;name:string;command:string;keys:string[];scope?:'editor'|'app'}[]}}|
+ {main?:never;activationEvents?:never;contributes:CreativeContributions}
+);
 export declare function definePlugin<T extends PluginManifest>(manifest:T):T;
+export {defineExtension,defineServiceContract} from './extension.js';
+export type * from './extension.js';
 export interface Marker {time:number;label:string;}
-export interface CommandProject {duration_sec:number;fps:number;markers:Marker[];markers_total:number;}
-export interface CaptionCue {start_sec:number;end_sec:number;text:string;}
-export type TranslationLanguage='en'|'fr'|'es'|'ar'|'de'|'it'|'pt'|'ja'|'ko'|'zh'|'tr'|'hi';
-export interface TranslatedCue {index:number;text:string;}
-export interface GifInput {start_sec:number;end_sec:number;max_size:'size-320'|'size-480'|'size-720'|'size-960';fps:'fps-5'|'fps-10'|'fps-20';}
-export interface GifPlan {staged:true;start_sec:number;end_sec:number;width:number;height:number;fps:number;frame_count:number;duration_sec:number;}
-/** Only declared permissions are granted. Effects/providers/presets are declarative, not context methods. */
-export interface CommandContext {
- readonly command:{readonly id:string};
- readonly editor:{read():Promise<EditorSnapshot>;stage(transaction:ClipTransaction):Promise<{staged:number}>};
- readonly project:{read():Promise<CommandProject>};
- readonly markers:{add(markers:Marker[]):Promise<{staged:number}>};
- readonly transcript:{read():Promise<CaptionCue[]>};
- readonly ai:{chapters(input:{count:number}):Promise<Marker[]>;translateCaptions(input:{language:TranslationLanguage}):Promise<TranslatedCue[]>};
- readonly captions:{addTranslation(input:{language:TranslationLanguage;translations:TranslatedCue[]}):Promise<{staged:number}>};
- readonly exports:{gif(input:GifInput):Promise<GifPlan>};
- progress(fraction:number,message?:string):Promise<{ok:true}>;
-}
-export type CommandResult=void|{message?:string};
-export type CommandHandler<Input extends CommandInput=CommandInput>=(context:CommandContext,input:Input)=>CommandResult|Promise<CommandResult>;
-export declare function defineCommand<Input extends CommandInput=CommandInput>(handler:CommandHandler<Input>):CommandHandler<Input>;
-export declare function defineCommand(handlers:Record<string,CommandHandler>):CommandHandler;
-/** Optional editor.read capability; handles are opaque and scoped to one document load. */
 export type EditorLane='video'|'overlay'|'audio'|'text'|'effect';
 export interface EditorTrack {readonly id:string;readonly lane:EditorLane;readonly layer:number;readonly locked:boolean;readonly hidden:boolean;readonly muted:boolean;readonly solo:boolean;}
 export interface EditorClip {readonly id:string;readonly trackId:string;readonly start_sec:number;readonly end_sec:number;readonly gap:boolean;readonly link?:{readonly groupId:string;readonly partnerId:string|null;readonly members_total:number};readonly main?:{readonly index:number;readonly transition:boolean;readonly overlap_sec:number};}
@@ -54,25 +41,50 @@ export interface EditorSnapshot {
  readonly selection:{readonly clipIds:readonly string[];readonly total:number};
  readonly timeline:{readonly tracks:readonly EditorTrack[];readonly tracks_total:number;readonly clips:readonly EditorClip[];readonly clips_total:number;readonly main_total?:number};
 }
-export type ClipEdit={type:'split-linked';clipId:string;partnerClipId:string;at_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'trim-linked';clipId:string;partnerClipId:string;start_sec:number;end_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'split';clipId:string;at_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'trim-main';clipId:string;start_sec:number;end_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'reorder';clipId:string;beforeClipId:string|null;gaps:'preserve';transitions:'reject'|'clear-boundaries'}|{type:'move';clipId:string;start_sec:number}|{type:'trim';clipId:string;start_sec:number;end_sec:number};
-export interface ClipTransaction {documentId:string;revision:number;operations:readonly ClipEdit[];}
-export interface EditorEvent {readonly changes:readonly ('timeline'|'selection'|'playhead')[];readonly snapshot:EditorSnapshot;}
-export interface PanelEditor {read():Promise<EditorSnapshot>;onChanged(callback:(event:EditorEvent)=>void):Unsubscribe;}
-export interface PanelSummary {name:string;duration_sec:number;fps:number;width:number;height:number;counts:Record<'video'|'overlay'|'audio'|'text'|'effect'|'media'|'markers',number>;markers:Marker[];}
-export type PanelTheme=Record<'background'|'surface'|'text'|'muted'|'accent'|'border',string>;
-export interface PanelInfo {apiVersion:1;panelId:string;name:string;pluginName:string;version:string;permissions:PanelPermission[];commands:{id:string;name:string;parameters:CommandParameter[]}[];theme:PanelTheme;}
-export interface PanelProgress {phase:'permission'|'running'|'applying'|'completed'|'denied'|'canceled'|'failed';progress:number;}
-export type PanelCommandResult={status:'completed';markers_added:number;clips_changed?:number}|{status:'denied'|'canceled'|'failed'};
-export type Unsubscribe=()=>void;
-export interface PanelStorage {get(key:string):Promise<JsonValue>;set(key:string,value:JsonValue):Promise<true>;remove(key:string):Promise<true>;keys():Promise<string[]>;clear():Promise<true>;}
-/** Raw isolated preload bridge; do not use the privileged editor API. */
-export interface PanelBridge {
- getInfo():Promise<PanelInfo>;
- editor?:PanelEditor;
- project:{read():Promise<PanelSummary>;onChanged(callback:(summary:PanelSummary)=>void):Unsubscribe};
- theme:{onChanged(callback:(theme:PanelTheme)=>void):Unsubscribe};
- storage:PanelStorage;
- commands:{run(commandId:string,input?:CommandInput):Promise<PanelCommandResult>;cancel():Promise<boolean>;onProgress(callback:(progress:PanelProgress)=>void):Unsubscribe};
+/** Two returned opaque handles of a complete picture/audio pair. */
+export interface LinkedClipPair {clipId:string;partnerClipId:string;}
+/** One interval removal; timeline.ripple + editor.read. Explicit free clips need
+ * clips.write; complete picture/audio pairs need clips.links. Markers stay put. */
+export interface RippleRemoveEdit {type:'ripple-remove';start_sec:number;end_sec:number;clipIds:readonly string[];linkedPairs:readonly LinkedClipPair[];gaps:'preserve-pieces';transitions:'reject';markers:'preserve';}
+/** Explicit clip lifecycle uses clips.manage; appending tracks uses tracks.write.
+ * Placement needs both; linked variants additionally need clips.links. */
+export type LifecycleEdit=
+ | {type:'create-track';trackId:string}
+ | {type:'create-media';sourceClipId:string;trackId:string;start_sec:number;offset_sec:number;duration_sec:number;gaps:'preserve-time';transitions:'reject'}
+ | {type:'create-text';trackId:string;start_sec:number;duration_sec:number;text:string}
+ | {type:'create-effect';sourceClipId:string;trackId:string;start_sec:number;duration_sec:number}
+ | {type:'duplicate-clip'|'place-clip';clipId:string;trackId:string;start_sec:number;gaps:'preserve-time';transitions:'reject'}
+ | {type:'delete-clip';clipId:string;gaps:'preserve-time';transitions:'reject'}
+ | {type:'duplicate-linked'|'place-linked';clipId:string;partnerClipId:string;pictureTrackId:string;audioTrackId:string;start_sec:number;gaps:'preserve-time';transitions:'reject'}
+ | {type:'delete-linked';clipId:string;partnerClipId:string;gaps:'preserve-time';transitions:'reject'};
+/** Static values only. Existing timing and unrelated curves remain unchanged. */
+export interface ClipTextStyle {
+ font?:'montserrat'|'poppins'|'anton'|'oswald'|'roboto';size?:number;bold?:boolean;italic?:boolean;underline?:boolean;uppercase?:boolean;color?:string;
+ align?:'left'|'center'|'right';letterSpacing?:number;lineHeight?:number;maxWidth?:number;x?:number;y?:number;rotation?:number;opacity?:number;
+ stroke?:{width?:number;color?:string};shadow?:{on?:boolean;color?:string;blur?:number;x?:number;y?:number;opacity?:number};bg?:{on?:boolean;color?:string;opacity?:number;radius?:number;padding?:number;mode?:'block'|'line'};
 }
-export interface PanelClient extends Omit<PanelBridge,'getInfo'|'editor'> {readonly editor:PanelEditor;readonly info:Readonly<PanelInfo>;supports(permission:PanelPermission):boolean;dispose():void;}
-export declare function connectPanel(options?:{host?:PanelBridge;signal?:AbortSignal}):Promise<Readonly<PanelClient>>;
+export interface ClipPictureTransform {scale?:number;scaleX?:number;scaleY?:number;uniform?:boolean;x?:number;y?:number;rot?:number;}
+export interface ClipAudioProperties {volume?:number;muted?:boolean;fadeIn_sec?:number;fadeOut_sec?:number;}
+/** partnerClipId is null for an unlinked clip; linked scope needs clips.links and both handles. */
+export type ClipPropertyEdit={clipId:string;partnerClipId:string|null}&(
+ | {type:'set-text';text:string;measuredWords:'reject'|'invalidate'}
+ | {type:'set-text-style';style:ClipTextStyle}
+ | {type:'set-transform';transform:ClipPictureTransform}
+ | {type:'set-opacity';opacity:number}
+ | {type:'set-audio';audio:ClipAudioProperties;fadePolicy:'replace-edges'});
+/** Source windows change at fixed timeline duration; curves stay in source seconds. */
+export type ClipCurveProperty='scale'|'x'|'y'|'rot'|'opacity'|'volume';
+export interface ClipCurvePoint {source_sec:number;value:number;easing:'linear'|'in'|'out'|'inout'|'continuous';}
+export interface ClipVolumePoint extends ClipCurvePoint {easing:'linear';}
+export type ClipAutomationEdit={clipId:string;partnerClipId:string|null}&(
+ | {type:'set-speed';speed:number;timeline:'preserve-time';source:'within-media';automation:'preserve-source'}
+ | {type:'set-keyframes';property:Exclude<ClipCurveProperty,'volume'>;points:readonly ClipCurvePoint[];timebase:'source'}
+ | {type:'set-keyframes';property:'volume';points:readonly ClipVolumePoint[];timebase:'source'}
+ | {type:'attach-effect';sourceClipId:string;beforeIndex:number;strength:number;params:Record<string,number>}
+ | {type:'set-effect';effectIndex:number|null;enabled:boolean;strength:number;params:Record<string,number>}
+ | {type:'remove-effect';effectIndex:number}
+ | {type:'move-effect';effectIndex:number;beforeIndex:number});
+/** Linked split/trim use picture times, including audio-initiated calls.
+ * reorder-linked requires explicit companions. */
+export type ClipEdit=ClipAutomationEdit|ClipPropertyEdit|LifecycleEdit|RippleRemoveEdit|{type:'reorder-linked';clipId:string;partnerClipId:string;beforeClipId:string|null;companions:readonly LinkedClipPair[];gaps:'preserve';transitions:'reject'|'clear-boundaries'}|{type:'link'|'unlink';clipId:string;partnerClipId:string}|{type:'move-linked';clipId:string;partnerClipId:string;start_sec:number;gaps:'preserve-time';transitions:'reject'}|{type:'split-linked';clipId:string;partnerClipId:string;at_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'trim-linked';clipId:string;partnerClipId:string;start_sec:number;end_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'split';clipId:string;at_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'trim-main';clipId:string;start_sec:number;end_sec:number;gaps:'preserve-time';transitions:'reject'|'preserve-overlap'}|{type:'reorder';clipId:string;beforeClipId:string|null;gaps:'preserve';transitions:'reject'|'clear-boundaries'}|{type:'move';clipId:string;start_sec:number}|{type:'trim';clipId:string;start_sec:number;end_sec:number};
+export interface ClipTransaction {documentId:string;revision:number;operations:readonly ClipEdit[];}

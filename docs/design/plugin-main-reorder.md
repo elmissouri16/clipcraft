@@ -65,8 +65,10 @@ Implementation steps:
    transactions in hidden Electron, including cancellation and revocation.
 
 SDK 0.6.0 adds [main-track split/trim](plugin-main-ranges.md) under `timeline.edit`.
-SDK 0.7.0 adds [explicit linked split/trim](plugin-linked-edits.md). Ripple,
-shifted-pair edits and automatic reframing or retiming remain separate stages. No installer or publication is
+SDK 0.7.0 adds [explicit linked split/trim](plugin-linked-edits.md), now including
+shifted pairs. SDK 0.8.0 also supports [explicit linked reordering](plugin-linked-reorder.md)
+with both sequencing and pair-management grants. Ordinary reordering retains the
+boundaries above. Ripple and automatic reframing remain separate pre-v1 work. No installer or publication is
 part of this work.
 
 Validation outcome on macOS: 40 focused reorder contract checks and

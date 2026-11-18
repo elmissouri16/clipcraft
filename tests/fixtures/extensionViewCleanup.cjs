@@ -1,0 +1,23 @@
+// Native renderer/session retention regression; no user profile or forced-GC
+// performance claim. GC only establishes whether closed package buffers are rooted.
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{once}=require('node:events');
+const {app,BrowserWindow,WebContentsView,session,protocol,ipcMain,webContents}=require('electron');
+const {VIEW_SCHEME}=require('../../electron/plugins/extensionViewProtocol.cjs');
+const config=JSON.parse(fs.readFileSync(process.argv.at(-1)));app.setPath('userData',path.join(config.directory,'user-data'));protocol.registerSchemesAsPrivileged([VIEW_SCHEME]);
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+app.whenReady().then(async()=>{
+ assert.equal(typeof global.gc,'function','Diagnostic GC must be explicitly enabled');
+ const owner=new BrowserWindow({show:false,width:800,height:600,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});await owner.loadURL('data:text/html,<h1>Isolated view cleanup owner</h1>');
+ const id='test.retention.view',extension={key:'retention-key',state:'running',manifest:{id:'test.retention'}},entry={job:extension,data:{id,title:'Retention fixture',entry:'assets/view.html'}},refs=[],jobRefs=[],viewRefs=[],samples=[];
+ const runtime={active:new Map([[extension.key,extension]]),ui:{list:()=>[{kind:'view',id}],entry:()=>entry},request:async()=>true};
+ const manager={commandBundle:async()=>{const payload=Buffer.alloc(config.assetBytes,refs.length+1);refs.push(new WeakRef(payload));return {files:new Map([['assets/view.html',Buffer.from('<!doctype html><title>Retention fixture</title><h1>Native extension view</h1>')],['assets/payload.json',payload]])};}};
+ const origins=new Set(),tokens=new Set();let createdSessions=0;const views=new(require('../../electron/plugins/extensionViews.cjs').ExtensionViews)({runtime,manager,ipcMain,WebContentsView,session:{fromPartition(...args){createdSessions++;return session.fromPartition(...args);}},getWindow:()=>owner});
+ const checkpoint=stage=>fs.writeFileSync(path.join(config.directory,'checkpoint.json'),JSON.stringify({stage,cycles:samples.length,samples},null,2));
+ const cycle=async()=>{checkpoint('opening');await views.open(id);checkpoint('opened');const job=views.active.get(id),wc=job.view.webContents;assert.ok(!origins.has(job.origin),'Reusing a session must not reuse its old origin');assert.ok(!tokens.has(job.token),'Reusing a session must not reuse its old bridge token');origins.add(job.origin);tokens.add(job.token);jobRefs.push(new WeakRef(job));viewRefs.push(new WeakRef(job.view));assert.ok(await wc.executeJavaScript('document.body.textContent.includes("Native extension view")'));const destroyed=once(wc,'destroyed');assert.equal(views.close(id),true);await destroyed;await views.sessions.settle();assert.equal(views.sessions.snapshot().failed,0);checkpoint('closed');assert.equal(views.close(id),false);assert.equal(views.active.size,0);assert.equal(views.senders.size,0);assert.equal(views.pending.size,0);};
+ const collect=async()=>{for(let i=0;i<8;i++){await wait(25);global.gc();}await wait(25);return {retainedJobs:jobRefs.filter(ref=>!!ref.deref()).length,retainedViews:viewRefs.filter(ref=>!!ref.deref()).length,retainedBuffers:refs.filter(ref=>!!ref.deref()).length,memory:process.memoryUsage(),webContents:webContents.getAllWebContents().map(wc=>({id:wc.id,url:wc.getURL()}))};};
+ try{
+  for(let i=0;i<config.cycles;i++){await cycle();samples.push({cycle:i,...await collect()});}
+  const final=await collect(),result={ok:final.retainedBuffers===0&&final.retainedJobs===0&&final.retainedViews===0,cycles:config.cycles,assetBytes:config.assetBytes,createdSessions,sessionPool:views.sessions.snapshot(),samples,final,userData:app.getPath('userData'),environment:{electron:process.versions.electron,node:process.version,platform:process.platform,arch:process.arch}};
+  fs.writeFileSync(path.join(config.directory,'result.json'),JSON.stringify(result,null,2));assert.equal(createdSessions,1,'Sequential reopenings must reuse one cleaned private session');assert.equal(final.retainedBuffers,0,'Closed native views must release their package buffers');assert.equal(final.retainedJobs,0,'Closed native views must release their jobs');assert.equal(final.retainedViews,0,'Closed native view wrappers must not remain rooted');assert.deepEqual(final.webContents.map(row=>row.id),[owner.webContents.id]);app.exit(0);
+ }finally{views.dispose();owner.destroy();}
+}).catch(error=>{fs.writeFileSync(path.join(config.directory,'failure.json'),JSON.stringify({error:error.stack},null,2));console.error(error);app.exit(1);});

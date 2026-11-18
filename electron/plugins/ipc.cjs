@@ -1,80 +1,181 @@
 const {PluginManager}=require('./manager.cjs');
-function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory}) {
+function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fontDirectory}) {
   const manager=new PluginManager(root,app.getVersion());
   const ready=examplesDirectory ? require('./examples.cjs').loadExamplePlugins(manager,examplesDirectory) : Promise.resolve();
   manager.ready=ready;
-  const {BrowserWindow,WebContentsView,session}=require('electron');
-  const {CommandRuntime}=require('./commandRuntime.cjs');
-  const translationReview=require('./translationReview.cjs').createTranslationReview(getWindow);
-  const runtime=new CommandRuntime({ipcMain,BrowserWindow,session,manager,getWindow,sandboxEnabled:!app.commandLine?.hasSwitch?.('no-sandbox'),timeoutMs:process.env.FVE_SMOKE?3000:15000,aiTimeoutMs:process.env.FVE_SMOKE?5000:90000,
-    review:async(manifest,command,markers,ai,extra)=>{
-      if(extra?.translation){
-        const {translationLanguage}=await import('../../shared/pluginAi.mjs');
-        const proposal=extra.translation;
-        return translationReview.request({name:manifest.name,version:manifest.version,provider:ai?.provider,model:ai?.model,language:translationLanguage(proposal.language).label,sourceTrack:proposal.sourceTrack,rows:proposal.captions.map((cue,index)=>({start:cue.start_sec,end:cue.end_sec,original:cue.text,translated:proposal.translations[index].text}))},extra.signal);
-      }
-      const i18n=require('../system/i18n.cjs');
-      const timestamp=time=>{const ms=Math.round(time*1000);return `${String(Math.floor(ms/3600000)).padStart(2,'0')}:${String(Math.floor(ms/60000)%60).padStart(2,'0')}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}.${String(ms%1000).padStart(3,'0')}`;};
-      const answer=await dialog.showMessageBox(getWindow(),{type:'question',buttons:[i18n.t('plugins.ai_apply'),i18n.t('plugins.ai_discard')],defaultId:1,cancelId:1,noLink:true,
-        title:i18n.t('plugins.ai_review_title'),message:i18n.t('plugins.ai_review_title'),detail:i18n.t('plugins.ai_review_detail',{name:manifest.name,version:manifest.version,provider:ai.provider,model:ai.model,markers:markers.map(m=>`${timestamp(m.time)} — ${m.label}`).join('\n')})});
-      return answer.response===0;
-    }});
-  manager.commandRuntime=runtime;
-  const panels=new (require('./panelRuntime.cjs').PanelRuntime)({ipcMain,WebContentsView,session,manager,getWindow,dialog,sandboxEnabled:!app.commandLine?.hasSwitch?.('no-sandbox'),heartbeatMs:process.env.FVE_SMOKE?250:1000,deadlineMs:process.env.FVE_SMOKE?2000:6000});
-  manager.panelRuntime=panels;
+  const extensions=new (require('./extensionRuntime.cjs').ExtensionRuntime)({manager,utilityProcess:require('electron').utilityProcess,safeStorage:require('electron').safeStorage});
+  manager.extensions=extensions;manager.extensionMedia=null;extensions.prepareSettings=info=>require('./extensionMigrations.cjs').prepare(info,require('../system/settings.cjs').getExtensionMigrations());
+  const agentCommands=new (require('./extensionAgentCommands.cjs').ExtensionAgentCommands)({runtime:extensions,manager,approve:async({manifest,command,signal})=>{const i18n=require('../system/i18n.cjs');const answer=await dialog.showMessageBox(getWindow(),{type:'question',title:i18n.t('plugins.agent_command_title'),signal,message:i18n.t('plugins.agent_command_message',{command:command.name,name:manifest.name}),detail:i18n.t('plugins.agent_command_detail',{version:manifest.version}),buttons:[i18n.t('app.cancel'),i18n.t('plugins.run_command')],defaultId:0,cancelId:0,noLink:true});return answer.response===1;}});extensions.agentCommands=agentCommands;manager.extensionAgentCommands=agentCommands;
+  const extensionCalls=new Map();
+  const commits=new (require('./extensionCommits.cjs').ExtensionCommits)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});extensions.commits=commits;manager.extensionCommits=commits;
+  app.on?.('will-quit',()=>commits.dispose());
+  const processes=new (require('./extensionProcesses.cjs').ExtensionProcesses)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
+  const media=new (require('./extensionMedia.cjs').ExtensionMedia)({root:require('node:path').join(require('node:path').dirname(root),'extension-media'),isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
+  manager.extensionMedia=media;
+  const operations=new (require('./extensionHooks.cjs').ExtensionHooks)({runtime:extensions,commits,media,describe:async(_op,job,operation)=>{const document=await extensions.invoke({key:job.key,generation:job.generation,method:'workspace.read',operation});if(document.name.length>1000)delete document.name;return document;}});extensions.operations=operations;manager.extensionHooks=operations;
+  const views=new (require('./extensionViews.cjs').ExtensionViews)({runtime:extensions,manager,ipcMain,WebContentsView:require('electron').WebContentsView,session:require('electron').session,getWindow,sandboxEnabled:!app.commandLine?.hasSwitch?.('no-sandbox'),deadlineMs:process.env.FVE_SMOKE?4000:10000});extensions.views=views;manager.extensionViews=views;views.onChanged=()=>views.notify({type:'catalog'});
+  app.on?.('before-quit',()=>views.dispose());
+  const messages=new (require('./extensionMessages.cjs').ExtensionMessages)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state),getWindow});
+  messages.onChanged=(owner,value)=>{try{if(owner&&!owner.isDestroyed()&&!owner.webContents.isDestroyed())owner.webContents.send('plugins:extensionMessagesChanged',value);}catch{}};
+  app.on?.('before-quit',()=>messages.dispose());
+  const files=new (require('./extensionFiles.cjs').ExtensionFiles)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});extensions.files=files;manager.extensionFiles=files;
+  const dialogs=new (require('./extensionDialogs.cjs').ExtensionDialogs)({dialog,getWindow,isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
+  const requestEditor=(request,{timeoutMs=30000,signal}={})=>new Promise((resolve,reject)=>{
+    const owner=getWindow()?.webContents;if(!owner||owner.isDestroyed())return reject(Error('Editor unavailable'));
+    const id=require('node:crypto').randomUUID();let timer;
+    const cleanup=()=>{clearTimeout(timer);extensionCalls.delete(id);signal?.removeEventListener('abort',aborted);for(const event of ['destroyed','render-process-gone','did-navigate'])owner.removeListener(event,closed);};
+    const closed=()=>{cleanup();reject(Error('Editor closed during extension request'));},aborted=()=>{cleanup();reject(Object.assign(Error('Export canceled'),{name:'AbortError'}));};
+    if(signal?.aborted){aborted();return;}
+    if(timeoutMs)timer=setTimeout(()=>{cleanup();reject(Error('Editor request timed out'));},timeoutMs);
+    signal?.addEventListener('abort',aborted,{once:true});for(const event of ['destroyed','render-process-gone','did-navigate'])owner.on(event,closed);
+    extensionCalls.set(id,{resolve:value=>{cleanup();resolve(value);},reject:error=>{cleanup();reject(error);},timer,key:request.key,generation:request.generation,operation:request.operation?.id});
+    try{owner.send('plugins:extensionRequest',{...request,id});}catch(error){cleanup();reject(error);}
+  });
+  const exports=new (require('./extensionExports.cjs').ExtensionExports)({runtime:extensions,getOwner:()=>getWindow()?.webContents,requestEditor});manager.extensionExports=exports;extensions.exports=exports;
+  operations.onCancelled=(owner,event)=>{for(const [id,call] of extensionCalls)if(call.operation===event.id){clearTimeout(call.timer);extensionCalls.delete(id);call.reject(Error(event.error));}try{if(!owner.isDestroyed())owner.send('plugins:extensionOperationCanceled',event);}catch{}};
+  extensions.ui.onChanged=catalog=>{views.notify({type:'catalog'});const owner=getWindow();if(owner&&!owner.isDestroyed())owner.webContents.send('plugins:extensionUiChanged',catalog);};
+  extensions.onChanged=state=>{agentCommands.progress();operations.prune();messages.prune();const owner=getWindow();if(owner&&!owner.isDestroyed())owner.webContents.send('plugins:extensionState',state);};
+  extensions.onStopped=job=>{dialogs.stopped(job);views.stopped(job);const cleanup=Promise.allSettled([exports.stopped(job),media.stopped(job),processes.stopped(job)]);for(const [id,call] of extensionCalls)if(call.key===job.key&&call.generation===job.generation){clearTimeout(call.timer);extensionCalls.delete(id);call.reject(Error('Extension stopped'));}return cleanup;};
+  extensions.invoke=async request=>{
+    const job=extensions.active.get(request.key);if(!job||!['running','activating'].includes(job.state)||request.generation&&request.generation!==job.generation)throw Error('Extension is no longer active');
+    const operation=request.operation,scope=operation?operations.authorize(job,operation,request.method):null;
+    const recheck=()=>{if(request.agentScope)agentCommands.assert(request.agentScope,getWindow()?.webContents);extensions.jobsHost.authorize(job,request.jobOperation,request.method);if(!extensions.executionActive(job,request.execution))throw Error('Extension callback canceled or finished');if(operation)operations.authorize(job,operation,request.method);};recheck();
+    request={...request,generation:job.generation,extensionId:job.manifest.id,...(scope?{operation:scope}:{})};
+    const callSignal=extensions.callSignal(job,request.execution,request.jobOperation),follow=(promise,abort)=>{if(!callSignal)return promise;callSignal.addEventListener('abort',abort,{once:true});if(callSignal.aborted)abort();return promise.finally(()=>callSignal.removeEventListener('abort',abort));};
+    if(request.method==='files.publish'){const value=await files.publish(job,request.args,{signal:callSignal,verify:recheck});if(request.agentScope)agentCommands.receipt(request.agentScope,{kind:'file',extensionId:job.manifest.id,...value});return value;}
+    if(request.method==='files.cancel')return files.cancel(job,request.args?.token);
+    if(request.method==='host.capabilities')return require('../../shared/extensionCapabilities.cjs').capabilities();
+    if(request.method==='host.read'){const tools=require('../media/ffmpeg.cjs');return {appVersion:app.getVersion(),apiVersion:1,platform:process.platform,arch:process.arch,tools:{ffmpeg:tools.ffmpegPath,ffprobe:tools.ffprobePath}};}
+    if(request.method==='ui.showOpenDialog'||request.method==='ui.showSaveDialog')return dialogs.show(job,request.method==='ui.showOpenDialog'?'open':'save',request.args,{signal:callSignal});
+    if(request.method==='ui.cancelDialog')return dialogs.cancel(job,request.args?.token);
+    if(request.method==='exports.render')return follow(exports.render(job,request.args,request.agentScope),()=>exports.cancel(job,request.args?.token));
+    if(request.method==='exports.cancel')return exports.cancel(job,request.args?.token);
+    if(request.method==='ui.showMessage'){const result=messages.show(job,request.args,request.args?.token);if(!operation)return follow(result,()=>messages.dismiss(job,request.args?.token));const signal=operations.signal(operation),abort=()=>messages.dismiss(job,request.args?.token);signal.addEventListener('abort',abort,{once:true});return result.finally(()=>signal.removeEventListener('abort',abort));}
+    if(request.method==='ui.dismissMessage')return messages.dismiss(job,request.args?.token);
+    if(request.method==='processes.start'){const value=await processes.start(job,request.args);try{recheck();if(request.agentScope&&job.state!=='activating'){const scope=request.agentScope,signal=agentCommands.signal(scope),abort=()=>{try{processes.kill(job,value.id);}catch{}};signal.addEventListener('abort',abort,{once:true});agentCommands.track(scope,()=>signal.removeEventListener('abort',abort));}if(operation&&job.state!=='activating'){const signal=operations.signal(operation),abort=()=>{try{processes.kill(job,value.id);}catch{}};signal.addEventListener('abort',abort,{once:true});operations.track(operation,()=>signal.removeEventListener('abort',abort));}return value;}catch(error){try{processes.kill(job,value.id);}catch{}throw error;}}
+    if(request.method==='processes.wait')return follow(processes.wait(job,request.args?.id),()=>{try{processes.kill(job,request.args?.id);}catch{}});
+    if(request.method==='processes.kill')return processes.kill(job,request.args?.id);
+    if(request.method==='media.import'){const value=await media.import(job,request.args);try{recheck();return value;}catch(error){await media.release(job,value.id).catch(()=>{});throw error;}}
+    if(request.method==='media.release')return media.release(job,request.args?.id);
+    if(request.method==='media.insert'||request.method==='media.preview'){
+      const item=await media.item(job,request.args?.id,request.method==='media.insert',scope?.id);recheck();
+      if(request.method==='media.preview')media.get(job,item.id).previewing=true;
+      try{return await requestEditor({...request,args:{...request.args,item}});}catch(e){if(request.method==='media.preview')try{media.get(job,item.id).previewing=false;}catch{}throw e;}
+    }
+    return requestEditor(request);
+  };
+
+  app.on?.('before-quit',()=>extensions.dispose());
+  ready.then(()=>app.whenReady?.()).then(()=>extensions.activate('startup')).catch(console.error);
+
+  const previewCache=new (require('./previewCache.cjs').PreviewCache)(manager);
+  app.on?.('before-quit',()=>previewCache.dispose());
+  const browserPreferences=new (require('./browserPreferences.cjs').BrowserPreferences)(manager);
+  const preferenceMigration=new (require('./preferenceMigration.cjs').PreferenceMigration)(manager);
+  const packBuilder=new (require('./packBuilder.cjs').PackBuilder)({manager,dialog,getWindow,fontDirectory});
+  app.on?.('before-quit',()=>{if(packBuilder.current)packBuilder.discard(packBuilder.current.id);});
   const sendDevelopment=(channel,state)=>{const win=getWindow();if(win&&!win.isDestroyed()&&!win.webContents.isDestroyed())win.webContents.send(channel,state);};
-  const development=new (require('./development.cjs').DevelopmentSessions)(manager,{onChanged:state=>sendDevelopment('plugins:developmentChanged',state),onCatalog:()=>sendDevelopment('plugins:developmentCatalogChanged')});
+  const development=new (require('./development.cjs').DevelopmentSessions)(manager,{onChanged:state=>sendDevelopment('plugins:developmentChanged',state),onCatalog:()=>{views.notify({type:'catalog'});extensions.ui.changed();sendDevelopment('plugins:developmentCatalogChanged');}});
   manager.development=development;
+  const authoring=new (require('./authoring.cjs').AuthoringTests)({development,dialog,getWindow});manager.authoring=authoring;
   app.on?.('will-quit',()=>development.dispose());
-  app.on?.('before-quit',()=>panels.close());
-  app.on?.('before-quit',()=>runtime.cancel());
 
   const handle=(name,fn)=>ipcMain.handle(`plugins:${name}`,async(event,...args)=>{
     const win=getWindow();
     if(!win || event.sender!==win.webContents || event.senderFrame!==win.webContents.mainFrame) throw Error('Plugin management is only available to the editor.');
     await ready;
-    if(['install','enable','remove'].includes(name)){runtime.cancel();panels.close(undefined,'failed','Panel closed for plugin management. Reopen it to continue.');manager.providerService?.revoke();}
-    const result=await fn(...args);
-    if(['install','enable','remove'].includes(name))await manager.providerService?.refresh();
-    if(['install','enable','remove'].includes(name)) getWindow()?.webContents.send('plugins:changed');
-    return result;
+    const changing=['install','installDependency','installCreatedPack','enable','remove','recover'].includes(name);
+    const releaseEvents=changing?extensions.events.hold():()=>{};
+    let primary;
+    try{if(changing)await extensions.dispose({temporary:true});return await fn(...args);}
+    catch(error){primary=error;throw error;}
+    finally{if(changing){try{await manager.refreshAiCatalog?.();}catch(error){if(!primary)throw error;}finally{extensions.events.invalidate();releaseEvents();const wc=getWindow()?.webContents;try{if(wc&&!wc.isDestroyed?.())wc.send('plugins:changed');}catch{}}}}
   });
-  handle('authorizeClipEdits',request=>runtime.authorizeEdits(request));
-  handle('authorizeDevelopmentCommit',(runId,key)=>development.authorizeCommit(runId,key));
   handle('development',()=>development.snapshot());
+  handle('beginAuthorExport',request=>authoring.export(request));
+  handle('cancelAuthorTest',()=>{authoring.revoke();return true;});
+  handle('finishAuthorTest',token=>authoring.finish(token));
   handle('startDevelopment',async()=>{const answer=await dialog.showOpenDialog(getWindow(),{properties:['openDirectory']});if(answer.canceled)return development.snapshot();return development.start(answer.filePaths[0]);});
+  handle('debugDevelopment',enabled=>extensions.debug(development.session?.key,enabled));
   handle('reloadDevelopment',()=>development.reload());
   handle('watchDevelopment',value=>development.setWatch(value));
   handle('endDevelopment',()=>development.end());
   handle('clearDevelopmentLogs',()=>development.clearLogs());
-  handle('claimPanelAction',(id,action)=>panels.actions.claim(id,action));
-  handle('authorizePanelAction',(id,action,run)=>panels.actions.authorize(id,action,run));
-  handle('finishPanelAction',(id,action,value)=>panels.actions.finish(id,action,value));
-  handle('progressPanelAction',(id,action,value)=>panels.actions.progress(id,action,value));
-  handle('clearPanelStorage',async key=>{if(panels.active?.key===key)panels.close(undefined,'closed');return manager.clearPanelStorage(key);});
-  handle('actions',()=>manager.actions());
-  handle('panels',()=>manager.panels());
-  handle('openPanel',request=>panels.open(request));
-  handle('closePanel',id=>panels.close(id));
-  handle('layoutPanel',(id,value)=>panels.layout(id,value));
-  handle('updatePanel',(id,value)=>panels.update(id,value));
-  handle('focusPanel',id=>panels.focus(id));
+  handle('previewSound',id=>{previewCache.bind(getWindow().webContents);return previewCache.acquire(id);});
+  handle('releaseSoundPreview',token=>previewCache.release(token));
+  handle('previewStorage',()=>previewCache.report());
+  handle('cleanPreviewStorage',token=>previewCache.clean(token));
+  handle('browserFavorites',()=>browserPreferences.read());
+  handle('setBrowserFavorite',(id,value)=>browserPreferences.set(id,value));
+  handle('previewContent',request=>require('./contentPreview.cjs').contentPreview(manager,request));
+  handle('preparePreferenceMigration',request=>preferenceMigration.prepare(request));
+  handle('migratePreferences',request=>preferenceMigration.commit(request));
+  handle('clearPanelStorage',key=>manager.clearPanelStorage(key));
+  handle('beginPackDraft',()=>packBuilder.begin());
+  handle('discardPackDraft',id=>packBuilder.discard(id));
+  handle('pickPackAssets',(id,kind)=>packBuilder.pick(id,kind));
+  handle('exportPackDraft',(id,input)=>packBuilder.export(id,input));
+  handle('installCreatedPack',(id,token)=>packBuilder.install(id,token));
+  handle('dependencies',async references=>(await import('../../shared/pluginDependencies.mjs')).dependencyReport(references,await manager.list()));
+  handle('installDependency',async key=>{if(typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key))throw Error('Invalid required pack fingerprint.');const answer=await dialog.showOpenDialog(getWindow(),{title:'Install exact required pack',properties:['openFile'],filters:[{name:'ClipCraft plugin',extensions:['tgz']}]});return answer.canceled?null:manager.install(answer.filePaths[0],false,{requiredKey:key});});
   handle('list',()=>manager.list());
+  handle('icon',key=>manager.icon(key));
+  handle('extensionViews',()=>views.catalog());
+  handle('extensionViewOpen',id=>views.reveal(id));
+  handle('extensionViewClose',id=>views.close(id));
+  handle('extensionViewLayout',(id,value)=>views.layout(id,value));
+  handle('extensionUi',async(location,key)=>{
+    if(key!==undefined){
+      if(typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key))throw Error('Invalid extension identity');
+      // Opening one extension's configuration activates only that already-trusted
+      // package. Explicit Stop remains final until the user activates it again.
+      if((await extensions.trustData())[key]&&!extensions.suspended.has(key))await extensions.start(key,{automatic:true});
+    }else if(typeof location==='string')await extensions.activate('ui:'+location);
+    return extensions.ui.list();
+  });
+  handle('extensionSettingsRead',id=>extensions.ui.settings(id));
+  handle('extensionSettingsUpdate',(id,key,value)=>extensions.ui.update(id,key,value));
+  handle('extensionUiExecute',(id,input)=>extensions.ui.execute(id,input));
+  handle('extensionShortcuts',()=>extensions.ui.shortcuts());
+  handle('extensionShortcutExecute',id=>extensions.ui.executeShortcut(id));
+  handle('extensionMessages',()=>messages.list());
+  handle('extensionMessageRespond',(id,action)=>messages.finish(id,action,getWindow()));
+  handle('extensionCancelJob',(key,generation,operation)=>extensions.cancel(key,operation,generation));
+  handle('extensionStatus',()=>extensions.status());
+  handle('extensionDiagnostics',()=>({items:extensions.diagnostics(),events:extensions.events.failures.slice()}));
+  handle('extensionInsertArtifact',(key,args)=>extensions.invoke({key,method:'media.insert',args}));
+  handle('extensionPreviewClosed',(key,id)=>{const job=extensions.active.get(key);if(!job)return false;try{media.get(job,id).previewing=false;extensions.emit('media.previewClosed',{extensionId:job.manifest.id,id}).catch(console.error);return true;}catch{return false;}});
+  handle('extensionCommitAcquire',(key,generation,execution,jobOperation)=>{const job=extensions.active.get(key);if(!job||job.generation!==generation)throw Error('Extension stopped');return commits.acquire(getWindow().webContents,[job],()=>extensions.executionActive(job,execution)&&(jobOperation===undefined||extensions.jobsHost.available(job,jobOperation)));});
+  handle('extensionCommitFinish',async(id,applied)=>{const owner=getWindow().webContents;try{await operations.finish(owner,id,applied===true);}finally{commits.finish(owner,id);}return true;});
+  ipcMain.on('plugins:extensionCommitApply',(event,id)=>{let allowed=false;try{const owner=getWindow()?.webContents;if(owner&&event.sender===owner&&event.senderFrame===owner.mainFrame&&commits.apply(owner,id)){operations.claimed(owner,id);allowed=true;}}catch{}event.returnValue=allowed;});
+  handle('extensionOperationBegin',input=>operations.begin(getWindow().webContents,input));
+  handle('extensionOperationCommit',id=>operations.acquire(getWindow().webContents,id));
+  handle('extensionOperationComplete',id=>operations.completeEmpty(getWindow().webContents,id));
+  handle('extensionOperationCancel',id=>operations.cancel(getWindow().webContents,id));
+  handle('extensionExportProgress',(id,input)=>exports.progress(getWindow().webContents,id,input));
+  handle('extensionAuthorize',(key,generation,execution,jobOperation)=>{const job=extensions.active.get(key);return !!job&&job.generation===generation&&['running','activating'].includes(job.state)&&extensions.executionActive(job,execution)&&(jobOperation===undefined||extensions.jobsHost.available(job,jobOperation));});
+  handle('extensionReply',reply=>{const call=extensionCalls.get(reply?.id);if(!call)return false;clearTimeout(call.timer);extensionCalls.delete(reply.id);reply.error?call.reject(Error(reply.error)):call.resolve(reply.value);return true;});
+  handle('extensionPublish',(name,value,metadata)=>{if(!['project.opened','project.closed','project.changed','editor.changed','selection.changed','playback.changed','export.changed','configuration.changed'].includes(name))throw Error('Invalid editor event');return extensions.emit(name,value,metadata);});
+
+  handle('extensionTrust',async key=>{
+    const bundle=await manager.commandBundle(key),manifest=bundle.manifest;if(!manifest.main)throw Error('Not a Node extension');
+    if((await extensions.trustData())[key]){await extensions.start(key);return true;}
+    const i18n=require('../system/i18n.cjs');const answer=await dialog.showMessageBox(getWindow(),{type:'warning',title:i18n.t('plugins.extension_trust_title'),message:i18n.t('plugins.extension_trust_message',{name:manifest.name}),detail:i18n.t('plugins.extension_trust_detail')+(bundle.development?'\n\n'+i18n.t('plugins.dev_node_trust',{source:manager.development.session.source}):''),buttons:[i18n.t('app.cancel'),i18n.t('plugins.extension_trust_confirm')],defaultId:0,cancelId:0,noLink:true});
+    if(answer.response!==1)return false;await extensions.trust(key);await extensions.start(key);return true;
+  });
+  handle('extensionStop',key=>{const s=development.session;if(s&&(s.key===key||s.previousKey===key))s.restart=false;return extensions.stop(key);});
+  handle('extensionExecute',(id,input,key)=>extensions.execute(id,input,{key}));
+  handle('extensionAgentCommand',input=>agentCommands.run(getWindow().webContents,input));
+  handle('extensionAgentCancel',id=>agentCommands.cancel(getWindow().webContents,id));
+
+  handle('prepareRecovery',()=>manager.prepareRecovery());
+  handle('recover',token=>manager.recover(token));
+  handle('showRecoveryArchive',async id=>require('electron').shell.openPath(await manager.inventoryStore.archivePath(id)));
   handle('presets',()=>manager.presets());
   handle('effects',()=>manager.effects());
+  handle('creative',()=>manager.creative());
   handle('transitions',()=>manager.transitions());
-  handle('answerTranslationReview',request=>translationReview.answer(request));
-  handle('runCommand',async request=>{const result=await runtime.run(request,async(manifest,command,info)=>{
-    const i18n=require('../system/i18n.cjs');
-    const {COMMAND_PERMISSION_LABELS}=await import('../../shared/pluginCommands.mjs');
-    const permissions=manifest.permissions.map(p=>'• '+i18n.t(COMMAND_PERMISSION_LABELS[p])).join('\n')||i18n.t('plugins.no_permissions');
-    const detail=info.gif?i18n.t('plugins.permission_detail_gif',{name:manifest.name,version:manifest.version,publisher:manifest.publisher,permissions,start:info.gif.start_sec,end:info.gif.end_sec,width:info.gif.width,height:info.gif.height,fps:info.gif.fps,frames:info.gif.frame_count}):info.ai?i18n.t('plugins.permission_detail_ai',{name:manifest.name,version:manifest.version,publisher:manifest.publisher,permissions,provider:info.ai.provider,model:info.ai.model,destination:info.ai.destination,cues:info.captions.cues,characters:info.captions.characters}):i18n.t('plugins.permission_detail',{name:manifest.name,version:manifest.version,publisher:manifest.publisher,permissions});
-    const translationDetail=info.translation?i18n.t('plugins.translation_consent',{language:(await import('../../shared/pluginAi.mjs')).translationLanguage(info.translation.language).label,track:info.translation.sourceTrack}):'';
-    const answer=await dialog.showMessageBox(getWindow(),{type:'question',buttons:[i18n.t('plugins.run_once'),i18n.t('plugins.cancel')],defaultId:1,cancelId:1,noLink:true,
-      title:i18n.t('plugins.permission_title'),message:command.name,detail:detail+translationDetail+(development.resolve(request.key)?'\n\n'+i18n.t('plugins.dev_consent'):'')});
-    return answer.response===0;
-  });if(result.status==='completed'&&!result.artifact&&!request.panelAction)development.rememberCommit(request.runId,request.key);development.record(request.key,result.status==='failed'?'error':'info',`Command ${request.commandId}: ${result.status}${result.error?': '+result.error:''}`,'lifecycle');return result;});
-  handle('cancelCommand',runId=>{if(typeof runId!=='string')throw Error('Invalid command run ID.');return runtime.cancel(runId);});
+  handle('soundAsset',async id=>{const asset=await manager.soundAsset(id);return {...asset,...await require('./contentAudio.cjs').inspectPackSound(asset.path)};});
   handle('install',async(folder=false)=>{
     if(typeof folder!=='boolean') throw Error('Invalid install mode.');
     const res=await dialog.showOpenDialog(getWindow(),{properties:[folder?'openDirectory':'openFile'],

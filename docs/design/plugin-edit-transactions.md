@@ -38,6 +38,11 @@ collateral change rejects the transaction. Nothing is partially applied.
 Native completion supplies a short-lived single-use commit authorization bound
 to run, package, proposal and editor frame. Stop, package changes, developer
 reload/end, stale documents and closed panel actions prevent unauthorized commits.
+Catalog revocation also cancels completed proposals whose native authorization
+reply is still queued. Waiting for authorization is cancelable; guarded reducer
+dispatch starts the committing phase. The combined permission matrix and
+supported/rejected mixtures are recorded in the
+[transaction review](plugin-transaction-review.md).
 The reducer accepts only a private prepared token with the original base and
 correct manual/agent owner. Preflight and speculative reducer evaluations do not
 consume tokens or acknowledge a write. Commit receipts belong to the actual

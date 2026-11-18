@@ -27,3 +27,5 @@ assert.equal(await loader.load({...font,id:'system',source:'system'}),false);ass
 assert.equal(await loader.load({...font,id:'custom',source:'custom'}),true);assert.equal(customLoads,1);
 loader.invalidate('custom');assert.equal(loader.status('custom'),undefined);
 console.log('Font loading passes: scoped faces, actual Unicode text, request sharing, retries, installed-font probes, custom loading and legacy styles');
+
+let release;let attempts=0;const raceLoader=createFontLoader({fontSet:set,customFace:async()=>{if(++attempts===1)await new Promise(resolve=>release=resolve);},localFace:()=>{throw Error('unused');}});const pack={...font,id:'pack-font-race',source:'pack'};const first=raceLoader.load(pack,{text:'Race'});raceLoader.invalidate(pack.id);assert.equal(await raceLoader.load(pack,{text:'Race'}),true);release();assert.equal(await first,false,'a revoked pending load cannot report a current face');assert.equal(raceLoader.status(pack.id),true,'late revoked completion cannot overwrite newer availability');console.log('Pack font revocation race passes');

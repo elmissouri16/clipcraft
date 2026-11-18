@@ -6,7 +6,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const tts = require("../../../electron/audio/tts.cjs");
+const tts={...require("../../../electron/audio/tts.cjs"),...require("../../../examples/extensions/voicestudio/src/studio.cjs")};
 const { probe } = require("../../../electron/media/ffmpeg.cjs");
 
 (async () => {
@@ -57,6 +57,7 @@ const { probe } = require("../../../electron/media/ffmpeg.cjs");
     const p = new URL(url).pathname;
     const json = (status, body) => ({ ok: status < 400, status, json: async () => body, arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body)).buffer });
     if (p === '/.well-known/voicestudio-speech') return json(200, over.service || { schema: 'voicestudio.speech-capabilities', service: 'VoiceStudio', service_version: '0.5.5' });
+    if (p === '/profiles') return json(200, [{id:'demo0001',kind:'clone',ref_text:'Exact reference words.'}]);
     if (p === '/v1/audio/voices') return over.voices ? over.voices() : json(200, { voices: [{ voice_id: 'alloy', name: 'Alloy', type: 'openai_alias' }, { voice_id: 'echo', name: 'Echo', type: 'openai_alias' }, { voice_id: 'demo0001', name: 'VoiceStudio Demo Voice', type: 'profile', language: 'English' }], engines: [] });
     if (p === '/engines/tts') return json(200, { active: 'omnivoice', backends: [{ id: 'omnivoice', display_name: 'VoiceStudio (k2-fsa/OmniVoice, 600+ languages)', available: true, supports_cloning: true, supports_emotion: false },
       { id: 'mlx-audio', display_name: 'MLX-Audio (mac-ARM)', available: true, supports_emotion: false }, { id: 'kittentts', display_name: 'KittenTTS', available: true }, { id: 'cosyvoice', display_name: 'CosyVoice 3', available: false, supports_emotion: true }] });
@@ -67,20 +68,21 @@ const { probe } = require("../../../electron/media/ffmpeg.cjs");
   st = await tts.studioStatus(studio(), '127.0.0.1:3900');
   assert.equal(st.running, true); assert.equal(st.version, '0.5.5'); assert.match(st.engine, /OmniVoice/);
   assert.deepEqual(st.engines.map((e) => [e.id, e.active, e.design, e.models[0] || null]), [['omnivoice', true, false, null], ['mlx-audio', false, true, 'Qwen3-TTS 1.7B 4bit (voice design, mlx-audio)'], ['kittentts', false, false, null]], 'available engines only, with the voice-design flag from the installed model');
-  assert.deepEqual(st.voices.map((v) => [v.id, v.name, v.kind, v.wire, v.engine]), [['alloy', 'Default voice', 'default', 'alloy', ''], ['demo0001', 'VoiceStudio Demo Voice', 'profile', 'demo0001', ''], ['design:mlx-audio', 'Describe a voice (Qwen3-TTS)', 'design', 'alloy', 'mlx-audio']],
+  assert.deepEqual(st.voices.map((v) => [v.id, v.name, v.kind, v.wire, v.engine]), [['alloy', 'Default voice', 'default', 'alloy', ''], ['demo0001', 'VoiceStudio Demo Voice', 'clone', 'demo0001', ''], ['design:mlx-audio', 'Describe a voice (Qwen3-TTS)', 'design', 'alloy', 'mlx-audio']],
     'the default voice first, then profiles, then one "Describe a voice" entry per voice-design engine, each carrying what the request needs');
   assert.equal(st.activeEngine, 'omnivoice');
   const spoken = await tts.studioSpeak(studio(), '', out, { voiceId: 'demo0001', text: 'Salam', speed: 3, style: 'calm' });
   const [speakUrl, speakOpts] = studioCalls.at(-1);
   assert.ok(speakUrl.endsWith('/v1/audio/speech') && speakOpts.method === 'POST');
-  assert.deepEqual(JSON.parse(speakOpts.body), { model: 'tts-1', input: 'Salam', voice: 'demo0001', response_format: 'wav', speed: 2, instruct: 'calm' }, 'speed is kept within 0.5–2; no engine means the active one');
+  assert.deepEqual(JSON.parse(speakOpts.body), { model: 'tts-1', input: 'Salam', voice: 'demo0001', response_format: 'wav', speed: 3, instruct: 'calm' }, 'supported speed passes unchanged; no engine means the active one');
   await tts.studioSpeak(studio(), '', out, { voiceId: 'alloy', text: 'Salam', model: 'mlx-audio', style: 'a sad woman, speaking slowly' });
   assert.equal(JSON.parse(studioCalls.at(-1)[1].body).model, 'mlx-audio', 'a chosen engine goes in model');
   await assert.rejects(tts.studioSpeak(studio(), '', out, { voiceId: 'alloy', text: 'x', model: 'bad engine!' }), /Pick a VoiceStudio engine/);
   assert.ok(fs.readFileSync(spoken).toString('ascii', 0, 4) === 'RIFF' && spoken.endsWith('.wav'));
   const before = studioCalls.length;
   await tts.studioSpeak(studio(), '', out, { voiceId: 'demo0001', text: 'Salam', speed: 3, style: 'calm' });
-  assert.equal(studioCalls.length, before, 'same text again comes from the cache');
+  assert.equal(studioCalls.length, before+1, 'a new generation uses current mutable profile data');
+  for(const speed of [0,5,NaN,'1'])await assert.rejects(tts.studioSpeak(studio(), '', out, {voiceId:'demo0001',text:'invalid speed',speed}),/speed/);
   await assert.rejects(tts.studioSpeak(studio(), '', out, { voiceId: 'demo0001', text: 'x'.repeat(4097) }), /4096 characters/);
   await assert.rejects(tts.studioSpeak(studio(), '', out, { voiceId: 'demo0001', text: '  ' }), /Type some text/);
   await assert.rejects(tts.studioSpeak(studio(), '', out, { voiceId: '../x', text: 'a' }), /Pick a VoiceStudio voice/);

@@ -61,6 +61,7 @@ module.exports = async (win, app, dir) => {
   };
   win.webContents.setBackgroundThrottling(false);win.setSize(1440, 1000);
   win.webContents.on('console-message', (_event, level, message) => { if (level >= 3) result.errors.push(message); });
+  settings.saveServiceKey('gemini-tts','fixture-mocked-speech-key');
   settings.setFirstRun({ tourSeen: true, packPromptSeen: true });settings.save({ provider: 'codex-sdk' });
   try {
     await until('!!window.__fve&&!!document.querySelector(".home-frame-card")');await click('.home-frame-card');await until('!!document.querySelector(".topbar")');await q('document.querySelector(".welcome-go")?.click()');

@@ -1,3 +1,5 @@
+import {useCreativePacks,preferredPackMotions} from '../../plugins/creativeRegistry.js';
+import {motionPresetPatch} from '../../../../shared/pluginMotion.mjs';
 import React, { useEffect, useRef, useState } from 'react';
 import { Ban } from 'lucide-react';
 import { ANIMATIONS, DEFAULT_ANIM_DURATION, animOf, previewState } from "../../timeline/anim.js";
@@ -51,6 +53,7 @@ function AnimThumb({ kind, id }) {
 
 // Clip panel > Animation: In, Out and Combo animations. A Combo replaces In and Out.
 export default function AnimationPanel({ clip, len, set, dispatch }) {
+  useCreativePacks();
   const current = animOf(clip, len);
   const [kind, setKind] = useState(current.combo ? 'combo' : current.out && !current.in ? 'out' : 'in');
   const chosen = clip.anim?.[kind]?.type || null;
@@ -71,6 +74,7 @@ export default function AnimationPanel({ clip, len, set, dispatch }) {
   const dur = current[kind]?.duration;
   return (
     <div className="anim-panel">
+      {!!preferredPackMotions().length&&<section data-pack-motions><h4>{t('plugins.motion_packs')}</h4>{preferredPackMotions().map(p=><div className="settings-actions" key={`${p.digest}/${p.id}`}><span title={p.pluginName}>{p.name}</span><button type="button" className="btn btn-sm" data-pack-motion={`${p.digest}/${p.id}`} onClick={()=>set(motionPresetPatch(p,clip))}>{t('plugins.replace_motion')}</button></div>)}</section>}
       <div className="seg-tabs small" role="tablist" aria-label={t('animation-panel.animation_type')}>
         {KINDS.map(([id, name]) => (
           <button key={id} role="tab" aria-selected={kind === id} className={kind === id ? 'on' : ''} onClick={() => setKind(id)}>

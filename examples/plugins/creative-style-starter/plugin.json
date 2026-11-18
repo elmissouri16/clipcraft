@@ -1,0 +1,98 @@
+{
+  "id": "clipcraft-examples.creative-starter",
+  "name": "Creative starter",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Original data-only title, caption, color and motion examples. Fonts are built into ClipCraft. Edit and package these values with the SDK or native creator.",
+  "contributes": {
+    "textStyles": [
+      {
+        "id": "clear-title",
+        "name": "Clear title",
+        "kind": "title",
+        "sampleText": "A clear title",
+        "duration": 3,
+        "style": {
+          "font": "montserrat",
+          "size": 72,
+          "bold": true,
+          "color": "#ffffff",
+          "y": 0.5,
+          "stroke": {
+            "width": 0
+          },
+          "shadow": {
+            "on": false
+          },
+          "animIn": {
+            "id": "fade",
+            "dur": 0.3
+          },
+          "animOut": {
+            "id": "fade",
+            "dur": 0.25
+          }
+        }
+      },
+      {
+        "id": "clear-caption",
+        "name": "Clear caption",
+        "kind": "caption",
+        "style": {
+          "font": "montserrat",
+          "size": 48,
+          "color": "#ffffff",
+          "highlight": {
+            "mode": "color",
+            "color": "#ffd400"
+          }
+        }
+      }
+    ],
+    "colorPresets": [
+      {
+        "id": "warm-detail",
+        "name": "Warm detail",
+        "settings": {
+          "filter": "warm",
+          "filterIntensity": 50,
+          "grade": {
+            "contrast": 12,
+            "temp": 8
+          }
+        }
+      }
+    ],
+    "motionPresets": [
+      {
+        "id": "gentle-pan-zoom",
+        "name": "Gentle pan and zoom",
+        "curves": {
+          "scale": [
+            {
+              "at": 0,
+              "value": 1
+            },
+            {
+              "at": 1,
+              "value": 1.12,
+              "ease": "smooth"
+            }
+          ],
+          "x": [
+            {
+              "at": 0,
+              "value": -0.04
+            },
+            {
+              "at": 1,
+              "value": 0.04
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "icon": "assets/icon.png"
+}

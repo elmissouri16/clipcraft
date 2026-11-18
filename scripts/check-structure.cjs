@@ -19,5 +19,6 @@ for (const [folder, allowed] of [['src',['main.jsx']],['electron',['main.cjs','p
   for (const file of fs.readdirSync(path.join(root,folder),{withFileTypes:true})) if(file.isFile() && /\.[cm]?(?:js|jsx)$/.test(file.name) && !allowed.includes(file.name)) problems.push(`${folder}/${file.name}: place implementation in its feature folder`);
 }
 for (const file of fs.readdirSync(__dirname)) if (/^test-/.test(file)) problems.push(`scripts/${file}: test suites belong in tests/unit/`);
+problems.push(...require('./check-runtime-dependencies.cjs').runtimeDependencyProblems(root));
 if (problems.length) { console.error(problems.join('\n'));process.exitCode=1; }
 else console.log('Structure OK: module imports resolve; entry points, features and test suites are separated.');

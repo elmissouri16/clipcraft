@@ -3,7 +3,8 @@ import {emptyProject,historyReducer,preparePluginEdits,pluginEditsApplied,prepar
 import {createEditorContext} from '../../../src/features/plugins/editorContext.js';
 import {editorSnapshot} from '../../../shared/pluginEditor.mjs';
 import {clipTransaction} from '../../../shared/pluginEdits.mjs';
-import {validateManifest} from '../../../shared/pluginManifest.mjs';
+// Historical schema assertions are read-only; native edit planning remains in use.
+import {validateLegacyManifest as validateManifest} from '../../../shared/legacyPluginManifest.mjs';
 import {actionState} from '../../../shared/pluginActions.mjs';
 let checks=0;const check=(name,fn)=>{fn();checks++;console.log('PASS',name);};
 const permissions=['editor.read','timeline.reorder'],clip=(id,duration=2,extra={})=>({id,in:0,out:duration,speed:1,...extra}),gap=(id,duration=1)=>clip(id,duration,{gap:true});
