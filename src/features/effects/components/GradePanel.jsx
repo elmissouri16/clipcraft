@@ -106,7 +106,8 @@ function LutSection({ lut, onChange, dispatch }) {
 // Adjust > Basic: Color, Lightness and Effects, plus the older Hue / Blur settings.
 // grade / adjust: the clip's values; onGrade / onAdjust get the whole new object.
 // autoFrom: { media, clip } of the clip, for the Auto button (left out where there is no single clip).
-export default function GradePanel({ grade = {}, adjust = {}, onGrade, onAdjust, dispatch, onApplyAll, autoFrom }) {
+// onReset: Reset all done by the caller (the inspector resets every selected clip); without it, onGrade + onAdjust.
+export default function GradePanel({ grade = {}, adjust = {}, onGrade, onAdjust, onReset, dispatch, onApplyAll, autoFrom }) {
   const [tab, setTab] = useState('basic');
   const [auto, setAuto] = useState(null); // 'busy' | { error }
   const g = { ...DEFAULT_GRADE, ...grade };
@@ -160,7 +161,7 @@ export default function GradePanel({ grade = {}, adjust = {}, onGrade, onAdjust,
         </div>
       )}
       <div className="grade-actions">
-        <button className="btn btn-ghost btn-sm" disabled={!changed} onClick={() => { onGrade({ hsl: g.hsl, curves: g.curves }); onAdjust({}); }}><RotateCcw size={13} /> {t('grade.reset_all')}</button>
+        <button className="btn btn-ghost btn-sm" disabled={!changed} onClick={() => { if (onReset) onReset(); else { onGrade({ hsl: g.hsl, curves: g.curves }); onAdjust({}); } }}><RotateCcw size={13} /> {t('grade.reset_all')}</button>
         {onApplyAll && <button className="btn btn-sm" onClick={onApplyAll} title={t('grade.give_every_clip_of_the_main_and_overlay_tr_2')}>{t('grade.apply_to_all')}</button>}
       </div>
       </div>

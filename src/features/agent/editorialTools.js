@@ -13,6 +13,19 @@ const RANGE = { start_sec: N, end_sec: N };
 const r2 = n => Math.round(n * 100) / 100;
 const PLATFORMS = ['tiktok', 'reels', 'shorts', 'youtube', 'podcast', 'tutorial', 'vlog', 'ad', 'other'];
 
+// A short id bound to a retake candidate's content (see remove_retakes).
+function retakeIds(list, words) {
+  const hash = (text) => { let h = 0x811c9dc5; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); };
+  const norm = (text) => String(text || '').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+  const seen = new Map();
+  return list.map(r => {
+    const before = words.filter(w => w.end <= r.start + 1e-6).slice(-3).map(w => norm(w.text)).join(' ');
+    const base = `rt_${hash([r.kind, norm(r.removed), norm(r.kept), before].join('|'))}`, n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    return { id: n > 1 ? `${base}_${n}` : base, ...r };
+  });
+}
+
 export const EDITORIAL_DECLARATIONS = [
   { name: 'edit_guide', description: `Editor playbook. topic: workflow (the step-by-step editing process), principles, or a genre recipe: ${GUIDE_TOPICS.filter(t => t !== 'principles').join(', ')}. Read workflow + the matching genre before any full edit or restructure.`,
     parameters: { type: 'OBJECT', properties: { topic: { ...S, enum: ['workflow', ...GUIDE_TOPICS] } }, required: ['topic'] } },
@@ -175,11 +188,14 @@ export function createEditorialTools({ project, dispatch, after, api, requestId,
       return after({ removed_count: cuts.length, ...out, ...summary, speech_after: 'Transcript words were remapped through the cuts; no new transcription is needed.' });
     },
 
+    // Retake ids name the candidate itself (its kind, text and the words just before it), never its
+    // place in the list: after any cut an id remembered from a dry run still names the same sentence,
+    // or no candidate at all (then it is refused as unknown).
     async remove_retakes(a = {}) {
       const res = await wordsFor(a);
       if (res.error) return res;
       const kinds = Array.isArray(a.kinds) && a.kinds.length ? a.kinds : ['restart', 'stutter'];
-      const all = findRetakes(res.words).map((r, i) => ({ id: `r${i + 1}`, ...r }));
+      const all = retakeIds(findRetakes(res.words), res.words);
       const chosen = all.filter(r => (Array.isArray(a.retake_ids) && a.retake_ids.length ? a.retake_ids.includes(r.id) : kinds.includes(r.kind)));
       const view = r => ({ id: r.id, kind: r.kind, start: r2(r.start), end: r2(r.end), removed: r.removed.slice(0, 160), kept: r.kept.slice(0, 160), ...(r.estimated ? { estimated: true } : {}) });
       if (a.dry_run) return { ok: true, dry_run: true, candidates: all.slice(0, 40).map(view), selected: chosen.map(r => r.id), note: 'Read removed vs kept. Apply with retake_ids for real retakes only.' };

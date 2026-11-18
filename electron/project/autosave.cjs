@@ -3,7 +3,7 @@
 // previous one (the old design kept a single shared crash-recovery snapshot that any
 // other project overwrote). A slot is one JSON file per project id:
 //
-//   <root>/<id>.json       { id, title, file, ratio, thumb, updatedAt, project }
+//   <root>/<id>.json       { id, title, file, fileStamp, ratio, thumb, updatedAt, project }
 //   <root>/chat/<id>.json  the project's CraftAI conversations (project.craftAI), kept apart so a
 //                          chat change never rewrites the document (sidecar.cjs); merged on read
 //   <root>/index.json      [{ id, title, file, ratio, thumb, updatedAt }] — newest first
@@ -14,7 +14,7 @@
 // point: they survive Home navigation, other projects, and app restarts.
 //
 // Hygiene: the store keeps at most CAP projects; writing beyond the cap evicts the OLDEST
-// slots (never the one just written). All writes are tmp-file + rename, so a crash mid-
+// slots whose project file exists (never the one just written, never an unsaved project's only copy). All writes are tmp-file + rename, so a crash mid-
 // write never leaves a torn slot. Ids are sanitized to a safe filename alphabet — a
 // hostile or corrupt id can never escape the store directory.
 //
@@ -70,15 +70,43 @@ function listSlots(root) {
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
+// Over the cap, the oldest slots whose project file still exists go first: their work also lives in
+// that file. A slot without a file (or whose file is gone) is the only copy of its project and is never
+// evicted, so the store may hold more than CAP slots when that many are unsaved.
 function prune(root, entries, keepId) {
-  const kept = [];
-  for (const e of entries) {
-    if (kept.length < CAP || e.id === keepId) { kept.push(e); continue; }
-    const f = slotPath(root, e.id);
-    if (f) { try { fs.unlinkSync(f); } catch { /* already gone */ } }
-    removeChat(root, e.id);
+  let excess = entries.length - CAP;
+  const evict = new Set();
+  for (let i = entries.length - 1; i >= 0 && excess > 0; i--) {
+    const e = entries[i];
+    if (e.id === keepId || !e.file || !fs.existsSync(e.file)) continue;
+    evict.add(e.id);
+    excess--;
   }
-  return kept;
+  for (const id of evict) {
+    const f = slotPath(root, id);
+    if (f) { try { fs.unlinkSync(f); } catch { /* already gone */ } }
+    removeChat(root, id);
+  }
+  return entries.filter((e) => !evict.has(e.id));
+}
+
+// The identity of a project file on disk ({ mtimeMs, size }), or null when it cannot be read. A slot
+// records it for its bound file each time it is written, so opening the slot later can tell whether
+// the file changed since (another computer, an outside tool, a backup restore) and open the file instead.
+function fileStamp(file) {
+  try { const st = fs.statSync(file); return st.isFile() ? { mtimeMs: st.mtimeMs, size: st.size } : null; } catch { return null; }
+}
+
+// True when a slot's bound file exists and is not the file the slot last saw: its identity differs from
+// the recorded stamp, or (a slot written before stamps were kept) the file was modified after the slot.
+// Such a slot must not be opened over the file: the file has work the slot never had.
+function fileChangedSince(slot) {
+  if (!slot || !slot.file) return false;
+  const now = fileStamp(slot.file);
+  if (!now) return false; // the file is gone: the slot is the only copy left
+  const was = slot.fileStamp;
+  if (was && typeof was === 'object') return now.mtimeMs !== was.mtimeMs || now.size !== was.size;
+  return now.mtimeMs > (Number(slot.updatedAt) || 0);
 }
 
 // record: { id, title, file, ratio, thumb, updatedAt, projectJson, chatJson? } — projectJson is the
@@ -102,6 +130,7 @@ function writeSlot(root, record) {
       updatedAt: Number(record.updatedAt) || Date.now(),
       project,
     };
+    if (slot.file) slot.fileStamp = fileStamp(slot.file);
     writeJsonAtomic(file, slot);
     if (record.chatJson !== undefined) writeSlotChat(root, slot.id, record.chatJson);
     const entry = { id: slot.id, title: slot.title, file: slot.file, ratio: slot.ratio, thumb: slot.thumb, updatedAt: slot.updatedAt };
@@ -165,4 +194,4 @@ function slotForFile(root, filePath) {
   return listSlots(root).find((e) => e.file === filePath) || null;
 }
 
-module.exports = { CAP, writeSlot, writeSlotChat, readSlot, listSlots, deleteSlot, slotForFile, slotPath, chatPath };
+module.exports = { CAP, fileStamp, fileChangedSince, writeSlot, writeSlotChat, readSlot, listSlots, deleteSlot, slotForFile, slotPath, chatPath };

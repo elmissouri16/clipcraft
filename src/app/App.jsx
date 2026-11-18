@@ -48,7 +48,7 @@ import { exportRenderPlan } from '../features/export/renderPlan.js';
 import { agentExportPlan } from '../features/export/agentExport.js';
 import { ExportProgress, exportStages, readExportProfile } from '../features/export/exportProgress.js';
 import { serializeProject, serializeProjectParts } from '../state/projectSerialization.js';
-import { projectDoc, projectChat, classifyChange, mergeChat } from '../state/projectFile.js';
+import { projectDoc, projectChat, classifyChange, mergeChat, sameDoc } from '../state/projectFile.js';
 import CloseDialog from './components/CloseDialog.jsx';
 import TopBar from './components/TopBar.jsx';
 import SettingsDialog from './components/SettingsDialog.jsx';
@@ -334,6 +334,13 @@ export default function App() {
       await a.slotWriting;
     } catch { /* the next change retries */ }
   };
+  // Closing with "Don't save" on a project that existed before this session: its slot goes back to the
+  // state it was loaded in (slot: the slot it was opened from, for its header; null when it had none).
+  const restoreLoadedSlot = async (base, slot) => {
+    const { compact } = await serializeProject(projectDoc(base));
+    await window.api.slotWrite({ id: base.id, title: slot?.title || base.name || 'Untitled', file: null, ratio: slot?.ratio || base.ratio || '',
+      thumb: slot ? slot.thumb || null : recentEntryFor(base, '', toFileUrl).thumb, updatedAt: slot?.updatedAt || Date.now(), projectJson: compact, chatJson: await chatText(base) });
+  };
   // Force-write everything pending for the CURRENT project (its file, then its slot) —
   // awaited before any switch (Home, new, open) so no edit hides inside a debounce window.
   const flushAutosave = async () => {
@@ -356,7 +363,7 @@ export default function App() {
     // still embeds its chat gets its sidecar on the first write, and the last-written marks reset.
     const loaded = a.seenLoad !== projectLoadVersion, previous = a.seen;
     a.seen = project; a.seenLoad = projectLoadVersion;
-    if (loaded) { a.fileChat = undefined; a.slotChat = undefined; }
+    if (loaded) { a.fileChat = undefined; a.slotChat = undefined; a.loadedProject = project; } // closing compares against it
     const change = classifyChange(previous, project);
     const docChanged = loaded || change.doc, chatChanged = loaded || change.chat;
     if (!docChanged && !chatChanged) return;
@@ -420,6 +427,7 @@ export default function App() {
       if (was && snap?.project) {
         // The window crashed and reloaded: same project, same file.
         autosave.current.file = snap.file || null;
+        autosave.current.origin = { created: false, slot: null }; // it existed before this session
         if (snap.file) setSaveState('saved');
         dispatch({ type: 'load', project: snap.project });
         setRecoveredNote(true);
@@ -999,6 +1007,18 @@ export default function App() {
     const key = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips' }[sel.track];
     return key ? p[key].find((c) => c.id === sel.id) : null;
   };
+  // A slow clip job (detach, enhance, reverse, freeze, track) resolves after other work may have run:
+  // call before awaiting; the returned check is true only while the same project load is open and the
+  // clip still plays the same window, so a result never lands in another project or on a changed clip.
+  const clipJob = (sel, c) => {
+    const pid = projectRef.current.id, version = loadVersionRef.current;
+    return () => {
+      const p = projectRef.current;
+      if (p.id !== pid || loadVersionRef.current !== version) return false;
+      const now = findClip(p, sel);
+      return !!now && now.mediaId === c.mediaId && (now.in || 0) === (c.in || 0) && now.out === c.out && (now.speed || 1) === (c.speed || 1);
+    };
+  };
   const copy = useCallback(() => {
     const c = findClip(project, selection);
     if (c && !c.gap) setClipboard({ track: selection.track, clip: c });
@@ -1025,6 +1045,7 @@ export default function App() {
     const m = c && p.media.find((x) => x.id === c.mediaId);
     if (!c || !m || m.type !== 'video' || !m.hasAudio || c.muted || c.linkId) return;
     setRenderJob({ kind: 'detach', label: t('app.detaching_audio'), fraction: 0 });
+    const current = clipJob(sel, c);
     const off = window.api.onDetachProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -1036,6 +1057,7 @@ export default function App() {
     if (res.canceled) { setRenderJob(null); return; }
     if (res.error) { setRenderJob({ error: res.error }); return; }
     setRenderJob(null);
+    if (!current()) return; // another project, or the clip changed while rendering
     const start = sel.track === 'video'
       ? (videoLayout(projectRef.current.videoClips).find((l) => l.clip.id === c.id)?.start ?? 0)
       : c.start;
@@ -1063,6 +1085,7 @@ export default function App() {
     const m = c && p.media.find((x) => x.id === c.mediaId);
     if (!c || !m || !m.hasAudio || m.type === 'image') return;
     setRenderJob({ kind: 'enhance', label: t('app.enhancing_voice'), fraction: 0 });
+    const current = clipJob(sel, c);
     const off = window.api.onEnhanceProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -1074,6 +1097,7 @@ export default function App() {
     if (res.canceled) { setRenderJob(null); return; }
     if (res.error) { setRenderJob({ error: res.error }); return; }
     setRenderJob(null);
+    if (!current()) return; // another project, or the clip changed while rendering
     dispatch({ type: 'update', track: sel.track, id: sel.id, patch: { enhance: { on: true, strength, path: res.path, from: c.in || 0, to: c.out ?? m.duration } } });
   }, []);
 
@@ -1175,9 +1199,11 @@ export default function App() {
     } else { start = c.start || 0; len = freeLen('overlay', c); }
     const at = readTime() > start && readTime() < start + len ? readTime() : start;
     const srcT = (c.in || 0) + (at - start) * (c.speed || 1);
+    const current = clipJob(sel, c);
     let fm;
     try { fm = await window.api.frameImage(m.path, srcT); } catch (e) { fm = { error: e.message }; }
     if (!fm || fm.error) { setRenderJob({ error: (fm && fm.error) || t('app.could_not_grab_the_frame') }); return; }
+    if (!current()) return; // another project, or the clip changed meanwhile
     let media = projectRef.current.media.find((x) => x.path === fm.path);
     const stillId = uid();
     dispatch({ type: 'beginGesture' });
@@ -1185,21 +1211,21 @@ export default function App() {
     if (sel.track === 'video') {
       const idx = videoLayout(p.videoClips).findIndex((x) => x.clip.id === c.id);
       let insertIndex = idx;
-      if (t > start + 0.01) {
-        if (t < start + len - 0.01) dispatch({ type: 'split', track: 'video', id: c.id, t, newId: uid() });
+      if (at > start + 0.01) {
+        if (at < start + len - 0.01) dispatch({ type: 'split', track: 'video', id: c.id, t: at, newId: uid() });
         insertIndex = idx + 1;
       }
       dispatch({ type: 'addToTimeline', mediaId: media.id, clipId: stillId, index: insertIndex });
     } else {
       const secondId = uid();
-      const interior = t > start + 0.01 && t < start + len - 0.01;
+      const interior = at > start + 0.01 && at < start + len - 0.01;
       if (interior) {
-        dispatch({ type: 'split', track: 'overlay', id: c.id, t, newId: secondId });
-        dispatch({ type: 'update', track: 'overlay', id: secondId, patch: { start: t + 4 } });
+        dispatch({ type: 'split', track: 'overlay', id: c.id, t: at, newId: secondId });
+        dispatch({ type: 'update', track: 'overlay', id: secondId, patch: { start: at + 4 } });
       } else {
         dispatch({ type: 'update', track: 'overlay', id: c.id, patch: { start: (c.start || 0) + 4 } });
       }
-      dispatch({ type: 'addOverlayClip', mediaId: media.id, clipId: stillId, at: t, layer: c.layer });
+      dispatch({ type: 'addOverlayClip', mediaId: media.id, clipId: stillId, at, layer: c.layer });
       dispatch({ type: 'update', track: 'overlay', id: stillId, patch: { transform: c.transform || undefined } });
     }
     dispatch({ type: 'endGesture' });
@@ -1220,6 +1246,7 @@ export default function App() {
       return;
     }
     setRenderJob({ kind: 'reverse', label: t('app.reversing_clip'), fraction: 0 });
+    const current = clipJob(sel, c);
     const off = window.api.onReverseProgress((pr) => {
       if (pr.path === m.path) setRenderJob((j) => (j && !j.error ? { ...j, fraction: pr.fraction } : j));
     });
@@ -1231,6 +1258,7 @@ export default function App() {
     if (res.canceled) { setRenderJob(null); return; }
     if (res.error) { setRenderJob({ error: res.error }); return; }
     setRenderJob(null);
+    if (!current()) return; // another project, or the clip changed while rendering
     let media = projectRef.current.media.find((x) => x.path === res.path);
     dispatch({ type: 'beginGesture' });
     if (!media) { media = { ...res, id: uid(), origin: 'reverse' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
@@ -1356,9 +1384,11 @@ export default function App() {
     if (!c || !m) return;
     setRenderJob({ kind: 'track', label: t('app.tracking_motion_in_name', { name: m.name || t('app.clip').toLowerCase() }), fraction: 0 });
     const off = window.api.onTrackProgress(({ fraction }) => setRenderJob((j) => (j && j.kind === 'track' ? { ...j, fraction } : j)));
+    const current = clipJob(pick, c);
     let res = null;
     try { res = await window.api.trackRun(m, c.in || 0, c.out ?? m.duration, pick.point, pick.box); } catch { /* reported below */ }
     off();
+    if (res && res.points && res.points.length && !current()) { setRenderJob(null); return; } // another project, or the clip changed
     if (res && res.points && res.points.length) {
       dispatch({ type: 'beginGesture' });
       dispatch({ type: 'update', track: pick.track, id: pick.id, patch: { track: { points: res.points, box: pick.box, fps: res.fps } } });
@@ -1612,6 +1642,7 @@ export default function App() {
       const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
       await flushAutosave(); // the current project keeps its last changes (file + slot)
       autosave.current.file = res.file;
+      autosave.current.origin = { created: false, slot: null };
       dispatch({ type: 'load', project: p });
       setSaveState('saved');
       setUnsavedNote(null);
@@ -1634,6 +1665,7 @@ export default function App() {
     };
     autosave.current.file = null;
     autosave.current.pendingRestore = false;
+    autosave.current.origin = { created: true };
     dispatch({ type: 'load', project: p });
     setSaveState('new');
     setUnsavedNote(null);
@@ -1661,11 +1693,15 @@ export default function App() {
       return { error: t('app.auto_saved_project_not_found') };
     }
     if (slot.error) return { error: slot.error }; // its chat file is held by another program
+    // Its file changed after the slot was last written (elsewhere, or by another program): the file
+    // has work the slot lacks, so the file opens and the slot is rewritten from it.
+    if (slot.fileChanged && slot.file) return loadFile(slot.file);
     let p;
     try { p = { ...normalizeProject(slot.project), id: slot.id }; }
     catch (e) { return { error: t('app.invalid_auto_saved_project', { error: e.message }) }; }
     autosave.current.file = slot.file || null;
     autosave.current.pendingRestore = false;
+    autosave.current.origin = { created: false, slot }; // Don't save on close puts this slot back
     dispatch({ type: 'load', project: p });
     setSaveState(slot.file ? 'saved' : 'new');
     setUnsavedNote(null);
@@ -1687,6 +1723,7 @@ export default function App() {
       const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
       await flushAutosave();
       autosave.current.file = res.file;
+      autosave.current.origin = { created: false, slot: null };
       dispatch({ type: 'load', project: p });
       setSaveState('saved');
       setUnsavedNote(null);
@@ -1706,16 +1743,22 @@ export default function App() {
     if (res?.error) showAlert(res.error);
   };
 
+  // Home's Import media starts a new, unsaved project holding the picked media (like New project):
+  // the project last open, and its file, are left as they were.
   const importFromHome = async () => {
-    await flushAutosave(); // the project in the editor keeps its state before media lands
-    const ok = await importMedia();
-    if (ok.length) {
-      autosave.current.pendingRestore = false;
-      setUnsavedNote(null);
-      autosave.current.file = null;
-      setSaveState('new');
-      setScreen('editor');
-    }
+    const items = await window.api.importMedia();
+    if (!items?.some((i) => !i.error)) { if (items?.length) addItems(items); return; } // canceled, or only errors to show
+    await flushAutosave(); // the project being left keeps everything, slot included
+    autosave.current.file = null;
+    autosave.current.pendingRestore = false;
+    autosave.current.origin = { created: true };
+    dispatch({ type: 'load', project: emptyProject() });
+    addItems(items);
+    setSaveState('new');
+    setUnsavedNote(null);
+    setSelection(null);
+    setTime(0);
+    setScreen('editor');
   };
 
   // The startup offer (a project the last session ended on, unsaved): restoring loads it
@@ -1730,6 +1773,7 @@ export default function App() {
     await flushAutosave();
     autosave.current.file = note.file || null;
     autosave.current.pendingRestore = false;
+    autosave.current.origin = { created: false, slot: null }; // the last session's work: never deleted on close
     dispatch({ type: 'load', project: p });
     if (note.file) setSaveState('saved');
     setUnsavedNote(null);
@@ -1784,6 +1828,15 @@ export default function App() {
       await keepRecovery(false);
       return window.api.closeNow();
     }
+    // A project that existed before this session (reopened from its Home card) and was not changed
+    // since it was loaded closes without asking: there is nothing to save or to throw away.
+    const created = a.origin?.created !== false, base = a.loadedProject;
+    const unchanged = !created && !!base && (sameDoc(base, a.project) || JSON.stringify(projectDoc(base)) === JSON.stringify(projectDoc(a.project)));
+    if (unchanged) {
+      await flushAutosave();
+      await keepRecovery(false);
+      return window.api.closeNow();
+    }
     window.api.closeCancel(); // the window waits for the answer
     if (a.asking) return; // already asking (the close button was clicked again)
     a.asking = true;
@@ -1796,8 +1849,18 @@ export default function App() {
     }
     if (choice === 'discard') {
       await keepRecovery(false);
+      // No pending slot write may land after the answer.
+      clearTimeout(a.slotTimer);a.slotTimer = null;
+      try { await a.slotWriting; } catch { /* the slot is replaced below */ }
       const id = a.project?.id;
-      if (id && !isTourId(id)) { try { await window.api.slotDelete(id); } catch { /* closing anyway */ } }
+      if (id && !isTourId(id)) {
+        try {
+          // A project made in this session goes; one that existed before gets its slot back as it was
+          // loaded, so "Don't save" throws away this session's changes and never the project.
+          if (created || !base || base.id !== id) await window.api.slotDelete(id);
+          else await restoreLoadedSlot(base, a.origin.slot);
+        } catch { /* closing anyway */ }
+      }
       return window.api.closeNow();
     }
     return window.api.closeCancel();
@@ -2317,7 +2380,8 @@ export default function App() {
         }} project={project} selection={selection} dispatch={dispatch} duration={duration} time={time} clockRef={clockRef} playing={playing} onSeek={seek}
           onAddTextOver={addTextOver}
           onEnhance={(strength) => selection && enhanceClip({ track: selection.track, id: selection.id }, strength)}
-          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} onColorPick={(sel) => startColorPick(sel)} />}
+          onTrackPick={(sel) => startTrackPick(sel)} onCropEdit={(sel) => startCropEdit(sel)} onColorPick={(sel) => startColorPick(sel)}
+          readLive={() => ({ project: projectRef.current, version: loadVersionRef.current })} />}
         {/* Splitters straddle the one-pixel divider between panels (6px wide, centred on it). */}
         <Splitter which="left" style={{ left: panes.left - 3 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_left_panel')} />
         {!agentMode && !panes.rightCollapsed && <Splitter which="right" style={{ right: panes.right - 3 }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_properties_panel')} />}

@@ -4,7 +4,7 @@
 import { providerShortName } from './providers.js';
 import { TOOL_DECLARATIONS, createToolRunner, describeImageProgress } from './tools.js';
 import { createToolCatalog } from './toolCatalog.js';
-import { validateAgentProject } from './validation.js';
+import { newValidationIssues, validateAgentProject } from './validation.js';
 import { updateVisualRequirements, markVisualCoverage, nextVisualSamples } from './visualVerification.js';
 import { introducedIssues } from './editorial.js';
 import { validateToolCall } from "../../../shared/toolArguments.mjs";
@@ -174,7 +174,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
   let changed = false;
   const operations = [];
   const running = new Map();
-  const initialIssues = new Set(validateAgentProject(ctx.getProject()).issues);
+  const initialValidation = validateAgentProject(ctx.getProject()), initialIssues = new Set(initialValidation.issues);
   const runner = createToolRunner({ ...ctx, requestId, isCanceled, onImageProgress: progress => {
     if (!isCanceled()) for (const event of running.values()) if (event.name === 'generate_image') onEvent({ ...event, label:describeImageProgress(progress), activity:{...event.activity,progress:imageActivityProgress(progress)} });
   },onToolProgress:progress=>{
@@ -250,8 +250,8 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
       if (!res.calls.length) {
         pruneFailures(failedEdits, ctx.getProject());
         if (failedEdits.size) return finish({ error: { error: unresolvedReport(failedEdits).error }, changed });
-        const verification = validateAgentProject(ctx.getProject());
-        const newIssues = verification.issues.filter(issue => !initialIssues.has(issue));
+        const finalProject = ctx.getProject(), verification = validateAgentProject(finalProject);
+        const newIssues = newValidationIssues(initialValidation, verification, finalProject);
         if (changed && newIssues.length) return finish({ error: { error: `Edit validation failed: ${newIssues.join(' ')}` }, changed, verification });
         const currentRevision = projectRevision(ctx.getProject());
         // One editorial pass before finishing: only issues introduced by this request.

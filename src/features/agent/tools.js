@@ -13,7 +13,7 @@ import { MOTION_GUIDE, MOTION_TOPICS } from './motionGuide.js';
 import { defaultSpeech, engineVoices, extensionEnginesOf, resolveSpeechEngine, engineProblem, usableEngines, voiceEngineName } from '../audio/voiceDefault.js';
 import { projectRevision, audioRevision } from './context.js';
 import { regroupSegments } from "../text/subtitles.js";
-import { validateAgentProject, verifyActionResults } from './validation.js';
+import { newValidationIssues, validateAgentProject, verifyActionResults } from './validation.js';
 import { projectScenes, filterScenes, storyboardSamples } from './sceneMap.js';
 import { cropWordTiming } from '../text/timing.js';
 import { EDITING_DECLARATIONS, createEditingTools } from './editingTools.js';
@@ -457,8 +457,7 @@ export function createToolRunner(ctx) {
     // reported as applied, or leave the timeline broken until completion checks.
     const before = ctx.getProject();
     const planned = prepareProjectAction(before, action), candidate = planned.project;
-    const oldIssues = new Set(validate(before).issues);
-    const issues = validate(candidate).issues.filter(issue => !oldIssues.has(issue));
+    const issues = newValidationIssues(validate(before), validate(candidate), candidate);
     if (issues.length) throw new Error(`Edit validation failed: ${issues.join(' ')}`);
     operation?.actions.push(action);
     if (operation) operation.wrote = true;
@@ -860,7 +859,7 @@ export function createToolRunner(ctx) {
   const pluginTools = createPluginTools({runExtensionCommand:(input)=>ctx.runExtensionCommand(input,{onProgress:ctx.onToolProgress,commit:(action,next,publish)=>{
     if(ctx.isCanceled?.()||ctx.editActive?.()===false||!operation)throw Error('Editing stopped.');
     const before=project();if(!operation.wrote&&projectRevision(before)!==operation.revision)throw Error('The project changed before this extension edit.');
-    const existing=new Set(validate(before).issues),issues=validate(next).issues.filter(issue=>!existing.has(issue));if(issues.length)throw Error('Edit validation failed: '+issues.join(' '));
+    const issues=newValidationIssues(validate(before),validate(next),next);if(issues.length)throw Error('Edit validation failed: '+issues.join(' '));
     publish(next);operation.actions.push(action);operation.wrote=true;operation.extensionExpected=projectRevision(next);
   }}),api:ctx.api,allowPluginCommands:ctx.allowPluginCommands,getProject:project,dispatch,settle:ctx.settle,isCanceled:ctx.isCanceled,editActive:ctx.editActive,pluginCommandReady:ctx.pluginCommandReady,getPluginEditorContext:ctx.getPluginEditorContext,getPluginEditContext:ctx.getPluginEditContext,pluginEditApplied:ctx.pluginEditApplied,onProgress:ctx.onToolProgress});
   const tools = {
@@ -1613,7 +1612,7 @@ export function createToolRunner(ctx) {
 
     async undo() {
       if (!ctx.undoOwn) return { error: 'Undo is not available here.' };
-      if (!ctx.undoOwn()) return { error: 'Nothing of yours to undo in this request.' };
+      if (!ctx.undoOwn({ call: true })) return { error: 'Nothing of yours to undo in this request.' };
       return after();
     },
 
@@ -1654,6 +1653,7 @@ export function createToolRunner(ctx) {
       const edits = !NON_MUTATING.has(name);
       const active = { revision, actions: [], wrote: false, validation: new WeakMap() };
       operation = edits ? active : null;
+      if (edits && name !== 'undo') ctx.markCall?.(); // where this call's steps begin, for undo
       lastActions = active.actions;
       let result;
       try {
@@ -1678,8 +1678,7 @@ export function createToolRunner(ctx) {
         if (errors.length) result = { ...result, error: errors.join(' ') };
       }
       const validation = changed ? active.validation.get(now) || validateAgentProject(now) : null;
-      const existing = new Set((active.validation.get(before) || validateAgentProject(before)).issues);
-      const issues = validation?.issues.filter(issue => !existing.has(issue)) || [];
+      const issues = validation ? newValidationIssues(active.validation.get(before) || validateAgentProject(before), validation, now) : [];
       if (issues.length) result = { ...result, error: `Edit validation failed: ${issues.join(' ')}` };
       return { ...result, ok: !result.error, changed, status: result.error ? 'blocked' : changed ? 'applied' : 'unchanged', before_revision: revision, revision: nextRevision,
         ...(validation ? { validation } : {}) };

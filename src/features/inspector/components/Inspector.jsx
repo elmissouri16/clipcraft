@@ -13,7 +13,7 @@ import TextInspector from "../../text/components/TextInspector.jsx";
 import ClipInspector from './ClipInspector.jsx';
 import AudioFxControls from "../../audio/components/AudioFx.jsx";
 import EnhanceVoice from "../../audio/components/EnhanceVoice.jsx";
-import { isLookPatch, lookAction, selectedPictures } from "../../effects/look.js";
+import { isLookPatch, lookAction, lookResetAction, selectedPictures } from "../../effects/look.js";
 import { clipLenTl, clipStartTl } from "../../timeline/track.js";
 import { t, tn } from '../../../i18n/index.js';
 import { catalogName, effectLabel } from '../../../i18n/catalog.js';
@@ -380,7 +380,7 @@ function InspectorHeader({ Icon, title, onCollapse }) {
   </div>;
 }
 
-export default function Inspector({  collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect }) {
+export default function Inspector({  collapsed = false, onCollapse, project, selection, dispatch, duration, time: pausedTime = 0, clockRef, playing = false, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null, onAddTextOver = null, onSelectEffect, readLive = null }) {
   const bodyRef = useRef(null);
   useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [selection?.track, selection?.id]);
   const time = useClockTime(clockRef, pausedTime, playing && !collapsed);
@@ -414,6 +414,11 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
     if (many.length > 1 && isLookPatch(patch) && (track === 'video' || track === 'overlay')) dispatch(lookAction(many, clip, patch));
     else dispatch({ type: 'update', track, id: clip.id, patch });
   };
+  // Grade "Reset all": every selected picture clip loses its own grade (one undo step).
+  const resetLook = () => {
+    const many = selectedPictures(project, selection);
+    dispatch(lookResetAction(many.length > 1 ? many : [{ track, clip }]));
+  };
   const media = clip?.mediaId && project.media.find((m) => m.id === clip.mediaId);
   const S = (p) => <Slider dispatch={dispatch} {...p} />;
 
@@ -443,7 +448,7 @@ export default function Inspector({  collapsed = false, onCollapse, project, sel
       )}
 
       {clip && (track === 'video' || track === 'overlay') && !clip.gap && (
-        <ClipInspector key={clip.id} clip={clip} media={media} project={project} set={set} dispatch={dispatch} track={track}
+        <ClipInspector key={clip.id} clip={clip} media={media} project={project} set={set} dispatch={dispatch} track={track} readLive={readLive} resetLook={resetLook}
           time={time} readTime={() => clockRef?.current?.time ?? time} onSeek={onSeek} onEnhance={onEnhance} onTrackPick={onTrackPick} onCropEdit={onCropEdit} onColorPick={onColorPick}
           start={track === 'overlay' ? clip.start : videoLayout(project.videoClips).find((l) => l.clip.id === clip.id)?.start ?? 0} />
       )}

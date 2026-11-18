@@ -38,6 +38,15 @@ export function selectedPictures(project, selection) {
     .filter((x) => x.clip && !x.clip.gap);
 }
 
+// "Reset all" in the grade panel, for one clip: the Basic grade, the LUT and the classic adjustments go
+// back to their defaults; the clip's own HSL and curves (reset on their own tabs) stay.
+export function resetLookPatch(clip) {
+  const g = clip.grade || {};
+  return { grade: Object.fromEntries(['hsl', 'curves'].filter((k) => g[k] !== undefined).map((k) => [k, g[k]])), adjust: {} };
+}
+// One undoable reset of every clip in `items` ([{ track, clip }]): each loses its own grade, whatever it was.
+export const lookResetAction = (items) => ({ type: 'updateMany', updates: items.map((it) => ({ track: it.track, id: it.clip.id, patch: resetLookPatch(it.clip) })) });
+
 // One undoable action that applies a look edit made on `base` to all `items` ([{ track, clip }]).
 export function lookAction(items, base, patch) {
   return { type: 'updateMany', updates: items.map((it) => ({ track: it.track, id: it.clip.id, patch: lookPatchFor(base, patch, it.clip) })) };

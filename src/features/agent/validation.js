@@ -1,4 +1,4 @@
-import { clipLen, exportDuration, projectDuration, videoLayout } from "../../state/store.js";
+import { clipLen, cutOrigins, exportDuration, projectDuration, videoLayout } from "../../state/store.js";
 
 const TRACKS = { video: 'videoClips', overlay: 'overlayClips', audio: 'audioClips', text: 'textClips', effect: 'effectClips' };
 const lookup = (p, track, id) => (p[TRACKS[track]] || []).find(c => c.id === id);
@@ -46,11 +46,31 @@ export function validateAgentProject(p) {
   }
   const duration = exportDuration(p), extent = projectDuration(p);
   if (!Number.isFinite(duration) || !Number.isFinite(extent)) issues.push('Project duration is not finite.');
+  const overruns = [];
   for (const track of ['overlay', 'audio', 'text', 'effect']) for (const c of p[TRACKS[track]] || []) {
     const end = c.start + (track === 'text' || track === 'effect' ? c.duration : clipLen(c));
-    if (end > duration + 0.05) issues.push(`${track}:${c.id}: ends at ${end.toFixed(3)}s beyond the ${duration.toFixed(3)}s export. Extend the main track or trim this content explicitly.`);
+    if (end > duration + 0.05) {
+      const issue = `${track}:${c.id}: ends at ${end.toFixed(3)}s beyond the ${duration.toFixed(3)}s export. Extend the main track or trim this content explicitly.`;
+      issues.push(issue);overruns.push({ track, id: c.id, by: end - duration, issue });
+    }
   }
-  return { ok: !issues.length, issues, warnings, export_duration_sec: duration, timeline_extent_sec: extent, checked_clips: seen.size };
+  const result = { ok: !issues.length, issues, warnings, export_duration_sec: duration, timeline_extent_sec: extent, checked_clips: seen.size };
+  Object.defineProperty(result, 'overruns', { value: overruns }); // for newValidationIssues; not part of the reported result
+  return result;
+}
+
+// The issues of `after` (a validateAgentProject result for `afterProject`) that `before` did not have.
+// Content that already ran past the export stays the same issue while it runs no further past: a ripple
+// cut moves it along with the end, and a piece cut from it (cutOrigins) is the same content.
+export function newValidationIssues(before, after, afterProject) {
+  const existing = new Set(before.issues), origins = cutOrigins(afterProject);
+  const was = new Map((before.overruns || []).map(o => [`${o.track}:${o.id}`, o.by]));
+  const known = (o) => {
+    for (let id = o.id, n = 0; id && n < 64; id = origins?.get(id), n++) if (was.has(`${o.track}:${id}`)) return was.get(`${o.track}:${id}`);
+    return undefined;
+  };
+  const kept = new Set((after.overruns || []).filter(o => { const by = known(o); return by !== undefined && o.by <= by + 0.05; }).map(o => o.issue));
+  return after.issues.filter(issue => !existing.has(issue) && !kept.has(issue));
 }
 
 // Check the final requested fields, including multi-action tools whose later

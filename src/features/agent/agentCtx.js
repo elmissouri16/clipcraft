@@ -20,11 +20,13 @@ export function makeAgentCtx({ app, provider, getProject, dispatch, settle, requ
     startExport: (...args) => live() ? app.startExport?.(...args) : undefined,
     runExtensionCommand: (input,callbacks) => {if(!live()||!allowPluginCommands)throw Error('Editing stopped.');return app.runExtensionCommand(input,{...callbacks,agentToken:requestId,isCanceled:()=>!live()});},
     api: window.api, settle,
-    // Undo only what this request did: the user's earlier edits stay.
-    undoOwn: () => {
+    // Undo only what this request did: the user's earlier edits stay. call: the whole last tool call
+    // that changed the project (markCall notes where each call starts); otherwise one step.
+    undoOwn: ({ call = false } = {}) => {
       if (!live() || app.getAgentEdit?.()?.token !== requestId || !app.getAgentEdit?.()?.steps.length) return false;
-      dispatch({ type: 'undoAgentEdit', token: requestId });
+      dispatch({ type: 'undoAgentEdit', token: requestId, ...(call ? { call: true } : {}) });
       return true;
     },
+    markCall: () => { if (live() && app.getAgentEdit?.()?.token === requestId) dispatch({ type: 'markAgentCall', token: requestId, agentToken: requestId }); },
   };
 }

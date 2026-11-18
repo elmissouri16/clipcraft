@@ -647,6 +647,9 @@ ipcMain.handle('slots:read', (_e, id) => {
   let slot;
   try { slot = autosaveStore.readSlot(autosaveDir(), id); } catch (error) { return { error: error.message }; } // a held chat file
   if (slot?.error) return slot;
+  // The bound file changed after the slot was written: the renderer opens the file instead, and the
+  // stale slot never becomes a known target, so no auto save can write it over the newer file.
+  if (autosaveStore.fileChangedSince(slot)) return { ...slot, fileChanged: true };
   // A slot bound to a project file adopts that file as known (same trust as project:openPath),
   // so the auto-save-to-file writes keep working for a project reopened from its slot.
   if (slot?.file && fs.existsSync(slot.file)) projectFiles.add(slot.file);
@@ -672,6 +675,9 @@ ipcMain.handle('app:closeCancel', () => { clearTimeout(closeTimer); relaunchOnCl
 // Export happens in two steps: the UI renders the text layer to PNG frames (export:frame / export:blanks),
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
 const frameDirs = new Set();
+// The file the save dialog returned for each user export (by frame folder): the only existing file a
+// user export may replace (electron/export/exportTarget.cjs).
+const confirmedExportFiles = new Map();
 const agentExportTargets = new Map();
 const extensionExportTargets = new Map();
 let currentExportFrameDir=null;
@@ -717,7 +723,7 @@ ipcMain.handle('export:begin', async (_e, suggested) => {
     file = res.filePath;
   }
   const frameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-text-'));
-  frameDirs.add(frameDir);
+  frameDirs.add(frameDir);confirmedExportFiles.set(frameDir, file);
   return { file, frameDir };
 });
 
@@ -761,7 +767,7 @@ const dropFrames = (dir) => {
     agentExportTargets.delete(dir);agentRequests.delete(owned.key);
     if (!owned.sender.isDestroyed()) owned.sender.removeListener('destroyed', owned.destroyed);
   }
-  frameDirs.delete(dir);
+  frameDirs.delete(dir);confirmedExportFiles.delete(dir);
   extensionExportTargets.delete(dir);
   textStreams.get(dir)?.kill();
   textStreams.delete(dir);
@@ -809,7 +815,10 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     if (owned?.controller.signal.aborted) return { canceled: true };
     if (currentExport) throw Error('Another video is already being encoded.');
     const project = fxJobs.resolve(projectIn);
-    if (owned && fs.existsSync(target.file) && project.media.some(m => m.path && fs.existsSync(m.path) && fs.realpathSync(m.path) === fs.realpathSync(target.file))) throw Error('Choose an output path different from source media.');
+    // No export writes over the project's source media; a user export replaces an existing file only
+    // when the save dialog returned that path for this export (a typed Name was never confirmed).
+    const targetProblem = require('./export/exportTarget.cjs').exportTargetProblem({ file: target?.file, mediaPaths: [...(projectIn?.media || []), ...(project.media || [])].map(m => m?.path), confirmed: confirmedExportFiles.get(target?.frameDir) || null, user: !owned });
+    if (targetProblem) throw Error(owned ? 'Choose an output path different from source media.' : i18n.t(targetProblem.reason === 'source' ? 'main.export_target_is_source' : 'main.export_target_exists', { name: path.basename(target.file) }));
     const textFile = path.join(target.frameDir, 'text.mov');
     const withText = textFrames > 0 && frameDirs.has(target.frameDir) && fs.existsSync(textFile)
       ? { ...project, textOverlay: { file: textFile, count: textFrames } }

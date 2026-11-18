@@ -1,5 +1,6 @@
 // Per-project autosave store (electron/project/autosave.cjs): per-id write/read roundtrip, index
-// ordering (newest first), rewrite dedupe, cap eviction (oldest out, just-written kept),
+// ordering (newest first), rewrite dedupe, cap eviction (oldest file-backed out, unsaved and
+// just-written kept), file stamps (a file changed after its slot is detected),
 // delete, file binding lookup, id sanitization, and index rebuild after loss.
 // Usage: node tests/unit/editor/test-autosave.cjs
 const assert = require('assert/strict');
@@ -64,10 +65,11 @@ const rec = (id, title, updatedAt, extra = {}) => ({
 }
 
 {
-  // Cap eviction: beyond CAP the oldest slots go; the just-written one always stays,
+  // Cap eviction: beyond CAP the oldest file-backed slots go; the just-written one always stays,
   // even when it is itself the oldest by timestamp (rewriting an old project).
   const root = tmp();
-  for (let i = 0; i < store.CAP + 3; i++) store.writeSlot(root, rec(`c${i}`, `P${i}`, 1000 + i));
+  const filed = (id) => { const f = path.join(root, `${id}.clipcraft.json`); fs.writeFileSync(f, '{}'); return { file: f }; };
+  for (let i = 0; i < store.CAP + 3; i++) store.writeSlot(root, rec(`c${i}`, `P${i}`, 1000 + i, filed(`c${i}`)));
   let list = store.listSlots(root);
   assert.equal(list.length, store.CAP);
   assert.ok(!list.some((x) => x.id === 'c0'));
@@ -75,10 +77,61 @@ const rec = (id, title, updatedAt, extra = {}) => ({
   assert.ok(list.some((x) => x.id === `c${store.CAP + 2}`));
   // Rewrite the current oldest survivor with an OLD timestamp: it must not evict itself.
   const oldest = list[list.length - 1].id;
-  store.writeSlot(root, rec(oldest, 'Still here', 1));
+  store.writeSlot(root, rec(oldest, 'Still here', 1, filed(oldest)));
   list = store.listSlots(root);
   assert.ok(list.some((x) => x.id === oldest));
   assert.equal(list.length, store.CAP);
+}
+
+{
+  // A slot without a file is the only copy of that project: eviction takes file-backed slots
+  // first and never an unsaved one, nor one whose file has gone, even past the cap.
+  const root = tmp();
+  store.writeSlot(root, rec('draft', 'Unsaved draft', 1));
+  store.writeSlot(root, rec('orphan', 'File deleted', 2, { file: path.join(root, 'gone.clipcraft.json') }));
+  for (let i = 0; i < store.CAP + 2; i++) {
+    const f = path.join(root, `s${i}.clipcraft.json`); fs.writeFileSync(f, '{}');
+    store.writeSlot(root, rec(`s${i}`, `Saved ${i}`, 100 + i, { file: f }));
+  }
+  let list = store.listSlots(root);
+  assert.ok(list.some((x) => x.id === 'draft') && fs.existsSync(store.slotPath(root, 'draft')), 'the unsaved draft survives the cap');
+  assert.ok(list.some((x) => x.id === 'orphan'), 'a slot whose file is gone survives the cap');
+  assert.equal(list.length, store.CAP, 'file-backed slots were evicted to make room');
+  assert.ok(!list.some((x) => x.id === 's0') && !list.some((x) => x.id === 's3'), 'the oldest file-backed slots went first');
+  // Only unsaved slots left beyond the cap: nothing is evicted.
+  for (let i = 0; i < store.CAP + 2; i++) store.writeSlot(root, rec(`u${i}`, `Unsaved ${i}`, 1000 + i));
+  list = store.listSlots(root);
+  assert.ok(Array.from({ length: store.CAP + 2 }, (_, i) => `u${i}`).every((id) => list.some((x) => x.id === id)), 'every unsaved slot is kept');
+  assert.ok(list.some((x) => x.id === 'draft'));
+  assert.ok(!list.some((x) => x.file && fs.existsSync(x.file)), 'all file-backed slots were evicted before any unsaved one');
+}
+
+{
+  // A file-backed slot records its file's identity; a file changed after the slot was written
+  // (another computer, an outside tool) is reported so the file opens instead of the stale slot.
+  const root = tmp();
+  const file = path.join(root, 'trip.clipcraft.json');
+  fs.writeFileSync(file, JSON.stringify({ id: 'p1', videoClips: [{ id: 'c1' }] }));
+  store.writeSlot(root, rec('p1', 'Trip', Date.now(), { file }));
+  let slot = store.readSlot(root, 'p1');
+  assert.deepEqual(slot.fileStamp, { mtimeMs: fs.statSync(file).mtimeMs, size: fs.statSync(file).size }, 'the slot records the file stamp');
+  assert.equal(store.fileChangedSince(slot), false, 'an unchanged file keeps the slot');
+  fs.writeFileSync(file, JSON.stringify({ id: 'p1', videoClips: [{ id: 'c1' }, { id: 'c2-made-elsewhere' }] }));
+  assert.equal(store.fileChangedSince(store.readSlot(root, 'p1')), true, 'a changed file is detected');
+  // Same size, different time is a change too.
+  store.writeSlot(root, rec('p1', 'Trip', Date.now(), { file }));
+  assert.equal(store.fileChangedSince(store.readSlot(root, 'p1')), false, 'rewriting the slot records the new stamp');
+  const later = new Date(Date.now() + 5000); fs.utimesSync(file, later, later);
+  assert.equal(store.fileChangedSince(store.readSlot(root, 'p1')), true, 'a new modification time alone is a change');
+  // A slot written before stamps existed: the file is preferred when it is newer than the slot.
+  const legacy = { ...store.readSlot(root, 'p1') }; delete legacy.fileStamp;
+  assert.equal(store.fileChangedSince({ ...legacy, updatedAt: Date.now() - 86400e3 }), true, 'legacy slot older than its file');
+  assert.equal(store.fileChangedSince({ ...legacy, updatedAt: Date.now() + 86400e3 }), false, 'legacy slot newer than its file');
+  // Unsaved slots and slots whose file is gone are never "changed": the slot is all there is.
+  assert.equal(store.fileChangedSince(store.readSlot(root, (store.writeSlot(root, rec('u', 'U', 1)), 'u'))), false);
+  fs.unlinkSync(file);
+  assert.equal(store.fileChangedSince(slot), false, 'a missing file leaves the slot as the copy to open');
+  assert.equal(store.readSlot(root, 'u').fileStamp, undefined, 'unsaved slots carry no stamp');
 }
 
 console.log('AUTOSAVE OK');
@@ -122,8 +175,10 @@ console.log('AUTOSAVE OK');
   // Delete and cap eviction take the chat with them; the chat folder never pollutes the index.
   store.deleteSlot(root, 'legacy');
   assert.ok(!fs.existsSync(store.chatPath(root, 'legacy')), 'deleteSlot removes the chat too');
+  const filed = (id) => { const f = path.join(root, `${id}.clipcraft.json`); fs.writeFileSync(f, '{}'); return { file: f }; };
+  store.writeSlot(root, rec('c1', 'Chat slot renamed', 3, filed('c1'))); // only file-backed slots are evicted
   store.writeSlotChat(root, 'c1', chat);
-  for (let i = 0; i < store.CAP; i++) store.writeSlot(root, rec(`fill${i}`, `Fill ${i}`, 100 + i));
+  for (let i = 0; i < store.CAP; i++) store.writeSlot(root, rec(`fill${i}`, `Fill ${i}`, 100 + i, filed(`fill${i}`)));
   assert.ok(!fs.existsSync(store.chatPath(root, 'c1')), 'eviction removes the evicted slot\'s chat');
   fs.unlinkSync(path.join(root, 'index.json'));
   assert.ok(store.listSlots(root).every((e) => !e.id.startsWith('chat')), 'the index rebuild ignores the chat folder');

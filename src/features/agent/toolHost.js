@@ -6,7 +6,7 @@ import { createToolRunner, describeImageProgress } from './tools.js';
 import { clearsFailure, describeCall, editTarget, failureTargets, pruneFailures, unresolvedReport } from './runAgent.js';
 import { validateToolCall } from "../../../shared/toolArguments.mjs";
 import { projectRevision, recallContext } from './context.js';
-import { validateAgentProject } from './validation.js';
+import { newValidationIssues, validateAgentProject } from './validation.js';
 import { introducedIssues } from './editorial.js';
 import { updateVisualRequirements, markVisualCoverage, nextVisualSamples } from './visualVerification.js';
 import { describeToolActivity, imageActivityProgress } from './toolActivity.js';
@@ -17,7 +17,7 @@ import { t } from '../../i18n/index.js';
 // tools/catalog: from nativeTools(). isCanceled: the owner's cancel state.
 export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, tools, catalog, completionPolicy }) {
   const initial = ctx.getProject(), initialRevision = projectRevision(initial);
-  const initialIssues = new Set(validateAgentProject(initial).issues), failures = new Map(), operations = [];
+  const initialValidation = validateAgentProject(initial), failures = new Map(), operations = [];
   let editorialReviewed = null, staleError = null, interruption = null, stopError = null, stopped = false, finalized = null, visual = [], changed = false, index = 0;
   const canceled = () => stopped || isCanceled();
   let imageEvent, activeEvent, activeProject;
@@ -49,8 +49,8 @@ export function createToolHost({ ctx, contents, onEvent, isCanceled, requestId, 
     if (prerequisite) return prerequisite;
     pruneFailures(failures, ctx.getProject());
     if (failures.size) return { ...unresolvedReport(failures), ready:false };
-    const validation = validateAgentProject(ctx.getProject());
-    const issues = validation.issues.filter(issue => !initialIssues.has(issue));
+    const finalProject = ctx.getProject(), validation = validateAgentProject(finalProject);
+    const issues = newValidationIssues(initialValidation, validation, finalProject);
     if (changed && issues.length) return { error:`Edit validation failed: ${issues.join(' ')}`, ready:false };
     const times_sec = nextVisualSamples(visual);
     if (times_sec.length) {

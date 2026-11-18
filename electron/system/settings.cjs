@@ -24,15 +24,39 @@ function settingsFile() {
 let cached = null; // { file, mtimeMs, size, text }
 const changeListeners=new Set(),PUBLIC_CHANGE_GROUPS=['ai','externalAgents','language','mcpServers','perfMode','proxy','quality','services','shortcuts','voiceDefault'];
 function onChanged(listener){if(typeof listener!=='function')throw Error('Settings listener must be a function');changeListeners.add(listener);return ()=>changeListeners.delete(listener);}
+// A settings.json that exists but does not parse (hand-edited, torn by another program) is moved aside
+// to settings.json.bad-<time> before anything can write over it, so its keys stay recoverable; an
+// earlier .bad copy is never replaced. Settings then start from empty, as for a first run.
+function setAside(file) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  for (let n = 0; n < 100; n++) {
+    const dest = `${file}.bad-${stamp}${n ? `-${n}` : ''}`;
+    try {
+      try { fs.linkSync(file, dest); } // fails when dest exists: never replaces an earlier copy
+      catch (error) { if (error.code === 'EEXIST') throw error; fs.copyFileSync(file, dest, fs.constants.COPYFILE_EXCL); }
+      fs.unlinkSync(file);
+      return dest;
+    } catch (error) { if (error.code !== 'EEXIST') return null; }
+  }
+  return null;
+}
 function read() {
+  let file;
   try {
-    const file = settingsFile(), st = fs.statSync(file);
+    file = settingsFile();
+    const st = fs.statSync(file);
     if (!cached || cached.file !== file || cached.mtimeMs !== st.mtimeMs || cached.size !== st.size) {
       cached = { file, mtimeMs: st.mtimeMs, size: st.size, text: fs.readFileSync(file, 'utf8') };
     }
+  } catch {
+    cached = null;
+    return {};
+  }
+  try {
     return JSON.parse(cached.text);
   } catch {
     cached = null;
+    setAside(file);
     return {};
   }
 }

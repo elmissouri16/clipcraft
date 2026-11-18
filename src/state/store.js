@@ -604,7 +604,10 @@ function reduceProjectInner(p, a) {
       // Style only the imported .srt subtitles (the Subtitles card's template grid).
       return { ...p, textClips: p.textClips.map((c) => (c.source === 'srt' ? { ...c, ...a.patch } : c)) };
     case 'styleCaptions':
-      return { ...p, textClips: p.textClips.map((c) => (c.caption ? { ...c, ...a.patch } : c)) };
+      // Every caption, or with a layer only the captions on that text track (the inspector's
+      // "Apply to all main captions" restyles the edited caption's own track, never imported or
+      // translated tracks on other layers).
+      return { ...p, textClips: p.textClips.map((c) => (c.caption && (a.layer === undefined || layerOf(c) === a.layer) ? { ...c, ...a.patch } : c)) };
     case 'duplicate': {
       const key = TRACKS[a.track];
       const i = p[key].findIndex((c) => c.id === a.id);
@@ -874,6 +877,13 @@ export function trimActions(p, { track, id, t, side, newId }) {
   return actions;
 }
 
+// A cut project -> Map(piece id -> id of the clip it was cut from), for the pieces that got a new id
+// (in this cut or an earlier one: follow the map to walk a piece's ancestry).
+// A cut never adds content: export coverage and the assistant's validation use this to tell a piece of
+// existing content (say, the rest of a music bed that already ran past the video) from added content.
+const cutPieceOrigins = new WeakMap();
+export const cutOrigins = (project) => (project && cutPieceOrigins.get(project)) || null;
+
 // Remove timeline intervals with one shared time map. Manual callers keep free
 // tracks fixed by default; the agent opts into ripple for captions, audio,
 // overlays, effects and markers. Linked audio always follows its picture.
@@ -905,13 +915,15 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
     used.add(id);
     return id;
   };
-  const records = new Map();
+  // Earlier cuts' entries stay, so a piece's ancestry can be followed back through successive cuts.
+  const records = new Map(), origins = new Map(cutOrigins(p) || []);
   const sliceClip = (track, clip, start, end, shouldRipple) => {
     const spans = shouldRipple ? piecesOf(start, end) : [[start, end]];
     const parts = spans.map(([a, b], i) => {
       const at = shouldRipple ? mapped(a) : a;
       if (spans.length === 1 && a === start && b === end && at === start) return { clip, start, end, originalStart: a, originalEnd: b };
       const id = i ? fresh(`${clip.id}-c${i}`) : clip.id;
+      if (i) origins.set(id, clip.id);
       let next = { ...clip, id };
       if (track === 'video' || track === 'overlay' || track === 'audio') {
         const speed = clip.speed || 1;
@@ -969,6 +981,7 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
         speed: picture.clip.speed || 1, linkId: nextLink, linkOff: audio.linkOff || 0, linkInOff: inOffset };
       const from = (sound.in - audio.in) / (audio.speed || 1);
       Object.assign(sound, sliceFades(audio, from, from + clipLen(sound), clipLen(audio)));
+      if (sound.id !== audio.id) origins.set(sound.id, audio.id);
       lists.audio.push({ clip: sound, start: at, end: at + clipLen(sound) });
     });
   }
@@ -986,6 +999,7 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
   }
   if (ripple) result.markers = (p.markers || []).filter(m => !cuts.some(r => m.time >= r.start && m.time < r.end))
     .map(m => ({ ...m, time: mapped(m.time) }));
+  if (origins.size) cutPieceOrigins.set(result, origins);
   return result;
 }
 
@@ -1125,6 +1139,21 @@ function warpTimeline(p, { from, to, factor, clipId, speed, videoClips }) {
   const actual = videoLayout(normalized.videoClips);
   if (actual.length !== lists.video.length || actual.some((l, i) => Math.abs(l.start - lists.video[i].start) > epsilon || Math.abs(l.end - lists.video[i].end) > epsilon)) return fail('The requested speed cannot represent the mapped transition timing exactly.');
   return { project: normalized, time_map: { start_sec: from, end_sec: to, factor, delta_sec: delta } };
+}
+
+// A picture clip's data kept in SOURCE time (keyframes, volume keys, the motion-track path) re-expressed
+// for a new source window that starts at newIn and plays at newSpeed, so each key keeps its place in the
+// clip's own time. For edits that swap what the clip plays (Stabilize, a template slot filled): returns
+// the patch fields to merge into the clip's update; nothing for a clip without such data.
+export function retimeSourceData(clip, newIn, newSpeed = clip.speed || 1) {
+  const oldIn = clip.in || 0, oldSpeed = clip.speed || 1;
+  const map = (t) => newIn + ((t - oldIn) / oldSpeed) * newSpeed;
+  const keys = (list) => (Array.isArray(list) ? list.map((q) => (q && Number.isFinite(q.t) ? { ...q, t: map(q.t) } : q)) : list);
+  const patch = {};
+  if (clip.keyframes && typeof clip.keyframes === 'object') patch.keyframes = Object.fromEntries(Object.entries(clip.keyframes).map(([k, list]) => [k, keys(list)]));
+  if (Array.isArray(clip.volumeKeys)) patch.volumeKeys = keys(clip.volumeKeys);
+  if (clip.track && Array.isArray(clip.track.points)) patch.track = { ...clip.track, points: keys(clip.track.points) };
+  return patch;
 }
 
 // After a split the In animation stays on the left part and the Out animation on the right one.
@@ -1303,7 +1332,7 @@ export function actionLocked(p, a) {
       return a.track === 'video' && !!a.on && !p.magnet?.video && p.videoClips.some((c) => c.gap) && isLayerLocked(p, 'video', 0);
     case 'removeSrtCaptions': return p.textClips.some((c) => c.source === 'srt' && clipLocked(p, 'text', c));
     case 'styleSrtCaptions': return p.textClips.some((c) => c.source === 'srt' && clipLocked(p, 'text', c));
-    case 'styleCaptions': return p.textClips.some((c) => c.caption && clipLocked(p, 'text', c));
+    case 'styleCaptions': return p.textClips.some((c) => c.caption && (a.layer === undefined || layerOf(c) === a.layer) && clipLocked(p, 'text', c));
     case 'trimClip': return clipLocked(p, a.track, clipOf(a.track, a.id));
     case 'paste': {
       if (a.track === 'video') return isLayerLocked(p, 'video', 0);
@@ -2321,12 +2350,22 @@ function reduceHistory(state, a,extensionEdit=false) {
     return { ...state, agentInterruption: undefined, agentEdit: { token: a.token, base: state.present, steps: [], future: state.future } };
   }
   if (a.type === 'endAgentEdit') return state.agentEdit?.token === a.token ? finishAgentEdit(state) : state;
+  // An agent tool call starts: note how many steps the request has, so its undo can revert the whole
+  // call (a call may dispatch several steps), not just its last step.
+  if (a.type === 'markAgentCall') {
+    const edit = state.agentEdit;
+    if (!edit || edit.token !== a.token) return state;
+    const n = edit.steps.length, calls = (edit.calls || []).filter(c => c < n);
+    return { ...state, agentEdit: { ...edit, calls: [...calls, n] } };
+  }
   if (a.type === 'undoAgentEdit') {
     const edit = state.agentEdit;
     if (!edit || edit.token !== a.token || !edit.steps.length) return state;
-    const restored = edit.steps.at(-1), steps = edit.steps.slice(0, -1);
+    // call: back to where the last call that changed something began; else one step.
+    const start = a.call ? (edit.calls || []).filter(c => c < edit.steps.length).at(-1) ?? 0 : edit.steps.length - 1;
+    const restored = edit.steps[start], steps = edit.steps.slice(0, start);
     return { ...state, present: { ...restored, layerState: followLayerState(state.present, restored) },
-      future: steps.length ? [] : edit.future, agentEdit: { ...edit, steps } };
+      future: steps.length ? [] : edit.future, agentEdit: { ...edit, steps, calls: (edit.calls || []).filter(c => c < start) } };
   }
   if (a.type === 'craftChat') {
     if (a.projectId !== state.present.id) return state;
@@ -2422,6 +2461,7 @@ function reduceHistory(state, a,extensionEdit=false) {
     && Object.keys(prepared.action).every(key => prepared.action[key] === a[key])
     && Object.keys(a).every(key => key === 'preparedAction' || key === 'agentToken' || Object.hasOwn(prepared.action, key));
   let reduced = reuse ? prepared.next : a.type === 'trimClip' ? trimClip(state.gestureStart || state.present, a) : reduceProject(state.present, a);
+  const cutPieces = cutOrigins(reduced);
   if ((!reuse || extensionEdit) && a.coverExport && reduced !== state.present) {
     // This tail is coverage for free-track content, not a user-authored gap.
     // Recompute it after intermediate insert/trim actions so importing a whole
@@ -2430,14 +2470,20 @@ function reduceHistory(state, a,extensionEdit=false) {
     const covered = tail?.agentCoverage === true;
     const base = covered ? { ...reduced, videoClips: reduced.videoClips.slice(0, -1) } : reduced;
     const endOfMain = exportDuration(base);
+    // Coverage is for content the action added, or content that played inside the old export and
+    // moved: a ripple that carries music or a title which already ran past the end must not grow
+    // a black tail to reach it (that content was never part of the export).
+    const oldEnd = exportDuration(state.present), origins = cutPieces;
     let required = endOfMain;
     for (const track of ['overlay', 'audio', 'text', 'effect']) {
       const key = TRACKS[track];
       const oldById = new Map((state.present[key] || []).map(c => [c.id, c]));
       for (const clip of reduced[key] || []) {
-        const old = oldById.get(clip.id);
+        const piece = !oldById.has(clip.id) && oldById.has(origins?.get(clip.id)); // cut from an existing clip
+        const old = oldById.get(piece ? origins.get(clip.id) : clip.id);
         const end = clip.start + freeLen(track, clip);
-        if (covered || !old || Math.abs(end - old.start - freeLen(track, old)) > 1e-7) required = Math.max(required, end);
+        const oldClipEnd = old ? old.start + freeLen(track, old) : 0;
+        if (!old || ((covered || piece || Math.abs(end - oldClipEnd) > 1e-7) && oldClipEnd <= oldEnd + 1e-7)) required = Math.max(required, end);
       }
     }
     if (covered || required > endOfMain + 1e-7) {
@@ -2473,6 +2519,9 @@ function reduceHistory(state, a,extensionEdit=false) {
     }
   }
   if (next === state.present) return state;
+  // Cut pieces keep their lineage through later edits (until a load), for coverage and validation.
+  const lineage = cutPieces || (a.type !== 'load' && cutOrigins(state.present));
+  if (lineage) cutPieceOrigins.set(next, lineage);
   if (a.type === 'load') return { past: [], present: next, future: [] };
   if (state.agentEdit && !a.agentToken) state = finishAgentEdit(state, a);
   // An agent step while the user holds a gesture moves the gesture's base along, so a manual trim

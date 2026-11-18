@@ -2348,6 +2348,8 @@
   "main.detach_audio_failed": "No se pudo separar el audio: {reason}",
   "main.elevenlabs_works": "ElevenLabs funciona ({count} voces).",
   "main.export_audio": "Exportar audio",
+  "main.export_target_exists": "Ya existe un archivo llamado {name} en esa carpeta. Elige otro nombre o usa Examinar para elegir el archivo que quieres reemplazar.",
+  "main.export_target_is_source": "{name} es uno de los archivos de origen de este proyecto y la exportación no puede reemplazarlo. Elige otro nombre o usa Examinar.",
   "main.ffmpeg_exited_with": "FFmpeg terminó con el código {code}",
   "main.filter_3d_lut": "LUT 3D",
   "main.filter_all_files": "Todos los archivos",

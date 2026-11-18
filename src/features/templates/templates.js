@@ -1,5 +1,5 @@
 // Template helpers: the replaceable clips ("slots") of a project and how a new video or photo fills one.
-import { clipLen, projectDuration, videoLayout } from "../../state/store.js";
+import { clipLen, projectDuration, retimeSourceData, videoLayout } from "../../state/store.js";
 
 export const isSlot = (c) => !!c?.slot && !c.gap;
 
@@ -12,14 +12,18 @@ export function slotList(p) {
 
 // Patch that puts media m into slot clip c without changing its length (so the edit keeps its rhythm):
 // a longer video is cut, a shorter one is slowed down to fill the slot, a photo is shown for the slot's length.
+// The slot's keyframes (and other source-time data) move to the new source time, so its animation keeps
+// its beat; a link to audio detached from the placeholder is dropped (that sound stays, as its own clip).
 export function fillSlot(c, m) {
   const len = clipLen(c);
-  if (m.type === 'image') return { mediaId: m.id, in: 0, out: len, speed: 1, filled: true };
+  const unlink = c.linkId ? { linkId: undefined, linkOff: undefined, linkInOff: undefined } : {};
+  const done = (patch) => ({ ...patch, ...retimeSourceData(c, patch.in, patch.speed ?? (c.speed || 1)), ...unlink, filled: true });
+  if (m.type === 'image') return done({ mediaId: m.id, in: 0, out: len, speed: 1 });
   const speed = c.speed || 1;
   const need = len * speed;
-  if ((m.duration || 0) >= need - 1e-3) return { mediaId: m.id, in: 0, out: need, filled: true };
+  if ((m.duration || 0) >= need - 1e-3) return done({ mediaId: m.id, in: 0, out: need });
   const d = Math.max(0.05, m.duration || 0.05);
-  return { mediaId: m.id, in: 0, out: d, speed: Math.max(0.1, d / len), filled: true };
+  return done({ mediaId: m.id, in: 0, out: d, speed: Math.max(0.1, d / len) });
 }
 
 // What the template package records about the project.

@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Crop, Pipette, RotateCcw,
 } from 'lucide-react';
-import { clipLen, formatTime, uid } from "../../../state/store.js";
+import { clipLen, findClipIn, formatTime, uid } from "../../../state/store.js";
+import { originalWindow, stabilizeOffUpdates, stabilizeUpdates } from '../stabilize.js';
 import { FILTERS, TRANSITIONS } from "../../effects/effects.js";
 import { directionGroupFor } from "../../effects/collections.js";
 import {
@@ -59,9 +60,10 @@ function MaskIcon({ type }) {
 
 // Stabilize: the clip's part of the video is steadied by the main process (vid.stab) into a new file,
 // which the clip then plays. clip.stabilize keeps the level and the original { mediaId, in, out }, so Off (or
-// another level) starts again from the original.
+// another level) starts again from the original (src/features/inspector/stabilize.js keeps source-time data
+// and a linked partner in step, and derives the original window from the clip's current one).
 const STAB_LEVELS = [['off', t('clip.off')], ['minimal', t('clip.minimal_crop')], ['recommended', t('clip.recommended')], ['most', t('clip.most_stable')]];
-function Stabilize({ clip, media, project, set, dispatch }) {
+function Stabilize({ clip, media, project, track, dispatch, readLive }) {
   const [job, setJob] = useState(null); // { fraction } while working
   const [error, setError] = useState('');
   const st = clip.stabilize || null;
@@ -71,22 +73,25 @@ function Stabilize({ clip, media, project, set, dispatch }) {
   const choose = async (level) => {
     setError('');
     if (level === 'off') {
-      if (st) set({ mediaId: st.mediaId, in: st.in, out: st.out, stabilize: null });
+      if (st) dispatch({ type: 'updateMany', updates: stabilizeOffUpdates(project, track, clip) });
       return;
     }
-    const from = st ? st.in : clip.in;
-    const to = st ? st.out : clip.out;
+    const w = originalWindow(clip);
+    const started = readLive?.();
     setJob({ fraction: 0 });
-    const res = await window.api.stabilizeRun({ path: orig.path, duration: orig.duration, hdr: orig.hdr }, from, to, level);
+    const res = await window.api.stabilizeRun({ path: orig.path, duration: orig.duration, hdr: orig.hdr }, w.in, w.out, level);
     setJob(null);
     if (res.canceled) return;
     if (res.error) return setError(res.error);
-    let m = project.media.find((x) => x.path === res.path);
-    if (!m) {
-      m = { ...res, id: uid(), origin: 'stabilize' }; // Media tree: Generated ▸ Processed
-      dispatch({ type: 'addMedia', items: [m] });
-    }
-    set({ mediaId: m.id, in: 0, out: m.duration, stabilize: { level, mediaId: st ? st.mediaId : clip.mediaId, in: from, out: to } });
+    // The render applies only to the project load it started in, and to the clip as it was.
+    const live = readLive?.() || { project };
+    if (started && (live.version !== started.version || live.project.id !== started.project.id)) return;
+    const now = findClipIn(live.project, track, clip.id);
+    if (!now || now.mediaId !== clip.mediaId || (now.in || 0) !== (clip.in || 0) || now.out !== clip.out || (now.speed || 1) !== (clip.speed || 1)) return;
+    let m = live.project.media.find((x) => x.path === res.path);
+    const items = m ? [] : [m = { ...res, id: uid(), origin: 'stabilize' }]; // Media tree: Generated ▸ Processed
+    const updates = stabilizeUpdates(live.project, track, now, m, level);
+    dispatch(items.length ? { type: 'batch', actions: [{ type: 'addMedia', items }, { type: 'updateMany', updates }] } : { type: 'updateMany', updates });
   };
   return (
     <Section title={t('clip.stabilize')}>
@@ -165,7 +170,7 @@ export function PinToTrack({ clip, project, set, card = false }) {
 
 // Properties of a picture clip (main track or overlay), the clip properties panel.
 // time: playhead; start: where the clip starts on the timeline (values and keyframes follow the playhead).
-export default function ClipInspector({ clip, media, project, set, dispatch, track, time = 0, readTime = () => time, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
+export default function ClipInspector({ clip, media, project, set, dispatch, track, readLive = null, resetLook = null, time = 0, readTime = () => time, start = 0, onSeek = () => {}, onEnhance = null, onTrackPick = null, onCropEdit = null, onColorPick = null }) {
   // A motion graphic opens on its own fields.
   const [tab, setTab] = useState(media?.graphic ? 'graphic' : 'video');
   const [sub, setSub] = useState('basic');
@@ -335,7 +340,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
                     onChange={(ease) => { const now=localNow();if(now!==null)set(setSegmentEase(clip,now,ease,fps)); }} />
                 </Section>
               )}
-              {media && <Stabilize clip={clip} media={media} project={project} set={set} dispatch={dispatch} />}
+              {media && <Stabilize clip={clip} media={media} project={project} track={track} dispatch={dispatch} readLive={readLive} />}
               {media && <MotionTracking clip={clip} media={media} set={set} onTrackPick={onTrackPick} track={track} />}
               {track === 'overlay' && <PinToTrack clip={clip} project={project} set={set} />}
               <Section title={t('clip.blend')} onReset={() => set({ blend: 'normal', opacity: 1, keyframes: dropKeys(['opacity']) })}>
@@ -555,7 +560,7 @@ export default function ClipInspector({ clip, media, project, set, dispatch, tra
           </Section>
           <Section title={t('clip.basic')}>
             <GradePanel grade={clip.grade} adjust={clip.adjust} dispatch={dispatch} autoFrom={media ? { media, clip } : undefined}
-              onGrade={(grade) => set({ grade })} onAdjust={(adjust) => set({ adjust })}
+              onGrade={(grade) => set({ grade })} onAdjust={(adjust) => set({ adjust })} onReset={resetLook || undefined}
               onApplyAll={() => dispatch({ type: 'updateMany', updates: [
                 ...project.videoClips.filter((c) => !c.gap).map((c) => ({ track: 'video', id: c.id, patch: { grade: { ...(clip.grade || {}) }, adjust: { ...(clip.adjust || {}) } } })),
                 ...(project.overlayClips || []).map((c) => ({ track: 'overlay', id: c.id, patch: { grade: { ...(clip.grade || {}) }, adjust: { ...(clip.adjust || {}) } } })),

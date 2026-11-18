@@ -2348,6 +2348,8 @@
   "main.detach_audio_failed": "Detach audio failed: {reason}",
   "main.elevenlabs_works": "ElevenLabs works ({count} voices).",
   "main.export_audio": "Export audio",
+  "main.export_target_exists": "A file named {name} already exists in that folder. Choose another name, or use Browse to pick the file to replace.",
+  "main.export_target_is_source": "{name} is one of this project's source files and cannot be replaced by the export. Choose another name or use Browse.",
   "main.ffmpeg_exited_with": "FFmpeg exited with {code}",
   "main.filter_3d_lut": "3D LUT",
   "main.filter_all_files": "All files",

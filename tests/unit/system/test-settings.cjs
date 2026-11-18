@@ -196,5 +196,23 @@ try {
   encryptionAvailable = true;
   settings.clearKey('groq');
   assert.equal(settings.getActive().provider, beforeCredential.ai.provider);
-  console.log('settings ok (atomic writes, private credentials, key-only edits preserve assistant configuration)');
+  // A settings.json that exists but does not parse is moved aside (settings.json.bad-<time>) before any
+  // setter writes, so a hand-edit typo never wipes the saved keys; an earlier copy is never replaced.
+  const dir = path.dirname(file), badCopies = () => fs.readdirSync(dir).filter((n) => n.startsWith('settings.json.bad-')).sort();
+  const torn = fs.readFileSync(file, 'utf8').replace(/\}\s*$/, ',}');
+  fs.writeFileSync(file, torn);
+  settings.setWindowState({ x: 0, y: 0, width: 1280, height: 800, maximized: false, fullScreen: false });
+  assert.equal(badCopies().length, 1, 'the unreadable settings were set aside');
+  assert.equal(fs.readFileSync(path.join(dir, badCopies()[0]), 'utf8'), torn, 'byte for byte, keys included');
+  assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).window, 'the new settings file is written after it');
+  const tornAgain = '{"language": "fr",,}';
+  fs.writeFileSync(file, tornAgain);
+  assert.equal(settings.getLanguagePreference(), 'system', 'a torn file reads as empty settings');
+  fs.writeFileSync(file, tornAgain + ' ');
+  settings.setLanguagePreference('es');
+  assert.equal(badCopies().length, 3, 'each torn file gets its own copy, earlier copies are kept');
+  assert.equal(fs.readFileSync(path.join(dir, badCopies()[0]), 'utf8'), torn, 'the first copy is never replaced');
+  assert.deepEqual(badCopies().slice(1).map((n) => fs.readFileSync(path.join(dir, n), 'utf8')).sort(), [tornAgain, tornAgain + ' '].sort());
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).language, 'es');
+  console.log('settings ok (atomic writes, private credentials, key-only edits preserve assistant configuration, torn files set aside)');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }
