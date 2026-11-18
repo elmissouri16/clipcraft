@@ -75,6 +75,10 @@ const size = (b64) => imageSize(Buffer.from(b64, 'base64'));
     assert.deepEqual(libraryPictures(project), [{ id: 'pic', name: 'a.jpg' }, { id: 'pic2', name: 'b.png' }]);
     const refs = graphicImageRefs(project, { photo: 'pic', title: 'pic is not here', other: 'vid', missing: 'nopath', rows: [{ label: 'x', image: 'pic2' }, 'pic'], n: 3 });
     assert.deepEqual(refs, [{ id: 'pic', path: '/p/a.jpg' }, { id: 'pic2', path: '/p/b.png' }]);
+    assert.deepEqual(graphicImageRefs(project, { scenes: [{ cast: { portraits: [['pic2'], { photo: 'pic' }] } }] }),
+      [{ id: 'pic2', path: '/p/b.png' }, { id: 'pic', path: '/p/a.jpg' }], 'nested schema images resolve without flattening their inputs');
+    const cyclic = { photo: 'pic' }; cyclic.self = cyclic;
+    assert.deepEqual(graphicImageRefs(project, cyclic), [{ id: 'pic', path: '/p/a.jpg' }], 'malformed cycles cannot loop forever');
     assert.deepEqual(graphicImageRefs(project, {}), []); assert.deepEqual(graphicImageRefs({}, { photo: 'pic' }), []);
     const many = { media: Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, type: 'image', path: `/p/${i}.jpg` })) };
     assert.equal(graphicImageRefs(many, Object.fromEntries(many.media.map((m, i) => [`k${i}`, m.id]))).length, 8, 'at most 8');

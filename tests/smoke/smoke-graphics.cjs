@@ -187,10 +187,12 @@ module.exports = async (win, app, dir) => {
     await changeField('Orbit rate', 8);
     check('out-of-range values cannot start a render', await q('!window.__fve.rawProject().overlayClips.some(c=>c.graphicDraft?.inputs?.rate===8) && document.querySelector(".graphic-panel").textContent.includes("Use 4 or less.")'));
     await changeField('Orbit rate', 2);
+    await q('document.querySelector(\'[data-graphic-data="Geometry"] .graphic-data-advanced summary\').click()');
+    await until('!!document.querySelector(\'textarea[aria-label="Geometry"]\')');
     await changeField('Geometry', '{', 'textarea');
     check('invalid JSON is identified without applying it', await q('document.querySelector(".graphic-panel").textContent.includes("Enter valid JSON.")'));
     await q('[...document.querySelectorAll(".graphic-actions button")].find(b=>b.textContent.trim()==="Reset").click()');
-    check('Reset restores numeric and JSON drafts', await q('document.querySelector(\'input[aria-label="Orbit rate"]\').value === "1" && JSON.parse(document.querySelector(\'textarea[aria-label="Geometry"]\').value).radius === 60 && !document.querySelector(".graphic-json.bad")'));
+    check('Reset restores numeric and structured data drafts', await q('document.querySelector(\'input[aria-label="Orbit rate"]\').value === "1" && document.querySelector(\'input[aria-label="Radius"]\').value === "60" && !document.querySelector(\'textarea[aria-label="Geometry"]\')'));
     await q('window.__fve.seek(.25)');
     await q('document.querySelector(\'input[aria-label="Orbit rate slider"]\').dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))');
     await changeField('Orbit rate slider', 2);
@@ -306,20 +308,42 @@ module.exports = async (win, app, dir) => {
     await q('[...document.querySelectorAll(".modal-backdrop button")].find(b=>b.textContent.trim()==="OK")?.click()');
     // The inspector: a picker of the library's pictures; choosing another one re-draws the graphic.
     await q(`window.__fve.select({ track: 'overlay', id: ${JSON.stringify(card.clip_id)} })`);
-    await until('!!document.querySelector(\'select[aria-label="Picture"]\')');
-    const picker = await q('[...document.querySelector(\'select[aria-label="Picture"]\').options].map(o=>o.textContent+"="+o.value)');
-    check('the Graphic tab offers the library pictures by name', picker.join(',') === 'None=,photo.jpg=pic,blue.png=pic2' && await q('document.querySelector(\'select[aria-label="Picture"]\').value') === 'pic');
+    await until('!!document.querySelector(\'button.library-image-current[aria-label="Picture"]\')');
+    check('the Graphic tab shows the selected library picture thumbnail', await q('document.querySelector(\'button.library-image-current[aria-label="Picture"]\').textContent.includes("photo.jpg") && !!document.querySelector(".library-image-current img")'));
+    await q('document.querySelector(\'button.library-image-current[aria-label="Picture"]\').click()');
+    await until('document.querySelectorAll(".library-image-option").length===2');
+    const picker = await q('[...document.querySelectorAll(".library-image-option")].map(o=>o.getAttribute("aria-label"))');
+    check('the thumbnail picker offers library pictures and None', picker.join(',') === 'photo.jpg,blue.png' && await q('!!document.querySelector(".library-image-none")'));
     const cardPast = await q('window.__fve.history().past.length');
-    await changeField('Picture', 'pic2', 'select');
+    await q('document.querySelector(\'.library-image-option[aria-label="blue.png"]\').click()');
     await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(card.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.photo==='pic2'})()`, 60000);
     const swapped = await readCard();
     result.cardSwap = { past: [cardPast, await q('window.__fve.history().past.length')], pixel: pixel(swapped.media.path, 2, px, py) };
     check('choosing another picture re-draws the graphic with it, as one Undo step', blueish(result.cardSwap.pixel) && result.cardSwap.past[1] === cardPast + 1 && swapped.media.path !== cardMedia.media.path);
     await wait(500); fs.writeFileSync(path.join(dir, 'inspector-photo-card.png'), (await win.capturePage()).toPNG());
-    await changeField('Picture', '', 'select');
+    await q('document.querySelector(\'button.library-image-current[aria-label="Picture"]\').click()');
+    await until('!!document.querySelector(".library-image-none")');
+    await q('document.querySelector(".library-image-none").click()');
     await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(card.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.photo===''})()`, 60000);
     result.cardNone = pixel((await readCard()).media.path, 2, px, py);
     check('without a picture the component draws its placeholder', near(result.cardNone, [51, 65, 85], 12));
+    // Nested image controls must follow the same preparation/live-edit/render path.
+    const nestedCode = [
+      "export const inputs={scene:{type:'object',label:'Scene',default:{people:[{portrait:''}]},fields:{people:{type:'array',label:'People',minItems:1,maxItems:2,items:{type:'object',fields:{portrait:{type:'image',label:'Portrait',default:''}}}}}}};",
+      'export default function render({width,height,inputs,kit}){const picture=kit.image(inputs.scene.people[0].portrait);',
+      'return kit.svg`<svg viewBox="0 0 ${width} ${height}">${picture ? kit.svg`<image href="${picture.href}" x="0" y="0" width="${width}" height="${height}"/>` : kit.svg`<rect width="100%" height="100%" fill="#334155"/>`}</svg>`;}'
+    ].join('\n');
+    const nested = await tool('add_graphic', { code: nestedCode, inputs: {scene:{people:[{portrait:'pic2'}]}}, duration_sec: 1, name: 'Nested picture' });
+    check('nested image input renders its actual library picture', nested.ok && blueish(pixel((await q(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(nested.clip_id)});return p.media.find(m=>m.id===c.mediaId).path})()`)), .5, px, py)));
+    await q(`window.__fve.select({track:'overlay',id:${JSON.stringify(nested.clip_id)}})`);
+    await until('!!document.querySelector(\'[data-graphic-data="Scene"]\')');
+    await q('[...document.querySelectorAll(\'[data-graphic-data="Scene"] .graphic-data-disclosure\')].find(e=>e.querySelector("strong")?.textContent==="People").click()');
+    await until('!!document.querySelector(\'button.library-image-current[aria-label="Portrait · 1 · People"]\')');
+    await q('document.querySelector(\'button.library-image-current[aria-label="Portrait · 1 · People"]\').click()');
+    await until('!!document.querySelector(".library-image-none")');await q('document.querySelector(".library-image-none").click()');
+    await until(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(nested.clip_id)});return p.media.find(m=>m.id===c.mediaId)?.graphic?.inputs?.scene?.people?.[0]?.portrait==='';})()`,60000);
+    const nestedPath = await q(`(()=>{const p=window.__fve.rawProject(),c=p.overlayClips.find(c=>c.id===${JSON.stringify(nested.clip_id)});return p.media.find(m=>m.id===c.mediaId).path})()`);
+    check('a nested thumbnail edit reaches the full-quality render',near(pixel(nestedPath,.5,px,py),[51,65,85],12));
     await wait(200);
     check('live graphics sandboxes are released after editing', require('electron').BrowserWindow.getAllWindows().length === 1);
     check('no renderer exceptions', !result.errors.length);

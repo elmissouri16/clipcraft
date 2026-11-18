@@ -36,12 +36,30 @@ kit:
 export const GRAPHICS_INPUTS = `Every component declares its own editable settings in export const inputs. The editor creates controls from that schema; there is no shape-specific tool or preset requirement.
 
 Field contract (all fields need default):
-- text: string, color: SVG colour string, boolean: on/off, series: array of data rows, json: arbitrary JSON.
+- text: string, color: SVG colour string, boolean: on/off, date: YYYY-MM-DD text, object: named fields, array (or series): list entries, json: infer controls recursively from arbitrary JSON. JSON is a data type, not a request to show users code.
 - number: numeric default; optional min, max, step, unit. Finite min and max produce a slider plus exact number entry; control: 'number' keeps just number entry. Use positive min where zero would be invalid; integer step for counts.
 - choice: options as strings/numbers/booleans, or [{ value: 'forward', label: 'Forward' }, ...]. Values retain their declared type.
 - image: default '' or the media id of a library picture; the editor shows a picker of the library's pictures. Read it with kit.image(id) and draw a placeholder when it returns null.
 - point: default { x: 0.5, y: 0.5 }, X/Y fields; defaults to normalized 0..1 bounds with step .01. Multiply x by width and y by height when drawing. Override min/max/step for other coordinate systems.
-- Any field: label, description, group (section heading). Choose concise names and explain units/meaning.
+- Any field: label and description. group creates top-level section headings; nested object descriptors create nested groups. Choose concise names and explain units/meaning.
+- Nested data: object fields: { key: { type, label, description, default?, ... } }; array/series items: one descriptor for new entries and their controls. Child defaults are optional. Put itemLabel: 'name' on a list for readable entry headings. Nested image, choice, number, date, point and color controls work like top-level controls.
+- Empty lists need items metadata: do not make users invent a record structure. Supply a useful default or fields/items at every editable empty group. minItems/maxItems constrain list length; render must support every allowed count, including zero if minItems is 0. additionalProperties: false keeps a declared object structure fixed (the default when fields is present); true permits adding/removing extra keys. Existing extra keys are preserved.
+- nullable: true permits clearing to null. Null remains null until explicitly filled. Use unambiguous labels such as 'Date of birth' and 'Age now', not abbreviations like 'dob'/'now'. Dates use type date only for ISO YYYY-MM-DD values; leave existing human-formatted dates as text. Numeric-looking strings stay strings unless the user edits a declared number field. Never silently rewrite existing values to match a new schema.
+- Lists are paged and nested groups open on demand. Prefer shallow purposeful groups, not a giant flat list of controls. The editor checks closed/off-page values too. Data is bounded to 50,000 visited values and 64 levels; keep generated settings much smaller. At most 8 distinct library images can be referenced, including nested images.
+
+Example of reusable, non-technical editing (render must read all these values):
+  export const inputs = {
+    people: { type: 'array', label: 'People', default: [], minItems: 0, maxItems: 8, itemLabel: 'name',
+      items: { type: 'object', fields: {
+        name: { type: 'text', label: 'Name', default: '' },
+        birthDate: { type: 'date', label: 'Date of birth', default: '' },
+        age: { type: 'number', label: 'Age now', min: 0, max: 150, step: 1, default: 0 },
+        portrait: { type: 'image', label: 'Portrait', default: '' },
+        details: { type: 'object', fields: { caption: { type: 'text', label: 'Caption', control: 'textarea', default: '' } } }
+      } }
+    }
+  };
+Read a nested picture with kit.image(inputs.people[i].portrait). Derive layout/reveal timing from list length, and handle the empty state. Do not generate photo0/photo1 fields whose count can drift from an editable people list.
 
 For example, speed: { type: 'number', default: 1, min: 0.1, max: 4, step: 0.1, unit: '×', label: 'Motion speed', group: 'Animation', description: 'Changes the motion rate without changing clip duration.' }.
 
@@ -65,14 +83,16 @@ export const GRAPHICS_DESIGN = `Design so it reads on a phone:
 
 const CHART = `export const inputs = {
   title: { type: 'text', default: 'Most populous US states' },
-  data: { type: 'series', default: [{ label: 'California', value: 39.0 }, { label: 'Texas', value: 30.5 }, { label: 'Florida', value: 22.6 }, { label: 'New York', value: 19.6 }] },
+  data: { type: 'series', label: 'Data', minItems: 1, maxItems: 8, itemLabel: 'label',
+    items: { type: 'object', fields: { label: { type: 'text', label: 'Category', default: '' }, value: { type: 'number', label: 'Value', min: 0, step: 0.1, default: 0 } } },
+    default: [{ label: 'California', value: 39.0 }, { label: 'Texas', value: 30.5 }, { label: 'Florida', value: 22.6 }, { label: 'New York', value: 19.6 }] },
   unit: { type: 'text', default: '#.#M' },
   accent: { type: 'color', default: '#f2b84b' },
 };
 // Horizontal bars that grow one after another, values counting up with them; the leader keeps a
 // soft pulse afterwards so the picture never freezes.
 export default function render({ frame, fps, width, height, inputs, kit }) {
-  const area = kit.safeArea(width, height), rows = inputs.data, max = Math.max(...rows.map((r) => r.value));
+  const area = kit.safeArea(width, height), rows = inputs.data, max = Math.max(1, ...rows.map((r) => r.value));
   // Each row: the label above a full-width bar, so bars stay long on vertical video too. Rows are
   // sized to the frame and the block is centred in the safe area.
   const rowH = Math.min(width * 0.22, (area.height - 260) / rows.length), block = 200 + rows.length * rowH;

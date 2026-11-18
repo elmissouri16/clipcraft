@@ -14,6 +14,7 @@ import { designWarnings } from '../../../src/features/agent/graphicsTools.js';
 import { swapGraphicActions, redrawGraphicAction, graphicOutdated } from '../../../src/features/graphics/graphicMedia.js';
 import { mediaTreeCounts, mediaTreeFilter } from '../../../src/features/library/assetsLib.js';
 import { graphicInputDefaults, graphicInputField, graphicInputError } from '../../../src/features/graphics/graphicInputs.js';
+import { graphicDataError, graphicDataType } from '../../../src/features/graphics/graphicData.js';
 
 const checks = [];
 const check = async (name, fn) => { await fn(); checks.push(name); };
@@ -94,6 +95,15 @@ await check('arbitrary input declarations preserve legacy values and validate ed
   const malformed = graphicInputField('n', { type: 'number', default: 2, min: 0, max: -1, step: -5 }, 2);
   assert.equal(malformed.slider, false); assert.equal(malformed.max, undefined); assert.equal(malformed.step, 'any');
   assert.equal(graphicInputField('old', 2, values.old).type, 'number');
+});
+
+await check('arbitrary JSON has adaptive field types without rewriting stored data', () => {
+  const rows = [{ name: 'Actor', dob: 'Apr 4, 1965', now: '61', phase: 1, enabled: false, note: null, details: { tags: ['a', 2, false] } }];
+  const before = JSON.stringify(rows);
+  assert.equal(graphicDataType(rows), 'array'); assert.equal(graphicDataType(rows[0]), 'object');
+  for (const value of [rows, { radius: 60 }, [null], [[1, 2]], ['name'], true, null, '2', 2]) assert.equal(graphicDataError(value), '');
+  assert.match(graphicDataError([{ bad: NaN }]), /finite number/);
+  assert.equal(JSON.stringify(rows), before, 'choosing the form view does not rewrite strings, numbers, booleans or nulls');
 });
 
 await check('a library picture named by an image input travels as a reference; the inspector gets a picker field', async () => {

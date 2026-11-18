@@ -3,30 +3,14 @@
 // colours, choices, points, library pictures and data tables get proper controls; anything else is JSON. Valid edits
 // are saved immediately; the player renders them live and the shared queue bakes them after editing.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { RefreshCw, RotateCcw } from 'lucide-react';
 import { clipLen, uid } from '../../../state/store.js';
 import { graphicEdits } from '../../graphics/graphicEdits.js';
 import { graphicInputDefaults, graphicInputField, graphicInputError } from '../../graphics/graphicInputs.js';
-import { libraryPictures } from '../../graphics/graphicImages.js';
+import { graphicDataError } from '../../graphics/graphicData.js';
+import LibraryImagePicker from '../../library/components/LibraryImagePicker.jsx';
+import GraphicDataField from './GraphicDataField.jsx';
 import { t } from '../../../i18n/index.js';
-
-function SeriesField({ rows, onChange }) {
-  const cols = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r)))].slice(0, 4), [rows]);
-  const numeric = (c) => rows.some((r) => typeof r[c] === 'number');
-  const set = (i, c, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [c]: numeric(c) ? (v === '' ? 0 : Number(v)) : v } : r)));
-  return (
-    <div className="graphic-series">
-      <div className="graphic-series-row head">{cols.map((c) => <span key={c}>{c}</span>)}<span /></div>
-      {rows.map((r, i) => (
-        <div className="graphic-series-row" key={i}>
-          {cols.map((c) => <input key={c} aria-label={`${c} ${i + 1}`} type={numeric(c) ? 'number' : 'text'} step="any" value={r[c] ?? ''} onChange={(e) => set(i, c, e.target.value)} />)}
-          <button type="button" className="icon-btn sm" aria-label={t('graphic.remove_row', { row: i + 1 })} onClick={() => onChange(rows.filter((_, j) => j !== i))}><Trash2 size={12} /></button>
-        </div>
-      ))}
-      <button type="button" className="btn btn-sm" onClick={() => onChange([...rows, Object.fromEntries(cols.map((c) => [c, numeric(c) ? 0 : '']))])}><Plus size={12} /> {t('graphic.add_row')}</button>
-    </div>
-  );
-}
 
 function JsonField({ value, onChange, onValidity, label }) {
   const [text, setText] = useState(() => JSON.stringify(value, null, 1));
@@ -41,7 +25,8 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
   const [draft, setDraft] = useState(clip.graphicDraft?.inputs || current);
   const [duration, setDuration] = useState(() => Math.round(clipLen(clip) * 100) / 100);
   const [status, setStatus] = useState(() => graphicEdits.status(clip.id));
-  const [invalidJson, setInvalidJson] = useState({});
+  const [invalidInputs, setInvalidInputs] = useState({});
+  const dataValidation = useRef(new Map());
   const [resetKey, setResetKey] = useState(0);
   const editing = useRef({ active: false, dragging: false, own: clip.graphicDraft });
   const lastMedia = useRef(media.id);
@@ -56,7 +41,7 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
     lastMedia.current = media.id;
     editing.current.own = clip.graphicDraft;
     if (ownBake) return; // preserve focus and unfinished local input when the cache catches up
-    setDraft(clip.graphicDraft?.inputs || current); setDuration(Math.round(clipLen(clip) * 100) / 100); setInvalidJson({}); setResetKey(n => n + 1);
+    setDraft(clip.graphicDraft?.inputs || current); setDuration(Math.round(clipLen(clip) * 100) / 100); setInvalidInputs({}); setResetKey(n => n + 1);
   }, [clip.graphicDraft, media.id]);
   useEffect(() => {
     const up = () => { if (editing.current.dragging) { editing.current.dragging = false; finish(); } };
@@ -65,13 +50,26 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
   }, []);
   const keys = [...new Set([...Object.keys(schema || {}), ...Object.keys(current)])];
   const fields = Object.fromEntries(keys.map((key) => [key, graphicInputField(key, schema?.[key], draft[key])]));
-  const errors = Object.fromEntries(keys.map((key) => [key, invalidJson[key] ? t('graphic.enter_valid_json') : graphicInputError(fields[key], draft[key])]));
+  const structured = key => ['json', 'series', 'object', 'array'].includes(fields[key].type);
+  const adaptive = key => structured(key) || fields[key].type === 'date' || schema?.[key]?.nullable === true
+    || schema?.[key]?.default === null || schema?.[key]?.control === 'textarea';
+  const keySet = new Set(keys);
+  for (const key of dataValidation.current.keys()) if (!keySet.has(key)) dataValidation.current.delete(key);
+  const errors = Object.fromEntries(keys.map(key => {
+    let error;
+    if (adaptive(key)) {
+      const cached = dataValidation.current.get(key), declaration = schema?.[key];
+      if (cached && Object.is(cached.value, draft[key]) && cached.declaration === declaration) error = cached.error;
+      else { error = graphicDataError(draft[key], declaration); dataValidation.current.set(key, { value: draft[key], declaration, error }); }
+    } else error = graphicInputError(fields[key], draft[key]);
+    return [key, invalidInputs[key] || error];
+  }));
   const invalid = Object.values(errors).some(Boolean);
   const validDuration = duration >= .2 && duration * (clip.speed || 1) >= .2 && duration * (clip.speed || 1) <= 60;
   const groups = new Map();
   for (const key of keys) { const group = fields[key].group; if (!groups.has(group)) groups.set(group, []); groups.get(group).push(key); }
 
-  const inputKey = JSON.stringify(draft);
+  const inputKey = useMemo(() => { try { return JSON.stringify(draft); } catch { return ''; } }, [draft]);
   useEffect(() => {
     if (!editing.current.active || invalid || !validDuration) return;
     const previous = clip.graphicDraft;
@@ -86,7 +84,8 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
     const set = (v) => { changed(); setDraft((d) => ({ ...d, [key]: v })); };
     const numeric = (e) => e.target.value === '' ? '' : Number(e.target.value);
     const number = (n, change, name = label) => <input type="number" min={min} max={max} step={step} aria-label={name} aria-invalid={!!errors[key]} value={n ?? ''} onChange={(e) => change(numeric(e))} />;
-    if (kind === 'series') return <SeriesField rows={Array.isArray(value) ? value : []} onChange={set} />;
+    if (adaptive(key)) return <GraphicDataField key={resetKey} value={value} declaration={schema?.[key]} label={label} media={project.media} advanced={structured(key)} onChange={set}
+      onValidity={message => setInvalidInputs(old => old[key] === message ? old : ({ ...old, [key]: message }))}/>;
     if (kind === 'color') return <div className="graphic-color"><input type="color" aria-label={label} value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'} onChange={(e) => set(e.target.value)} /><input type="text" aria-label={t('inspector.name_value', { name: label })} value={value ?? ''} onChange={(e) => set(e.target.value)} /></div>;
     if (kind === 'number') return <div className="graphic-number">
       {spec.slider && <input type="range" aria-label={t('graphic.name_slider', { name: label })} min={min} max={max} step={step} value={typeof value === 'number' ? value : min} onChange={(e) => set(numeric(e))} />}
@@ -97,19 +96,11 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
       {!spec.options.some((option) => Object.is(option.value, value)) && <option value={-1} disabled>{t('graphic.choose')}</option>}
       {spec.options.map((option, index) => <option key={index} value={index}>{option.label}</option>)}
     </select>;
-    if (kind === 'image') {
-      // The library's pictures by name; the value is the media id, which the project keeps (never the picture).
-      const pictures = libraryPictures(project), chosen = value ? String(value) : '', known = !chosen || pictures.some((p) => p.id === chosen);
-      return <select aria-label={label} value={chosen} onChange={(e) => set(e.target.value)}>
-        <option value="">{t('grade.none')}</option>
-        {!known && <option value={chosen} disabled>{t('graphic.missing_picture_removed_from_the_library')}</option>}
-        {pictures.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>;
-    }
+    if (kind === 'image') return <LibraryImagePicker media={project.media} value={value ? String(value) : ''} onChange={set} label={label}/>;
     if (kind === 'boolean') return <input type="checkbox" aria-label={label} checked={!!value} onChange={(e) => set(e.target.checked)} />;
     if (kind === 'text' || kind === 'string') return String(value ?? '').length > 48 ? <textarea rows={2} aria-label={label} value={value ?? ''} onChange={(e) => set(e.target.value)} />
       : <input type="text" aria-label={label} value={value ?? ''} onChange={(e) => set(e.target.value)} />;
-    return <JsonField key={resetKey} value={value} label={label} onChange={set} onValidity={(valid) => setInvalidJson((old) => ({ ...old, [key]: !valid }))} />;
+    return <JsonField key={resetKey} value={value} label={label} onChange={set} onValidity={valid => setInvalidInputs(old => ({ ...old, [key]: valid ? '' : t('graphic.enter_valid_json') }))} />;
   };
 
   return (
@@ -118,7 +109,7 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
       {!keys.length && <p className="dim small">{t('graphic.this_graphic_declares_no_editable_fields_a')}</p>}
       {[...groups].map(([group, groupKeys]) => <fieldset className="graphic-group" key={group}>
         {group && <legend>{group}</legend>}
-        {groupKeys.map((key) => <div className={`graphic-field ${fields[key].type === 'series' ? 'wide' : ''}`} key={key}>
+        {groupKeys.map((key) => <div className={`graphic-field ${structured(key) ? 'wide' : ''}`} key={key}>
           <span>{fields[key].label}</span><div className="graphic-control">{field(key)}</div>
           {fields[key].description && <small className="graphic-field-help">{fields[key].description}</small>}
           {errors[key] && <small className="graphic-field-help graphic-error" role="alert">{errors[key]}</small>}
@@ -130,7 +121,7 @@ export default function GraphicPanel({ clip, media, project, track, dispatch }) 
       {(status.error || status.previewError) && <p className="graphic-error" role="alert">{status.error || status.previewError}</p>}
       <div className="graphic-actions">
         {status.error && <button type="button" className="btn btn-sm" onClick={() => graphicEdits.retry(clip.id)}><RefreshCw size={13} /> {t('graphic.retry_update')}</button>}
-        <button type="button" className="btn btn-sm" onClick={() => { changed(); setDraft({ ...current, ...graphicInputDefaults(schema) }); setInvalidJson({}); setResetKey((n) => n + 1); }}><RotateCcw size={13} /> {t('hsl-curves.reset')}</button>
+        <button type="button" className="btn btn-sm" onClick={() => { changed(); setDraft({ ...current, ...graphicInputDefaults(schema) }); setInvalidInputs({}); setResetKey((n) => n + 1); }}><RotateCcw size={13} /> {t('hsl-curves.reset')}</button>
       </div>
       <small className="dim graphic-status" role="status">{invalid ? t('graphic.fix_the_highlighted_fields_to_apply') : status.pending ? t('graphic.live_preview_preparing_full_quality') : t('graphic.up_to_date')}</small>
     </div>

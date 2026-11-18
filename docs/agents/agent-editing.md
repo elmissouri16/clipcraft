@@ -90,8 +90,13 @@ measurements: [motion graphics](../design/motion-graphics.md).
     the main track (enforced in the reducer).
   - The inspector opens on a Graphic tab showing the inputs the component declares. The sandbox
     reports them; the editor never runs the code. Text, numbers, colours, on/off, choices, X/Y
-    points, library pictures (a picker by name) and data tables get proper controls, alongside
-    the duration. Numeric min/max/step,
+    points, library pictures (a searchable thumbnail picker), and recursive data forms get proper
+    controls, alongside the duration. Objects, primitive/mixed lists and nested records adapt to
+    their values, including legacy JSON declarations. Optional nested fields/items metadata gives
+    them labels, choices, image controls, defaults and list bounds. Closed groups mount on demand;
+    collections show one page at a time while validation covers all entries. An advanced JSON
+    editor remains available. See [the data field contract](../design/motion-graphics-inputs.md).
+    Numeric min/max/step,
     units, labels, descriptions and groups are supported; bounded numbers also get sliders.
     Choices keep their original value types. Invalid numbers, choices and JSON keep the last valid
     settings. Valid changes are saved on the clip immediately and preview live in a persistent,
