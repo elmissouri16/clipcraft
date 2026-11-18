@@ -23,7 +23,7 @@ function fallbackOrder(first, hasKey) {
   return [first, ...rest];
 }
 
-// Runs step(cfg) with each provider in turn until one answers.
+// Runs step(cfg) with each provider in turn until one answers or fails with something other than the service.
 // Returns { result, provider, failed: [{ provider, reason, error }] }; throws the first error when all fail.
 async function withFallback(order, getCfg, step) {
   const failed = [];
@@ -33,6 +33,12 @@ async function withFallback(order, getCfg, step) {
       return { result, provider, failed };
     } catch (e) {
       if (e.name === 'AbortError') throw e;
+      // Only a provider's own failure (an AiError carries the service's status) moves the step on. The editor's
+      // errors (a bug, an empty or blocked reply flagged noFallback) are the answer, never a reason to switch.
+      if (!Number.isInteger(e?.status) || e.noFallback) {
+        if (failed.length) e.message = `${e.message}\n\nAlso tried: ${failed.map((f) => `${NAMES[f.provider] || f.provider} (${f.reason})`).join(', ')}.`;
+        throw e;
+      }
       failed.push({ provider, reason: reason(e), error: e });
     }
   }

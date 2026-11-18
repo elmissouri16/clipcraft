@@ -5,8 +5,9 @@ import { projectDoc, projectChat } from './projectFile.js';
 export function createProjectSerializer(makeWorker) {
   let worker, broken = false, next = 0;
   const pending = new Map(), recent = [];
-  const serialize = project => {
-    const cached = recent.find(entry => entry.project === project);
+  // pretty: false skips the indented copy (the chat is only written compact).
+  const serialize = (project, { pretty = true } = {}) => {
+    const cached = recent.find(entry => entry.project === project && entry.pretty === pretty);
     if (cached) return cached.promise;
     const promise = new Promise((resolve, reject) => {
       if (!worker && !broken) {
@@ -25,15 +26,15 @@ export function createProjectSerializer(makeWorker) {
         } catch { broken = true; }
       }
       if (!worker) {
-        try { resolve({ compact: JSON.stringify(project), pretty: JSON.stringify(project, null, 2) }); }
+        try { resolve({ compact: JSON.stringify(project), ...(pretty ? { pretty: JSON.stringify(project, null, 2) } : {}) }); }
         catch (error) { reject(error); }
         return;
       }
       const id = ++next;pending.set(id, { resolve, reject });
-      try { worker.postMessage({ id, project }); }
+      try { worker.postMessage({ id, project, pretty }); }
       catch (error) { pending.delete(id);reject(error); }
     });
-    const entry = { project, promise };recent.push(entry);
+    const entry = { project, pretty, promise };recent.push(entry);
     if (recent.length > 2) recent.shift();
     promise.catch(() => { const index = recent.indexOf(entry);if (index >= 0) recent.splice(index, 1); });
     return promise;
@@ -47,6 +48,6 @@ export const serializeProject = createProjectSerializer(() => new Worker(new URL
 // when the project has no conversations worth storing.
 export async function serializeProjectParts(project) {
   const chat = projectChat(project);
-  const [doc, chatOut] = await Promise.all([serializeProject(projectDoc(project)), chat ? serializeProject(chat) : null]);
+  const [doc, chatOut] = await Promise.all([serializeProject(projectDoc(project)), chat ? serializeProject(chat, { pretty: false }) : null]);
   return { doc, chat: chatOut };
 }

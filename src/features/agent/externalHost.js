@@ -39,6 +39,10 @@ ClipCraft runs as a desktop app and you edit the project open in it while the us
 // onActivity(event).
 export function createExternalHost(app) {
   let edit = null, queue = Promise.resolve(), client = null;
+  // What lasts for the outside agent's whole connection, across its edits: the identity its frames were
+  // presented under (the main process names it per MCP session) and its search results (search_sounds /
+  // search_stock ids used by a later add_sound / add_stock).
+  let session = { id: null, searchResults: new Map() };
   const current = new Map(); // callId -> edit, for cancel
   let declarations = externalTools(app.provider());
 
@@ -52,8 +56,8 @@ export function createExternalHost(app) {
     const contents = [];
     const state = { token, projectId: project.id, loadVersion, calls: 0, stopped: false, client: client?.name || 'External agent', started: Date.now() };
     const isCurrent = () => app.screen() === 'editor' && app.project().id === state.projectId && app.loadVersion() === state.loadVersion;
-    const ctx = makeAgentCtx({ app: app.pilotApp, provider: app.provider(), getProject: app.project, dispatch: app.dispatch, settle: app.settle,
-      requestId: token, isCurrent, isStopped: () => state.stopped });
+    const ctx = { ...makeAgentCtx({ app: app.pilotApp, provider: app.provider(), getProject: app.project, dispatch: app.dispatch, settle: app.settle,
+      requestId: token, isCurrent, isStopped: () => state.stopped }), evidenceId: session.id || token, searchResults: session.searchResults };
     state.isCurrent = isCurrent;
     state.host = createToolHost({ ctx, contents, onEvent: (event) => { activity({ ...event, editId: token, client: state.client }); if (state.callId && event.status === 'running' && event.label) window.api.externalProgress?.({ callId: state.callId, label: event.label }); },
       isCanceled: () => state.stopped || !isCurrent(), requestId: token, tools: declarations.tools, catalog: declarations.catalog });
@@ -126,8 +130,9 @@ export function createExternalHost(app) {
   // One call at a time, in arrival order: edit boundaries and project switches never interleave.
   // A call canceled while it still waits its turn never runs.
   const withdrawn = new Set();
-  function call({ callId, name, args, client: from }) {
+  function call({ callId, name, args, client: from, session: sessionId }) {
     if (from?.name) client = from;
+    if (typeof sessionId === 'string' && sessionId && sessionId !== session.id) session = { id: sessionId, searchResults: new Map() };
     const run = () => {
       if (withdrawn.delete(callId)) return { error: 'The call was canceled before it ran.', canceled: true };
       return PROJECT_NAMES.has(name) ? projectCall(name, args || {}) : editorCall({ callId, name, args: args || {} });
@@ -161,7 +166,7 @@ export function createExternalHost(app) {
       await queue;
       closeEdit('released');
       if (client) activity({ type: 'agent-released', client: client.name });
-      client = null;
+      client = null; session = { id: null, searchResults: new Map() };
     },
     status,
   };

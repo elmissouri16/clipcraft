@@ -228,8 +228,9 @@ async function geminiGenerate(cfg, body, timeoutMs, signal) {
     } catch (e) {
       failures.push({ label: a.label, e });
       // A custom address is used as given. Only a key/endpoint mismatch is worth trying the other endpoint for.
-      // A 404 means the key was accepted and the model is the problem, so it is reported as is.
-      if (base || cfg.allowEndpointFallback === false || ![400, 401, 403].includes(e.status)) throw e;
+      // A 404 means the key was accepted and the model is the problem, so it is reported as is; so is a 400 that
+      // is about the request rather than the key.
+      if (base || cfg.allowEndpointFallback === false || !keyRefused(e)) throw e;
     }
   }
   // Both endpoints refused the key: say what each one answered so the real cause is visible.
@@ -305,29 +306,52 @@ async function chat(cfg, { system = '', messages, maxTokens = 1024, timeoutMs, s
 // A rate limit (HTTP 429, e.g. Groq's free tier: a few thousand tokens per minute) or a busy service (500, 502,
 // 503 "high demand", 504) is waited out and retried: the wait the service names ("try again in 10.7s"), else 2,
 // 5 then 10 seconds, up to about a minute in all.
-async function checkedStep(result, tools) {
-  const { validateToolCall } = await import("../../shared/toolArguments.mjs");
+// Only a structurally broken call (not an object, no name, no arguments object) ends the step here. A call
+// that fails its schema or names a tool that is not loaded goes back to the model with the reason
+// (runAgent.js validates every call before any runs), so the model can correct it.
+async function checkedStep(result) {
   for (const call of result.calls || []) {
-    const error = validateToolCall(call, tools);
-    if (error) throw new AiError(`Invalid ${call.name || 'tool'} call: ${error} No tools from this response were executed.`, 0);
+    const named = call !== null && typeof call === 'object' && typeof call.name === 'string' && call.name;
+    if (!named || call.args === null || typeof call.args !== 'object' || Array.isArray(call.args)) {
+      throw new AiError(`Invalid ${named ? call.name : 'tool'} call: tool calls require a name and an arguments object. No tools from this response were executed.`, 0);
+    }
   }
   return result;
 }
+// A reply with neither text nor tool calls: the provider blocked or dropped the answer. It is reported with the
+// provider's reason instead of reading as a finished answer, and never moves the request to another provider.
+const emptyReply = (reason) => Object.assign(new AiError(`The AI returned an empty reply${reason ? ` (${reason})` : ''}. Nothing from this reply was applied. Try rephrasing the request or choose another model.`, 0), { noFallback: true });
+// Gemini 3 checks a thought signature on the first function call of each model step in the current turn.
+// Steps the host adds (critique_edit, inspect_frames) or that came from another provider have none, so they
+// carry Google's documented placeholder; signatures the model returned are kept as they are.
+const PLACEHOLDER_SIGNATURE = 'skip_thought_signature_validator';
+function signedForGemini(contents) {
+  return (contents || []).map((turn) => {
+    if (turn?.role !== 'model' || !Array.isArray(turn.parts)) return turn;
+    const calls = turn.parts.filter((part) => part?.functionCall);
+    if (!calls.length || calls.some((part) => part.thoughtSignature)) return turn;
+    const first = turn.parts.indexOf(calls[0]);
+    return { ...turn, parts: turn.parts.map((part, i) => (i === first ? { ...part, thoughtSignature: PLACEHOLDER_SIGNATURE } : part)) };
+  });
+}
+// A Google answer that means the key itself was refused (wrong key type for the endpoint): only then is the
+// other endpoint worth trying. Other 400s (a bad request body, a missing signature) are reported as they are.
+const keyRefused = (e) => [401, 403].includes(e.status) || (e.status === 400 && /api[ _-]?key|API_KEY_INVALID|credential|unauthenticated|authenticat/i.test(`${e.message} ${e.short || ''}`));
 
 async function agentStep(cfg, opts, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
-  if(extensionAi.isExtension(cfg.provider))return checkedStep(await extensionAi.get().generate(cfg,{...opts,contents:attachImages(opts.contents||[],opts.images)}),opts.tools||[]);
+  if(extensionAi.isExtension(cfg.provider))return checkedStep(await extensionAi.get().generate(cfg,{...opts,contents:attachImages(opts.contents||[],opts.images)}));
   if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
   if (localAgents.isProvider(cfg.provider)) {
     if (cfg.reasoningEffort) await selectedThinking(cfg, opts.signal);
     if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
-    return checkedStep(await localAgents.agentStep(cfg, opts), opts.tools || []);
+    return checkedStep(await localAgents.agentStep(cfg, opts));
   }
   opts = { ...opts, contents: attachImages(opts.contents || [], opts.images) };
   let waited = 0;
   for (let attempt = 0; ; attempt++) {
     if (opts.signal?.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
     try {
-      return checkedStep(await agentStepOnce(cfg, opts), opts.tools || []);
+      return checkedStep(await agentStepOnce(cfg, opts));
     } catch (e) {
       const retryable = e.status === 429 || BUSY.includes(e.status);
       const m = /(?:try again|retry) in ([\d.]+)\s*(ms|s)\b/i.exec(e.message);
@@ -363,22 +387,23 @@ async function agentStepOnce(cfg, { system, contents, tools, maxTokens = 2048, t
   if (!cfg.apiKey) throw new AiError('No API key saved for Google Gemini. Add it in Settings.', 0);
   const capability = await selectedThinking(cfg, signal);
   const body = {
-    contents,
+    contents: signedForGemini(contents),
     tools: [{ functionDeclarations: tools }],
     generationConfig: { maxOutputTokens: maxTokens, ...(capability ? { thinkingConfig: { thinkingLevel: cfg.reasoningEffort.toUpperCase() } } : {}) },
   };
   if (system) body.systemInstruction = { parts: [{ text: system }] };
   const j = await geminiGenerate({ ...cfg, model: normalizeModel('gemini', cfg.model) }, body, timeoutMs, signal);
   const cand = j?.candidates?.[0];
-  const content = cand?.content || { role: 'model', parts: [{ text: '' }] };
-  if (!content.role) content.role = 'model';
   if (cand?.finishReason === 'MAX_TOKENS') throw new AiError('The model exhausted its output budget and the response was truncated. No tools from this response were executed.', 0);
-  const parts = content.parts || [];
+  const content = cand?.content;
+  const parts = Array.isArray(content?.parts) ? content.parts : [];
   const calls = parts.filter((x) => x.functionCall).map((x) => ({ name: x.functionCall.name, args: Object.hasOwn(x.functionCall, 'args') ? x.functionCall.args : {} }));
   const text = parts.filter((x) => x.text && !x.thought).map((x) => x.text).join('');
-  if (!parts.length && cand?.finishReason && cand.finishReason !== 'STOP') {
-    throw new AiError(`The model stopped without an answer (${cand.finishReason}). Try rephrasing your request.`, 0);
+  if (!calls.length && !text.trim()) {
+    const reason = j?.promptFeedback?.blockReason ? `request blocked: ${j.promptFeedback.blockReason}` : cand?.finishReason && cand.finishReason !== 'STOP' ? cand.finishReason : cand ? 'no content' : 'no candidates';
+    throw emptyReply(`Google Gemini: ${reason}`);
   }
+  if (!content.role) content.role = 'model';
   return { content, text, calls };
 }
 
@@ -469,9 +494,12 @@ async function responsesAgentStep(cfg, { system, contents, tools, maxTokens = 20
   if (j.error || j.status === 'failed') throw new AiError(j.error?.message || 'The reasoning request failed.', 0);
   if (j.status === 'incomplete') throw new AiError('The model response was incomplete. No tools from this response were executed.', 0);
   const items = j.output || [];
-  const calls = items.filter((item) => item.type === 'function_call').map((item) => ({ name: item.name, args: JSON.parse(item.arguments === undefined ? '{}' : item.arguments) }));
+  const calls = items.filter((item) => item.type === 'function_call').map((item) => {
+    try { return { name: item.name, args: JSON.parse(item.arguments === undefined ? '{}' : item.arguments) }; }
+    catch { throw new AiError(`Invalid JSON arguments for ${item.name}. No tools from this response were executed.`, 0); }
+  });
   const text = items.filter((item) => item.type === 'message').flatMap((item) => item.content || []).filter((part) => part.type === 'output_text').map((part) => part.text).join('');
-  if (!text && !calls.length) throw new AiError('The model returned no answer or editor tool calls. Try again or choose another model.', 0);
+  if (!text.trim() && !calls.length) throw emptyReply(`${providers.byId(cfg.provider)?.short || cfg.provider}: ${items.flatMap((item) => item.content || []).find((part) => part.type === 'refusal')?.refusal?.slice(0, 300) || 'no content'}`);
   return { text, calls, content: { role: 'model', parts: [...(text ? [{ text }] : []), ...calls.map((call) => ({ functionCall: call }))],
     openaiModel: cfg.model, openaiResponseItems: items } };
 }
@@ -525,8 +553,12 @@ async function openaiAgentStep(cfg, { system, contents, tools, maxTokens, timeou
     timeoutMs,
     signal,
   }, cfg.apiKey);
-  if (j?.choices?.[0]?.finish_reason === 'length') throw new AiError('The model exhausted its output budget and the response was truncated. No tools from this response were executed. Retry a smaller request.', 0);
+  const finish = j?.choices?.[0]?.finish_reason;
+  if (finish === 'length') throw new AiError('The model exhausted its output budget and the response was truncated. No tools from this response were executed. Retry a smaller request.', 0);
   const msg = j?.choices?.[0]?.message || {};
+  if (finish === 'content_filter' || (!msg.tool_calls?.length && !String(msg.content || '').trim())) {
+    throw emptyReply(`${providers.byId(cfg.provider)?.short || cfg.provider}: ${typeof msg.refusal === 'string' && msg.refusal.trim() ? `refused: ${msg.refusal.trim().slice(0, 300)}` : finish || (j?.choices?.length ? 'no content' : 'no choices')}`);
+  }
   const calls = (msg.tool_calls || []).map((tc) => {
     let args = {};
     try {
@@ -599,6 +631,7 @@ async function anthropicAgentStep(cfg, { system, contents, tools, maxTokens, tim
   const blocks = j?.content || [];
   const calls = blocks.filter((b) => b.type === 'tool_use').map((b) => ({ name: b.name, args: Object.hasOwn(b, 'input') ? b.input : {} }));
   const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  if (j.stop_reason === 'refusal' || (!calls.length && !text.trim())) throw emptyReply(`Anthropic Claude: ${j.stop_reason === 'refusal' ? 'refused' : j.stop_reason || 'no content'}`);
   const parts = [...(text ? [{ text }] : []), ...calls.map((c) => ({ functionCall: { name: c.name, args: c.args } }))];
   return { content: { role: 'model', parts: parts.length ? parts : [{ text: '' }], anthropicModel: cfg.model, anthropicBlocks: blocks }, text, calls };
 }

@@ -218,7 +218,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
       const system = `${SYSTEM_PROMPT}\nLive editor revision: ${revision}. ${known === revision ? 'Matches the latest editor result: reuse known ids/times; read only missing details.' : known ? 'Changed since the latest editor result: refresh affected ids/times when needed.' : 'Use current user-attached references when available; get_project provides missing ids/times when needed.'}`;
       const schemaChars = JSON.stringify(tools).length;
       if (system.length + schemaChars > 152000) throw new Error('The loaded tool schemas exceed the input budget. Start a new request and load fewer tool groups.');
-      const prepared = prepareContext(contents, { maxChars: 160000 - system.length - schemaChars });
+      const prepared = prepareContext(contents, { maxChars: 160000 - system.length - schemaChars, liveRevision: revision });
       contextUsage.requests++;
       contextUsage.inputChars += system.length + schemaChars + prepared.sentChars;
       contextUsage.avoidedChars += Math.max(0, prepared.originalChars - prepared.sentChars)
@@ -246,6 +246,9 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
         onEvent({ type: 'tool', id: `switch-${step}`, name: 'switch', label: t('activity.switched_to_provider', { why, provider: providerName(res.provider), model: res.model }), status: 'switch' });
       }
       provider = res.provider;
+      // A reply with neither text nor tool calls is a blocked or dropped answer, not a finished one: it is
+      // reported and its empty turn never enters the conversation. (Providers name their reason in ai.cjs.)
+      if (!res.calls?.length && !String(res.text || '').trim()) return finish({ error: { error: 'The AI returned an empty reply. Nothing from this reply was applied. Try rephrasing the request or choose another model.' }, changed });
       contents.push(res.content);
       if (!res.calls.length) {
         pruneFailures(failedEdits, ctx.getProject());

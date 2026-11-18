@@ -10,6 +10,7 @@ import CraftModelPicker from './CraftModelPicker.jsx';
 import SubagentControl from './SubagentControl.jsx';
 import Dropdown from "../../../components/ui/Dropdown.jsx";
 import { newChatSession, normalizeChatSessions, snapshotChatSessions } from "../chatSessions.js";
+import { compactSavedContents } from "../context.js";
 import ToolActivityRow from './ToolActivityRow.jsx';
 import EditPlanCard from './EditPlanCard.jsx';
 import VideoClipPicks from './VideoClipPicks.jsx';
@@ -275,10 +276,15 @@ export default function CraftAI({ getProject, getHistoryLength, dispatch, settle
     return () => clearTimeout(timer);
   }, [open]);
 
-  const updateLast = (fn, completedContents) => updateSession((s) => ({
-    messages: s.messages.map((x, i) => (i === s.messages.length - 1 ? fn(x) : x)),
-    ...(completedContents ? { contents: structuredClone(completedContents) } : {}),
-  }));
+  // A finished request keeps older bulky tool results as previews (context.js compactSavedContents), in the
+  // live conversation and in the saved one, so neither grows with every result ever returned.
+  const updateLast = (fn, completedContents) => {
+    if (completedContents && completedContents === contents.current) completedContents = contents.current = compactSavedContents(contents.current);
+    return updateSession((s) => ({
+      messages: s.messages.map((x, i) => (i === s.messages.length - 1 ? fn(x) : x)),
+      ...(completedContents ? { contents: structuredClone(completedContents) } : {}),
+    }));
+  };
   const stopRequest = () => {
     if(canceled.current || !activeRequest.current)return;
     canceled.current=true;setStopping(true);

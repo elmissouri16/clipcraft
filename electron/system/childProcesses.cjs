@@ -23,6 +23,17 @@ function killAll() {
   live.clear();
 }
 const running = () => live.size;
+// Resolves once the child has exited (at once if it already has), or after timeoutMs: what must wait for a
+// process to let go of its files or working folder (Windows refuses to remove a live process's folder).
+function processExited(child, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    if (!child || child.exitCode != null || child.signalCode != null || typeof child.once !== 'function') { resolve(); return; }
+    const done = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(done, timeoutMs);
+    timer.unref?.();
+    child.once('exit', done); child.once('error', done);
+  });
+}
 
 // Partial files are named <name>.<pid>-<hex>.part[.<ext>] (stabilization's motion file: .<pid>-<hex>.trf; see
 // PART_TAG in the media modules). At startup any whose process is no longer running, and any untagged one left by
@@ -44,4 +55,4 @@ function sweepPartFiles(dir, { alive = processAlive } = {}) {
   return removed;
 }
 
-module.exports = { spawn, execFile, track, killAll, running, sweepPartFiles, processAlive };
+module.exports = { spawn, execFile, track, killAll, running, sweepPartFiles, processAlive, processExited };

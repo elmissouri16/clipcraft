@@ -2,6 +2,7 @@ import { normalizeTimelineAttachments } from './timelineAttachments.js';
 import { normalizeToolActivity } from './activityData.js';
 import { normalizeChatImages } from './imageAttachments.js';
 import { normalizeChatVideos } from './videoAttachments.js';
+import { compactSavedContents } from './context.js';
 // Project-owned conversations. Only completed turns enter saved model context;
 // an interrupted request can be displayed without replaying unfinished tools.
 const record = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -59,8 +60,8 @@ export function normalizeChatSessions(value) {
       })),
       // Undo history is not serialized, so restored replies cannot undo an edit.
     })),
-    contents: (Array.isArray(s.contents) ? s.contents : []).filter((turn) => record(turn)
-      && ['user', 'model'].includes(turn.role) && Array.isArray(turn.parts)),
+    contents: compactSavedContents((Array.isArray(s.contents) ? s.contents : []).filter((turn) => record(turn)
+      && ['user', 'model'].includes(turn.role) && Array.isArray(turn.parts))),
   }));
   return { version: 1, sessions, activeSessionId: sessions.some((s) => s.id === value?.activeSessionId)
     ? value.activeSessionId : sessions[0]?.id || null };
@@ -68,10 +69,28 @@ export function normalizeChatSessions(value) {
 
 // Detach saved data from the agent's mutable contents array and omit live Undo
 // affordances while retaining pending flags for interruption recovery on load.
+// Chat updates replace what changed (a new message, a new contents array), so the copy of anything
+// unchanged is reused instead of cloning every session on every event. A reused copy is checked against a
+// shallow record of its source, so a field replaced in place is still copied again.
+const json = (value) => JSON.parse(JSON.stringify(value));
+const messageCopies = new WeakMap(), contentsCopies = new WeakMap();
+const sameShallow = (shape, value) => { const keys = Object.keys(value); return keys.length === Object.keys(shape).length && keys.every((key) => shape[key] === value[key]); };
+const copyOf = (cache, value, make) => {
+  if (!value || typeof value !== 'object') return value;
+  const hit = cache.get(value);
+  if (hit && sameShallow(hit.shape, value)) return hit.copy;
+  const copy = make(value);
+  cache.set(value, { shape: Array.isArray(value) ? [...value] : { ...value }, copy });
+  return copy;
+};
+const snapshotSession = ({ messages, contents, ...rest }) => ({
+  ...json(rest),
+  messages: (Array.isArray(messages) ? messages : []).map((message) => copyOf(messageCopies, message, ({ changed, ...kept }) => json(kept))),
+  contents: copyOf(contentsCopies, contents, json),
+});
 export function snapshotChatSessions(chat) {
-  return JSON.parse(JSON.stringify({ ...chat, sessions: chat.sessions.map((s) => ({
-    ...s, messages: s.messages.map(({ changed, ...message }) => message),
-  })) }));
+  const { sessions, ...rest } = chat;
+  return { ...json(rest), sessions: sessions.map(snapshotSession) };
 }
 
 export const hasChatContent = (p) => !!p.craftAI?.sessions?.some((s) => s.messages?.length || s.draft?.trim() || s.timelineAttachments?.length || s.images?.length || s.videos?.length || s.queue?.length);

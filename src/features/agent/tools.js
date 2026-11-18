@@ -533,8 +533,9 @@ export function createToolRunner(ctx) {
   };
 
   const clamp = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : d);
-  // Items from search_sounds / search_stock, by the short id the model sees (s1, v2, p3...).
-  const found = new Map();
+  // Items from search_sounds / search_stock, by the short id the model sees (s1, v2, p3...). An outside
+  // agent's session shares one map across its edits (externalHost.js), so its search ids stay valid.
+  const found = ctx.searchResults instanceof Map ? ctx.searchResults : new Map();
   const keep = (prefix, item) => {
     const id = `${prefix}${found.size + 1}`;
     found.set(id, item);
@@ -859,13 +860,13 @@ export function createToolRunner(ctx) {
   const captionTools = createCaptionTools({ project, dispatch, after, findClip, api, splitClip: extended.splitClip,
     requestId: ctx.requestId, revision: projectRevision });
   const audioTools = createAudioTools({ project, dispatch, after, findClip, api, requestId: ctx.requestId });
-  const trackingTools = createTrackingTools({ project, dispatch, after, findClip, api, requestId: ctx.requestId });
+  const trackingTools = createTrackingTools({ project, dispatch, after, findClip, api, requestId: ctx.requestId, evidenceId: ctx.evidenceId });
   const reviewTools = createReviewTools({ project, revision: projectRevision, startExport: ctx.startExport, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, editActive: ctx.editActive, onProgress:ctx.onToolProgress });
   const editorialTools = createEditorialTools({ project, dispatch, after, api, requestId: ctx.requestId, speech, sceneData, settle: ctx.settle, isCanceled: ctx.isCanceled });
   const pathTools = createPathTools({ project, dispatch, after, needPicture });
   const graphicsTools = createGraphicsTools({ project, dispatch, after, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, settle: ctx.settle });
   const referenceTools = createReferenceTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled });
-  const discoveryTools = createDiscoveryTools({ project, api, requestId: ctx.requestId, isCanceled: ctx.isCanceled, editActive: ctx.editActive,
+  const discoveryTools = createDiscoveryTools({ project, api, requestId: ctx.requestId, evidenceId: ctx.evidenceId, isCanceled: ctx.isCanceled, editActive: ctx.editActive,
     onProgress: ctx.onToolProgress, place, dispatch, settle: ctx.settle, after, analysisScope: ctx.analysisScope });
   const pluginTools = createPluginTools({runExtensionCommand:(input)=>ctx.runExtensionCommand(input,{onProgress:ctx.onToolProgress,commit:(action,next,publish)=>{
     if(ctx.isCanceled?.()||ctx.editActive?.()===false||!operation)throw Error('Editing stopped.');
@@ -927,7 +928,7 @@ export function createToolRunner(ctx) {
     },
     async annotate_scene(a) {
       if (!api.agentAnnotateScene) return { error: 'Scene observations require an updated ClipCraft.' };
-      return api.agentAnnotateScene({ ...a, project: { media: project().media }, requestId: ctx.requestId });
+      return api.agentAnnotateScene({ ...a, project: { media: project().media }, requestId: ctx.requestId, ...(ctx.evidenceId ? { evidenceId: ctx.evidenceId } : {}) });
     },
     async get_project({ scope = 'all', details = false, clip_ids, offset = 0, limit = 30, if_revision } = {}) {
       const p = project();
@@ -1359,7 +1360,14 @@ export function createToolRunner(ctx) {
         const want = Number(list[i].start_sec);
         if (Number.isFinite(want) && want >= 0) at = want;
         const added = await place(addProbed(res.items[i]), { start_sec: at, name: res.items[i].name });
-        if (added.error) return { ...added, placed_clip_ids: clips.map((c) => c.clip_id) };
+        if (added.error) {
+          // The earlier lines are on the timeline: say so, so a retry sends only the lines still missing.
+          const remaining = list.slice(i).map((l, k) => ({ line: i + k + 1, text: String(l.text).trim() }));
+          if (!clips.length) return { ...added, remaining_lines: remaining };
+          const { ok: _ok, ...placed } = await after({ clips, requests: res.requests });
+          return { ...placed, error: `${added.error} Lines 1–${i} were placed (placed_clip_ids); lines ${i + 1}–${list.length} were not. Do not repeat this call unchanged: retry only the remaining lines (add_voiceover for a single line) with retry_of.`,
+            changed: true, partial: true, placed_clip_ids: clips.map((c) => c.clip_id), remaining_lines: remaining };
+        }
         dispatch({ type: 'update', track: 'audio', id: added.clip_id, patch: { volume: clamp(volume, 0, 2, 1) } });
         const len = res.items[i].duration || 0;
         clips.push({ clip_id: added.clip_id, start_sec: r2(at), length_sec: r2(len), text: String(list[i].text).slice(0, 40) });

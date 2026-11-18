@@ -44,7 +44,8 @@ export function subjectFraming(project, media, clip, points) {
   }
   return { crop: { l: 0, t: 0, r: 0, b: 0 }, transform: { ...DEFAULT_TRANSFORM, scale }, keyframes, anim: undefined };
 }
-export function createTrackingTools({ project, dispatch, after, findClip, api, requestId }) {
+// evidenceId: the identity frames were presented under when it is not the request id (an outside agent's session).
+export function createTrackingTools({ project, dispatch, after, findClip, api, requestId, evidenceId }) {
   const startOf = f => f.track === 'video' ? videoLayout(project().videoClips).find(row => row.clip.id === f.clip.id).start : f.clip.start;
   const unlocked = f => { if (isLayerLocked(project(), f.track, clipLayer(f.track, f.clip))) throw Error('The selected clip is on a locked layer.'); };
   return {
@@ -58,7 +59,7 @@ export function createTrackingTools({ project, dispatch, after, findClip, api, r
       if (!finite(smoothing_sec) || smoothing_sec < 0 || smoothing_sec > 2 || typeof reframe !== 'boolean' || typeof allow_low_confidence !== 'boolean') throw Error('Use smoothing_sec 0–2 and boolean reframe/allow_low_confidence.');
       if (!api.agentMediaJob) throw Error('Restart ClipCraft to load tracking jobs.');
       const c = f.clip;
-      const result = await api.agentMediaJob({ requestId, action: 'track', item: m, from: c.in, to: c.out, frame_ids: [frame_id], pick, box });
+      const result = await api.agentMediaJob({ requestId, ...(evidenceId ? { evidenceId } : {}), action: 'track', item: m, from: c.in, to: c.out, frame_ids: [frame_id], pick, box });
       if (result?.error) throw Error(result.error);
       const points = result?.points;
       if (!Array.isArray(points) || !points.length || points.length > 20000 || points.some((p, i) => !p || ![p.t, p.x, p.y, p.c].every(finite) || p.t < c.in - .001 || p.t > c.out || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1 || p.c < 0 || p.c > 1 || i > 0 && p.t <= points[i - 1].t) || Math.abs(points[0].t - c.in) > .05 || points.at(-1).t < c.out - .15) throw Error('Tracking returned an incomplete or invalid path.');

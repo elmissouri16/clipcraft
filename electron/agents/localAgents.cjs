@@ -12,6 +12,7 @@ const { filterLevels } = require('./thinking.cjs');
 const { readImages } = require('./agentImages.cjs');
 const { abortable } = require('../system/cancel.cjs');
 const { runtimePath } = require('./agentRuntime.cjs');
+const { removeWorkDir } = require('../system/workDirs.cjs');
 let runtimeDirectory = null;
 const setRuntimeDirectory = directory => { runtimeDirectory = directory; };
 
@@ -58,11 +59,16 @@ function executableFile(file, platform = process.platform) {
 function unwrapShim(file, provider, platform = process.platform, arch = process.arch) {
   const real = fs.realpathSync(file);
   const windowsCodexJs = provider === 'codex-sdk' && /\.[cm]?js$/i.test(real);
+  // On Windows an extensionless file beside npm's shims is the POSIX shell script: never an executable.
+  if (platform === 'win32' && !/\.(cmd|bat|exe|com|[cm]?js)$/i.test(real)) throw new Error('Select the installed native executable (.exe) instead of a shell script.');
   if (!/\.(cmd|bat)$/i.test(file) && !windowsCodexJs) return fs.realpathSync(file);
   const packages = path.join(path.dirname(file), 'node_modules');
   if (provider === 'claude-agent-sdk') {
+    // npm may nest the platform package under the main package's own node_modules.
+    const main = path.join(packages, '@anthropic-ai', 'claude-code');
     for (const entry of [path.join(packages, '@anthropic-ai', `claude-code-${platform}-${arch}`, 'claude.exe'),
-      path.join(packages, '@anthropic-ai', 'claude-code', 'cli.js')]) {
+      path.join(main, 'node_modules', '@anthropic-ai', `claude-code-${platform}-${arch}`, 'claude.exe'),
+      path.join(main, 'cli.js')]) {
       if (fs.existsSync(entry)) return entry;
     }
   } else if (provider === 'opencode-sdk') {
@@ -74,10 +80,13 @@ function unwrapShim(file, provider, platform = process.platform, arch = process.
     }
   } else {
     const vendors = [path.join(path.dirname(real), '..', 'vendor'), path.join(packages, '@openai', 'codex', 'vendor'), path.join(path.dirname(file), "../..", 'vendor')];
-    try {
-      const nativeManifest = createRequire(real).resolve(`@openai/codex-${platform}-${arch}/package.json`);
-      vendors.unshift(path.join(path.dirname(nativeManifest), 'vendor'));
-    } catch { /* Older npm releases bundled their binaries under codex/vendor. */ }
+    // The platform package beside the shim, or nested under the main package (npm's usual global layout).
+    for (const from of [path.join(packages, '@openai', 'codex', 'package.json'), real]) {
+      try {
+        const nativeManifest = createRequire(from).resolve(`@openai/codex-${platform}-${arch}/package.json`);
+        vendors.unshift(path.join(path.dirname(nativeManifest), 'vendor'));
+      } catch { /* Older npm releases bundled their binaries under codex/vendor. */ }
+    }
     for (const vendor of vendors) {
       try {
         for (const target of fs.readdirSync(vendor)) {
@@ -106,7 +115,7 @@ function findExecutable(provider, configured = '', { env = process.env, home = o
   // An explicitly downloaded, verified runtime takes precedence over stale PATH installs.
   const managed = runtimePath(runtimeRoot, provider, { platform, arch });
   if (managed && executableFile(managed, platform)) return managed;
-  const names = platform === 'win32' ? [`${info.cli}.exe`, `${info.cli}.cmd`, info.cli] : [info.cli];
+  const names = platform === 'win32' ? [`${info.cli}.exe`, `${info.cli}.cmd`] : [info.cli];
   for (const dir of searchDirectories(env, home, platform)) {
     for (const name of names) {
       const candidate = path.join(dir, name);
@@ -232,7 +241,8 @@ function createLocalAgents({ loadSdk = (provider) => import(PROVIDERS[provider].
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', stop);
-      fs.rmSync(cwd, { recursive: true, force: true });
+      // Never throws (a folder still held by an exiting agent is retried), so it cannot replace the result.
+      await removeWorkDir(cwd);
     }
   }
 
@@ -385,35 +395,42 @@ ${skill}
 
 Scene request:
 ${prompt.trim()}`;
-      const result = await thread.run([{ type: 'text', text: instruction }, ...references.map((file) => ({ type: 'local_image', path: file }))],
-        { signal: session.controller.signal });
-      if (session.controller.signal.aborted) throw abortError();
-      // codex exec/SDK does not expose the app-server savedPath event. Its native
-      // outputs live under this new thread's generated_images folder instead.
-      const id = thread.id;
-      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) throw new Error('Codex did not return an image-generation thread.');
-      const roots = [path.join(codexHome, 'generated_images', id), path.join(session.cwd, 'generated_images', id)];
-      const files = [];
-      for (const root of roots) {
-        if (!fs.existsSync(root)) continue;
-        if (fs.lstatSync(root).isSymbolicLink() || fs.realpathSync(root) !== path.join(fs.realpathSync(path.dirname(root)), id)) throw new Error('Codex returned an unsafe image artifact directory.');
-        for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-          if (!/\.png$/i.test(entry.name)) continue;
-          const file = path.join(root, entry.name), stat = fs.lstatSync(file);
-          if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 128 * 1024 * 1024) throw new Error('Codex returned an invalid image artifact.');
-          files.push(file);
+      // This thread's own output folder under the Codex home goes once its PNG was copied into project
+      // storage, and also when the image is refused or the run stops (a symlink is never followed).
+      try {
+        const result = await thread.run([{ type: 'text', text: instruction }, ...references.map((file) => ({ type: 'local_image', path: file }))],
+          { signal: session.controller.signal });
+        if (session.controller.signal.aborted) throw abortError();
+        // codex exec/SDK does not expose the app-server savedPath event. Its native
+        // outputs live under this new thread's generated_images folder instead.
+        const id = thread.id;
+        if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) throw new Error('Codex did not return an image-generation thread.');
+        const roots = [path.join(codexHome, 'generated_images', id), path.join(session.cwd, 'generated_images', id)];
+        const files = [];
+        for (const root of roots) {
+          if (!fs.existsSync(root)) continue;
+          if (fs.lstatSync(root).isSymbolicLink() || fs.realpathSync(root) !== path.join(fs.realpathSync(path.dirname(root)), id)) throw new Error('Codex returned an unsafe image artifact directory.');
+          for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+            if (!/\.png$/i.test(entry.name)) continue;
+            const file = path.join(root, entry.name), stat = fs.lstatSync(file);
+            if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 128 * 1024 * 1024) throw new Error('Codex returned an invalid image artifact.');
+            files.push(file);
+          }
         }
+        if (files.length !== 1) throw new Error(files.length
+          ? 'Codex generated multiple images for one scene. Request one image per scene and try again.'
+          : `Codex produced no native image. No image was added. ${String(result.finalResponse || 'Check that your installed Codex version, account and selected model support image generation.').slice(0, 600)}`);
+        const bytes = fs.readFileSync(files[0]);
+        if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Codex returned an invalid PNG image.');
+        if (session.controller.signal.aborted) throw abortError();
+        fs.mkdirSync(outputDir, { recursive: true });
+        const dest = path.join(outputDir, `codex-${require('node:crypto').randomUUID()}.png`);
+        fs.writeFileSync(dest, bytes, { flag: 'wx' });
+        return { path: dest, source: 'codex-imagegen', prompt: prompt.trim() };
+      } finally {
+        const own = /^[A-Za-z0-9_-]{1,100}$/.test(String(thread.id || '')) ? path.join(codexHome, 'generated_images', thread.id) : null;
+        try { if (own && fs.lstatSync(own).isDirectory()) fs.rmSync(own, { recursive: true, force: true }); } catch { /* not there */ }
       }
-      if (files.length !== 1) throw new Error(files.length
-        ? 'Codex generated multiple images for one scene. Request one image per scene and try again.'
-        : `Codex produced no native image. No image was added. ${String(result.finalResponse || 'Check that your installed Codex version, account and selected model support image generation.').slice(0, 600)}`);
-      const bytes = fs.readFileSync(files[0]);
-      if (bytes.length < 24 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Codex returned an invalid PNG image.');
-      if (session.controller.signal.aborted) throw abortError();
-      fs.mkdirSync(outputDir, { recursive: true });
-      const dest = path.join(outputDir, `codex-${require('node:crypto').randomUUID()}.png`);
-      fs.writeFileSync(dest, bytes, { flag: 'wx' });
-      return { path: dest, source: 'codex-imagegen', prompt: prompt.trim() };
     });
   }
 
@@ -453,7 +470,7 @@ ${prompt.trim()}`;
       return await require('./opencodeNative.cjs').listModels({ sdk, executablePath:resolveExecutable(cfg.provider,cfg.executablePath,{env,home}), cwd, env:childEnv() });
     } catch(error) {
       return { ok:true, models:[], useCliDefault:true, notice:`The live model list is unavailable (${String(error.message||error).slice(0,200)}). The OpenCode default and custom provider/model IDs are still supported.` };
-    } finally { fs.rmSync(cwd,{recursive:true,force:true}); }
+    } finally { await removeWorkDir(cwd); }
   }
   async function loadCodexModels(cfg) {
       let liveError;
@@ -465,7 +482,8 @@ ${prompt.trim()}`;
         if(entries.length)return {ok:true,models:entries.map(m=>m.model),modelLabels:Object.fromEntries(entries.map(m=>[m.model,m.displayName||m.model])),
           modelCapabilities:Object.fromEntries(entries.map(m=>[m.model,{reasoningEfforts:filterLevels(cfg.provider,(m.supportedReasoningEfforts||[]).map(level=>level.reasoningEffort)),defaultReasoningEffort:m.defaultReasoningEffort,inputModalities:m.inputModalities||['text','image']}]))};
       } catch(error){liveError=error.message;}
-      finally {client?.close();fs.rmSync(cwd,{recursive:true,force:true});}
+      // The catalog process must exit before its folder can go (Windows); the removal never throws.
+      finally {await client?.close();await removeWorkDir(cwd);}
       // Older/offline CLIs can still use their cached catalog, a manually
       // entered model, or the recommended model selected by the installed CLI.
       try {

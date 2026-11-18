@@ -114,6 +114,7 @@ class CodexNative {
     } finally { signal?.removeEventListener('abort',abort); this.active=null; }
   }
   fail(error) { for (const pending of this.pending.values()) pending.reject(error); this.pending.clear(); this.active?.reject(error); }
-  close() { this.closed=true;this.fail(new Error('Codex session closed.'));this.lines.close();try{this.proc.kill();}catch{} }
+  // Resolves once the app-server has exited (bounded), so its working folder can then be removed.
+  close() { const exited=require('../system/childProcesses.cjs').processExited(this.proc);this.closed=true;this.fail(new Error('Codex session closed.'));this.lines.close();try{this.proc.kill();}catch{} return exited; }
 }
 module.exports={CodexNative,CODEX_FEATURES_OFF};

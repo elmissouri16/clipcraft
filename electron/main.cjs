@@ -1078,6 +1078,9 @@ ipcMain.handle('app:relaunch', () => { relaunchOnClose = true; if (win && !win.i
 // ---- MCP servers: external tool servers (stdio) whose tools CraftAI may call. ----
 const mcp = require("./agents/mcp.cjs");
 const mcpRegistry = mcp.createRegistry(() => settings.getMcpServers());
+// Servers removed or edited in Settings stop at once; the rest stop when the app quits.
+settings.onChanged(({ keys }) => { if (keys?.includes('mcpServers')) mcpRegistry.prune(); });
+app.on('will-quit', () => mcpRegistry.stopAll());
 ipcMain.handle('settings:setMcpServers', (_e, list) => settings.setMcpServers(list));
 ipcMain.handle('settings:setShortcuts', (_e, map) => settings.setShortcuts(map));
 ipcMain.handle('mcp:tools', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
@@ -1592,7 +1595,14 @@ ipcMain.handle('agent:cancel', (event, requestId) => {
   nativeRuns.get(key)?.controller.abort();
   agentRequests.get(key)?.abort();
 });
-app.on('before-quit', () => { externalAgents.stop().catch(() => {}); agentRuntimes.close(); for (const job of nativeRuns.values()) job.controller.abort(); for (const controller of agentRequests.values()) controller.abort(); localAgents.closeNativeSessions(); agentFrames.dispose(); });
+// Native agent sessions stop and delete their stored transcripts before the app exits (bounded wait).
+let nativeSessionsClosed = false;
+app.on('before-quit', (event) => {
+  externalAgents.stop().catch(() => {}); agentRuntimes.close(); for (const job of nativeRuns.values()) job.controller.abort(); for (const controller of agentRequests.values()) controller.abort(); agentFrames.dispose();
+  if (nativeSessionsClosed) return;
+  nativeSessionsClosed = true; event.preventDefault();
+  Promise.race([localAgents.closeNativeSessions(), new Promise((resolve) => setTimeout(resolve, 8000))]).catch(() => {}).finally(() => app.quit());
+});
 // Tile 2–6 already captured frames into one numbered contact sheet (see agentFrames.cjs).
 ipcMain.handle('agent:frameSheet',async(event,req={})=>{
   try{return await agentFrames.sheet(event.sender.id,req.frame_ids,{revision:req.revision});}
@@ -1698,12 +1708,15 @@ ipcMain.handle('agent:analyzeReference', (event, req = {}) => withAgentJob(event
     onProgress: p => { if (!event.sender.isDestroyed()) event.sender.send('agent:referenceProgress', { requestId: req.requestId, progress: p }); } });
   return { ok: true, name, cached: value.cached, fingerprint: summarize(value, { transcriptFrom: Math.max(0, Number(req.transcript_from_sec) || 0) }), source: { path: file, width: value.frame.width, height: value.frame.height, duration: value.duration_sec } };
 }));
+// Frames count as evidence for the request that was shown them, or for an outside agent's session
+// (external/host.cjs presents them under that id; each of its calls runs in a separate edit).
+const evidenceScope = req => typeof req?.evidenceId === 'string' && req.evidenceId ? req.evidenceId : req?.requestId;
 ipcMain.handle('agent:annotateScene',async(event,req)=>{
   try{
     const media=req?.project?.media?.find(m=>m.id===req.media_id);if(!media)throw new Error('Unknown media source.');
     const index=sceneAnalysis.read(req.analysis_id),shot=index?.shots.find(s=>s.id===req.shot_id);
     if(!shot||index.fingerprint!==fileFingerprint(media.path))throw new Error('The source analysis is stale. Analyse the current source again.');
-    const frames=agentFrames.evidence(event.sender.id,req.frame_ids,req.requestId);
+    const frames=agentFrames.evidence(event.sender.id,req.frame_ids,evidenceScope(req));
     if(frames.some(f=>f.source==='timeline'||f.media_id!==media.id||f.fingerprint!==index.fingerprint||f.source_time_sec<shot.start_sec||(!(['image'].includes(media.type))&&f.source_time_sec>=shot.end_sec)))throw new Error('Evidence must show the same source shot and current source file.');
     const active=settings.getActive();
     return {shot:sceneAnalysis.annotate(req.analysis_id,req.shot_id,{description:req.description,tags:req.tags,evidence:frames.map(f=>({source_time_sec:f.source_time_sec,image_hash:f.image_hash,source_fingerprint:f.fingerprint})),provider:frames[0].presentedProvider||active.provider,model:frames[0].presentedModel||active.model})};
@@ -1865,25 +1878,11 @@ ipcMain.handle('agent:openSource', async (_event, value) => {
   await shell.openExternal(url);
   return { ok: true };
 });
-const { runImageJobs } = require("./agents/imageJobs.cjs");
-const { fitImageFrame, validateImageFrame } = require("./media/imageFrame.cjs");
-async function generateSceneImage(cfg, req, signal) {
-  if (!req || !/^\d{1,4}:\d{1,4}$/.test(req.ratio || '')) return { error: 'Provide the project aspect ratio for the scene image.' };
-  validateImageFrame(req.width, req.height);
-  const image = await localAgents.generateImage(cfg, { prompt: req.prompt, ratio: req.ratio, width: req.width, height: req.height,
-    referencePaths: req.referencePaths || [], transparentBackground: req.transparentBackground === true,
-    outputDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'codex-images'), signal });
-  if (signal.aborted) return { canceled: true, error: 'Image generation stopped.' };
-  const framed = await fitImageFrame(image.path, { width: req.width, height: req.height, signal });
-  if (signal.aborted) return { canceled: true, error: 'Image generation stopped.' };
-  const [media] = await probeAll([framed.path]);
-  if (!media || media.error || media.type !== 'image') return { error: 'Codex produced an image that ClipCraft could not read.' };
-  if (media.width !== req.width || media.height !== req.height) return { error: 'The generated image does not match the project dimensions.' };
-  const title = String(req.prompt).trim().split(/\s+/).slice(0, 7).join(' ').replace(/[\\/:*?"<>|]+/g, '');
-  return { ...media, name: `${title || 'Generated scene'}.png`, origin: 'codex-image',
-    generation: { provider: 'codex-sdk', skill: 'imagegen', prompt: image.prompt,
-      width: req.width, height: req.height, nativeWidth: framed.nativeWidth, nativeHeight: framed.nativeHeight } };
-}
+const { runImageJobs, sceneImage } = require("./agents/imageJobs.cjs");
+const { fitImageFrame } = require("./media/imageFrame.cjs");
+// One scene image: Codex's imagegen output fitted to the project canvas (agents/imageJobs.cjs).
+const generateSceneImage = (cfg, req, signal) => sceneImage(cfg, req, signal, { generateImage: localAgents.generateImage, fitImageFrame, probeAll,
+  outputDir: path.join(process.env.FVE_SMOKE || app.getPath('userData'), 'codex-images') });
 function registerImageHandler(channel, batch = false) {
   ipcMain.handle(channel, async (event, req) => {
     const key = agentRequestKey(event, req?.requestId);
@@ -1953,7 +1952,7 @@ ipcMain.handle('agent:refineCuts', (event, project, opts = {}) => withAgentJob(e
 ipcMain.handle('agent:loudness', (event, project, opts = {}) => withAgentJob(event, opts.requestId, signal => rhythm().loudness(project, { ...opts, signal })));
 ipcMain.handle('agent:mediaJob', (event, req = {}) => withAgentJob(event, req.requestId, signal => {
   if (req.action === 'track') {
-    const frames = agentFrames.evidence(event.sender.id, req.frame_ids, req.requestId);
+    const frames = agentFrames.evidence(event.sender.id, req.frame_ids, evidenceScope(req));
     if (frames.some(f => f.presentedVia)) throw Error('Tracking needs the starting frame inspected on its own (inspect_frames source clip), not a contact-sheet cell.');
     if (frames.length !== 1 || frames.some(f => f.source === 'timeline' || f.media_id !== req.item?.id || f.fingerprint !== fileFingerprint(req.item.path)
       || Math.abs(f.source_time_sec - req.from) > .05)) throw Error('Inspect and present the raw source at this clip’s starting frame in the current request before tracking.');

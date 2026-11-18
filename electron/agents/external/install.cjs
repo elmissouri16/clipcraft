@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
+const { launchSpec } = require('../../system/windowsCommands.cjs');
 
 const NAME = 'clipcraft';
 const AGENTS = [
@@ -41,8 +42,8 @@ function codexSection(text) {
 }
 const codexBlock = (url, token) => `[mcp_servers.${NAME}]\nurl = ${JSON.stringify(url)}\nhttp_headers = { Authorization = ${JSON.stringify(`Bearer ${token}`)} }\ntool_timeout_sec = 900\n`;
 
-// opts: { home, env, searchDirectories(env, home) -> dirs, platform }
-function createInstaller({ home, env = process.env, searchDirectories, platform = process.platform }) {
+// opts: { home, env, searchDirectories(env, home) -> dirs, platform, execFileImpl (tests) }
+function createInstaller({ home, env = process.env, searchDirectories, platform = process.platform, execFileImpl = execFile }) {
   const files = {
     claude: path.join(env.CLAUDE_CONFIG_DIR || home, '.claude.json'),
     codex: path.join(env.CODEX_HOME || path.join(home, '.codex'), 'config.toml'),
@@ -60,10 +61,12 @@ function createInstaller({ home, env = process.env, searchDirectories, platform 
     }
     return null;
   }
-  // Arguments are ClipCraft's own (a fixed name, a local URL, a hex token): safe for a .cmd shim's shell.
+  // A Windows .cmd shim (npm installs) runs through cmd.exe with every part quoted, so a header with spaces
+  // and a profile path with a space each stay one argument (system/windowsCommands.cjs). No shell otherwise.
   const run = (file, args) => new Promise((resolve, reject) => {
     fs.mkdirSync(home, { recursive: true }); // the working folder (a missing cwd also reads as ENOENT)
-    execFile(file, args, { cwd: home, env: childEnv(), timeout: 60000, windowsHide: true, shell: platform === 'win32' && /\.(cmd|bat)$/i.test(file) },
+    const launch = launchSpec(file, args, { platform, env });
+    execFileImpl(launch.command, launch.args, { cwd: home, env: childEnv(), timeout: 60000, windowsHide: true, ...launch.options },
       (error, stdout, stderr) => error ? reject(new Error(String(stderr || stdout || error.message).trim().split('\n').slice(-3).join(' ').slice(0, 400))) : resolve(stdout));
   });
 

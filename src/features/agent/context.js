@@ -45,6 +45,8 @@ export function recallContext(contents, { ref, offset = 0, max_chars = 3000, que
   const archivedTurn = turnMatch && contents[Number(turnMatch[1])];
   const response = match && contents[Number(match[1])]?.parts?.[Number(match[2])]?.functionResponse;
   if (!response && !archivedTurn) return { error: 'Unknown context reference. Use a context_ref from an abbreviated tool result.' };
+  const kept = response?.response?.result;
+  if (kept?.archived === 'saved') return { ref, error: SAVED_NOTE, total_chars: kept.total_chars, ...(kept.preview ? { preview: kept.preview } : {}) };
   const text = JSON.stringify(archivedTurn ?? response.response?.result ?? response.response ?? {});
   let start = Number.isFinite(Number(offset)) ? Math.max(0, Math.floor(Number(offset))) : 0;
   if (query) {
@@ -57,11 +59,58 @@ export function recallContext(contents, { ref, offset = 0, max_chars = 3000, que
   return { ref, offset: start, total_chars: text.length, text: text.slice(start, end), next_offset: end < text.length ? end : null };
 }
 
-export function prepareContext(contents, { toolBudget = 18000, itemBudget = 5000, maxChars = 120000 } = {}) {
+// The stub that stands in for a bulky tool result: its reference, size, revision, error and a preview.
+// The request copy (prepareContext) and the saved conversation (compactSavedContents) share it.
+function archivedResult(response, ref, json, budget, note) {
+  const result = response.response?.result || {};
+  return { ...response, response: { result: {
+    context_ref: ref, tool: response.name, total_chars: json.length,
+    ...(result.revision ? { revision: result.revision } : {}),
+    ...(result.error ? { error: String(result.error).slice(0, 500) } : {}),
+    ...(budget ? { preview: json.slice(0, budget) } : {}),
+    note,
+  } } };
+}
+const SAVED_NOTE = 'Only a preview of this older tool output was kept with the saved chat. Run the tool again for current data.';
+// The saved conversation keeps the newest bulky tool results whole (keepChars in all) and replaces older ones
+// with the same stub as the request copy, marked archived: 'saved' (recall_context then says what was kept).
+// Turn and part positions are unchanged, so context_ref and turn:N references stay valid.
+export function compactSavedContents(contents, { keepChars = 250000, minChars = 2000, previewChars = 700 } = {}) {
+  let kept = 0, changed = false;
+  const turns = [...(contents || [])];
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (!turn?.parts?.some(part => part?.functionResponse)) continue;
+    let parts = null;
+    for (let k = turn.parts.length - 1; k >= 0; k--) {
+      const response = turn.parts[k]?.functionResponse;
+      if (!response || response.response?.result?.archived === 'saved') continue;
+      const json = JSON.stringify(response.response ?? {});
+      if (json.length < minChars) continue;
+      if (kept + json.length <= keepChars) { kept += json.length; continue; }
+      parts ||= [...turn.parts];
+      const stub = archivedResult(response, contextRef(i, k), json, previewChars, SAVED_NOTE);
+      stub.response.result.archived = 'saved';
+      parts[k] = { ...turn.parts[k], functionResponse: stub };
+    }
+    if (parts) { turns[i] = { ...turn, parts }; changed = true; }
+  }
+  return changed ? turns : contents;
+}
+const archiveNote = (result, liveRevision) => result?.revision && result.revision === liveRevision
+  ? 'Archived tool output of the live project revision. Use recall_context for exact data.'
+  : 'Archived tool output. Use recall_context for exact data; historical project state may be outdated.';
+
+// liveRevision: the project revision now, so a result of that revision is never called outdated.
+export function prepareContext(contents, { toolBudget = 18000, itemBudget = 5000, maxChars = 120000, liveRevision } = {}) {
   let remaining = toolBudget;
   const seen = new Set();
   const turns = [...contents];
   let abbreviated = 0;
+  // The results of the latest step (the last turn, when it answers tool calls) reach the model whole: the
+  // model asked for them to decide its next step. Only the overall budget bounds them.
+  const latest = contents.at(-1)?.parts?.some(part => part.functionResponse) ? contents.length - 1 : -1;
+  let latestRemaining = Math.floor(maxChars / 2);
   // Prefer recent results. User instructions, model reasoning/signatures and
   // call/result pairing are preserved byte for byte; no extra model call needed.
   for (let i = contents.length - 1; i >= 0; i--) {
@@ -72,21 +121,18 @@ export function prepareContext(contents, { toolBudget = 18000, itemBudget = 5000
       const response = parts[k].functionResponse;
       if (!response) continue;
       const json = JSON.stringify(response.response ?? {});
+      if (i === latest && json.length <= latestRemaining) {
+        latestRemaining -= json.length; remaining = Math.max(0, remaining - json.length);
+        seen.add(`${response.name}:${json}`);
+        continue;
+      }
       const duplicate = json.length > 500 && seen.has(`${response.name}:${json}`);
       seen.add(`${response.name}:${json}`);
       const cap = response.name === 'recall_context' ? 8000 : itemBudget;
       if (json.length <= 350) { remaining = Math.max(0, remaining - json.length); continue; }
       if (!duplicate && json.length <= cap && json.length <= remaining) { remaining -= json.length; continue; }
-      const ref = contextRef(i, k);
       const budget = duplicate ? 0 : Math.min(remaining, Math.min(700, itemBudget));
-      const result = response.response?.result || {};
-      parts[k] = { ...parts[k], functionResponse: { ...response, response: { result: {
-        context_ref: ref, tool: response.name, total_chars: json.length,
-        ...(result.revision ? { revision: result.revision } : {}),
-        ...(result.error ? { error: String(result.error).slice(0, 500) } : {}),
-        ...(budget ? { preview: json.slice(0, budget) } : {}),
-        note: 'Archived tool output. Use recall_context for exact data; historical project state may be outdated.',
-      } } } };
+      parts[k] = { ...parts[k], functionResponse: archivedResult(response, contextRef(i, k), json, budget, archiveNote(response.response?.result, liveRevision)) };
       remaining -= budget;
       abbreviated++; changed = true;
     }

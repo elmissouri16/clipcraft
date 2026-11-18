@@ -13,6 +13,8 @@ const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/ser
 const { ListToolsRequestSchema, CallToolRequestSchema, isInitializeRequest } = require('@modelcontextprotocol/sdk/types.js');
 const { abortError, checkAbort, abortable } = require('../system/cancel.cjs');
 const { LIMITS } = require('./contract.cjs');
+const { processExited } = require('../system/childProcesses.cjs');
+const withinMs = (promise, ms) => Promise.race([Promise.resolve(promise), new Promise((resolve) => setTimeout(resolve, ms).unref?.())]);
 
 const AGENT = 'clipcraft'; // the agent every session runs as
 const MCP_SERVER = 'clipcraft'; // OpenCode names its tools clipcraft_<tool>
@@ -68,7 +70,8 @@ function startServer({ executablePath, cwd, env, spawnImpl = spawn, timeoutMs = 
     env: { ...env, OPENCODE_SERVER_PASSWORD: password, XDG_CONFIG_HOME: configHome } });
   proc.stderr?.on('data', () => {}); // never surface credential-bearing diagnostics
   const lines = readline.createInterface({ input: proc.stdout });
-  const close = () => { try { lines.close(); } catch { /* closed */ } try { proc.kill(); } catch { /* gone */ } };
+  // Resolves once the process has exited (bounded), so its folder can then be removed.
+  const close = () => { const exited = processExited(proc); try { lines.close(); } catch { /* closed */ } try { proc.kill(); } catch { /* gone */ } return exited; };
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (fn, value) => { if (settled) return; settled = true; clearTimeout(timer); fn(value); };
@@ -311,11 +314,18 @@ class OpenCodeSession {
       return { text: text || '', ...(this.tokenUsage ? { tokenUsage: usageOf(this.tokenUsage) } : {}) };
     } finally { signal?.removeEventListener('abort', abort); this.active = null; }
   }
+  // Ends the session: its stored conversation (frames of the user's footage included) is deleted from
+  // OpenCode's database while the server still runs, then the server stops. Resolves once it has exited.
   close() {
+    if (this.closing) return this.closing;
     this.closed = true; this.events.abort();
     const active = this.active; this.active = null; active?.reject(new Error('OpenCode session closed.'));
-    this.server?.close(); this.endpoint?.close().catch(() => {});
     this.started?.catch(() => {});
+    return this.closing = (async () => {
+      await withinMs(this.started?.catch(() => {}), 5000); // a session still being created is removed too
+      if (this.client && this.sessionID && !this.gone) await withinMs(Promise.resolve().then(() => this.client.session.remove?.({ sessionID: this.sessionID })).catch(() => {}), 5000);
+      await Promise.all([this.server?.close(), this.endpoint?.close().catch(() => {})]);
+    })();
   }
 }
 
@@ -334,7 +344,7 @@ async function listModels({ sdk, executablePath, cwd, env, spawnImpl = spawn, si
     const modelCapabilities = Object.fromEntries(entries.map((m) => [id(m), { reasoningEfforts: (m.variants || []).map((v) => v.id).filter((v) => typeof v === 'string') }]));
     const defaultModel = fallback?.data ? id(fallback.data) : (fallback?.providerID ? id(fallback) : undefined);
     return { ok: true, models, modelLabels, modelCapabilities, ...(defaultModel ? { defaultModel } : {}), ...(models.length ? {} : { useCliDefault: true, notice: 'OpenCode reports no models. Connect a provider with `opencode auth login`.' }) };
-  } finally { server.close(); }
+  } finally { await server.close(); }
 }
 
 // One request without a retained session (chat / structured steps / connection test): a session with no
@@ -348,7 +358,7 @@ async function runOnce({ sdk, executablePath, cwd, env, cfg, system = '', prompt
     const raw = String(text || '').trim();
     const body = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     try { return JSON.parse(body); } catch { const i = body.indexOf('{'), j = body.lastIndexOf('}'); if (i >= 0 && j > i) return JSON.parse(body.slice(i, j + 1)); throw new Error('OpenCode returned no JSON object.'); }
-  } finally { session.close(); }
+  } finally { await session.close(); }
 }
 
 module.exports = { OpenCodeSession, NativeMcpEndpoint, startServer, listModels, runOnce, projectConfig, mcpConfig, permissionRules, modelRef, authHeaders, usageOf, AGENT, MCP_SERVER, WEB_TOOLS, EVENT_TYPES };

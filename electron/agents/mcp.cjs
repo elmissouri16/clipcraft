@@ -3,6 +3,7 @@
 // free of Electron imports so it can be unit-tested in plain node (tests/unit/agents/test-mcp.mjs).
 const { spawn } = require('child_process');
 const { abortable, checkAbort, abortError } = require("../system/cancel.cjs");
+const { launchSpec, stopProcessTree } = require('../system/windowsCommands.cjs');
 
 const PROTOCOL_VERSION = '2024-11-05';
 const CLIENT_INFO = { name: 'ClipCraft', version: require('../../package.json').version };
@@ -10,9 +11,11 @@ const CLIENT_INFO = { name: 'ClipCraft', version: require('../../package.json').
 class McpError extends Error {}
 
 class McpClient {
-  constructor(server, { timeoutMs = 20000 } = {}) {
+  // platform: for tests only (how a Windows launch is built).
+  constructor(server, { timeoutMs = 20000, platform = process.platform } = {}) {
     this.server = server; // { name, command, args }
     this.timeoutMs = timeoutMs;
+    this.platform = platform;
     this.proc = null;
     this.buffer = '';
     this.nextId = 1;
@@ -25,7 +28,10 @@ class McpClient {
     this.started = (async () => {
       const { command, args = [] } = this.server;
       if (!command) throw new McpError('This MCP server has no command.');
-      const proc = this.proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      // On Windows npx and other .cmd launchers need cmd.exe: the line is built with every argument quoted
+      // (system/windowsCommands.cjs), and no console window opens.
+      const launch = launchSpec(command, args, { platform: this.platform });
+      const proc = this.proc = spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...launch.options });
       this.buffer = '';
       this.proc.stdout.setEncoding('utf8');
       this.proc.stdout.on('data', (chunk) => { if (this.proc === proc) this.onData(chunk); });
@@ -126,7 +132,8 @@ class McpClient {
   }
 
   stop() {
-    if (this.proc) { try { this.proc.kill(); } catch { /* already gone */ } this.proc = null; }
+    // The whole tree: on Windows the direct child is cmd.exe or an npx shim, the server runs below it.
+    if (this.proc) { stopProcessTree(this.proc, { platform: this.platform }); this.proc = null; }
     this.started = null;
     this.failAll(new McpError('The MCP client was stopped.'));
   }
@@ -136,7 +143,13 @@ class McpClient {
 // reuse the spawned processes. getServers() returns the current settings list.
 function createRegistry(getServers) {
   const clients = new Map();
-  const keyOf = (s) => `${s.name}\n${s.command}\n${(s.args || []).join(' ')}`;
+  const keyOf = (s) => JSON.stringify([s.name, s.command, s.args || []]);
+  // A server removed or changed in Settings stops now, not at quit: only the current list keeps a process.
+  const prune = (servers = getServers()) => {
+    const current = new Set(servers.map(keyOf));
+    for (const [key, client] of clients) if (!current.has(key)) { client.stop(); clients.delete(key); }
+    return servers;
+  };
   const clientFor = (server) => {
     const key = keyOf(server);
     if (!clients.has(key)) clients.set(key, new McpClient(server));
@@ -149,7 +162,7 @@ function createRegistry(getServers) {
     async declarations({ signal } = {}) {
       const decls = [];
       const problems = [];
-      for (const server of getServers()) {
+      for (const server of prune()) {
         try {
           checkAbort(signal);
           const tools = await clientFor(server).listTools({ signal });
@@ -171,7 +184,7 @@ function createRegistry(getServers) {
     // Routes an mcp_<server>_<tool> call to its server.
     async call(prefixedName, args, { signal } = {}) {
       checkAbort(signal);
-      const servers = getServers().slice().sort((a, b) => sanitize(b.name).length - sanitize(a.name).length);
+      const servers = prune().slice().sort((a, b) => sanitize(b.name).length - sanitize(a.name).length);
       for (const server of servers) {
         const prefix = `mcp_${sanitize(server.name)}_`;
         if (prefixedName.startsWith(prefix)) {
@@ -195,6 +208,7 @@ function createRegistry(getServers) {
         client.stop();
       }
     },
+    prune: () => { prune(); },
     stopAll() { for (const c of clients.values()) c.stop(); clients.clear(); },
   };
 }

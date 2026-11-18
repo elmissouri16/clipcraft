@@ -25,6 +25,10 @@ function createExternalAgents({ ipcMain, getWindow, settings, version, agentFram
   let validateToolCall = null;
   let craftBusy = false;
   const installer = createInstaller(installerOptions);
+  // One evidence identity per MCP session: frames shown to the agent are presented under it here, and the
+  // renderer checks evidence under it (externalHost.js), across the separate edits its calls run in.
+  const sessionIds = new WeakMap();
+  const sessionOf = (owner) => { if (!owner) return null; if (!sessionIds.has(owner)) sessionIds.set(owner, `external:${crypto.randomUUID()}`); return sessionIds.get(owner); };
   const contents = () => { const win = getWindow(); return win && !win.isDestroyed() ? win.webContents : null; };
   const send = (channel, value) => { const wc = contents(); if (wc && !wc.isDestroyed()) wc.send(channel, value); };
   const fromWindow = (event) => event.sender === contents();
@@ -49,14 +53,15 @@ function createExternalAgents({ ipcMain, getWindow, settings, version, agentFram
     onCall: async (call, owner) => {
       if (!contract && !(await waitReady())) return errorResult('ClipCraft is still starting. Retry in a moment.');
       validateToolCall ||= (await import(pathToFileURL(path.join(__dirname, '../../../shared/toolArguments.mjs')).href)).validateToolCall;
+      const session = sessionOf(owner) || `external:${call.id}`;
       const invoke = (name, args) => new Promise((resolve) => {
         if (call.signal.aborted) return resolve({ error: 'Stopped.', canceled: true });
         pending.set(call.id, { resolve, progress: call.progress });
         call.signal.addEventListener('abort', () => send('external:cancel', { callId: call.id }), { once: true });
-        send('external:call', { callId: call.id, name, args, client: owner?.client || null });
+        send('external:call', { callId: call.id, name, args, client: owner?.client || null, session });
       });
       const caller = createToolCaller({ tools: contract.tools, aliases: contract.aliases, validateToolCall, report, invoke, agentFrames,
-        ownerId: contents()?.id, requestId: call.id, provider: 'external', model: owner?.client?.name || '' });
+        ownerId: contents()?.id, requestId: session, provider: 'external', model: owner?.client?.name || '' });
       return caller(call.name, call.args);
     },
   });

@@ -243,7 +243,7 @@ export default function App() {
   // The document and its chat sidecar are written apart (docs/architecture/project-file.md):
   // a.fileChat / a.slotChat remember the chat last written to each, so a timeline edit carries the
   // chat only when it changed too, and a chat change (writeChat) never rewrites the document.
-  const chatText = async (project) => { const chat = projectChat(project); return chat ? (await serializeProject(chat)).compact : null; };
+  const chatText = async (project) => { const chat = projectChat(project); return chat ? (await serializeProject(chat, { pretty: false })).compact : null; };
   const writeFile = async () => {
     const a = autosave.current;
     clearTimeout(a.fileTimer);

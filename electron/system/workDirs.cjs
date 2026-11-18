@@ -33,4 +33,15 @@ function sweepWorkDirs(root = os.tmpdir(), { alive = processAlive } = {}) {
   return removed;
 }
 
-module.exports = { makeWorkDir, sweepWorkDirs, OWNER };
+// Removes a working folder without ever throwing: a folder still held by a process that is exiting (Windows
+// answers EBUSY/EPERM) is retried for a few seconds, and one that still cannot go is left for the OS temp
+// cleanup. Resolves true when the folder is gone.
+function removeWorkDir(dir, { retries = 10, delayMs = 200 } = {}) {
+  if (!dir) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    try { fs.rm(dir, { recursive: true, force: true, maxRetries: retries, retryDelay: delayMs }, (error) => resolve(!error)); }
+    catch { resolve(false); }
+  });
+}
+
+module.exports = { makeWorkDir, sweepWorkDirs, removeWorkDir, OWNER };

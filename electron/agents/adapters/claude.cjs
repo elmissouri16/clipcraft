@@ -1,6 +1,7 @@
 // Claude adapter (docs/design/agent-adapters.md): the shared tools as an in-process SDK MCP server,
 // one resumed SDK session per chat. Wire format only: it never adds, drops or renames tools or
 // instructions. Claude's own built-ins stay off except its web tools under Web research.
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const research = require('../research.cjs');
 const { LIMITS } = require('../contract.cjs');
 const { version } = require('../../../package.json');
@@ -74,8 +75,26 @@ function createClaudeAdapter({ sdk, executablePath, cwd, env, cfg, system, tools
     usageTotal: () => null,
     // After each request: no callbacks until the next one, and the in-process server is closed.
     async endRun() { current = null; const s = server; server = null; await Promise.resolve(s?.instance?.close?.()).catch(() => {}); },
-    close() { current = null; query?.close(); Promise.resolve(server?.instance?.close?.()).catch(() => {}); server = null; },
+    // The session ends: its CLI stops and the transcript it persisted (with base64 frames of the user's
+    // footage) is deleted. Only this session's id in this session's own temp folder is ever touched.
+    async close() {
+      const running = query; current = null; query?.close(); query = null;
+      const s = server; server = null; await Promise.resolve(s?.instance?.close?.()).catch(() => {});
+      const id = sessionId; sessionId = null;
+      if (!id || typeof sdk.deleteSession !== 'function') return;
+      if (running) await new Promise((resolve) => setTimeout(resolve, 1000)); // a stopped CLI's last writes
+      await Promise.resolve().then(() => sdk.deleteSession(id, { dir: cwd })).catch(() => {});
+      for (const dir of transcriptFolders(cwd, env)) { try { fs.rmdirSync(dir); } catch { /* not empty, or not there */ } }
+    },
   };
 }
 
-module.exports = { createClaudeAdapter };
+// The Claude projects folders named after a working folder (its path with every other character a dash),
+// for the folder as given and its real path. Only removed when empty.
+function transcriptFolders(cwd, env = {}) {
+  const root = path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+  let real = cwd; try { real = fs.realpathSync(cwd); } catch { /* already gone */ }
+  return [...new Set([cwd, real].map((dir) => path.join(root, String(dir).replace(/[^a-zA-Z0-9]/g, '-'))))];
+}
+
+module.exports = { createClaudeAdapter, transcriptFolders };

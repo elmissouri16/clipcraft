@@ -11,6 +11,7 @@ const { createCodexAdapter } = require('./adapters/codex.cjs');
 const { createClaudeAdapter } = require('./adapters/claude.cjs');
 const { createOpenCodeAdapter } = require('./adapters/opencode.cjs');
 const { LIMITS: SHARED_LIMITS, hostError } = require('./contract.cjs');
+const { removeWorkDir } = require('../system/workDirs.cjs');
 
 const SECRETS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
 const NOT_ACCEPTED = 'The host has not accepted completion. Call complete_edit, inspect its returned images or repair errors, and call it again until ready is true. If it reports subagents_required, complete delegated source analysis or supply the concrete subagent_skip limitation it requests. Honor explicit requests to use subagents; never silently replace them with solo work. Then provide your final answer. Do not repeat already completed edits.';
@@ -19,8 +20,20 @@ const agentName = (provider) => ({ 'codex-sdk': 'Codex', 'claude-agent-sdk': 'Cl
 // limits: the contract's, overridable for tests only.
 function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession = CodexNative, limits: LIMITS = SHARED_LIMITS }) {
   const sessions = new Map();
-  const dispose = (state) => { state.adapter?.close(); fs.rmSync(state.cwd, { recursive: true, force: true }); };
-  const forget = (key) => { const state = sessions.get(key); if (state) { sessions.delete(key); dispose(state); } };
+  // The adapter stops its agent (and removes the transcript that session stored) before the working folder
+  // goes: Windows refuses to remove a live process's folder. Never throws; resolves when done.
+  const dispose = async (state) => {
+    const adapter = state.adapter; state.adapter = null;
+    try { await adapter?.close(); } catch { /* the session goes away either way */ }
+    await removeWorkDir(state.cwd);
+  };
+  const disposing = new Set(); // sessions still stopping (quitting waits for them)
+  const forget = (key) => {
+    const state = sessions.get(key); if (!state) return Promise.resolve();
+    sessions.delete(key);
+    const done = dispose(state).finally(() => disposing.delete(done)); disposing.add(done);
+    return done;
+  };
 
   const openAdapter = async (cfg, state, { system, tools, env, executablePath }) => {
     const common = { executablePath, cwd: state.cwd, env, cfg, system, tools, webResearch: research.enabled(cfg) };
@@ -106,7 +119,7 @@ function createNativeAgents({ loadSdk, resolveExecutable, childEnv, CodexSession
       await state.adapter?.endRun();
     }
   }
-  function closeOwner(prefix) { for (const key of sessions.keys()) if (key.startsWith(prefix)) forget(key); }
-  return { run, closeOwner, close: () => { for (const key of sessions.keys()) forget(key); } };
+  function closeOwner(prefix) { return Promise.all([...sessions.keys()].filter((key) => key.startsWith(prefix)).map(forget)); }
+  return { run, closeOwner, close: () => Promise.all([...[...sessions.keys()].map(forget), ...disposing]) };
 }
 module.exports = { createNativeAgents };

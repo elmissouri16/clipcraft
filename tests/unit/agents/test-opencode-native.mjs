@@ -142,7 +142,7 @@ const pending = adapter.turn({ prompt: 'never finishes', images: [], attempt: 2,
 log.prompts.length = 0; await new Promise((r) => setTimeout(r, 20)); stopper.abort();
 const stopped = await pending.catch((e) => e);
 check('Stop interrupts the OpenCode session and the turn ends as aborted', stopped.name === 'AbortError' && log.interrupts.length === 1);
-adapter.close();
+await adapter.close();
 check('closing the adapter stops the server process', launch.proc.killed === true);
 
 // ---- one-shot JSON (chat / structured step / connection test) ----

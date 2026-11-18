@@ -21,11 +21,11 @@ export const DISCOVERY_DECLARATIONS = [
     parameters: { type: 'OBJECT', properties: { ...SOURCE, pick_id: S }, required: ['media_id', 'index_id', 'pick_id'] } },
 ];
 
-export function createDiscoveryTools({ project, api, requestId, isCanceled, onProgress, editActive, place, dispatch, settle, after, analysisScope }) {
+export function createDiscoveryTools({ project, api, requestId, evidenceId, isCanceled, onProgress, editActive, place, dispatch, settle, after, analysisScope }) {
   const call = async (action, args) => {
     if (!api.agentSourceDiscovery) throw Error('Source discovery requires an updated ClipCraft.');
     if (isCanceled?.() || editActive?.() === false) throw Error('Source discovery stopped.');
-    const result = await api.agentSourceDiscovery({ ...args, action, requestId, project: { media: project().media } });
+    const result = await api.agentSourceDiscovery({ ...args, action, requestId, ...(evidenceId ? { evidenceId } : {}), project: { media: project().media } });
     if (isCanceled?.() || editActive?.() === false) throw Error('Source discovery stopped. Completed index chunks were kept.');
     if (!result?.ok) return { ...result, error: result?.error || 'Source discovery failed.' };
     return result;
