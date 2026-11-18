@@ -83,7 +83,7 @@ export function createEditorialTools({ project, dispatch, after, api, requestId,
   };
   const applyCuts = async (cuts, a) => {
     const before = project();
-    if (cutRanges(before, cuts, { ripple: true }) === before) return { error: 'The range edit is blocked by a locked related track or has no editable footage.' };
+    if (cutRanges(before, cuts, { ripple: true }) === before) return { error: 'The range edit is blocked by a locked related track, has no editable footage, or cuts inside a transition overlap (cut outside it or remove that transition first).' };
     const total = exportDuration(before), kept = known;
     dispatch({ type: 'cutRanges', ranges: cuts, ripple: true });
     await settle();

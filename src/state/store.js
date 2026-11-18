@@ -571,14 +571,15 @@ function reduceProjectInner(p, a) {
         // The gap covers the clip's visible span: its length less the overlap of the transition
         // into it, so every later clip keeps its position.
         const list = p.videoClips.map((x, i) => (x.id === a.id ? newGap(x.id, clipLen(x) - transitionDur(p.videoClips, i)) : x));
-        return { ...p, videoClips: normalizeGaps(list) };
+        return { ...p, videoClips: keepOverlaps(p.videoClips, normalizeGaps(list)) };
       }
       const rest = p[key].filter((x) => x.id !== a.id);
       if (!p.magnet[a.track]) return { ...p, [key]: rest };
       const len = freeLen(a.track, c);
       const end = c.start + len;
       const same = (x) => !LAYERED[a.track] || layerOf(x) === layerOf(c);
-      return { ...p, [key]: rest.map((x) => (same(x) && x.start >= end - 1e-6 ? { ...x, start: Math.max(0, x.start - len) } : x)) };
+      const fixed = pictureLinked(p, a.track);
+      return { ...p, [key]: rest.map((x) => (same(x) && !fixed(x) && x.start >= end - 1e-6 ? { ...x, start: Math.max(0, x.start - len) } : x)) };
     }
     case 'preparedPluginClips': {
       const plan=pluginClipArrays.get(a.token);
@@ -770,6 +771,32 @@ function reduceProject(p, a) {
   return next;
 }
 
+// Main-track transitions keep the overlap they have. The half-clip rule (transitionDur) re-clamps
+// a transition whenever a neighbouring clip gets shorter or longer; an edit that changes one clip
+// (a trim, a split, a delete leaving a gap) would then move every later clip while captions, music
+// and overlays stay. Each surviving transition is pinned to its previous overlap, or to the one
+// in `kept` (by clip id) when the edit shortens that transition on purpose.
+function keepOverlaps(before, list, kept = new Map()) {
+  const old = new Map(before.map((c, i) => [c.id, transitionDur(before, i)]));
+  let changed = false;
+  const out = list.map((c, i) => {
+    if (!c.transition || c.gap || !(kept.has(c.id) || old.has(c.id))) return c;
+    const keep = kept.has(c.id) ? kept.get(c.id) : old.get(c.id);
+    if (Math.abs(transitionDur(list, i) - keep) < 1e-9) return c;
+    changed = true;
+    return { ...c, transition: { ...c.transition, timelineOverlap: keep } };
+  });
+  return changed ? out : list;
+}
+
+// On the audio track, the sound of a Detach-audio pair is placed by its picture (link sync), not
+// by the track's magnet: a ripple there leaves it alone. Returns a test for such clips.
+function pictureLinked(p, track) {
+  if (track !== 'audio') return () => false;
+  const pictures = new Set([...p.videoClips, ...(p.overlayClips || [])].map((c) => c.linkId).filter(Boolean));
+  return (x) => !!x.linkId && pictures.has(x.linkId);
+}
+
 // Trims one edge of a clip. `delta` is how much that edge moves INTO the clip, in timeline seconds
 // (positive shortens, negative extends). Always computed from the project at gesture start, so repeated
 // pointer moves never accumulate. Main track (magnet off): the removed time becomes a gap, and extending
@@ -785,7 +812,7 @@ export function trimClip(p, { track, id, edge, delta }) {
     const list = [...p.videoClips];
     if (c.gap) {
       list[idx] = { ...c, out: Math.max(MIN_CLIP, c.out - delta) };
-      return { ...p, videoClips: normalizeGaps(list) };
+      return { ...p, videoClips: keepOverlaps(p.videoClips, normalizeGaps(list)) };
     }
     const m = p.media.find((x) => x.id === c.mediaId);
     const sp = c.speed || 1;
@@ -793,15 +820,19 @@ export function trimClip(p, { track, id, edge, delta }) {
     // A transition overlaps the two clips at the trimmed edge. The removed time comes out of
     // that overlap first (the transition shortens, nothing else moves) and only the rest becomes
     // a gap — so the far edge of the clip, and every later clip, stay where they were.
+    const kept = new Map();
     const shrinkTransition = (i, left) => {
       const t = list[i].transition;
-      list[i] = { ...list[i], transition: left > 1e-6 ? { ...t, duration: left, ...(Number.isFinite(t.timelineOverlap) ? { timelineOverlap: left } : {}) } : null };
+      list[i] = { ...list[i], transition: left > 1e-6 ? { ...t, duration: left, timelineOverlap: left } : null };
+      kept.set(list[i].id, left > 1e-6 ? left : 0);
     };
+    // The transition at the far edge keeps its overlap, so the clip cannot get shorter than it.
+    const incoming = transitionDur(p.videoClips, idx), outgoing = list[idx + 1] && !list[idx + 1].gap ? transitionDur(p.videoClips, idx + 1) : 0;
     let d;
     if (edge === 'left') {
       const prev = list[idx - 1];
       const avail = prev && prev.gap ? clipLen(prev) : 0;
-      const newIn = Math.max(0, Math.min(c.in + delta * sp, c.out - MIN_CLIP * sp));
+      const newIn = Math.max(0, Math.min(c.in + delta * sp, Math.max(c.in, c.out - Math.max(MIN_CLIP, outgoing) * sp)));
       d = Math.max((newIn - c.in) / sp, -avail);
       list[idx] = { ...c, in: c.in + d * sp };
       if (d > 0) {
@@ -816,7 +847,7 @@ export function trimClip(p, { track, id, edge, delta }) {
     } else {
       const after = list[idx + 1];
       const avail = !after ? Infinity : after.gap ? clipLen(after) : 0;
-      const newOut = Math.max(c.in + MIN_CLIP * sp, Math.min(c.out - delta * sp, maxOut));
+      const newOut = Math.max(Math.min(c.out, c.in + Math.max(MIN_CLIP, incoming) * sp), Math.min(c.out - delta * sp, maxOut));
       d = Math.max((c.out - newOut) / sp, -avail);
       list[idx] = { ...c, out: c.out - d * sp };
       if (d > 0) {
@@ -829,7 +860,7 @@ export function trimClip(p, { track, id, edge, delta }) {
         }
       } else if (d < 0 && after && after.gap) list[idx + 1] = { ...after, out: after.out + d };
     }
-    return { ...p, videoClips: normalizeGaps(list) };
+    return { ...p, videoClips: keepOverlaps(p.videoClips, normalizeGaps(list), kept) };
   }
 
   // Free tracks.
@@ -869,9 +900,10 @@ export function trimClip(p, { track, id, edge, delta }) {
     next = { ...c, duration: len - d };
   }
   const oldEnd = c.start + len;
+  const fixed = pictureLinked(p, track);
   const out = p[key].map((x) => {
     if (x.id === id) return next;
-    if (p.magnet[track] && x.start >= oldEnd - 1e-6 && (!LAYERED[track] || layerOf(x) === layerOf(c))) return { ...x, start: Math.max(0, x.start - d) };
+    if (p.magnet[track] && x.start >= oldEnd - 1e-6 && !fixed(x) && (!LAYERED[track] || layerOf(x) === layerOf(c))) return { ...x, start: Math.max(0, x.start - d) };
     return x;
   });
   return { ...p, [key]: out };
@@ -1000,6 +1032,11 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
       ? { ...item.clip.transition, duration: overlap, timelineOverlap: overlap } : null };
     previous = item;
   }
+  // Every piece must land where the time map puts it: a cut inside a transition's overlap leaves
+  // pieces shorter than the overlap kept between them, the main track would lose less than the
+  // captions, sound and markers shift, and nothing could keep them together. Refused whole.
+  const placed = videoLayout(main.map(item => item.clip));
+  if (placed.some((l, i) => Math.abs(l.start - main[i].start) > 1e-6)) return p;
   const lists = { video: main };
   for (const [track, key] of Object.entries(CLIP_LISTS)) {
     if (track === 'video') continue;
@@ -1007,11 +1044,24 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
   }
   // A detached pair is sliced from the picture's retained source intervals. Each
   // resulting pair receives its own link, never several pictures to one sound.
+  const mainSpan = new Map(videoLayout(p.videoClips).map(l => [l.clip.id, [l.start, l.end]]));
   for (const [linkId, pair] of linkPairs(p)) {
     if (!pair.pic || !pair.aud) continue;
     const pictures = records.get(pair.pic.clip.id) || [];
     const audio = pair.aud.clip;
     lists.audio = lists.audio.filter(item => !records.get(audio.id)?.includes(item));
+    // A sound placed off its picture (linkOff, as Link records a separately recorded mic) cannot
+    // be cut by the picture's source window: the same timeline span holds other words there. When
+    // a cut falls on the pair, the sound is cut by its own timeline span, like the picture, and
+    // the pieces are no longer linked (no equal-length pieces could keep one offset).
+    const picSpan = pair.pic.track === 'video' ? mainSpan.get(pair.pic.clip.id) : [pair.pic.clip.start, pair.pic.clip.start + freeLen(pair.pic.track, pair.pic.clip)];
+    const audEnd = audio.start + freeLen('audio', audio), lo = Math.min(picSpan[0], audio.start), hi = Math.max(picSpan[1], audEnd);
+    if (Math.abs(audio.linkOff || 0) > 1e-6 && (pair.pic.track === 'video' || ripple) && cuts.some(r => r.start < hi && r.end > lo)) {
+      const unlink = c => ({ ...c, linkId: undefined, linkOff: undefined, linkInOff: undefined });
+      pictures.forEach(picture => { picture.clip = unlink(picture.clip); });
+      for (const piece of sliceClip('audio', audio, audio.start, audEnd, true)) lists.audio.push({ ...piece, clip: unlink(piece.clip) });
+      continue;
+    }
     pictures.forEach((picture, index) => {
       const nextLink = index ? fresh(`${linkId}~${picture.clip.id}`) : linkId;
       picture.clip = { ...picture.clip, linkId: nextLink };
@@ -1209,19 +1259,20 @@ function splitAt(p, track, id, t, newId) {
   if (track === 'video') {
     const l = videoLayout(p.videoClips).find((x) => x.clip.id === id);
     if (!l || l.clip.gap || t - l.start < MIN_CLIP || l.end - t < MIN_CLIP) return p;
+    // A cut inside a transition would leave a half shorter than that transition's overlap:
+    // the overlap could not be kept, and every later clip would move. Such a cut is refused.
+    const next = p.videoClips[l.index + 1];
+    if (t - l.start < l.trans - 1e-9 || (next && !next.gap && l.end - t < transitionDur(p.videoClips, l.index + 1) - 1e-9)) return p;
     const cut = l.clip.in + (t - l.start) * (l.clip.speed || 1);
     const list = [];
-    p.videoClips.forEach((c, i) => {
-      if (c.id !== id) {
-        // The transition into the clip after the split keeps its overlap: the short right
-        // half must not re-clamp it (which would move every later clip).
-        const td = i === l.index + 1 && c.transition && !c.gap ? transitionDur(p.videoClips, i) : 0;
-        return list.push(td > 0 ? { ...c, transition: { ...c.transition, timelineOverlap: td } } : c);
-      }
+    p.videoClips.forEach((c) => {
+      if (c.id !== id) return list.push(c);
       list.push({ ...c, out: cut, anim: splitAnim(c.anim, 'left'), ...sliceFades(c, 0, t - l.start, l.end - l.start) },
         { ...c, id: newId, in: cut, transition: null, anim: splitAnim(c.anim, 'right'), ...sliceFades(c, t - l.start, l.end - l.start, l.end - l.start) });
     });
-    return { ...p, videoClips: list };
+    // The transitions on both sides keep their overlap: the shorter halves must not re-clamp
+    // them (which would move every later clip).
+    return { ...p, videoClips: keepOverlaps(p.videoClips, list) };
   }
   if (track === 'audio') {
     const c = p.audioClips.find((x) => x.id === id);
@@ -2558,19 +2609,28 @@ function reduceHistoryStep(state, a,extensionEdit=false) {
     }
   }
   if (reduced === state.present) return state;
-  let next = reuse ? reduced : placeLayers(reduced, state.present);
-  if (next !== state.present && placementBlocked(state.present, next, a)) return state;
-  if (!reuse && next !== state.present) {
+  // A trim drag recomputes every move from the gesture's start, so its linked partner is
+  // synced against that same start: diffed against the previous move, the side the user
+  // drags looked unchanged and the pair flipped back.
+  const linkBase = a.type === 'trimClip' && state.gestureStart ? state.gestureStart : state.present;
+  let next = reduced;
+  if (!reuse) {
     // Only an exact private prepared batch can preserve already validated
     // complete pairs. JSON actions and unrelated reducer paths cannot opt in.
     const clipPlan=a.type==='batch'&&a.actions.length===1&&a.actions[0].type==='preparedPluginClips'?pluginClipArrays.get(a.actions[0].token):null;
-    const preserved=clipPlan?.base===state.present&&Object.entries(clipPlan.arrays).every(([key,value])=>next[key]===value)?clipPlan.preservedLinks:null;
-    next = syncLinked(state.present, next, preserved);
+    const placedPlan=clipPlan?.base===state.present?placeLayers(reduced,state.present):null;
+    const preserved=placedPlan&&Object.entries(clipPlan.arrays).every(([key,value])=>placedPlan[key]===value)?clipPlan.preservedLinks:null;
+    // Partners follow first, then every clip gets its layer: a sound that followed its picture
+    // onto a taken spot moves to a free layer like any other placed clip.
+    next = placeLayers(syncLinked(linkBase, reduced, preserved), state.present);
+  }
+  if (next !== state.present && placementBlocked(state.present, next, a)) return state;
+  if (!reuse && next !== state.present) {
     // Older projects can contain drift. Loading or unrelated edits must not
     // freeze them; reject only a newly introduced or worsened mismatch.
     if (a.type !== 'load') {
-      const prior = linkPairs(state.present);
-      const presentStart = picStarts(state.present), nextStart = picStarts(next);
+      const prior = linkPairs(linkBase);
+      const presentStart = picStarts(linkBase), nextStart = picStarts(next);
       const drift = (startOf, pair) => {
         if (!pair?.pic || !pair?.aud) return [0, 0, 0, 0];
         const pic = pair.pic.clip, aud = pair.aud.clip;

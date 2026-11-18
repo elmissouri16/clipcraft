@@ -93,7 +93,7 @@ function measureNoise(ffmpegPath, item, from, to, isCanceled = () => false) {
 function outFile(item, from, to, strength, noiseDb, cacheDir) {
   const st = fs.statSync(item.path);
   const key = crypto.createHash('sha1')
-    .update(`${item.path}|${st.size}|${st.mtimeMs}|enhance3|${strength}|${num(from)}|${num(to)}|nf${Math.round(noiseDb)}`)
+    .update(`${item.path}|${st.size}|${st.mtimeMs}|enhance4|${strength}|${num(from)}|${num(to)}|nf${Math.round(noiseDb)}`)
     .digest('hex').slice(0, 16);
   return path.join(cacheDir, `${key}-enhance-${strength}.wav`);
 }
@@ -137,7 +137,9 @@ async function enhance(item, { from = 0, to, strength = 'standard', cacheDir, ff
   // which costs 3.01 dB per channel; pan to dual-mono at unity first so the enhanced
   // render carries the source's true level (the same rule the export chains apply —
   // see monoUp in ffmpeg.cjs).
-  const chain = item.channels === 1 ? `pan=stereo|c0=c0|c1=c0,${chainFor(strength, noiseDb)}` : chainFor(strength, noiseDb);
+  // The render starts at `from` even when the audio stream starts later (recorded WebM): the
+  // lead-in is kept as silence, like the export chains keep it (sourceAudio in ffmpeg.cjs).
+  const chain = `aresample=async=1:min_hard_comp=0.1:first_pts=0,${item.channels === 1 ? `pan=stereo|c0=c0|c1=c0,${chainFor(strength, noiseDb)}` : chainFor(strength, noiseDb)}`;
   const args = ['-ss', num(a), '-t', num(len), '-i', item.path,
     '-map', '0:a:0', '-vn', '-af', chain, '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-y', part];
   try {

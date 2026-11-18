@@ -60,6 +60,10 @@ for(let trial=0;trial<30;trial++){
  const word={...p,textClips:[{...p.textClips[0],highlight:{mode:'box'},words:[{text:'A',start:0,end:3},{text:'B',start:3,end:6}],text:'A B'}]};
  const words=createTextFrameState(word);assert.equal(words(1).key,words(2).key);assert.notEqual(words(2).key,words(4).key);
  word.textClips[0]={...word.textClips[0],highlight:{mode:'karaoke'}};const karaoke=createTextFrameState(word);assert.notEqual(karaoke(1).key,karaoke(2).key);
+ // The reveal/single highlights pop each word in over 0.15 s / 0.12 s: live frames then, a reused frame after.
+ for(const [mode,pop] of [['reveal',.15],['single',.12]]){word.textClips[0]={...word.textClips[0],highlight:{mode}};const at=createTextFrameState(word);
+  assert.notEqual(at(3+pop/3).key,at(3+pop*2/3).key,`${mode}: the word pop is drawn frame by frame`);assert.equal(at(3+pop+.01).key,at(5).key,`${mode}: the settled word reuses its frame`);
+  assert.notEqual(at(.02).key,at(.05).key,`${mode}: the first word pops too`);}
  const effects=createTextFrameState(p,[[1,2]]);assert.notEqual(effects(1.1).key,effects(1.2).key);
 }
 {

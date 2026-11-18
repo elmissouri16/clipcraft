@@ -31,16 +31,18 @@ function audioFxFilters(fx) {
   }
   const semi = clamp(fx.pitch ?? 0, -12, 12);
   if (semi) {
-    const ratio = Math.pow(2, semi / 12);
+    const rate = Math.round(48000 * Math.pow(2, semi / 12));
     // Shift the sample rate, resample back to 48 kHz, then restore the original tempo:
-    // the pitch moves, the duration does not.
-    out.push(`asetrate=${Math.round(48000 * ratio)}`, 'aresample=48000', `atempo=${num(1 / ratio)}`);
+    // the pitch moves, the duration does not. The tempo undoes exactly the rate actually
+    // set (a rounded one drifted the sound from the picture, 0.3 s over 10 minutes).
+    out.push(`asetrate=${rate}`, 'aresample=48000', `atempo=${Number((48000 / rate).toFixed(12))}`);
   }
   // Loudness last: single-pass loudnorm to the podcast/social target. It works at
   // 192 kHz internally, so resample back to the chain's 48 kHz right after it.
   // Give the resampler an explicit layout. Mono WAV inputs can otherwise leave
-  // loudnorm's 192 kHz output without a negotiable layout in bundled FFmpeg.
-  if (fx.loudnorm) out.push('aformat=channel_layouts=stereo', 'loudnorm=I=-14:TP=-1:LRA=11', 'aresample=48000');
+  // loudnorm's 192 kHz output without a negotiable layout in bundled FFmpeg; the same
+  // holds after it (the main track's apad could not negotiate one: the export failed).
+  if (fx.loudnorm) out.push('aformat=channel_layouts=stereo', 'loudnorm=I=-14:TP=-1:LRA=11', 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo');
   return out;
 }
 

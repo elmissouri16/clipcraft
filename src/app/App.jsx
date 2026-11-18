@@ -20,6 +20,7 @@ import { useExternalAgent } from './useExternalAgent.js';
 import { createExtensionEditorTools } from '../features/plugins/extensionEditorTools.js';
 import SequenceDialog from "../features/timeline/components/SequenceDialog.jsx";
 import { mismatchFor, sequencePatchFor } from "../features/timeline/sequence.js";
+import { reverseUpdates, unreverseUpdates } from "../features/timeline/reverse.js";
 import { sizeFor } from "../features/effects/effects.js";
 import { filterFx, isFilterFx } from "../features/effects/filters.js";
 import ContextMenu from "../components/ui/ContextMenu.jsx";
@@ -1017,7 +1018,9 @@ export default function App() {
     if (selection.items) {
       // Several clips: one undo step for all of them.
       dispatch({ type: 'beginGesture', group: true });
-      selection.items.forEach(removeOne);
+      // Sounds first: a picture removed first would pull its linked sound onto the next one's spot
+      // (link sync) before that one goes, so the result depended on which clip was clicked.
+      [...selection.items].sort((x, y) => (y.track === 'audio') - (x.track === 'audio')).forEach(removeOne);
       dispatch({ type: 'endGesture', group: true });
     } else removeOne(selection);
     setSelection(null);
@@ -1270,7 +1273,8 @@ export default function App() {
     const m = c && p.media.find((x) => x.id === c.mediaId);
     if (!c || !m) return;
     if (c.reversed) {
-      dispatch({ type: 'update', ...sel, patch: { mediaId: c.reversed.mediaId, in: c.reversed.in, out: c.reversed.out, reversed: null } });
+      // Back to the original, on the part of it this clip (or this piece of it) plays now.
+      dispatch({ type: 'updateMany', updates: unreverseUpdates(p, sel.track, c) });
       return;
     }
     setRenderJob({ kind: 'reverse', label: t('app.reversing_clip'), fraction: 0 });
@@ -1290,7 +1294,8 @@ export default function App() {
     let media = projectRef.current.media.find((x) => x.path === res.path);
     dispatch({ type: 'beginGesture', group: true });
     if (!media) { media = { ...res, id: uid(), origin: 'reverse' }; dispatch({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
-    dispatch({ type: 'update', ...sel, patch: { mediaId: media.id, in: 0, out: res.duration, reversed: { mediaId: c.mediaId, in: c.in || 0, out: c.out ?? m.duration } } });
+    const now = findClip(projectRef.current, sel);
+    dispatch({ type: 'updateMany', updates: reverseUpdates(projectRef.current, sel.track, { ...now, out: now.out ?? m.duration }, media) });
     dispatch({ type: 'endGesture', group: true });
   };
 

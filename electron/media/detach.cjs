@@ -15,7 +15,7 @@ const num = (v) => Number(v.toFixed(3)).toString();
 
 function outFile(item, from, to, cacheDir) {
   const st = fs.statSync(item.path);
-  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|detach1|${num(from)}|${num(to)}`).digest('hex').slice(0, 16);
+  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|detach2|${num(from)}|${num(to)}`).digest('hex').slice(0, 16);
   return path.join(cacheDir, `${key}-detach.wav`);
 }
 
@@ -53,8 +53,10 @@ async function detach(item, { from = 0, to, cacheDir, ffmpegPath, onProgress = (
   const out = outFile(item, a, b, cacheDir);
   if (fs.existsSync(out)) return out;
   const part = `${path.basename(out, '.wav')}.${PART_TAG}.part.wav`;
+  // The file starts at the range's first source second even when the audio stream starts later
+  // (recorded WebM): that lead-in is kept as silence, so the sound stays with its picture.
   const args = ['-ss', num(a), '-t', num(len), '-i', item.path,
-    '-map', '0:a:0', '-vn', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-y', part];
+    '-map', '0:a:0', '-vn', '-af', 'aresample=async=1:min_hard_comp=0.1:first_pts=0', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-y', part];
   try {
     await run(ffmpegPath, args, cacheDir, (t) => onProgress(Math.min(0.99, t / len)), isCanceled);
     fs.renameSync(path.join(cacheDir, part), out);

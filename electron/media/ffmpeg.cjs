@@ -184,13 +184,82 @@ function transitionDur(clips, i) {
   return Math.max(0, Math.min(t.duration, clipLen(clips[i]) / 2, clipLen(clips[i - 1]) / 2));
 }
 
+// Main-track placement on the output grids. Each clip's first and end frame (at fps) and
+// sample (at 48 kHz) are rounded from its cumulative timeline position, so every clip's
+// stream holds exactly its share of the grid: joining them adds no rounding error, however
+// many cuts the track has (a per-clip rounding drifted the picture a frame per cut).
+const AUDIO_RATE = 48000;
+function mainGrid(clips, fps) {
+  let end = 0;
+  return clips.map((c, i) => {
+    const start = i ? end - transitionDur(clips, i) : 0;
+    end = start + clipLen(c);
+    return { start, end, f0: Math.round(start * fps), f1: Math.round(end * fps), s0: Math.round(start * AUDIO_RATE), s1: Math.round(end * AUDIO_RATE) };
+  });
+}
+// Exactly n frames on the fps grid: the last picture is held when the source runs short.
+const exactFrames = (n, fps) => `tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${n},setpts=N/(${fps}*TB)`;
+const sec6 = (s) => Number(s).toFixed(6);
+// Two neighbouring main-track sounds: crossfaded over their overlap in samples (a transition), else butted.
+const joinAudio = (a, b, overlap, out) => (overlap > 0 ? `[${a}][${b}]acrossfade=ns=${overlap}[${out}]` : `[${a}][${b}]concat=n=2:v=0:a=1[${out}]`);
+// A source's sound from the clip's first source second (pts 0 after the input seek, or
+// `from` without one), keeping where the audio stream starts: a recording whose audio
+// begins after its picture (recorded WebM) plays that silence first, as the player does.
+// `from`: where the clip starts in the stream (the seek residue, or clip.in for an unseeked input).
+const sourceAudio = (len, from = 0) => (from < 1e-7
+  ? [`atrim=start=0:end=${num(len)}`, 'aresample=async=1:min_hard_comp=0.1:first_pts=0']
+  : [`atrim=start=${sec6(from)}:end=${sec6(from + len)}`, `asetpts=PTS-${sec6(from)}/TB`, 'aresample=async=1:min_hard_comp=0.1:first_pts=0']);
+// Input seek point for a clip starting at t source seconds: t rounded DOWN to the millisecond.
+// Rounded to nearest, a frame-aligned start such as 8/30 s (0.2667) seeked to 0.267, past
+// that frame: the clip lost its first picture and ran a frame ahead of its sound. Sound
+// read from such an input skips the residue (sourceAudio's `from`).
+const seekTo = (t) => Math.max(0, Math.floor(Math.max(0, t) * 1000 + 1e-6) / 1000);
+const seekRest = (t) => Math.max(0, t - seekTo(t));
+// Gain, effects and level automation of a clip's sound, from its (tempo-corrected) source to
+// a 48 kHz stereo stream. The effects always run at 48 kHz (the pitch shift relies on it).
+// Loudness normalization sets the level of the effects' output, so with it on the clip's own
+// volume and fades come after it: otherwise they would be normalized away, while the player
+// applies them.
+function clipAudioBody(c, len, up) {
+  const gain = [`volume=${gainOf(c)}`, ...audioFadeFilters(c, len, num)];
+  const late = !!(c.audioFx && c.audioFx.loudnorm);
+  return [...(up ? [up] : []), ...atempo(speedOf(c)), ...(late ? [] : gain), 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
+    ...audioFxFilters(c.audioFx), ...(late ? gain : []), ...audioAutomationFilters(c)];
+}
+
 function atempo(speed) {
   const out = [];
   let s = speed;
   while (s > 2) { out.push('atempo=2'); s /= 2; }
   while (s < 0.5) { out.push('atempo=0.5'); s /= 0.5; }
-  if (Math.abs(s - 1) > 1e-3) out.push(`atempo=${s.toFixed(4)}`);
+  if (Math.abs(s - 1) > 1e-9) out.push(`atempo=${Number(s.toFixed(9))}`);
   return out;
+}
+
+// Classic Adjust exactly as the player draws it: the CSS filter brightness() contrast() saturate()
+// hue-rotate() (src/features/effects/effects.js clipCss), in that order on the gamma-encoded RGB
+// values, each step clamped. Brightness multiplies, contrast scales about mid-grey, saturate and
+// hue-rotate are the CSS colour matrices. (FFmpeg's eq adds brightness to luma instead: blacks
+// came out grey, and its contrast pivots on luma, so colours drifted from the preview.)
+function adjustFilters(a) {
+  const f = [], k = Math.max(0, 1 + finite(a.brightness, 0)), c = Math.max(0, finite(a.contrast, 1)), s = Math.max(0, finite(a.saturation, 1));
+  const d = (v) => Number(v.toFixed(6));
+  if (k !== 1 || c !== 1) {
+    const lift = k !== 1 ? `clip(val*${d(k)},0,maxval)` : 'val';
+    const e = c !== 1 ? `clip((${lift}-maxval/2)*${d(c)}+maxval/2,0,maxval)` : lift;
+    // lut values are truncated to integers: +0.5 rounds them.
+    f.push(`lutrgb=r='${e}+0.5':g='${e}+0.5':b='${e}+0.5'`);
+  }
+  const mixer = (m) => `colorchannelmixer=${['rr', 'rg', 'rb', 'gr', 'gg', 'gb', 'br', 'bg', 'bb'].map((n, i) => `${n}=${d(m[i])}`).join(':')}`;
+  if (s !== 1) f.push(mixer([0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s, 0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s, 0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s]));
+  const h = finite(a.hue, 0) * Math.PI / 180;
+  if (h) {
+    const cs = Math.cos(h), sn = Math.sin(h);
+    f.push(mixer([0.213 + cs * 0.787 - sn * 0.213, 0.715 - cs * 0.715 - sn * 0.715, 0.072 - cs * 0.072 + sn * 0.928,
+      0.213 - cs * 0.213 + sn * 0.143, 0.715 + cs * 0.285 + sn * 0.140, 0.072 - cs * 0.072 - sn * 0.283,
+      0.213 - cs * 0.213 - sn * 0.787, 0.715 - cs * 0.715 + sn * 0.715, 0.072 + cs * 0.928 + sn * 0.072]));
+  }
+  return f;
 }
 
 // Filters for the look of a clip (flip, color filter, adjustments, effects) on a picture of size W x H.
@@ -205,10 +274,7 @@ function lookFilters(clip, W, H) {
   if (fx.includes('flipv') && !viaShader('flipv')) f.push('vflip');
   // clip.filter is drawn by the effects pass (GPU, src/features/effects/filters.js), like in the player.
   const a = { brightness: 0, contrast: 1, saturation: 1, hue: 0, blur: 0, ...(clip.adjust || {}) };
-  if (a.brightness || a.contrast !== 1 || a.saturation !== 1) {
-    f.push(`eq=brightness=${num(a.brightness * 0.5)}:contrast=${num(a.contrast)}:saturation=${num(a.saturation)}`);
-  }
-  if (a.hue) f.push(`hue=h=${num(a.hue)}`);
+  f.push(...adjustFilters(a));
   const blur = Math.round((a.blur + (fx.includes('blur') && !viaShader('blur') ? 6 : 0)) * (W / 640));
   if (blur > 0) f.push(`boxblur=${Math.min(blur, Math.floor(Math.min(W, H) / 2) - 1)}`);
   if (fx.includes('vignette') && !viaShader('vignette')) f.push('vignette=PI/4');
@@ -224,7 +290,7 @@ function clipVideoFilters(clip, W, H, fps, background) {
     `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${hex(background, '#000000')}`,
     'setsar=1',
     ...lookFilters(clip, W, H),
-    `fps=${fps}`,
+    `fps=${fps}:start_time=0`,
     'format=rgba',
     layers.TO_YUV709,
   ].join(',');
@@ -251,25 +317,20 @@ function enhancePathOf(clip) {
 // (electron/media/enhance.cjs writes -ac 2), so the enhanced path never takes the pan.
 const monoUp = (m, enhanced) => (!enhanced && m && m.channels === 1 ? 'pan=stereo|c0=c0|c1=c0' : null);
 
-function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false) {
+// samples: the clip's exact length at 48 kHz on the main-track grid (see mainGrid).
+function clipAudioFilter(clip, m, idx, i, enhIdx = -1, seeked = false, samples = Math.round(clipLen(clip) * AUDIO_RATE)) {
   const len = clipLen(clip);
   if (clip.gap || !m || m.type === 'image' || !m.hasAudio || clip.muted) {
-    return `anullsrc=r=48000:cl=stereo,atrim=duration=${num(len)},aformat=sample_fmts=fltp[a${i}]`;
+    return `anullsrc=r=48000:cl=stereo,atrim=end_sample=${samples},aformat=sample_fmts=fltp[a${i}]`;
   }
   // Perf B1 (2026-11-01): when the caller input-seeked this clip's input (-ss before -i),
   // the stream already starts at clip.in, so the trim runs from 0 — identical samples,
   // without decoding the skipped prefix. The enhanced branch is pre-trimmed by the
   // enhance render and always reads from 0.
-  const src = enhIdx >= 0
-    ? [`[${enhIdx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
-    : seeked
-      ? [`[${idx}:a]atrim=start=0:end=${num(clip.out - clip.in)}`, 'asetpts=PTS-STARTPTS']
-      : [`[${idx}:a]atrim=start=${num(clip.in)}:end=${num(clip.out)}`, 'asetpts=PTS-STARTPTS'];
+  const src = sourceAudio(clip.out - clip.in, enhIdx >= 0 ? 0 : seeked ? seekRest(clip.in) : clip.in);
   const up = monoUp(m, enhIdx >= 0);
-  return [...src, ...(up ? [up] : []), ...atempo(speedOf(clip)),
-    `volume=${gainOf(clip)}`, ...audioFadeFilters(clip, len, num), 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo',
-    ...audioFxFilters(clip.audioFx), ...audioAutomationFilters(clip),
-    `apad=whole_dur=${num(len)}`, `atrim=duration=${num(len)}`].join(',') + `[a${i}]`;
+  return `[${enhIdx >= 0 ? enhIdx : idx}:a]` + [...src, ...clipAudioBody(clip, len, up),
+    `apad=whole_len=${samples}`, `atrim=end_sample=${samples}`].join(',') + `[a${i}]`;
 }
 
 // Analysis uses the same audible sources as playback, while preserving main-track
@@ -339,19 +400,19 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
   let n = 0;
   const input = (c, m) => {
     const enhanced = enhancePathOf(c), index = n++;
-    inputs.push(...(enhanced ? ['-i', enhanced] : ['-ss', num(c.in), '-i', m.path]));
+    inputs.push(...(enhanced ? ['-i', enhanced] : ['-ss', num(seekTo(c.in)), '-i', m.path]));
     return { index, enhanced };
   };
+  const grid = mainGrid(plan.main, positive(project.fps, 30));
   plan.main.forEach((clip, i) => {
     const m = plan.media.get(clip.mediaId);
     const src = !clip.muted ? input(clip, m) : { index: -1 };
-    filters.push(clipAudioFilter(clip, m, src.index, i, src.enhanced ? src.index : -1, true));
+    filters.push(clipAudioFilter(clip, m, src.index, i, src.enhanced ? src.index : -1, true, grid[i].s1 - grid[i].s0));
   });
   if (plan.main.length) {
     let label = 'a0';
     for (let i = 1; i < plan.main.length; i++) {
-      const td = transitionDur(plan.main, i);
-      filters.push(td > 0 ? `[${label}][a${i}]acrossfade=d=${num(td)}[ja${i}]` : `[${label}][a${i}]concat=n=2:v=0:a=1[ja${i}]`);
+      filters.push(joinAudio(label, `a${i}`, grid[i - 1].s1 - grid[i].s0, `ja${i}`));
       label = `ja${i}`;
     }
     filters.push(`[${label}]aresample=16000,aformat=sample_fmts=fltp:channel_layouts=mono[main]`);
@@ -360,9 +421,8 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
   plan.extras.forEach(({ clip: c, media: m }, j) => {
     const { index, enhanced } = input(c, m), len = clipLen(c);
     const up = monoUp(m, !!enhanced);
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`];
-    chain.push(...audioFadeFilters(c, len, num));
-    chain.push(...audioFxFilters(c.audioFx), ...audioAutomationFilters(c), 'aresample=16000', 'aformat=sample_fmts=fltp:channel_layouts=mono', `adelay=${Math.round(Math.max(0, c.start || 0) * 1000)}:all=1`);
+    const chain = [...sourceAudio(c.out - c.in, enhanced ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up)];
+    chain.push('aresample=16000', 'aformat=sample_fmts=fltp:channel_layouts=mono', `adelay=${Math.round(Math.max(0, c.start || 0) * 1000)}:all=1`);
     filters.push(`[${index}:a]${chain.join(',')}[x${j}]`);
     mix.push(`[x${j}]`);
   });
@@ -456,7 +516,9 @@ function narrowClip(clip, m, from, to) {
 // Adds the picture input of a clip and returns a filter chain prefix "[n:v]trim...," that gives its frames at
 // the clip's own timing. clip.videoOverride ({ file, start, end } in timeline seconds) replaces the media by a file
 // the animated-effects pass rendered.
-function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
+// shift: seconds added to the clip's clock, so that its picture lies at its exact timeline time on
+// the frame grid its stream starts on (the stream starts on the nearest frame, see mainGrid).
+function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H, shift = 0) {
   // Perf B1: media inputs are input-seeked (-ss before -i) to the clip's first frame and
   // the trim runs from 0 — the encoder never decodes the skipped prefix (measured at
   // +48% export time for a clip starting 55 min into its source). `audioSeeked` tells
@@ -480,9 +542,9 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
         const frames = Math.ceil((span.to - start) * fps - 1e-7) - Math.ceil((span.from - start) * fps - 1e-7);
         if (frames <= 0) return;
         const duration = span.to - span.from, speed = positive(o.sourceSpeed, speedOf(clip));
-        const idx = span.file ? addInput(['-ss', num(span.fileStart || 0), '-i', span.file])
+        const idx = span.file ? addInput(['-ss', num(seekTo(span.fileStart || 0)), '-i', span.file])
           : m.type === 'image' ? addInput(stillInput(m.path, fps, duration))
-          : addInput(['-ss', num((o.sourceIn ?? clip.in - start * speed) + span.from * speed), '-i', m.path]);
+          : addInput(['-ss', num(seekTo((o.sourceIn ?? clip.in - start * speed) + span.from * speed)), '-i', m.path]);
         first ??= idx;
         const sourceDuration = span.file || m.type === 'image' ? duration : duration * speed;
         const clock = span.file || m.type === 'image' ? 'PTS-STARTPTS' : `(PTS-STARTPTS)/${speed}`;
@@ -496,15 +558,17 @@ function pictureSource(clip, m, len, fps, addInput, filters, tag, W, H) {
       filters.push(`${labels.join('')}${labels.length > 1 ? `concat=n=${labels.length}:v=1:a=0` : 'null'}[${label}]`);
       return { idx: first, chain: `[${label}]null`, own: false, audioSeeked: false };
     }
-    const idx = addInput(['-ss', num(o.start), '-i', o.file]);
+    const idx = addInput(['-ss', num(seekTo(o.start)), '-i', o.file]);
     return { idx, chain: `[${idx}:v]trim=duration=${num(o.end - o.start)},setpts=PTS-STARTPTS`, own: false, audioSeeked: false };
   }
   if (m.type === 'image') {
     const idx = addInput(stillInput(m.path, fps, len));
     return { idx, chain: `[${idx}:v]trim=duration=${num(len)},setpts=PTS-STARTPTS${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: false };
   }
-  const idx = addInput(['-ss', num(clip.in), '-i', m.path]);
-  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-STARTPTS)/${speedOf(clip)}${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
+  // The source frames keep their own times from clip.in (the first one can lie after it on an
+  // off-grid cut): resetting them to start at 0 moved the picture up to a frame early.
+  const idx = addInput(['-ss', num(seekTo(clip.in)), '-i', m.path]);
+  return { idx, chain: `[${idx}:v]trim=duration=${num(clip.out - clip.in)},setpts=(PTS-${sec6(seekRest(clip.in))}/TB)/${speedOf(clip)}+${sec6(shift)}/TB${matrixIn(m)}${toSdr(m)}${colorLutFilter(clip, m, W, H)}`, own: true, audioSeeked: true };
 }
 
 // A colour-only look baked into a 3D LUT (electron/export/fxjobs.cjs lut): applied where the
@@ -540,13 +604,16 @@ function buildExportArgs(project, outFile, opts = {}) {
   if (clips.length === 0) throw new Error('The video track is empty.');
 
   // 1) Main track: prepare each clip (trim, speed, size, look) with a matching audio stream.
+  // Every clip's picture ends on exactly its frame count on the output grid, and its sound on its sample count.
+  const grid = mainGrid(clips, fps);
   clips.forEach((clip, i) => {
     const m = mediaById[clip.mediaId];
     const len = clipLen(clip);
+    const fit = exactFrames(grid[i].f1 - grid[i].f0, fps), samples = grid[i].s1 - grid[i].s0;
     if (clip.gap) {
       // A gap on the main track: the project background, in silence.
-      filters.push(`color=c=${hex(bg, '#000000')}:s=${W}x${H}:r=${fps}:d=${num(len)},format=yuv420p[v${i}]`);
-      if (!opts.raw) filters.push(clipAudioFilter(clip, null, -1, i));
+      filters.push(`color=c=${hex(bg, '#000000')}:s=${W}x${H}:r=${fps}:d=${num(len)},format=yuv420p,${fit}[v${i}]`);
+      if (!opts.raw) filters.push(clipAudioFilter(clip, null, -1, i, -1, false, samples));
       return;
     }
     // Clips with a transform, mask, chroma key, opacity or blend go through the layered render; the rest keep the plain path.
@@ -566,59 +633,56 @@ function buildExportArgs(project, outFile, opts = {}) {
       const layer = layers.buildLayer({ clip, media: m, W, H, fps, len, tag, srcLabel, maskIdx, decoIdx, motion, customMaskIdx }, { lookFilters, num, hex });
       filters.push(...layer.filters);
       filters.push(`color=c=${hex(bg, '#000000')}:s=${W}x${H}:r=${fps}:d=${num(len)},format=yuv420p[bg${tag}]`);
-      filters.push(...layers.composite({ base: `bg${tag}`, layer: layer.out, blend: clip.blend, tag, out: `v${i}` }));
+      filters.push(...layers.composite({ base: `bg${tag}`, layer: layer.out, blend: clip.blend, tag, out: `vl${i}` }));
+      filters.push(`[vl${i}]${fit}[v${i}]`);
     };
-    const src = pictureSource(clip, m, len, fps, addInput, filters, `m${i}`, W, H);
+    const src = pictureSource(clip, m, len, fps, addInput, filters, `m${i}`, W, H, grid[i].start - grid[i].f0 / fps);
     if (layered) {
-      filters.push(`${src.chain},fps=${fps},tpad=stop_mode=clone:stop=1[s${i}]`);
+      filters.push(`${src.chain},fps=${fps}:start_time=0,tpad=stop_mode=clone:stop=1[s${i}]`);
       renderLayered(`s${i}`);
     } else {
-      filters.push(`${src.chain},${clipVideoFilters(clip, W, H, fps, bg)}[v${i}]`);
+      filters.push(`${src.chain},${clipVideoFilters(clip, W, H, fps, bg)},${fit}[v${i}]`);
     }
     // Sound comes from the media even when the picture was pre-rendered. A dedicated
     // audio input (picture came from an override file) is input-seeked too (B1).
-    const audioIdx = src.own || m.type === 'image' || !m.hasAudio || clip.muted ? src.idx : addInput(['-ss', num(clip.in), '-i', m.path]);
+    const audioIdx = src.own || m.type === 'image' || !m.hasAudio || clip.muted ? src.idx : addInput(['-ss', num(seekTo(clip.in)), '-i', m.path]);
     const enhP = !opts.raw && enhancePathOf(clip);
     const enhIdx = enhP ? addInput(['-i', enhP]) : -1;
-    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx, src.own ? !!src.audioSeeked : true));
+    if (!opts.raw) filters.push(clipAudioFilter(clip, m, src.own ? src.idx : audioIdx, i, enhIdx, src.own ? !!src.audioSeeked : true, samples));
   });
 
-  // 2) Join clips: xfade/acrossfade where a transition is set, plain concat otherwise.
+  // 2) Join clips: xfade/acrossfade where a transition is set, plain concat otherwise. A transition
+  // spans the frames (and samples) where the two clips' grid positions overlap.
   let cv = 'v0';
   let ca = 'a0';
-  let end = clipLen(clips[0]);
   for (let i = 1; i < clips.length; i++) {
-    const td = transitionDur(clips, i);
-    const start = end - td;
-    const seg = td > 0 && project.fxSegments && project.fxSegments[clips[i].id];
+    const g = grid[i], tf = grid[i - 1].f1 - g.f0;
+    const seg = tf > 0 && project.fxSegments && project.fxSegments[clips[i].id];
     if (seg) {
       // Animated transition rendered by the effects pass: what came before, the transition, the rest of the clip.
       const sIdx = addInput(['-i', seg]);
       filters.push(
-        `[${cv}]trim=duration=${num(start)},setpts=PTS-STARTPTS,setsar=1[jA${i}]`,
-        `[${sIdx}:v]trim=duration=${num(td)},setpts=PTS-STARTPTS,fps=${fps},scale=${W}:${H},setsar=1,format=rgba,${layers.TO_YUV709}[jT${i}]`,
-        `[v${i}]trim=start=${num(td)},setpts=PTS-STARTPTS,setsar=1[jB${i}]`,
+        `[${cv}]trim=end_frame=${g.f0},setpts=PTS-STARTPTS,setsar=1[jA${i}]`,
+        `[${sIdx}:v]trim=duration=${num(grid[i - 1].end - g.start)},setpts=PTS-STARTPTS,fps=${fps},scale=${W}:${H},setsar=1,format=rgba,${layers.TO_YUV709},${exactFrames(tf, fps)}[jT${i}]`,
+        `[v${i}]trim=start_frame=${tf},setpts=PTS-STARTPTS,setsar=1[jB${i}]`,
         `[jA${i}][jT${i}][jB${i}]concat=n=3:v=1:a=0[jv${i}]`,
       );
-      filters.push(`[${ca}][a${i}]acrossfade=d=${num(td)}[ja${i}]`);
-    } else if (td > 0) {
+    } else if (tf > 0) {
       // xfade needs both inputs on the same time base (after an animated transition the video so far has another one).
       filters.push(
         `[${cv}]settb=1/${fps}[xa${i}]`, `[v${i}]settb=1/${fps}[xb${i}]`,
-        `[xa${i}][xb${i}]xfade=transition=${xfadeName(clips[i].transition.type)}:duration=${num(td)}:offset=${num(start)}[jv${i}]`,
+        `[xa${i}][xb${i}]xfade=transition=${xfadeName(clips[i].transition.type)}:duration=${sec6(tf / fps)}:offset=${sec6(g.f0 / fps)}[jv${i}]`,
       );
-      filters.push(`[${ca}][a${i}]acrossfade=d=${num(td)}[ja${i}]`);
     } else {
       filters.push(`[${cv}][v${i}]concat=n=2:v=1:a=0[jv${i}]`);
-      filters.push(`[${ca}][a${i}]concat=n=2:v=0:a=1[ja${i}]`);
     }
+    filters.push(joinAudio(ca, `a${i}`, grid[i - 1].s1 - g.s0, `ja${i}`));
     cv = `jv${i}`;
     ca = `ja${i}`;
-    end = start + clipLen(clips[i]);
   }
-  const total = end;
+  const total = grid[grid.length - 1].end;
   if (opts.raw) {
-    const frames = Math.max(1,Math.round(total*fps));
+    const frames = Math.max(1, grid[grid.length - 1].f1);
     filters.push(`[${cv}]tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=N/(${fps}*TB)[rawframes]`);
     return {
       args: ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'),
@@ -637,12 +701,13 @@ function buildExportArgs(project, outFile, opts = {}) {
     const start = Math.max(0, c.start);
     if (start >= total - 0.01) return;
     const tag = `o${j}`;
-    const src = pictureSource(c, m, len, fps, addInput, filters, `o${j}`, W, H);
+    const startFrame = Math.round(start * fps);
+    const src = pictureSource(c, m, len, fps, addInput, filters, `o${j}`, W, H, start - startFrame / fps);
     // A trim/speed conversion can end between frame ticks (especially an EOF
     // trim of reversed media). Give the layer's timed canvas a final picture to
     // sample rather than allowing shortest=1 to truncate every following layer.
-    filters.push(`${src.chain},fps=${fps},tpad=stop_mode=clone:stop=1[os${j}]`);
-    const idx = src.own ? src.idx : m.hasAudio && !c.muted && m.type === 'video' ? addInput(['-ss', num(c.in), '-i', m.path]) : src.idx;
+    filters.push(`${src.chain},fps=${fps}:start_time=0,tpad=stop_mode=clone:stop=1[os${j}]`);
+    const idx = src.own ? src.idx : m.hasAudio && !c.muted && m.type === 'video' ? addInput(['-ss', num(seekTo(c.in)), '-i', m.path]) : src.idx;
     const maskFile = project.maskFiles && project.maskFiles[c.id];
     const maskIdx = maskFile ? addInput(['-loop', '1', '-framerate', String(fps), '-t', num(len), '-i', maskFile]) : null;
     const decoFile = maskFile && project.decoFiles && project.decoFiles[c.id];
@@ -654,7 +719,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     filters.push(...layer.filters);
     // Transparent frames before and after, so the layer lines up with the video frame for frame.
     const after = Math.max(0, total - start - len);
-    filters.push(`[${layer.out}]tpad=start_duration=${num(start)}:stop_duration=${num(after)}:start_mode=add:stop_mode=add:color=black@0,trim=duration=${num(total)}[op${j}]`);
+    filters.push(`[${layer.out}]tpad=start=${startFrame}:stop_duration=${num(after)}:start_mode=add:stop_mode=add:color=black@0,trim=duration=${num(total)}[op${j}]`);
     filters.push(...layers.composite({ base: cv, layer: `op${j}`, blend: c.blend, tag, out: `ov${j}`, rgb: true, active:[start,start+len] }));
     cv = `ov${j}`;
     rgbComposited = true;
@@ -680,14 +745,11 @@ function buildExportArgs(project, outFile, opts = {}) {
     const enhP = enhancePathOf(c);
     // B1: the media input is input-seeked to c.in (the enhanced render is pre-trimmed),
     // so the trim runs from 0 in both cases.
-    const idx = addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', mediaById[c.mediaId].path]);
+    const idx = addInput(enhP ? ['-i', enhP] : ['-ss', num(seekTo(c.in)), '-i', mediaById[c.mediaId].path]);
     const len = (c.out - c.in) / speedOf(c); // timeline length (audio clips carry a speed, e.g. detached ones)
     const delay = Math.round(c.start * 1000);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`];
-    chain.push(...audioFadeFilters(c, len, num));
-    chain.push(...audioFxFilters(c.audioFx), ...audioAutomationFilters(c));
-    chain.push('aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', `adelay=${delay}|${delay}`);
+    const chain = [...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[m${j}]`);
     mixLabels.push(`[m${j}]`);
   });
@@ -696,8 +758,7 @@ function buildExportArgs(project, outFile, opts = {}) {
     const up = monoUp(mediaById[c.mediaId], !!enh);
     // B1: idx always names an input seeked to c.in (or the pre-trimmed enhanced render),
     // so the trim runs from 0.
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(sp), `volume=${gainOf(c)}`, ...audioFadeFilters(c, len, num),
-      'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo', ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c), `adelay=${delay}|${delay}`];
+    const chain = [...sourceAudio(c.out - c.in, enh ? 0 : seekRest(c.in)), ...clipAudioBody({ ...c, speed: sp }, len, up), `adelay=${delay}|${delay}`];
     filters.push(`[${idx}:a]${chain.join(',')}[oa${j}]`);
     mixLabels.push(`[oa${j}]`);
   });
@@ -752,24 +813,23 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   const mix = [];
   let n = 0;
   const addInput = (args) => { inputs.push(...args); return n++; };
-  const fmt = 'aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo';
   let sound = false;
 
   const clips = timedMain(project.videoClips.filter((c) => c.gap || mediaById[c.mediaId]));
   const overlays = (project.overlayClips || []).filter(timed), tracks = (project.audioClips || []).filter(timed);
   if (clips.length) {
+    const grid = mainGrid(clips, positive(project.fps, 30));
     clips.forEach((clip, i) => {
       const m = mediaById[clip.mediaId];
       const has = m && m.type === 'video' && m.hasAudio && !clip.muted && !clip.gap;
       if (has) sound = true;
       const enhP = has && enhancePathOf(clip);
       // B1: seek the media input to the clip start; clipAudioFilter trims from 0.
-      filters.push(clipAudioFilter(clip, m, has ? addInput(['-ss', num(clip.in), '-i', m.path]) : -1, i, enhP ? addInput(['-i', enhP]) : -1, true));
+      filters.push(clipAudioFilter(clip, m, has ? addInput(['-ss', num(seekTo(clip.in)), '-i', m.path]) : -1, i, enhP ? addInput(['-i', enhP]) : -1, true, grid[i].s1 - grid[i].s0));
     });
     let ca = 'a0';
     for (let i = 1; i < clips.length; i++) {
-      const td = transitionDur(clips, i);
-      filters.push(td > 0 ? `[${ca}][a${i}]acrossfade=d=${num(td)}[ja${i}]` : `[${ca}][a${i}]concat=n=2:v=0:a=1[ja${i}]`);
+      filters.push(joinAudio(ca, `a${i}`, grid[i - 1].s1 - grid[i].s0, `ja${i}`));
       ca = `ja${i}`;
     }
     mix.push(`[${ca}]`);
@@ -781,7 +841,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const delay = Math.round(Math.max(0, c.start) * 1000);
     const enhP = enhancePathOf(c);
     const upO = monoUp(m, !!enhP);
-    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', m.path])}:a]atrim=start=0:end=${num(c.out - c.in)},asetpts=PTS-STARTPTS,${[...(upO ? [upO] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`, ...audioFadeFilters(c, clipLen(c), num), ...audioFxFilters(c.audioFx), ...audioAutomationFilters(c)].join(',')},${fmt},adelay=${delay}|${delay}[oa${j}]`);
+    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(seekTo(c.in)), '-i', m.path])}:a]${[...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, clipLen(c), upO)].join(',')},adelay=${delay}|${delay}[oa${j}]`);
     mix.push(`[oa${j}]`);
   });
   tracks.filter((c) => !c.muted && mediaById[c.mediaId]).forEach((c, j) => {
@@ -790,10 +850,8 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
     const delay = Math.round(c.start * 1000);
     const enhP = enhancePathOf(c);
     const up = monoUp(mediaById[c.mediaId], !!enhP);
-    const chain = [`atrim=start=0:end=${num(c.out - c.in)}`, 'asetpts=PTS-STARTPTS', ...(up ? [up] : []), ...atempo(speedOf(c)), `volume=${gainOf(c)}`];
-    chain.push(...audioFadeFilters(c, len, num));
-    chain.push(...audioFxFilters(c.audioFx), ...audioAutomationFilters(c));
-    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(c.in), '-i', mediaById[c.mediaId].path])}:a]${chain.join(',')},${fmt},adelay=${delay}|${delay}[m${j}]`);
+    const chain = [...sourceAudio(c.out - c.in, enhP ? 0 : seekRest(c.in)), ...clipAudioBody(c, len, up)];
+    filters.push(`[${addInput(enhP ? ['-i', enhP] : ['-ss', num(seekTo(c.in)), '-i', mediaById[c.mediaId].path])}:a]${chain.join(',')},adelay=${delay}|${delay}[m${j}]`);
     mix.push(`[m${j}]`);
   });
   if (!sound) throw new Error('Nothing to export: no clip on the timeline has sound.');

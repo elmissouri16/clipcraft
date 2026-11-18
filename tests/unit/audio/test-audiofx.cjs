@@ -20,7 +20,7 @@ assert.deepEqual(audioFxFilters({ highpass: 80 }), ['highpass=f=80']);
 assert.deepEqual(audioFxFilters({ highpass: 10 }), [], 'a sub-20 Hz high-pass is off, not a filter');
 assert.deepEqual(audioFxFilters({ lowpass: 12000 }), ['lowpass=f=12000']);
 assert.deepEqual(audioFxFilters({ lowpass: 20000 }), [], 'a 20 kHz low-pass is off, not a filter');
-assert.deepEqual(audioFxFilters({ loudnorm: true }), ['aformat=channel_layouts=stereo', 'loudnorm=I=-14:TP=-1:LRA=11', 'aresample=48000']);
+assert.deepEqual(audioFxFilters({ loudnorm: true }), ['aformat=channel_layouts=stereo', 'loudnorm=I=-14:TP=-1:LRA=11', 'aresample=48000', 'aformat=sample_fmts=fltp:channel_layouts=stereo']);
 assert.deepEqual(audioFxFilters({ highpass: 5000 }), ['highpass=f=1000'], 'high-pass clamps at 1 kHz');
 
 // Presets: complete fx objects whose chains carry their signature filters.

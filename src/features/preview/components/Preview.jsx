@@ -343,7 +343,11 @@ export default function Preview({
     lastApply.current = { t, playing: isPlaying };
     leadRef.current = null;
     const enhSounding = new Set(); // enhanced picture clips heard at t; the rest get paused below
-    const active = mainIndex.at(t).filter(l => mediaById[l.clip.mediaId]);
+    // A transition from or into a gap (a deleted, deactivated or hidden clip) runs against the
+    // background, as the export's xfade with the gap's background frames does: the gap takes a
+    // slot of its own, filled with the background colour, for the transition's length.
+    const here = mainIndex.at(t), crossing = here.length === 2 && here[1].trans > 0;
+    const active = here.filter(l => mediaById[l.clip.mediaId] || (crossing && l.clip.gap));
     const incoming = active.length === 2 ? active[1] : null;
     const fxTr = incoming && incoming.trans > 0 ? fxTransition(incoming.clip.transition.type,incoming.clip.transition) : null;
     const tr = incoming && incoming.trans > 0 && !fxTr ? transitionStyles(incoming.clip.transition.type, (t - incoming.start) / incoming.trans) : null;
@@ -368,6 +372,16 @@ export default function Preview({
       const fx = c.effects || [];
       slot.style.visibility = 'visible';
       slot.style.zIndex = item === incoming ? 2 : 1;
+      slot.style.background = c.gap ? project.background : '';
+      layer.style.display = c.gap ? 'none' : '';
+      if (decos[k].current) decos[k].current.style.display = c.gap ? 'none' : '';
+      if (c.gap) {
+        if (!v.paused) v.pause();
+        slot.style.filter = '';
+        slot.style.mixBlendMode = '';
+        if (tr) Object.assign(slot.style, item === incoming ? tr.in : tr.out);
+        return;
+      }
       slot.style.filter = clipCss(c);
       slot.style.mixBlendMode = blendOf(c).css;
       const motionNow = (hasMotion(c) || c.pin) ? stateAtPinned(project, { track: 'video', clip: c }, t - item.start, clipLen(c)) : undefined;
@@ -429,6 +443,12 @@ export default function Preview({
         const m = mediaById[item.clip.mediaId];
         let off = trBufs.current[key];
         if (!off || off.width !== pw || off.height !== ph) { off = document.createElement('canvas'); off.width = pw; off.height = ph; trBufs.current[key] = off; }
+        if (item.clip.gap) {
+          const g = off.getContext('2d');
+          g.fillStyle = project.background || '#000000'; g.fillRect(0, 0, pw, ph);
+          off.dataset.renderError = '';
+          return off;
+        }
         const kc = keyed[k].current;
         const srcEl = kc.style.display === 'block' ? kc : m.type === 'image' ? imgs[k].current : vids[k].current;
         const motion = (hasMotion(item.clip) || item.clip.pin) ? stateAtPinned(project, {track:'video',clip:item.clip},t-item.start,clipLen(item.clip)) : undefined;

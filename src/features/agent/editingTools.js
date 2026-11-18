@@ -2,7 +2,8 @@
 // All writes use the runner's guarded dispatch; no direct store mutation here.
 import { LAYERED, clipLayer, clipLen, freeLen, findLinkPartner, isLayerLocked, layerCount, layerFree, layerStateOf, uid, videoLayout, MIN_CLIP } from '../../state/store.js';
 import { stateAt } from '../timeline/anim.js';
-import { sliceFades, volumeAt } from '../audio/fades.js';
+import { sliceFades } from '../audio/fades.js';
+import { reverseUpdates, unreverseUpdates } from '../timeline/reverse.js';
 
 const S = { type: 'STRING' }, N = { type: 'NUMBER' }, B = { type: 'BOOLEAN' };
 export const EDITING_DECLARATIONS = [{
@@ -189,11 +190,8 @@ export function createEditingTools(env) {
         const media = p.media.find(m => m.id === c.mediaId);
         if (!media || media.type === 'image') throw Error('Reverse requires a video or audio source.');
         if (c.reversed) {
-          const saved = c.reversed;
-          dispatch({ type: 'update', track: found.track, id: c.id, patch: {
-            mediaId: saved.mediaId, in: saved.in, out: saved.out, reversed: null,
-            ...(saved.original ? saved.original : {}),
-          } });
+          // Back to the original, on the part of it this clip (or this piece of it) plays now.
+          dispatch({ type: 'updateMany', updates: unreverseUpdates(p, found.track, c) });
           return after({ clip_id: c.id, reversed: false });
         }
         if (!api.agentMediaJob) throw Error('Restart ClipCraft to load agent media jobs.');
@@ -204,20 +202,7 @@ export function createEditingTools(env) {
         const nextMedia = env.addProbed({ ...result, origin: 'reverse' });
         if (!nextMedia) throw Error('The reversed media could not be imported.');
         await settle();
-        const keyframes = c.keyframes && Object.fromEntries(Object.entries(c.keyframes).map(([key, keys]) => [key, keys.map(k => ({ ...k, t: k.t - c.in }))]));
-        const track = c.track?.points ? { ...c.track, points: c.track.points.map(point => ({ ...point, t: c.out - point.t })).sort((a, b) => a.t - b.t) } : c.track;
-        let volumeKeys = c.volumeKeys;
-        if (volumeKeys?.length) {
-          const keys = volumeKeys.filter(k => k.t >= c.in && k.t <= c.out);
-          if (volumeKeys[0].t < c.in && !keys.some(k => k.t === c.in)) keys.unshift({ t: c.in, v: volumeAt(volumeKeys, c.in) });
-          if (volumeKeys.at(-1).t > c.out && !keys.some(k => k.t === c.out)) keys.push({ t: c.out, v: volumeAt(volumeKeys, c.out) });
-          volumeKeys = keys.map(k => ({ t: c.out - k.t, v: k.v })).reverse();
-        }
-        dispatch({ type: 'update', track: found.track, id: c.id, patch: {
-          mediaId: nextMedia.id, in: 0, out: Math.min(sourceLength, result.duration), keyframes, track, enhance: undefined,
-          volumeKeys,
-          reversed: { mediaId: c.mediaId, in: c.in, out: c.out, original: { keyframes: c.keyframes, track: c.track, enhance: c.enhance, volumeKeys: c.volumeKeys } },
-        } });
+        dispatch({ type: 'updateMany', updates: reverseUpdates(project(), found.track, c, nextMedia) });
         return after({ clip_id: c.id, reversed: true, media_id: nextMedia.id });
       }
       throw Error('Unknown extended clip operation.');

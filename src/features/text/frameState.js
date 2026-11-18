@@ -32,6 +32,10 @@ export function createTextFrameState(project, overlayRanges = []) {
         const count = String(style.text || '').trim().split(/\s+/).filter(Boolean).length;
         const times = style.words?.length === count ? style.words : Array.from({ length: count }, (_, i) => ({ start: i * clip.duration / count }));
         for (let i = 0; i < times.length; i++) if (times[i].start <= local) word = i;
+        // The reveal and single highlights pop each word in over its first moments (render.js):
+        // those frames change with time, not only with the word.
+        const pop = style.highlight.mode === 'reveal' ? 0.15 : style.highlight.mode === 'single' ? 0.12 : 0;
+        if (pop && word >= 0 && local - times[word].start < pop) dynamic = true;
       }
       return `${index}:${word}`;
     }).join('|');

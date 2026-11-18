@@ -976,7 +976,7 @@ export function createToolRunner(ctx) {
       const coveredSec = audible ? audible.reduce((n, a) => n + Math.max(0, Math.min(total, a.end) - Math.max(0, a.start)), 0) : total;
       const scope = audible && coveredSec < total - 0.05 ? { analyzed_sec: r2(coveredSec), note: `Only pauses inside the ${r2(coveredSec)} s where the selected audio plays were considered; the rest of the timeline was left untouched.` } : {};
       if (!ranges.length) return { ok: true, removed_count: 0, removed_sec: 0, ...scope, note: scope.note || 'No silence long enough was found.' };
-      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or has no editable footage.' };
+      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track, has no editable footage, or cuts inside a transition overlap (cut outside it or remove that transition first).' };
       dispatch({ type: 'cutRanges', ranges, ripple: true });
       await ctx.settle();
       return after({ removed_count: ranges.length, removed_sec: r2(total - exportDuration(project())), source, ...scope });
@@ -986,7 +986,7 @@ export function createToolRunner(ctx) {
       const total = exportDuration(project()), range = normalizedRange(start_sec, end_sec, total);
       if (range.error) return range;
       const ranges = [range];
-      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track.' };
+      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or cuts inside a transition overlap (cut outside it or remove that transition first).' };
       dispatch({ type: 'cutRanges', ranges, ripple: true });
       await ctx.settle();
       return after({ removed_sec: r2(total - exportDuration(project())) });
@@ -999,7 +999,7 @@ export function createToolRunner(ctx) {
       const invalid = list.find(r => r.error); if (invalid) return invalid;
       const cuts = complementRanges(list, total);
       if (cuts.length) {
-        if (cutRanges(project(), cuts, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track.' };
+        if (cutRanges(project(), cuts, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or cuts inside a transition overlap (cut outside it or remove that transition first).' };
         dispatch({ type: 'cutRanges', ranges: cuts, ripple: true });
       }
       return after({ kept_ranges: list.length });
