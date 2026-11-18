@@ -15,7 +15,7 @@ async function closeContents(wc,force,owner){
 }
 class ExtensionViews{
  constructor({runtime,manager,ipcMain,WebContentsView,session,getWindow,sandboxEnabled=true,deadlineMs=10000}){
-  Object.assign(this,{runtime,manager,WebContentsView,session,getWindow,sandboxEnabled,deadlineMs});this.sessions=new ExtensionViewSessions(session);this.lifecycle=Symbol();this.active=new Map();this.pending=new Map();this.selected=null;this.onChanged=()=>{};
+  Object.assign(this,{runtime,manager,WebContentsView,session,getWindow,sandboxEnabled,deadlineMs});this.sessions=new ExtensionViewSessions(session);this.lifecycle=Symbol();this.active=new Map();this.activating=new Set();this.pending=new Map();this.selected=null;this.onChanged=()=>{};
   const owned=(event,token,boot=false)=>{const job=this.senders?.get(event.sender.id);if(!job||job.closed||event.sender!==job.view.webContents||event.senderFrame!==event.sender.mainFrame||event.senderFrame?.origin!==job.origin||!this.live(job)||!boot&&job.token!==token)throw Error('Extension view is unavailable');return job;};this.senders=new Map();
   ipcMain.handle('extensionView:boot',(event,sandboxed)=>{const job=owned(event,null,true);if(job.booted||sandboxed!==true||event.sender.getOSProcessId()===job.owner.getOSProcessId()){this.close(job.id,'View requires a separate sandboxed renderer');throw Error('Extension view sandbox unavailable');}job.booted=true;job.lastBeat=Date.now();job.view.webContents.send('extensionView:shortcuts',[...(job.shortcuts||[])]);return {apiVersion:1,token:job.token,id:job.id,title:job.data.title,extensionId:job.extension.manifest.id,theme:job.theme};});
   ipcMain.handle('extensionView:call',async(event,token,method,input)=>{
@@ -39,7 +39,7 @@ class ExtensionViews{
  async openView(id){
   const lifecycle=this.lifecycle;
   if(!this.sandboxEnabled)throw Error('Extension views require Electron process sandboxing');
-  if(!this.runtime.ui.list().some(entry=>entry.kind==='view'&&entry.id===id)){const declared=(await this.catalog()).items.find(entry=>entry.id===id);if(declared&&!(await this.runtime.trustData())[declared.key])throw Error('Trust this extension in Plugins before opening its views');await this.runtime.activate('view:'+id);}
+  if(!this.runtime.ui.list().some(entry=>entry.kind==='view'&&entry.id===id)){const declared=(await this.catalog()).items.find(entry=>entry.id===id);if(declared&&!(await this.runtime.trustData())[declared.key])throw Error('Trust this extension in Plugins before opening its views');this.activating.add(id);try{await this.runtime.activate('view:'+id);}finally{this.activating.delete(id);}}
   const entry=this.runtime.ui.entry('view',id),extension=entry.job,data=entry.data;
   const bundle=await this.manager.commandBundle(extension.key);if(this.runtime.ui.entry('view',id,extension)!==entry)throw Error('View registration changed while opening');
   if(this.active.size>=16)throw Error('Close an extension view before opening another');if(!bundle.files.has(data.entry))throw Error('Extension view entry is missing from its package');
@@ -55,6 +55,9 @@ class ExtensionViews{
    job={id,origin,instance:crypto.randomUUID(),requests:new Set(),deliveries:new Map(),deliverySequence:0,incomingBytes:0,outgoingBytes:0,outgoing:0,outgoingStart:Date.now(),data,local:id.slice(extension.manifest.id.length+1),extension,view,ownerWindow,owner:ownerWindow.webContents,session:ses,disposeProtocol,releaseSession:lease.release,token:crypto.randomBytes(24).toString('hex'),closed:false,theme:DEFAULT_THEME,lastBeat:Date.now(),lastCheck:Date.now(),ack:0,sequence:0,inflight:0,calls:0,rateStart:Date.now()};
    job.ownerGone=()=>this.close(id);job.resized=()=>{if(!job.closed){view.setVisible(false);this.notify({type:'layout',id});}};
    this.active.set(id,job);this.senders.set(wc.id,job);markExtensionViewSender(wc);wc.setWindowOpenHandler(denyPopup);for(const event of ['will-navigate','will-frame-navigate','will-attach-webview'])wc.on(event,preventNativeEvent);
+   // A view has no console the author can see. Script errors (a blocked inline script, an exception
+   // in the view code) go to the owning extension's log, a bounded number per view.
+   let reported=0;wc.on('console-message',(event,legacyLevel,legacyMessage)=>{const level=event?.level??legacyLevel,message=event?.message??legacyMessage;if((level==='error'||level===3)&&reported++<20)try{this.runtime.log(job.extension,('View '+id+': '+String(message)).slice(0,2000),'error');}catch{}});
    wc.once('render-process-gone',()=>this.close(id,'The extension view renderer stopped'));wc.once('destroyed',()=>this.close(id,'The extension view closed'));
    for(const event of ['destroyed','render-process-gone','did-start-navigation'])job.owner.on(event,job.ownerGone);ownerWindow.on('resize',job.resized);ownerWindow.contentView.addChildView(view);view.setBounds({x:0,y:0,width:1,height:1});view.setVisible(false);
    job.timer=setInterval(()=>{if(!this.live(job))return this.close(id);const now=Date.now();if(now-job.lastCheck>2500)job.lastBeat=now;job.lastCheck=now;if(now-job.lastBeat>this.deadlineMs)return this.close(id,'The extension view stopped responding',true);if(job.booted)wc.send('extensionView:pulse',++job.sequence);},1000);
@@ -65,7 +68,7 @@ class ExtensionViews{
    throw error;
   }
  }
- async reveal(id){await this.open(id);const job=this.active.get(id);if(!job||!this.live(job))throw Error('Extension view stopped');this.selected=id;job.focusRequested=true;if(job.view.getVisible()){job.view.webContents.focus();job.focusRequested=false;}this.notify({type:'reveal',id});this.onChanged();return true;}
+ async reveal(id){if(this.activating.has(id)){this.selected=id;return true;}await this.open(id);const job=this.active.get(id);if(!job||!this.live(job))throw Error('Extension view stopped');this.selected=id;job.focusRequested=true;if(job.view.getVisible()){job.view.webContents.focus();job.focusRequested=false;}this.notify({type:'reveal',id});this.onChanged();return true;}
  post(extension,id,input){
   const job=this.active.get(id);if(!job||job.extension!==extension||!this.live(job))return Promise.resolve(false);
   if(Date.now()-job.outgoingStart>60000){job.outgoingStart=Date.now();job.outgoing=0;job.outgoingBytes=0;}

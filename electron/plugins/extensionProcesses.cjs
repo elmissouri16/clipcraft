@@ -22,7 +22,11 @@ class ExtensionProcesses {
    const collect=stream=>chunk=>{record.bytes+=chunk.length;if(record.bytes>limit){record.error=Error('Managed process output exceeded its limit');this.terminate(record);}else record[stream].push(chunk);};
    child.stdout.on('data',collect('stdout'));child.stderr.on('data',collect('stderr'));child.stdin.on('error',()=>{});
    child.on('error',error=>{record.error=error;});
-   child.on('close',(code,signal)=>{record.closed=true;clearTimeout(record.timer);record.error?reject(record.error):resolve({code,signal,stdout:Buffer.concat(record.stdout).toString('utf8'),stderr:Buffer.concat(record.stderr).toString('utf8')});});
+   // 'close' waits for every holder of the output pipes. A descendant that outlives the program
+   // (a daemon it started, a background job) would keep the result pending forever and block Stop,
+   // so shortly after the program itself exits its pipes are released.
+   child.on('exit',()=>{record.exitTimer=setTimeout(()=>{if(!record.closed){child.stdout.destroy();child.stderr.destroy();}},250);});
+   child.on('close',(code,signal)=>{record.closed=true;clearTimeout(record.timer);clearTimeout(record.exitTimer);record.error?reject(record.error):resolve({code,signal,stdout:Buffer.concat(record.stdout).toString('utf8'),stderr:Buffer.concat(record.stderr).toString('utf8')});});
   });record.result.catch(()=>{});
   record.timer=setTimeout(()=>{record.error=Error('Managed process timed out');this.terminate(record);},timeout);
   child.stdin.end(input.stdin??'');

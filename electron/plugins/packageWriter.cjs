@@ -12,7 +12,11 @@ async function writePackage(bundle,target,{signal,requireTgz=true}={}){
   // The pipeline owns the stream and its descriptor on success/error/abort.
   // Mixing a numeric fd with manual FileHandle.close masked cap errors as EBADF.
   await pipeline(tar.c({cwd:stage,gzip:true,portable:true},[...bundle.files.keys()]),cap,createWriteStream(archive,{flags:'wx'}),{signal});
-  signal?.throwIfAborted();await fs.link(archive,target);
+  signal?.throwIfAborted();
+  // A hard link publishes atomically and never overwrites. Volumes without hard links (FAT, exFAT,
+  // some network shares) get an exclusive copy, which still refuses an existing destination.
+  try{await fs.link(archive,target);}
+  catch(error){if(!['ENOTSUP','EOPNOTSUPP','EPERM','EXDEV'].includes(error.code))throw error;await fs.copyFile(archive,target,require('node:fs').constants.COPYFILE_EXCL);}
   return {path:target,bytes:total,key:bundle.key};
  }finally{await fs.rm(stage,{recursive:true,force:true});if(publication)await fs.rm(publication,{recursive:true,force:true});}
 }

@@ -66,7 +66,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   };
 
   app.on?.('before-quit',()=>extensions.dispose());
-  ready.then(()=>app.whenReady?.()).then(()=>extensions.activate('startup')).catch(console.error);
+  ready.then(()=>app.whenReady?.()).then(()=>extensions.activate('startup',{continueOnError:true})).catch(console.error);
 
   const previewCache=new (require('./previewCache.cjs').PreviewCache)(manager);
   app.on?.('before-quit',()=>previewCache.dispose());
@@ -86,10 +86,15 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
     await ready;
     const changing=['install','installDependency','installCreatedPack','enable','remove','recover'].includes(name);
     const releaseEvents=changing?extensions.events.hold():()=>{};
+    // A catalog change stops every extension so no package is replaced under a running process.
+    // The ones that were running come back afterwards (also when the user cancels the picker);
+    // a removed, disabled or explicitly stopped package simply does not start again.
+    const resume=changing?[...extensions.active.values()].filter(job=>!extensions.suspended.has(job.key)).map(job=>job.key):[];
     let primary;
     try{if(changing)await extensions.dispose({temporary:true});return await fn(...args);}
     catch(error){primary=error;throw error;}
-    finally{if(changing){try{await manager.refreshAiCatalog?.();}catch(error){if(!primary)throw error;}finally{extensions.events.invalidate();releaseEvents();const wc=getWindow()?.webContents;try{if(wc&&!wc.isDestroyed?.())wc.send('plugins:changed');}catch{}}}}
+    finally{if(changing){try{await manager.refreshAiCatalog?.();}catch(error){if(!primary)throw error;}finally{extensions.events.invalidate();releaseEvents();const wc=getWindow()?.webContents;try{if(wc&&!wc.isDestroyed?.())wc.send('plugins:changed');}catch{}
+      extensions.resuming=(async()=>{for(const key of resume)await extensions.start(key,{automatic:true}).catch(()=>{});await extensions.activate('startup',{continueOnError:true}).catch(()=>{});})();}}}
   });
   handle('development',()=>development.snapshot());
   handle('beginAuthorExport',request=>authoring.export(request));
@@ -130,7 +135,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
       // Opening one extension's configuration activates only that already-trusted
       // package. Explicit Stop remains final until the user activates it again.
       if((await extensions.trustData())[key]&&!extensions.suspended.has(key))await extensions.start(key,{automatic:true});
-    }else if(typeof location==='string')await extensions.activate('ui:'+location);
+    }else if(typeof location==='string')await extensions.activate('ui:'+location,{continueOnError:true});
     return extensions.ui.list();
   });
   handle('extensionSettingsRead',id=>extensions.ui.settings(id));

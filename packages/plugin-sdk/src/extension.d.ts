@@ -1,4 +1,5 @@
 import type {EditorSnapshot,ClipTransaction} from './index.js';
+export type {EditorSnapshot,EditorClip,EditorTrack,EditorLane,ClipTransaction,ClipEdit,LinkedClipPair,ClipTextStyle,ClipPictureTransform,ClipAudioProperties,ClipCurvePoint,ClipCurveProperty} from './index.js';
 /** Trusted Node host APIs. Development contract; stable v1 acceptance is pending. */
 export interface HostCapabilities {apiVersion:1;features:Readonly<Record<string,number|undefined>>}
 export type ServiceSchema=
@@ -27,7 +28,7 @@ export interface ServiceClient<C extends ServiceContract>{
 export interface ServiceDescription {id:string;extensionId:string;host?:boolean;contract?:ServiceContract;[key:string]:unknown}
 export declare function defineServiceContract<const C extends ServiceContract>(contract:C):C;
 export type ConfigurationScope={scope?:'global';documentId?:never}|{scope:'project';documentId:string};
-/** A host-rendered message. Dismissal, expiry, cancellation or stop returns undefined. */
+/** A host-rendered message. Dismissal, expiry, cancellation or stop returns undefined. message and detail are single lines without control characters; at most three actions; timeoutMs 1–240 s; at most three messages wait at once. */
 export interface ExtensionMessage {message:string;detail?:string;kind?:'info'|'warning'|'error';actions?:{id:string;title:string}[];timeoutMs?:number}
 export interface Disposable {dispose():void|Promise<void>}
 export interface JobContext {signal:AbortSignal;progress(fraction:number,message?:string):Promise<void>}
@@ -45,6 +46,7 @@ export interface FilePublicationOptions {path:string;destination:string;overwrit
 export interface ExtensionHostInfo {appVersion:string;apiVersion:1;platform:'aix'|'android'|'darwin'|'freebsd'|'haiku'|'linux'|'openbsd'|'sunos'|'win32'|'cygwin'|'netbsd';arch:string;tools:{ffmpeg:string;ffprobe:string}}
 export interface NativeActionContext {location:'context';editor:EditorSnapshot;clipId:string|null}
 export type NativeUiLocation='toolbar'|'inspector'|'context'|'export'|'settings.voice'|'settings.plugins';
+/** default is shown in the form and returned by configuration.get until the user changes the value. */
 export interface NativeSettingField {key:string;label:string;type:'string'|'secret'|'number'|'boolean'|'select';description?:string;default?:string|number|boolean;min?:number;max?:number;step?:number;options?:{label:string;value:string}[]}
 /** Consistency anchor for complete document inspection, independent of playback/selection. */
 export interface InspectionScope {documentId:string;projectRevision:number}
@@ -100,14 +102,28 @@ export interface ExtensionEventMap {
  'extension.changed':{extensionId:string;key:string;generation:string;state:'activating'|'running'|'stopping'|'stopped'};
  'export.changed':{operationId:string;documentId:string;status:'preparing'|'rendering'|'completed'|'canceled'|'failed';progress?:number;phase?:string;phaseProgress?:number;stage?:string;elapsedSeconds?:number;remainingSeconds?:number|null;file?:string;size?:number;metadata?:ExtensionExportResult['metadata'];error?:string;review?:boolean};
 }
+/** One of the editor's own tools: the set CraftAI uses (text, transitions, filters, colour, keyframes, effects, audio, project settings…). parameters is its JSON schema. */
+export interface EditorToolDescription {name:string;description:string;parameters:unknown}
+export interface EditorToolCall {name:string;args?:Record<string,unknown>}
+/** One result per call that ran, in order. A failed call's result has an error string. */
+export interface EditorToolRun {results:Record<string,unknown>[];changed:boolean}
+export interface EditorTools {
+ /** The tools this editor version offers. Read it at run time; names and schemas follow the application. */
+ list():Promise<EditorToolDescription[]>;
+ /** Runs 1–64 calls in order as one edit and one Undo step. Every write is validated by the editor.
+  * atomic (default true): the first failing call rolls back the whole run and rejects.
+  * atomic false: each result is returned; a failed call has an error and later calls still run.
+  * Rejects while CraftAI, an outside agent or a drag holds the editor, and inside save/export hooks. */
+ run(calls:EditorToolCall|EditorToolCall[],options?:{atomic?:boolean}):Promise<EditorToolRun>;
+}
 export interface ExtensionContext {
  readonly extension:{id:string;path:string;storagePath:string;generation:string};
  readonly subscriptions:Disposable[];
  host:{read():Promise<ExtensionHostInfo>;capabilities():Promise<HostCapabilities>};
  files:{publish(input:FilePublicationOptions,options?:{signal?:AbortSignal}):Promise<PublishedFile>};
- editor:{read(input?:{clipIds:string[]}):Promise<EditorSnapshot>;apply(transaction:ClipTransaction):Promise<{applied:number}>};
+ editor:{read(input?:{clipIds:string[]}):Promise<EditorSnapshot>;apply(transaction:ClipTransaction):Promise<{applied:number}>;tools:EditorTools};
  workspace:{read():Promise<{documentId:string;name:string;width:number;height:number;fps:number;duration_sec:number;export_duration_sec:number}>;inspect<S extends InspectionSection>(input:InspectionRequest<S>):Promise<InspectionPage<S>>;readValue(input:InspectionValueRequest):Promise<InspectionValuePage>};
- media:{import(input:({path:string;bytes?:never}|{path?:never;bytes:Uint8Array})&{name?:string}):Promise<MediaArtifact>;preview(input:{id:string;autoplay?:boolean}):Promise<{shown:true}>;insert(input:MediaPlacement):Promise<{mediaId:string;clipId:string;lane:'video'|'overlay'|'audio'}>;release(input:{id:string}):Promise<boolean>};
+ media:{/** With bytes, name is required and its suffix selects the format. A picture that does not decode is refused. */import(input:({path:string;bytes?:never}|{path?:never;bytes:Uint8Array})&{name?:string}):Promise<MediaArtifact>;preview(input:{id:string;autoplay?:boolean}):Promise<{shown:true}>;/** handle is the public clip handle for editor.read/apply. The lane defaults to the named track's. A placement that does not fit on that track is refused. */insert(input:MediaPlacement):Promise<{mediaId:string;clipId:string;handle?:string;lane:'video'|'overlay'|'audio'}>;release(input:{id:string}):Promise<boolean>};
  captions:{read(input?:{trackId?:string;cursor?:number;limit?:number}):Promise<{documentId:string;revision:number;total:number;next:number|null;cues:(CaptionCueInput&{id:string|null})[]}>;write(input:CaptionWriteInput):Promise<{written:number;trackId?:string}>};
  markers:{apply(transaction:MarkerTransaction):Promise<{applied:number}>};
  exports:{render(input?:ExtensionExportOptions,options?:{signal?:AbortSignal;onProgress?:(progress:ExtensionExportProgress)=>void}):Promise<ExtensionExportResult>};
@@ -118,7 +134,9 @@ export interface ExtensionContext {
  services:{register(id:string,implementation:Record<string,(input:any,context:{signal:AbortSignal})=>any>,metadata?:Record<string,unknown>):Promise<Disposable>;registerTyped<const C extends ServiceContract>(id:string,contract:C,implementation:ServiceImplementation<C>,metadata?:Record<string,unknown>):Promise<Disposable>;connect<const C extends ServiceContract>(id:string,contract:C):Promise<ServiceClient<C>>;describe(id:string):Promise<ServiceDescription>;list():Promise<ServiceDescription[]>;call<T=unknown>(id:string,method:string,input?:unknown):Promise<T>;stream<T=unknown>(id:string,method:string,input?:unknown,options?:{signal?:AbortSignal}):AsyncIterable<T>};
  configuration:{get<T=unknown>(key:string,options?:ConfigurationScope):Promise<T|undefined>;update(input:{key:string;value:unknown}&ConfigurationScope):Promise<boolean>};
  secrets:{get(key:string):Promise<string|undefined>;store(input:{key:string;value:string}):Promise<boolean>;delete(key:string):Promise<boolean>};
+ /** timeoutMs 1 ms–30 min (default 5 min); stdout and stderr share maxOutputBytes (default 1 MiB, at most 8 MiB); stdin at most 1 MiB. result rejects on timeout, kill, abort or output overflow. */
  processes:{spawn(input:{file:string;args:string[];cwd?:string;env?:Record<string,string>;stdin?:string;timeoutMs?:number;maxOutputBytes?:number;signal?:AbortSignal}):Promise<{id:string;pid:number|null;result:Promise<{code:number|null;signal:string|null;stdout:string;stderr:string}>;kill():Promise<boolean>}>};
+ /** Long work belongs here: a command has five minutes, and time spent in a job, a managed process, a dialog, a message, an export, another extension or editor.tools.run does not count against it. timeoutMs 1 s–30 min. */
  jobs:{run<T>(title:string,work:(context:JobContext)=>Promise<T>,options?:{timeoutMs?:number;signal?:AbortSignal}):Promise<T>};
  log(message:string,level?:'info'|'warning'|'error'):Promise<void>;
 }

@@ -123,6 +123,10 @@ class PluginManager {
       if(bootstrap&&rows.some(row=>row.key===key&&row.recovered))return this.list();
       if(rows.some(row=>row.key===key&&row.removing))throw Error('Plugin removal is pending. Retry removal before reinstalling this version.');
       const current=await this.list();
+      // An ID is one publisher's. Accepting another publisher's package as an "update" would disable
+      // the original and hand its identity to an unrelated author.
+      const foreign=current.find(row=>row.manifest?.id===manifest.id&&row.manifest.publisher!==manifest.publisher&&(row.manifest.main||manifest.main));
+      if(foreign)throw Error(`"${manifest.id}" is already installed from ${foreign.manifest.publisher}. Remove it before installing a plugin with the same ID from ${manifest.publisher}.`);
       for(const row of current) if(row.manifest?.id===manifest.id) {
         if(row.manifest.version===manifest.version && row.key!==key&&!migrationPair(row.manifest,manifest)) throw Error('This version already exists with different content. Increment the package version.');
         const item=rows.find(x=>x.key===row.key);if(!migrationPair(row.manifest,manifest))item.enabled=false;

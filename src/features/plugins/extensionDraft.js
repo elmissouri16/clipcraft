@@ -29,7 +29,7 @@ export function carryPreparationMetadata(draft,current){
 export class ExtensionDraft {
  constructor(history,{selection=null,playhead={time_sec:0,playing:false}}={}){Object.assign(this,{base:history,project:history.present,selection,playhead,steps:0,effectRevision:pluginEffectsRevision(),usesEffects:false});this.reader=createEditorContext();this.actions=[];}
  valid(){return !this.usesEffects||this.effectRevision===pluginEffectsRevision();}
- capture(input){const snapshot=this.reader(this.project,this.selection,this.playhead,input);return {snapshot,targets:this.reader.targets(snapshot)};}
+ capture(input){const snapshot=this.reader(this.project,this.selection,this.playhead,input);return {snapshot,targets:this.reader.targets(snapshot),rebase:value=>this.reader.rebase?.(value,snapshot)??value};}
  read(method,input,extensionId){
   if(method==='workspace.inspect')return this.reader.inspect(this.project,this.selection,this.playhead,input);
   if(method==='workspace.readValue')return this.reader.readValue(this.project,this.selection,this.playhead,input);
@@ -42,7 +42,8 @@ export class ExtensionDraft {
  }
  write(method,input,extensionId){
   if(this.steps>=128)throw Error('Save/export preparation exceeds 128 document edits');
-  const {snapshot,targets}=this.capture(method==='editor.apply'?editContextInput(input):undefined);let action,value,verify;
+  const {snapshot,targets,rebase}=this.capture(method==='editor.apply'?editContextInput(input):undefined);let action,value,verify;
+  if(method==='editor.apply'||method==='captions.write')input=rebase(input);
   if(method==='configuration.update'){
    const plan=projectConfiguration(this.project,snapshot.documentId,extensionId,method,input);action=plan.action;value=plan.value;verify=state=>state.present.extensionSettings===action.settings;
   }else if(method==='editor.apply'){
@@ -52,7 +53,7 @@ export class ExtensionDraft {
    const targets=this.reader.markerTargets(this.project,this.selection,this.playhead,input),plan=markerApply(this.project,this.reader.scope(),input,targets);action=plan.action;value={applied:plan.applied};verify=state=>state.present.markers===action.markers;
   }else if(method==='media.insert'){
    if(input.documentId&&input.documentId!==snapshot.documentId)throw Error('Draft media context is stale');
-   const plan=mediaInsertion(this.project,snapshot,input.item,input);action=plan.action;value={mediaId:plan.mediaId,clipId:plan.clipId,lane:plan.lane};verify=state=>state.present[plan.key].some(clip=>clip.id===plan.clipId);
+   const plan=mediaInsertion(this.project,snapshot,input.item,input);action=plan.action;value={mediaId:plan.mediaId,clipId:plan.clipId,lane:plan.lane};verify=state=>{plan.verifyPlacement(state.present);return state.present[plan.key].some(clip=>clip.id===plan.clipId);};
   }else if(method==='captions.write'){
    const plan=captionWrite(this.project,snapshot,input,extensionId,this.reader.scope());action=plan.action;value={written:plan.ids.length,...(plan.trackId?{trackId:plan.trackId}:{})};verify=state=>plan.ids.every(id=>state.present.textClips.some(clip=>clip.id===id))&&(plan.action.ids||[]).every(id=>!state.present.textClips.some(clip=>clip.id===id));
   }else throw Error('Unsupported draft edit');

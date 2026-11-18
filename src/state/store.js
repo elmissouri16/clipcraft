@@ -1426,7 +1426,7 @@ function syncLinked(prev, next, preservedLinks) {
     const pa = was.aud.clip;
     const num = (c, f) => (f === 'speed' ? c.speed || 1 : c[f] || 0);
     const vChanged = ['in', 'out', 'speed'].some((f) => num(v, f) !== num(pv, f))
-      || prevStart(was.pic.track, pv) !== nextStart(pair.pic.track, v);
+      || Math.abs(prevStart(was.pic.track, pv) - nextStart(pair.pic.track, v)) > 1e-9;
     const aChanged = ['in', 'out', 'speed', 'start'].some((f) => num(au, f) !== num(pa, f));
     if (vChanged) {
       const want = {
@@ -1744,7 +1744,7 @@ function preparePluginAutomation(project,context,bindings,operations){
  const hasSound=c=>{const m=project.media.find(m=>m.id===c.mediaId);return m?.type==='audio'||m?.hasAudio===true;};
  const effectRef=(fx,instance,params,enable=true)=>{
   if(!isPluginEffect(fx)){
-   if(!EFFECTS.some(e=>e.id===fx)&&!(fx.startsWith('filter:')&&FILTERS.some(f=>f.id===fx.slice(7))))throw Error('Unknown built-in effect resource.');
+   if(!EFFECTS.some(e=>e.id===fx)&&!(fx.startsWith('filter:')&&(FILTERS.some(f=>f.id===fx.slice(7))||/^filter:lut:[\w .-]{1,120}$/.test(fx))))throw Error('Unknown built-in effect resource.');
    if(Object.keys(params).length)throw Error('Built-in effect resources support strength, not arbitrary numeric parameters.');return undefined;
   }
   if(!enable&&!Object.keys(params).length)return instance;
@@ -1782,6 +1782,7 @@ function preparePluginAutomation(project,context,bindings,operations){
   }else if(op.type==='attach-effect'){
    const resource=lookup(op.sourceClipId),source=current(resource),list=effects(clip);
    if(resource.track!=='effect'||source.linkId||typeof source.fx!=='string'||list.length>=32||op.beforeIndex>list.length||list.includes(source.fx))throw Error('Effect attachment needs a distinct returned resource and an available explicit slot.');
+   if(source.fx.startsWith('filter:'))throw Error('A filter look applies as an Effects-track layer and cannot be attached to one clip.');
    const ref=effectRef(source.fx,source.pluginEffect,op.params),next=[...list];next.splice(op.beforeIndex,0,source.fx);
    const c={...clip,effects:next,fxStrength:{...clip.fxStrength,[source.fx]:op.strength}};
    if(ref)c.pluginEffects={...clip.pluginEffects,[source.fx]:ref};put(target,c);
@@ -1943,7 +1944,8 @@ function preparePluginLifecycle(project,context,bindings,operations,allocateId){
  }
  for(const track of EDITABLE_LANES)for(const clip of expected[TRACKS[track]])if(changedIds.has(clip.id)){
   const len=source(track,clip),end=clip.start+len;if(!Number.isFinite(clip.start)||clip.start<0||end>projectDuration(project)+epsilon)throw Error('Lifecycle range exceeds the project.');
-  for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<end-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Lifecycle placement overlaps another clip.');
+  // Effects stack: the Effects track has no one-clip-at-a-time rule in the editor either.
+  if(track!=='effect')for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<end-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Lifecycle placement overlaps another clip.');
  }
  for(const id of preservedLinks){const members=Object.keys(TRACKS).flatMap(t=>expected[TRACKS[t]].filter(c=>c.linkId===id));if(members.some(c=>changedIds.has(c.id)))pluginLinkedPair(expected,id,false);}
  return preparePluginClipPlan(project,expected,clipsChanged,preservedLinks,tracksChanged);
@@ -2218,7 +2220,10 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
    const from=op.start_sec-oldStart,to=op.end_sec-oldStart;
    if(['overlay','audio'].includes(binding.track)){
     const speed=current.speed||1;if(!Number.isFinite(speed)||speed<=0)throw Error('Invalid clip speed.');
-    patch={...patch,in:current.in+from*speed,out:current.in+to*speed,...sliceFades(current,from,to,oldEnd-oldStart)};
+    // A start within the validator's tolerance of the clip start must not push the source in-point
+    // a hair below zero (frame-snapped times rarely equal the stored float exactly).
+    patch={...patch,in:Math.max(0,current.in+from*speed),out:current.in+to*speed,...sliceFades(current,from,to,oldEnd-oldStart)};
+    if(current.in+from*speed<-1e-8)patch.in=current.in+from*speed;
     const media=project.media.find(m=>m.id===current.mediaId);
     if(!Number.isFinite(patch.in)||!Number.isFinite(patch.out)||patch.in<0||(media?.type!=='image'&&Number.isFinite(media?.duration)&&patch.out>media.duration+1e-8))throw Error('Trim exceeds source bounds.');
    }else patch={...patch,duration:op.end_sec-op.start_sec,...(binding.track==='text'?cropWordTiming(current,from,to):{})};
@@ -2267,7 +2272,7 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
   const limit=track==='audio'&&reorderedAudio.has(clip.id)?Math.max(projectDuration(project),videoLayout(main).at(-1)?.end||0):projectDuration(project);
   if(!Number.isFinite(end)||clip.start<0||end>limit+1e-8)throw Error('Clip range exceeds the project.');
   if(['audio','overlay'].includes(track)){const media=project.media.find(m=>m.id===clip.mediaId);if(!Number.isFinite(clip.in)||!Number.isFinite(clip.out)||clip.in<0||clip.out<=clip.in||(media?.type!=='image'&&Number.isFinite(media?.duration)&&clip.out>media.duration+1e-8))throw Error('Clip edit exceeds source bounds.');}
-  for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<end-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Clip edit would overlap another clip.');
+  if(track!=='effect')for(const other of expected[TRACKS[track]])if(other.id!==clip.id&&clipLayer(track,other)===clipLayer(track,clip)&&other.start<end-1e-6&&clip.start<other.start+freeLen(track,other)-1e-6)throw Error('Clip edit would overlap another clip.');
  }
  return preparePluginClipPlan(project,expected,clipsChanged,shiftedLinks);
 }

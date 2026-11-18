@@ -17,6 +17,7 @@ import { LAYERED, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration
 import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
 import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
 import { useExternalAgent } from './useExternalAgent.js';
+import { createExtensionEditorTools } from '../features/plugins/extensionEditorTools.js';
 import SequenceDialog from "../features/timeline/components/SequenceDialog.jsx";
 import { mismatchFor, sequencePatchFor } from "../features/timeline/sequence.js";
 import { sizeFor } from "../features/effects/effects.js";
@@ -2241,11 +2242,12 @@ export default function App() {
   const pluginContext=useRef(null);
   if(!pluginContext.current||pluginContext.current.epoch!==projectLoadVersion)pluginContext.current={epoch:projectLoadVersion,read:createEditorContext()};
   const readPluginContext=(input)=>pluginContext.current.read(projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input);
-  const capturePluginEditContext=(input)=>{const snapshot=readPluginContext(input);return {snapshot,targets:pluginContext.current.read.targets(snapshot)};};
+  const capturePluginEditContext=(input)=>{const snapshot=readPluginContext(input);return {snapshot,targets:pluginContext.current.read.targets(snapshot),rebase:value=>pluginContext.current.read.rebase(value,snapshot)};};
   const {items:extensionContextUi}=useExtensionUi('context');
   const extensionContextActions=extensionContextUi.filter(entry=>entry.kind==='action');
   useEffect(()=>window.api.onExtensionViewEvent?.(event=>{if(event.type==='reveal'){if(settingsOpen){setSettingsOpen(false);setSettingsVersion(version=>version+1);}setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}}),[agentMode,settingsOpen]);
-  const extensionHost=useExtensionHost({capture:capturePluginEditContext,inspect:(method,input)=>pluginContext.current.read[method](projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input),getHistory:()=>historyRef.current,dispatch,startExport:startExtensionExport,hasProject:screen==='editor',epoch:projectLoadVersion,selection:()=>editorRef.current.selection,documentScope:()=>{readPluginContext();return pluginContext.current.read.scope();},isPreparationBusy:(kind,allowAgent)=>!!agentRunRef.current&&!allowAgent||kind==='save'&&exportRunning.current,isBusy:()=>!!agentRunRef.current||exportRunning.current,isAgentCommandBusy:()=>!!exportRunning.current||!!historyRef.current.gestureStart});
+  const extensionEditorTools=useRef(null);extensionEditorTools.current||=createExtensionEditorTools(()=>externalApp.current);
+  const extensionHost=useExtensionHost({editorTools:extensionEditorTools.current,capture:capturePluginEditContext,inspect:(method,input)=>pluginContext.current.read[method](projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input),getHistory:()=>historyRef.current,dispatch,startExport:startExtensionExport,hasProject:screen==='editor',epoch:projectLoadVersion,selection:()=>editorRef.current.selection,documentScope:()=>{readPluginContext();return pluginContext.current.read.scope();},isPreparationBusy:(kind,allowAgent)=>!!agentRunRef.current&&!allowAgent||kind==='save'&&exportRunning.current,isBusy:()=>!!agentRunRef.current||exportRunning.current,isAgentCommandBusy:()=>!!exportRunning.current||!!historyRef.current.gestureStart});
 
   if (screen === 'home') {
     return (

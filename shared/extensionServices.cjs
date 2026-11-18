@@ -39,7 +39,7 @@ function serviceValue(schema,value,label='Service value'){
   else {
    if(!v||typeof v!=='object'||seen.has(v))fail();seen.add(v);
    if(s.type==='array'){if(!Array.isArray(v)||s.maxItems!==undefined&&v.length>s.maxItems)fail();for(const item of v)check(s.items,item,depth+1);}
-   else {if(!plain(v)||Object.keys(v).some(key=>!Object.hasOwn(s.properties,key))||s.required.some(key=>!Object.hasOwn(v,key)))fail();for(const [key,item]of Object.entries(v))check(s.properties[key],item,depth+1);}
+   else {if(!plain(v)||Object.keys(v).some(key=>!Object.hasOwn(s.properties,key))||s.required.some(key=>v[key]===undefined))fail();for(const [key,item]of Object.entries(v))if(item!==undefined)check(s.properties[key],item,depth+1);}
    seen.delete(v);
   }
  }

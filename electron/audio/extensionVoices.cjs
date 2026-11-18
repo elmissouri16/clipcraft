@@ -7,7 +7,7 @@ function normalize(entry,status){
 }
 class ExtensionVoices{
  constructor(manager){this.manager=manager;}
- async entries(){await this.manager.ready;await this.manager.extensions.activate('ui:voice.engines');return this.manager.extensions.ui.list().filter(entry=>entry.kind==='integration'&&entry.point==='voice.engines');}
+ async entries(){await this.manager.ready;await this.manager.extensions.activate('ui:voice.engines',{continueOnError:true});return this.manager.extensions.ui.list().filter(entry=>entry.kind==='integration'&&entry.point==='voice.engines');}
  async catalog(signal){
   const entries=await this.entries();return Promise.all(entries.map(async entry=>{
    try{return normalize(entry,await this.manager.extensions.callService(entry.service,'status',{}, {signal,timeoutMs:25000}));}

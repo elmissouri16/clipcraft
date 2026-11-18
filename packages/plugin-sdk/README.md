@@ -57,10 +57,15 @@ export async function activate(context: ExtensionContext) {
 ```
 
 Registered IDs are scoped to the package. The public command above is
-`studio.my-extension.hello`. Declared commands support lazy activation; optional
-`activationEvents` use `startup`, `command:<id>`, `event:<topic>`,
-`service:<id>`, `hook:<id>`, `view:<id>` or `ui:<location>`. Register actions for
-`export` with `ui:export` when they should be discovered from the export dialog.
+`studio.my-extension.hello`. An extension without `activationEvents` starts with
+the app once trusted, so its actions, hooks and listeners are present after every
+launch. Declare `activationEvents` to start lazily instead: `startup`,
+`command:<id>`, `event:<topic>`, `service:<id>`, `hook:<id>`, `view:<id>` or
+`ui:<location>` (for example `ui:export` for actions discovered from the export
+dialog). An empty list activates only on a declared command or view.
+
+**[The Extension API guide](../../docs/design/plugin-extension-api.md)** explains
+every namespace with examples, the lifecycle rules, limits and current gaps.
 
 Installation, validation and inspection do not evaluate authored code. Trust &
 activate authorizes full Node access to files, programs and the network. This
@@ -81,6 +86,7 @@ Every call is checked against the activation that issued it.
 | `services.register/list/call/stream` | Ordinary cross-extension and application services; streams pull bounded values or bytes. |
 | `hooks.register` | Save/export validation and private preparation drafts with cancellation and one Undo. |
 | `workspace.read/inspect/readValue` | Document summary, complete paginated inspection and lazy nested values. |
+| `editor.tools.list/run` | The editor's own editing tools (titles, transitions, filters, colour, keyframes, effects, audio, project settings…) as one validated, undoable batch. |
 | `editor.read/apply` | Public editor handles and validated atomic edit transactions. |
 | `markers.apply` | Add, update or remove document markers through revision-scoped transactions. |
 | `captions.read/write` | Read cue pages; append, replace or create a separate caption track. |

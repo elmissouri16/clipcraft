@@ -60,6 +60,8 @@ class ExtensionUi {
  observe(listener){this.observers.add(listener);return()=>this.observers.delete(listener);}
  changed(){const list=this.list();this.onChanged(list);for(const listener of this.observers)try{listener(list);}catch{}}
  list(){return [...this.entries.values()].filter(entry=>this.live(entry)).map(entry=>entry.data);}
+ // The default a registered settings field declares, so the extension reads what the form shows.
+ defaultValue(job,key){for(const entry of this.entries.values())if(entry.job===job&&entry.data.kind==='settings'){const field=entry.data.fields.find(f=>f.key===key&&f.type!=='secret');if(field&&field.default!==undefined)return field.default;}return undefined;}
  async shortcuts(){
   const rows=await (this.runtime.manager.extensionRows?.()||this.runtime.manager.list()),trust=await this.runtime.trustData(),catalog=new Map(),available=new Set();
   for(const row of rows.filter(row=>row.manifest?.main)){
@@ -89,7 +91,7 @@ class ExtensionUi {
   job.nativeSettingsPending=(job.nativeSettingsPending||0)+1;job.nativeSettingsRevision=(job.nativeSettingsRevision||0)+1;this.changed();
   try{
    if(data.validate){const result=await this.runtime.execute(data.validate,{key,value});this.entry('settings',id,job);if(result&&Object.hasOwn(result,'value'))value=validateValue(f,result.value);}
-   await this.runtime.storage(job,f.type==='secret'?(value===''?'secrets.delete':'secrets.store'):'configuration.update',{key,value});return true;
+   await this.runtime.storage(job,f.type==='secret'?(value===''?'secrets.delete':'secrets.store'):'configuration.update',{key,value},undefined,'user');return true;
   }finally{job.nativeSettingsPending--;job.nativeSettingsRevision++;this.changed();}
  }
 

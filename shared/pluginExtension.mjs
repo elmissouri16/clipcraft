@@ -4,7 +4,9 @@ export {extensionFile} from './pluginExtensionFiles.cjs';
 export function extensionManifest(input){
  if(input.main!=='dist/extension.cjs')throw Error('Extension main must be dist/extension.cjs');
  if(input.entry||input.permissions?.length)throw Error('Node extensions use package trust, not command permissions');
- const events=input.activationEvents??[];
+ // No declaration means "start with the app", so runtime registrations (actions, hooks, listeners)
+ // are present after a restart. Declare an explicit list, or [], to activate lazily instead.
+ const events=input.activationEvents??['startup'];
  if(!Array.isArray(events)||events.length>128||events.some(e=>typeof e!=='string'||!(/^(startup|command:[\w.-]+|event:[\w.-]+|service:[\w.-]+|hook:[\w.-]+|view:[\w.-]+|ui:[\w.-]+)$/.test(e)))||new Set(events).size!==events.length)throw Error('Invalid extension activationEvents');
  const c=input.contributes||{};
  if(Object.keys(c).some(k=>['aiProviders','localTools','exportDestinations','panels'].includes(k)))throw Error('Use extension registrations instead of specialized executable contributions');

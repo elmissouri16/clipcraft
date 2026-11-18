@@ -9,7 +9,8 @@ function trackOf(snapshot,trackId,lane) {
 }
 export function mediaInsertion(project,snapshot,item,input) {
  if(!item||!['image','video','audio'].includes(item.type)||!item.path||!item.id)throw Error('Host media artifact is invalid');
- const lane=input.lane||(item.type==='audio'?'audio':'video'),key=laneKeys[lane];
+ // A named track decides the lane when none is given ("overlay:1" is an overlay placement).
+ const lane=input.lane||(typeof input.trackId==='string'&&laneKeys[input.trackId.split(':')[0]]?input.trackId.split(':')[0]:item.type==='audio'?'audio':'video'),key=laneKeys[lane];
  if(!key||item.type==='audio'&&lane!=='audio'||item.type!=='audio'&&lane==='audio')throw Error('Media does not match the requested track');
  const track=trackOf(snapshot,input.trackId,lane);
  if(isLayerLocked(project,lane,track.layer))throw Error('The target track is locked');
@@ -23,7 +24,15 @@ export function mediaInsertion(project,snapshot,item,input) {
   actions.push({type:'addToTimeline',mediaId:item.id,clipId,index,preserveCanvas:true});
  }else if(lane==='overlay')actions.push({type:'addOverlayClip',mediaId:item.id,clipId,at,layer:track.layer});
  else actions.push({type:'addToTimeline',mediaId:item.id,clipId,at,layer:track.layer});
- return {action:{type:'batch',actions},clipId,mediaId:item.id,lane,key};
+ // The layout pass moves a clip that does not fit to another layer, even a locked one, and may
+ // move an existing clip out of the way. An insertion must land where it was asked to, alone.
+ const verifyPlacement=after=>{
+  if(lane==='video')return;
+  const busy='That track is occupied at this time. Choose a free time or another track.';
+  const placed=after[key].find(clip=>clip.id===clipId),layers=new Map(project[key].map(clip=>[clip.id,clip.layer||0]));
+  if(!placed||(placed.layer||0)!==track.layer||after[key].some(clip=>layers.has(clip.id)&&layers.get(clip.id)!==(clip.layer||0)))throw Error(busy);
+ };
+ return {action:{type:'batch',actions},clipId,mediaId:item.id,lane,key,verifyPlacement};
 }
 function captionTrack(project,trackId){
  const id=trackId??'text:0',match=typeof id==='string'&&/^text:(0|[1-9][0-9]{0,8})$/.exec(id),layer=Number(match?.[1]);
@@ -56,6 +65,11 @@ export function captionWrite(project,snapshot,input,extensionId,scope) {
  });
  const ids=input.mode==='replace'?project.textClips.filter(c=>c.caption&&(c.layer||0)===track.layer).map(c=>c.id):[];
  if(project.textClips.length-ids.length+clips.length>10000)throw Error('Project text limit reached');
+ // One track holds one clip at a time. Overlapping cues would be moved to other tracks by the
+ // layout pass (also onto locked ones, and taking existing titles with them), so refuse them here.
+ const removed=new Set(ids),kept=create?[]:project.textClips.filter(c=>(c.layer||0)===track.layer&&!removed.has(c.id)).map(c=>({start:c.start,duration:c.duration,kept:true}));
+ const ordered=[...kept,...clips].sort((x,y)=>x.start-y.start);
+ for(let i=1;i<ordered.length;i++)if(ordered[i].start<ordered[i-1].start+ordered[i-1].duration-1e-6&&!(ordered[i].kept&&ordered[i-1].kept))throw Error(ordered[i].kept||ordered[i-1].kept?'A caption cue overlaps a clip already on this track':'Caption cues overlap each other');
  const action=create?{type:'appendCaptionTrack',layer:track.layer,name,hidden,clips}:ids.length||clips.length?{type:'replaceCaptionCues',ids,clips}:null;
  return {action,ids:clips.map(c=>c.id),...(create?{trackId:track.id}:{})};
 }

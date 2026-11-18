@@ -87,7 +87,8 @@ export function useExtensionHost(options){
 
    let value;const base=current.capture();
    const contextInput=request.method==='editor.read'?request.args:request.method==='editor.apply'?editContextInput(request.args):undefined;
-   const {snapshot,targets}=contextInput===undefined?base:current.capture(contextInput),state=current.getHistory(),project=state.present;
+   const {snapshot,targets,rebase}=contextInput===undefined?base:current.capture(contextInput),state=current.getHistory(),project=state.present;
+   if(['editor.apply','captions.write','media.insert'].includes(request.method)&&rebase)request={...request,args:rebase(request.args)};
    const canCommit=async()=>{
     if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation)||!latest.current.hasProject||!samePreparationDocument(project,latest.current.getHistory().present)||(agentSession?latest.current.isAgentCommandBusy?.():current.isBusy()||state.agentEdit)||state.gestureStart)throw Error('Editor changed, is busy, or extension stopped');
    };
@@ -107,7 +108,11 @@ export function useExtensionHost(options){
     const write=request.method==='configuration.update';if(write)await canCommit();
     const plan=projectConfiguration(project,snapshot.documentId,request.extensionId,request.method,request.args);if(plan.action)await commit(plan.action);value=plan.value;
    }else if(request.method==='editor.read')value=snapshot;
-   else if(request.method==='workspace.inspect')value=current.inspect('inspect',request.args);
+   else if(request.method==='editor.tools.list')value=current.editorTools.list();
+   else if(request.method==='editor.tools.run'){
+    if(agentSession)throw Error('Editor tools are not available while CraftAI runs this command; use editor.apply.');
+    value=await current.editorTools.run(request.args,async()=>{if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension callback or job stopped');});
+   }else if(request.method==='workspace.inspect')value=current.inspect('inspect',request.args);
    else if(request.method==='workspace.readValue')value=current.inspect('readValue',request.args);
    else if(request.method==='workspace.read')value={documentId:snapshot.documentId,name:project.name,width:project.width,height:project.height,fps:project.fps,duration_sec:projectDuration(project),export_duration_sec:exportDuration(renderable(project))};
    else if(request.method==='editor.apply'){
@@ -125,8 +130,11 @@ export function useExtensionHost(options){
     await canCommit();
     if(request.args.documentId&&request.args.documentId!==snapshot.documentId)throw Error('Project changed while previewing');
     const plan=mediaInsertion(project,snapshot,request.args.item,request.args);
+    plan.verifyPlacement(historyReducer({past:[],present:project,future:[]},plan.action).present);
     await commit(plan.action);
-    value={mediaId:plan.mediaId,clipId:plan.clipId,lane:plan.lane};
+    // clipId is the saved clip id; handle is the public handle editor.read/apply use for it.
+    const handle=latest.current.capture().targets.find(target=>target.id===plan.clipId)?.handle;
+    value={mediaId:plan.mediaId,clipId:plan.clipId,lane:plan.lane,...(handle?{handle}:{})};
    }else if(request.method==='captions.read')value=captionRead(project,snapshot,targets,request.args);
    else if(request.method==='captions.write'){
     await canCommit();const plan=captionWrite(project,snapshot,request.args,request.extensionId,current.documentScope());

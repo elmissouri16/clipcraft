@@ -36,22 +36,28 @@ class ExtensionFiles{
    if(!sameSource(record.sourceStat,await source.stat()))throw Error('Source changed while copying');
    const stagedHandle=await fsp.open(staged,'r');try{await stagedHandle.sync();}finally{await stagedHandle.close();}
    this.assert(record);
+   // Staging is private (0600). The published file gets ordinary permissions: the ones a new file
+   // would have, or those of the file it replaces.
+   const publicMode=0o666&~process.umask();
    if(args.overwrite){
     let current;try{current=fs.lstatSync(record.destination);}catch(error){if(error.code!=='ENOENT')throw error;}
     if(current&&(!current.isFile()||same(current,record.sourceStat)))throw Error('Destination changed to a source, link or directory');
+    fs.chmodSync(staged,current?current.mode&0o777:publicMode);
     fs.renameSync(staged,record.destination);record.published=true;record.atomic=true;
    }else{
+    fs.chmodSync(staged,publicMode);
     try{fs.linkSync(staged,record.destination);record.published=true;record.atomic=true;}
     catch(error){
      if(!['ENOTSUP','EOPNOTSUPP','EPERM','EXDEV'].includes(error.code))throw error;
-     this.assert(record);target=await fsp.open(record.destination,'wx',0o600);record.owned=await target.stat();this.assert(record);
-     await this.exclusiveCopy(record,staged,target);await target.sync();await target.close();target=null;
+     this.assert(record);target=await fsp.open(record.destination,'wx',publicMode);record.owned=await target.stat();this.assert(record);
+     // FAT and exFAT give a file a new identity once it has data, so identify it after writing.
+     await this.exclusiveCopy(record,staged,target);await target.sync();record.owned=await target.stat();await target.close();target=null;
      this.assert(record);const current=fs.lstatSync(record.destination);if(!same(current,record.owned))throw Error('Destination changed during publication');record.published=true;record.atomic=false;
     }
    }
    record.result={path:record.destination,bytes:record.bytes,sha256:record.sha256,atomic:record.atomic};return record.result;
   }finally{
-   clearTimeout(timer);signal?.removeEventListener('abort',abort);await target?.close().catch(()=>{});await source?.close().catch(()=>{});
+   clearTimeout(timer);signal?.removeEventListener('abort',abort);if(target)record.owned=await target.stat().catch(()=>record.owned);await target?.close().catch(()=>{});await source?.close().catch(()=>{});
    if(!record.published&&record.owned){try{const current=await fsp.lstat(record.destination);if(same(current,record.owned))await fsp.unlink(record.destination);}catch(error){if(error.code!=='ENOENT')console.error('Incomplete extension file cleanup failed:',error.message);}}
    try{if(record.directory)await fsp.rm(record.directory,{recursive:true,force:true});}
    catch(error){if(record.result)record.result.warning='File published; temporary-file cleanup failed: '+error.message;else console.error('Extension publication staging cleanup failed:',error.message);}

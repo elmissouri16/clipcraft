@@ -7,7 +7,7 @@ import {createProjectInspection} from './projectInspection.js';
 // One instance per loaded document. Bounded edit snapshots keep private keys out;
 // trusted complete inspection exposes saved content through separate read-only pages.
 export function createEditorContext(){
- const documentId=`d-${crypto.randomUUID()}`,handles=new Map(),reverseHandles=new Map(),linkHandles=new Map(),reverseLinks=new Map(),inspection=createProjectInspection();let projectRevision=0,serial=0,base,rows=[],groups=new Map(),counts,last,selectionKey,projection;
+ const documentId=`d-${crypto.randomUUID()}`,handles=new Map(),reverseHandles=new Map(),linkHandles=new Map(),reverseLinks=new Map(),inspection=createProjectInspection();let projectRevision=0,serial=0,base,rows=[],groups=new Map(),counts,last,selectionKey,projection,floor=0;
  const handle=key=>{if(!handles.has(key)){const id=`c-${++serial}`;handles.set(key,id);reverseHandles.set(id,key);}return handles.get(key);};
  const identity=(lane,id)=>JSON.stringify([lane,id]);
  const read=(project,selection,playhead,input)=>{
@@ -52,6 +52,9 @@ export function createEditorContext(){
   }
   if(!projection||key!==selectionKey){selectionKey=key;projection=projectRows();}
   const snapshot={version:1,documentId,revision:(last?.revision||0)+1,playhead:{time_sec:Math.max(0,Math.min(1e9,Number.isFinite(playhead.time_sec)?playhead.time_sec:0)),playing:!!playhead.playing},...projection};
+  // The revision also advances for playback and selection. Only a document change makes earlier
+  // revisions stale: floor is the first revision of the current document state.
+  if(!last||documentChanged)floor=snapshot.revision;
   if(!last||documentChanged||editorChanges(last,snapshot).length)last=snapshot;
   if(input?.clipIds.length){
    const byKey=new Map(rows.map(row=>[identity(row.lane,row.clip.id),row]));
@@ -62,6 +65,9 @@ export function createEditorContext(){
   return last;
  };
  read.scope=()=>({documentId,projectRevision});
+ // A write captured before the playhead or selection moved still describes the same document:
+ // carry it forward to the current revision instead of rejecting it as stale.
+ read.rebase=(input,snapshot)=>input&&typeof input==='object'&&!Array.isArray(input)&&input.documentId===documentId&&Number.isInteger(input.revision)&&input.revision>=floor&&input.revision<snapshot.revision?{...input,revision:snapshot.revision}:input;
  read.targets=snapshot=>{
   if(snapshot.documentId!==documentId)throw Error('Editor document changed.');
   return snapshot.timeline.clips.map(c=>{const key=reverseHandles.get(c.id);if(!key)throw Error('Unknown editor handle.');const [track,id]=JSON.parse(key);return {handle:c.id,track,id,...(c.link?{linkGroup:c.link.groupId,linkId:reverseLinks.get(c.link.groupId)}:{})};});
