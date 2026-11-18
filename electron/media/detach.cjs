@@ -11,11 +11,14 @@ const path = require('path');
 const { spawn } = require('../system/childProcesses.cjs');
 const { t } = require('../system/i18n.cjs');
 
-const num = (v) => Number(v.toFixed(3)).toString();
+// Seek, length and cache key use microsecond precision: a range rounded to milliseconds could
+// render a file shorter than the clip, which the link check then refuses.
+const exact = (v) => Number(v.toFixed(6)).toString();
+const RATE = 48000;
 
 function outFile(item, from, to, cacheDir) {
   const st = fs.statSync(item.path);
-  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|detach2|${num(from)}|${num(to)}`).digest('hex').slice(0, 16);
+  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|detach3|${exact(from)}|${exact(to)}`).digest('hex').slice(0, 16);
   return path.join(cacheDir, `${key}-detach.wav`);
 }
 
@@ -55,8 +58,12 @@ async function detach(item, { from = 0, to, cacheDir, ffmpegPath, onProgress = (
   const part = `${path.basename(out, '.wav')}.${PART_TAG}.part.wav`;
   // The file starts at the range's first source second even when the audio stream starts later
   // (recorded WebM): that lead-in is kept as silence, so the sound stays with its picture.
-  const args = ['-ss', num(a), '-t', num(len), '-i', item.path,
-    '-map', '0:a:0', '-vn', '-af', 'aresample=async=1:min_hard_comp=0.1:first_pts=0', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-y', part];
+  // The result is padded with silence (a sound stream that ends before its picture) and cut to
+  // exactly the clip's length rounded UP to a whole sample, so the file is never shorter.
+  const samples = Math.ceil(len * RATE - 1e-6);
+  const args = ['-ss', exact(a), '-t', exact(len), '-i', item.path,
+    '-map', '0:a:0', '-vn', '-af', `aresample=${RATE}:async=1:min_hard_comp=0.1:first_pts=0,apad=whole_len=${samples},atrim=end_sample=${samples}`,
+    '-c:a', 'pcm_s16le', '-ar', String(RATE), '-ac', '2', '-y', part];
   try {
     await run(ffmpegPath, args, cacheDir, (t) => onProgress(Math.min(0.99, t / len)), isCanceled);
     fs.renameSync(path.join(cacheDir, part), out);

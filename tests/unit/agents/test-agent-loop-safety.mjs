@@ -90,6 +90,19 @@ try {
   check('archived user instructions remain recoverable', recallContext(history, { ref: 'turn:0', max_chars: 6000 }).text.includes('Instruction 0'));
   const aiIndex = bounded.contents.findIndex(turn => turn.parts?.some(part => part.functionCall));
   check('checkpoint preserves tool-call and result pairing', aiIndex >= 0 && bounded.contents[aiIndex + 1].parts[0].functionResponse.name === 'get_project');
+  {
+    // The same schema-invalid call on every step: the request ends with the validation error after three
+    // steps (before, it ran to the 40-step limit, one paid request each, and ended with the step-limit message).
+    const bad = { name: 'set_project', args: { name: 42 } };
+    const same = fixture(() => reply([bad]));
+    const result = await same.run();
+    check('a repeated invalid call stops after three requests', same.requests.length === 3);
+    check('the request ends with the validation error', /same invalid tool call/.test(result.error?.error) && result.error.error.includes(validateToolCall(bad, TOOL_DECLARATIONS)));
+    // A model that corrects itself is not stopped: two bad steps, then a valid answer.
+    const fixed = fixture((n) => (n < 2 ? reply([bad]) : n === 2 ? reply([{ name: 'set_project', args: { name: 'Renamed' } }]) : reply()));
+    const ok = await fixed.run();
+    check('a corrected call after two invalid steps continues', !/same invalid/.test(ok.error?.error || '') && fixed.requests.length === 4 && fixed.state().present.name === 'Renamed');
+  }
   console.log('agent loop safety OK: ' + checks.join('; '));
   if (process.env.AGENT_LOOP_EVIDENCE) fs.writeFileSync(process.env.AGENT_LOOP_EVIDENCE, JSON.stringify({ checks }, null, 2));
 } finally { global.fetch = oldFetch; }

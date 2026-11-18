@@ -13,7 +13,7 @@ import {refreshPluginEffects,subscribePluginEffects,pluginEffectsRevision,assert
 import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, openLayer, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
+import { LAYERED, LINK_FILE_SLACK, openLayer, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, linkPairBatch, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
 import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
 import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
 import { useExternalAgent } from './useExternalAgent.js';
@@ -1112,7 +1112,10 @@ export default function App() {
     let media = now.media.find((x) => x.path === res.path);
     const actions = [];
     if (!media) { media = { ...res, id: uid(), origin: 'detach' }; actions.push({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
-    const out = Math.min(c.out - c.in, res.duration || (c.out - c.in)), speed = c.speed || 1;
+    // The render is padded to the clip's length; a probe a few milliseconds short of it still
+    // takes the clip's whole window (the pair check would refuse a shorter one).
+    const want = c.out - c.in, speed = c.speed || 1;
+    const out = res.duration && res.duration < want - LINK_FILE_SLACK ? res.duration : want;
     actions.push({ type: 'update', track: sel.track, id: sel.id, patch: { muted: true, linkId } });
     // The sound goes on the first audio layer with room that is not locked, hidden or muted.
     actions.push({ type: 'insertAudioClip', clip: {
@@ -1122,7 +1125,7 @@ export default function App() {
     } });
     // All or nothing: one step that mutes the picture only together with the sound's insert.
     const batch = { type: 'batch', actions };
-    if (historyReducer(historyRef.current, batch) === historyRef.current) return;
+    if (historyReducer(historyRef.current, batch) === historyRef.current) { setRenderJob({ error: t('app.detach_refused') }); return; }
     dispatch({ type: 'beginGesture', group: true });
     dispatch(batch);
     dispatch({ type: 'endGesture', group: true });
@@ -1178,16 +1181,11 @@ export default function App() {
     const pc = findClip(p, pic);
     const ac = findClip(p, aud);
     if (!pc || !ac || pc.linkId || ac.linkId) return;
-    const vStart = pic.track === 'video'
-      ? (videoLayout(p.videoClips).find((l) => l.clip.id === pc.id)?.start ?? 0)
-      : pc.start;
-    const linkId = uid();
+    // All or nothing: the picture never keeps a link its sound did not receive.
+    const batch = linkPairBatch(p, pic, aud, uid());
+    if (!batch || historyReducer(historyRef.current, batch) === historyRef.current) { setRenderJob({ error: t('app.link_refused') }); return; }
     dispatch({ type: 'beginGesture', group: true });
-    dispatch({ type: 'update', track: pic.track, id: pic.id, patch: { linkId } });
-    dispatch({ type: 'update', track: 'audio', id: ac.id, patch: {
-      linkId, linkOff: ac.start - vStart, linkInOff: ac.in - pc.in,
-      speed: pc.speed || 1, out: ac.in + (pc.out - pc.in),
-    } });
+    dispatch(batch);
     dispatch({ type: 'endGesture', group: true });
   }, [selection]);
 

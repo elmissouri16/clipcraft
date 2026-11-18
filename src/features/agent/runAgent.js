@@ -208,6 +208,9 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
     const failedEdits = new Map();
     let visualRegions = [], visualDirty = false, editorialChecked = false;
     let frameIds=[]; // Only this request's bounded visual evidence is attached.
+    // A model that keeps sending the same invalid calls would loop to the step limit (one paid
+    // request per step): after three such steps in a row the request ends with the validation error.
+    let invalidRepeat = { key: null, count: 0 };
     for (let step = 0; step < MAX_STEPS; step++) {
       if (isCanceled()) return finish({ text: '', canceled: true, changed });
       if (ctx.editActive && !ctx.editActive()) return finish({ error: { error: 'The project changed outside this request. Stale editing instructions were stopped.' }, changed });
@@ -291,6 +294,8 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
 
       const invalidCalls = res.calls.map(call => validateToolCall(call, tools));
       const invalidBatch = invalidCalls.some(Boolean);
+      const invalidKey = invalidBatch ? JSON.stringify(res.calls.map((call, i) => [call.name, call.args ?? null, invalidCalls[i] || null])) : null;
+      invalidRepeat = invalidKey && invalidKey === invalidRepeat.key ? { key: invalidKey, count: invalidRepeat.count + 1 } : { key: invalidKey, count: invalidKey ? 1 : 0 };
       const responses = [];
       for (let index = 0; index < res.calls.length;) {
         if (isCanceled()) return finish({ text: '', canceled: true, changed });
@@ -361,6 +366,7 @@ export async function runAgent({ contents, ctx, onEvent, isCanceled, requestId, 
         index += group.length;
       }
       contents.push({ role: 'user', parts: responses });
+      if (invalidRepeat.count >= 3) return finish({ error: { error: `The assistant sent the same invalid tool call three times in a row, so the request was stopped: ${invalidCalls.find(Boolean)}` }, changed });
     }
     return finish({ error: { error: 'The assistant reached its step limit before finishing. Completed edits were kept; review them before continuing.' }, changed });
   } catch (error) {

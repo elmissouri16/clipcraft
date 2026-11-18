@@ -108,4 +108,24 @@ const tail = (p) => p.videoClips.filter((c) => c.agentCoverage);
   assert.match((await runner.run('remove_retakes', { retake_ids: [first.id] })).error, /unknown/, 'an id whose candidate is gone is refused');
   assert.equal(exportDuration(box.s.present) < 30, true);
 }
+{
+  // generate_images runs through runImages, not run(): it must mark where its steps begin too, or the
+  // undo that follows also reverts the call before it.
+  let state = { past: [], future: [], present: { ...emptyProject(), name: 'Original' } };
+  const raw = (a) => { state = historyReducer(state, a); };
+  const token = 'req-images';
+  window.api = { agentGenerateImages: async (req) => ({ results: req.scenes.map((s, i) => ({ type: 'image', path: `/gen${i}.png`, name: `g${i}`, width: 1080, height: 1920 })) }) };
+  raw({ type: 'beginAgentEdit', token });
+  let ctx;
+  const app = { getAgentEdit: () => state.agentEdit, addProbed: (res) => { const m = { ...res, id: res.path }; ctx.dispatch({ type: 'addMedia', items: [m] }); return m; } };
+  ctx = { ...makeAgentCtx({ app, provider: 'codex-sdk', getProject: () => state.present, dispatch: raw, settle: async () => {}, requestId: token, isCurrent: () => true, isStopped: () => false }), requestId: token, isCanceled: () => false };
+  const runner = createToolRunner(ctx);
+  assert.equal((await runner.run('set_project', { name: 'Renamed first' })).status, 'applied');
+  const images = await runner.runImages([{ prompt: 'one', start_sec: 0, duration_sec: 2 }, { prompt: 'two', start_sec: 2, duration_sec: 2 }]);
+  assert.ok(images.every((r) => r.status === 'applied') && state.present.overlayClips.length === 2, 'the image batch inserts its scenes');
+  assert.equal((await runner.run('undo', {})).status, 'applied');
+  assert.equal(state.present.overlayClips.length, 0, 'undo removes the image batch');
+  assert.equal(state.present.name, 'Renamed first', 'and keeps the call before it');
+  window.api = {};
+}
 console.log('agent cut coverage, call undo and retake ids OK');

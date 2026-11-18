@@ -21,6 +21,7 @@ const project = (paths, n, len = 0.6, step = 0.9, extra = {}) => ({
 (async () => {
   try {
     // 1) Bounded command lines.
+    const inputs = (args) => args.filter((a) => a === '-i').length;
     const long = 'C:\\Users\\Samantha\\Videos\\ClipCraft\\Screen recording 2026-11-18 10-11-12.mp4';
     const big = project([long], 400, 4.7, 6);
     const graphs = path.join(dir, 'graphs'); fs.mkdirSync(graphs);
@@ -30,6 +31,21 @@ const project = (paths, n, len = 0.6, step = 0.9, extra = {}) => ({
       audioExport: commandLength(ff.graphFile(ff.buildAudioExportArgs(big, 'C:\\Users\\Samantha\\Music\\out.mp3', 'mp3'), graphs)),
     };
     for (const [name, length] of Object.entries(lengths)) assert.ok(length < LIMIT / 4, `${name}: ${length} characters for 400 clips`);
+    // Every decoded frame of a shared input goes to each clip on it, so the work grows with clips x stretch: a
+    // cut-heavy export of 200 clips on one input ran 7x slower than one input per clip. No input feeds more than
+    // 8 clips, nor more than 60 source seconds, while the command line stays bounded (above).
+    const cuts = project([long], 200, 1.1, 1.5);
+    const uses = (graph, kind) => { const count = new Map(); for (const m of graph.matchAll(new RegExp(`\\[(\\d+):${kind}\\]`, 'g'))) count.set(m[1], (count.get(m[1]) || 0) + 1); return count; };
+    const graphOf = (args) => args[args.indexOf('-filter_complex') + 1];
+    const seeks = (args) => args.flatMap((a, k) => (a === '-ss' ? [Number(args[k + 1])] : []));
+    const cutArgs = { video: ff.buildExportArgs(cuts, 'x.mp4', { encoder: 'libx264' }).args, timelineAudio: ff.buildTimelineAudioArgs(cuts, 'x.wav', 'all'), audioExport: ff.buildAudioExportArgs(cuts, 'x.mp3', 'mp3') };
+    for (const [name, args] of Object.entries(cutArgs)) {
+      const counts = [...uses(graphOf(args), 'v').values(), ...uses(graphOf(args), 'a').values()];
+      assert.ok(counts.length && Math.max(...counts) <= 8, `${name}: at most 8 clips per shared input (got ${Math.max(...counts)})`);
+      assert.ok(inputs(args) >= Math.ceil(200 / 8), `${name}: ${inputs(args)} inputs for 200 cuts`);
+      const at = seeks(args);
+      assert.ok(at.every((t, k) => k === 0 || t - at[k - 1] <= 60 + 1.5), `${name}: no input spans more than 60 source seconds`);
+    }
     const run = ff.longGraph(ff.buildTimelineAudioArgs(big, 'a.wav', 'all'));
     assert.ok(run.args.includes('-filter_complex_script'), 'the runners move a long graph to a file');
     const script = run.args[run.args.indexOf('-filter_complex_script') + 1];
@@ -48,10 +64,11 @@ const project = (paths, n, len = 0.6, step = 0.9, extra = {}) => ({
       return p;
     };
     const shared = shape([src]), separate = shape(links);
-    const inputs = (args) => args.filter((a) => a === '-i').length;
-    assert.equal(inputs(ff.buildExportArgs(shared, 'x.mp4', { encoder: 'libx264' }).args), 4, 'video: one input per forward run (jump back, minute later)');
+        assert.equal(inputs(ff.buildExportArgs(shared, 'x.mp4', { encoder: 'libx264' }).args), 4, 'video: one input per forward run (jump back, minute later)');
     assert.equal(inputs(ff.buildExportArgs(separate, 'x.mp4', { encoder: 'libx264' }).args), n);
-    assert.equal(inputs(ff.buildTimelineAudioArgs(shared, 'x.wav', 'all')), 2, 'sound: one input per stretch of the file');
+    // Sound shares only forward runs in timeline order, like pictures (an unordered group buffered the sound
+    // of every later clip in memory): the jump back and the minute-later clip each open their own input.
+    assert.equal(inputs(ff.buildTimelineAudioArgs(shared, 'x.wav', 'all')), 4, 'sound: one input per forward run of the file');
 
     // The export's own graph, its picture and sound written raw instead of encoded.
     let runs = 0;

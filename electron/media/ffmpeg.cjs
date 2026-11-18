@@ -226,30 +226,35 @@ const seekRest = (t) => Math.max(0, t - seekTo(t));
 // past Windows' 32,767-character limit at about a hundred clips of a long recording. A shared input is seeked to
 // its first clip (seekTo) and FFmpeg decodes it once; each clip trims its own part from `base`, the input's seek
 // point. A clip `gap` seconds or more past the group's furthest end opens a new input, so no long stretch is
-// decoded for nothing. ordered (pictures): groups are runs of consecutive uses whose ranges move forward
-// (decoded frames are not held back for a later clip); otherwise (sound) all uses of a file group by position.
-// uses: [{ key, file, from, to, lane }]: uses in different lanes (tracks mixed at the same time) never share, so
-// one is not held back waiting for the other. get(key) opens the input on first use: { idx, base }.
-function sharedInputs(uses, addInput, { gap, ordered = false }) {
+// decoded for nothing. Groups are runs of consecutive uses whose ranges move forward (decoded frames and samples
+// are not held back for a later clip). Every decoded frame of an input goes to each clip sharing it, so the
+// cost grows with clips x stretch: a group holds at most `max` clips over at most `span` source seconds.
+// uses: [{ key, file, from, to, lane }] in timeline order: uses in different lanes (tracks mixed at the same time)
+// never share, so one is not held back waiting for the other. get(key) opens the input on first use: { idx, base }.
+const SHARE_MAX = 8, SHARE_SPAN = 60;
+function sharedInputs(uses, addInput, { gap, max = SHARE_MAX, span = SHARE_SPAN }) {
   const groups = [], byKey = new Map(), id = (u) => `${u.lane || ''}\n${u.file}`;
-  const list = ordered ? uses : [...uses].sort((a, b) => (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : a.from - b.from));
   let last = null;
-  for (const use of list) {
-    const fits = last && last.id === id(use) && use.from - last.end < gap && (!ordered || use.from >= last.lastFrom && use.from >= last.end - 0.5);
-    if (!fits) groups.push(last = { id: id(use), file: use.file, from: use.from, end: use.to, lastFrom: use.from, idx: null });
-    else { last.from = Math.min(last.from, use.from); last.end = Math.max(last.end, use.to); last.lastFrom = use.from; }
+  for (const use of uses) {
+    const fits = last && last.id === id(use) && use.from - last.end < gap && use.from >= last.lastFrom && use.from >= last.end - 0.5
+      && last.count < max && use.to - last.from <= span;
+    if (!fits) groups.push(last = { id: id(use), file: use.file, from: use.from, end: use.to, lastFrom: use.from, count: 1, idx: null });
+    else { last.end = Math.max(last.end, use.to); last.lastFrom = use.from; last.count++; }
     byKey.set(use.key, last);
   }
   const open = (g) => { if (g.idx === null) g.idx = addInput(['-ss', num(seekTo(g.from)), '-i', g.file]); return { idx: g.idx, base: seekTo(g.from) }; };
   return { get: (key) => (byKey.has(key) ? open(byKey.get(key)) : null), groups };
 }
-// Pictures: a gap this long is cheaper to seek over than to decode; when that still leaves too many inputs for a
-// bounded command line, forward runs share regardless of gaps.
-function sharedPictureInputs(uses, addInput) {
+// A gap this long is cheaper to seek over than to decode (pictures 5 s, sound 60 s); when the gap and span
+// limits still leave too many inputs for a bounded command line, forward runs share regardless of them (each
+// group still holds at most SHARE_MAX clips). Inputs are only added when a clip asks for one.
+function boundedInputs(uses, addInput, gap) {
   const length = (plan) => plan.groups.reduce((n, g) => n + g.file.length + 24, 0);
-  const near = sharedInputs(uses, addInput, { gap: 5, ordered: true });
-  return length(near) <= 16000 ? near : sharedInputs(uses, addInput, { gap: Infinity, ordered: true });
+  const near = sharedInputs(uses, addInput, { gap });
+  return length(near) <= 16000 ? near : sharedInputs(uses, addInput, { gap: Infinity, span: Infinity });
 }
+const sharedPictureInputs = (uses, addInput) => boundedInputs(uses, addInput, 5);
+const sharedSoundInputs = (uses, addInput) => boundedInputs(uses, addInput, 60);
 // Gain, effects and level automation of a clip's sound, from its (tempo-corrected) source to
 // a 48 kHz stereo stream. The effects always run at 48 kHz (the pitch shift relies on it).
 // Loudness normalization sets the level of the effects' output, so with it on the clip's own
@@ -439,7 +444,7 @@ function buildTimelineAudioArgs(project, outWav, selection = 'all') {
   let n = 0;
   const addInput = (args) => { inputs.push(...args); return n++; };
   const users = [...plan.main.filter((c) => !c.muted).map((c) => ({ clip: c, m: plan.media.get(c.mediaId), lane: 'main' })), ...plan.extras.map(({ clip, media }, j) => ({ clip, m: media, lane: `x${j}` }))];
-  const shared = sharedInputs(users.filter(({ clip }) => !enhancePathOf(clip)).map(({ clip, m, lane }) => ({ key: clip, file: m.path, from: clip.in, to: clip.out, lane })), addInput, { gap: 60 });
+  const shared = sharedSoundInputs(users.filter(({ clip }) => !enhancePathOf(clip)).map(({ clip, m, lane }) => ({ key: clip, file: m.path, from: clip.in, to: clip.out, lane })), addInput);
   const input = (c) => {
     const enhanced = enhancePathOf(c);
     if (enhanced) return { index: addInput(['-i', enhanced]), enhanced, base: 0 };
@@ -875,7 +880,7 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   const overlayHas = (c) => { const m = mediaById[c.mediaId]; return !!(m && m.type === 'video' && m.hasAudio && !c.muted); };
   // Main-track clips share inputs; each overlay or audio-track clip keeps its own (they play over the main track).
   const users = [...clips.filter(mainHas).map((c) => [c, 'main']), ...overlays.filter(overlayHas).map((c, j) => [c, `o${j}`]), ...tracks.filter((c) => !c.muted && mediaById[c.mediaId]).map((c, j) => [c, `t${j}`])].filter(([c]) => !enhancePathOf(c));
-  const shared = sharedInputs(users.map(([c, lane]) => ({ key: c, file: mediaById[c.mediaId].path, from: c.in, to: c.out, lane })), addInput, { gap: 60 });
+  const shared = sharedSoundInputs(users.map(([c, lane]) => ({ key: c, file: mediaById[c.mediaId].path, from: c.in, to: c.out, lane })), addInput);
   if (clips.length) {
     const grid = mainGrid(clips, positive(project.fps, 30));
     clips.forEach((clip, i) => {

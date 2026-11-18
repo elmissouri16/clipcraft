@@ -115,13 +115,19 @@ export function lutError(table, size, colors, exact) {
 }
 
 const tables = new Map();
+const lutTokens = new WeakMap();
+let lutCount = 0;
+const lutToken = (lut) => { if (!lutTokens.has(lut)) lutTokens.set(lut, ++lutCount); return lutTokens.get(lut); };
 // Bakes the passes into a size³ RGB table (red fastest), checked against the
 // exact shader. Returns { table, size, error } or null when the LUT would differ.
 export function bakeColorLut(gl, passes, size = LUT_SIZE) {
   if (!colorOnlyPasses(passes)) return null;
-  const key = JSON.stringify(passes.map((p) => (p.lut ? { lut: p.lut.id || p.lut.size + ':' + p.lut.data.length, K: p.K } : p.expr)));
+  // Every LUT object of the pass list is part of the key (a LUT's name or size says nothing
+  // about its contents): two lists that agree on their first LUT but differ later, or a LUT
+  // reloaded with other contents, never share a table.
+  const key = JSON.stringify(passes.map((p) => (p.lut ? { lut: lutToken(p.lut), K: p.K } : p.expr)));
   const memo = tables.get(key);
-  if (memo && memo.lut === passes.find((p) => p.lut)?.lut) return memo.result;
+  if (memo) return memo.result;
   const step = 255 / (size - 1), lattice = new Uint8Array(size ** 3 * 3);
   for (let b = 0, i = 0; b < size; b++) for (let g = 0; g < size; g++) for (let r = 0; r < size; r++, i += 3) {
     lattice[i] = Math.round(r * step); lattice[i + 1] = Math.round(g * step); lattice[i + 2] = Math.round(b * step);
@@ -130,7 +136,7 @@ export function bakeColorLut(gl, passes, size = LUT_SIZE) {
   const colors = probeColors();
   const error = lutError(table, size, colors, shade(gl, colors, passes));
   const result = error.p999 <= LUT_TOLERANCE.p999 && error.max <= LUT_TOLERANCE.max ? { table, size, error } : null;
-  tables.set(key, { lut: passes.find((p) => p.lut)?.lut, result });
+  tables.set(key, { result });
   if (tables.size > 8) tables.delete(tables.keys().next().value);
   return result;
 }

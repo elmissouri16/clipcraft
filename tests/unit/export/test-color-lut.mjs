@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { colorOnlyExpr, colorOnlyPasses, applyLut, lutError, LUT_SIZE } from '../../../src/features/export/colorLut.js';
+import { colorOnlyExpr, colorOnlyPasses, applyLut, lutError, bakeColorLut, LUT_SIZE } from '../../../src/features/export/colorLut.js';
 import { FILTER_LOOKS as FILTERS, filterExpr } from '../../../src/features/effects/filters.js';
 import { gradeExpr } from '../../../src/features/effects/grade.js';
 
@@ -16,6 +16,29 @@ const { FxJobs } = require('../../../electron/export/fxjobs.cjs');
 const { ffmpegPath } = require('../../../electron/media/ffmpeg.cjs');
 const checks = [];
 const check = (name, fn) => { fn(); checks.push(name); };
+
+// The bake memo tells pass lists apart by every LUT object in them: two lists (two clips, or two
+// exports in one session) that share their first LUT but differ later never share a table.
+check('the LUT bake memo keys on every LUT of the pass list', () => {
+  const lut = (id) => ({ size: 2, data: new Float32Array(24), id: undefined, name: id });
+  const amber = lut('amber'), fade = lut('fade'), neon = lut('neon');
+  const gains = new Map([[amber, 0.9], [fade, 0.8], [neon, 0.4]]);
+  let runs = 0, last;
+  const gl = {
+    effects({ data }, w, h, passes) { runs++; last = data.slice(); for (let i = 0; i < last.length; i += 4) for (const p of passes) for (let c = 0; c < 3; c++) last[i + c] = Math.round(last[i + c] * gains.get(p.lut)); },
+    read() { return last; },
+  };
+  const a = bakeColorLut(gl, [{ lut: amber, K: 1 }, { lut: fade, K: 1 }], 9);
+  const before = runs;
+  const b = bakeColorLut(gl, [{ lut: amber, K: 1 }, { lut: neon, K: 1 }], 9);
+  assert.ok(a && b && a !== b && runs > before, 'a different second LUT bakes its own table');
+  const white = (t) => applyLut(t.table, t.size, 255, 255, 255)[0];
+  assert.equal(white(a), Math.round(Math.round(255 * 0.9) * 0.8));
+  assert.equal(white(b), Math.round(Math.round(255 * 0.9) * 0.4));
+  const again = runs;
+  assert.equal(bakeColorLut(gl, [{ lut: amber, K: 1 }, { lut: fade, K: 1 }], 9), a, 'the same LUT objects reuse the table');
+  assert.equal(runs, again);
+});
 
 check('colour-only expressions: samples at (X, Y) only, no position, time or noise', () => {
   assert.ok(colorOnlyExpr('S(X,Y) * 1.2'));

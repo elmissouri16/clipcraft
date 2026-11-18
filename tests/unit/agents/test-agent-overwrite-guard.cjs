@@ -7,14 +7,16 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { createEditorExportTarget } = require('../../../electron/agents/editorExport.cjs');
 const { runEditorFileJob } = require('../../../electron/agents/editorFiles.cjs');
+const { fileFingerprint } = require('../../../electron/media/mediaAnalysis.cjs');
 
 const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-overwrite-guard-')));
 const frameDirs = [];
 (async () => {
   try {
-    // A session record like main.cjs keeps: file -> size+mtime written by this owner.
+    // A session record like main.cjs keeps: file -> the fingerprint main.cjs takes (size, mtime, ctime, inode)
+    // when written by this owner. ctime matters: removing the temporary hard link of a subtitle write changes it.
     const written = new Map();
-    const stamp = file => { const s = fs.statSync(file); return `${s.size}:${s.mtimeMs}`; };
+    const stamp = file => fileFingerprint(file);
     const registry = owner => ({ mayReplace: file => written.get(file)?.owner === owner && written.get(file)?.stamp === stamp(file),
       wrote: file => written.set(file, { owner, stamp: stamp(file) }) });
     const footage = path.join(dir, 'interview-raw.mp4');fs.writeFileSync(footage, 'the user footage');
@@ -51,6 +53,7 @@ const frameDirs = [];
     assert.equal(fs.readFileSync(notes, 'utf8'), 'the user subtitles');
     await assert.rejects(runEditorFileJob({ action: 'write_subtitles', path: notes, text: 'x', overwrite: true }, { ...files, mayReplace: undefined, wrote: undefined }), /new file name/, 'without a session record nothing is replaced');
     const mine = await runEditorFileJob({ action: 'write_subtitles', path: path.join(dir, 'mine.srt'), text: 'first' }, files);
+    assert.equal(written.get(mine.path)?.stamp, fileFingerprint(mine.path), 'the record is taken after the temporary link is gone');
     await runEditorFileJob({ action: 'write_subtitles', path: mine.path, text: 'second', overwrite: true }, files);
     assert.equal(fs.readFileSync(mine.path, 'utf8'), 'second', 'an own subtitle file is replaced when asked');
     await assert.rejects(runEditorFileJob({ action: 'write_subtitles', path: mine.path, text: 'third', overwrite: true }, { ...files, ...registry('window-2') }), /new file name/);

@@ -609,6 +609,7 @@ export function createToolRunner(ctx) {
   }
   async function runImages(scenes) {
     if (!Array.isArray(scenes) || !scenes.length || scenes.length > 12) throw new Error('Use 1–12 image scenes per batch.');
+    ctx.markCall?.(); // where this batch's steps begin, for undo (as run() marks every other edit)
     let expectedRevision = projectRevision(project()), stale = false;
     const prepared = scenes.map(args => {
       try { return prepareImageScene(args || {}); } catch (e) { return { error: e.message }; }

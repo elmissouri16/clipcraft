@@ -350,6 +350,12 @@ export function canvasFor(p, m) {
 // Caption sources that regenerating or removing the auto captions (setCaptions) keeps: imported
 // .srt files, translations and extension-written tracks.
 const CAPTIONS_KEPT = new Set(['srt', 'plugin-translation', 'extension']);
+// The group a caption is restyled with: all auto captions together; a kept track (the imported
+// .srt cues, one translation, one extension's track) only with the cues of its own source and
+// language. Not the layer: placement spreads overlapping cues of one track over several layers.
+export function captionGroup(c) {
+  return CAPTIONS_KEPT.has(c.source) ? JSON.stringify([c.source, c.extensionId || '', c.language || '']) : 'auto';
+}
 
 function reduceProjectInner(p, a) {
   switch (a.type) {
@@ -681,11 +687,16 @@ function reduceProjectInner(p, a) {
     case 'styleSrtCaptions':
       // Style only the imported .srt subtitles (the Subtitles card's template grid).
       return { ...p, textClips: p.textClips.map((c) => (c.source === 'srt' ? { ...c, ...a.patch } : c)) };
-    case 'styleCaptions':
-      // Every caption, or with a layer only the captions on that text track (the inspector's
-      // "Apply to all main captions" restyles the edited caption's own track, never imported or
-      // translated tracks on other layers).
-      return { ...p, textClips: p.textClips.map((c) => (c.caption && (a.layer === undefined || layerOf(c) === a.layer) ? { ...c, ...a.patch } : c)) };
+    case 'styleCaptions': {
+      // Every caption, or with `of` (a caption id) only that caption's group: the inspector's
+      // "Apply to all main captions" restyles the auto captions together, or one imported,
+      // translated or extension track on its own. Layers do not decide it: the placement rule
+      // often puts .srt cues and auto captions on the same text layer.
+      const like = a.of === undefined ? null : p.textClips.find((c) => c.id === a.of && c.caption);
+      if (a.of !== undefined && !like) return p;
+      const group = like && captionGroup(like);
+      return { ...p, textClips: p.textClips.map((c) => (c.caption && (!like || captionGroup(c) === group) ? { ...c, ...a.patch } : c)) };
+    }
     case 'duplicate': {
       const key = TRACKS[a.track];
       const i = p[key].findIndex((c) => c.id === a.id);
@@ -983,6 +994,9 @@ export function trimActions(p, { track, id, t, side, newId }) {
     end = c.start + freeLen(track, c);
   }
   if (t - start < MIN_CLIP || end - t < MIN_CLIP) return [];
+  // A split the reducer refuses (inside a transition, for one) must not leave the delete
+  // alone in the group: it would remove the whole clip. No split, no trim.
+  if (splitAt(p, track, id, t, newId) === p) return [];
   const actions = [{ type: 'split', track, id, t, newId }];
   // Delete-left on the main track: the split builds the surviving right half with
   // transition: null (correct for a plain split, whose right half starts mid-clip),
@@ -1410,6 +1424,23 @@ export function findLinkPartner(p, clip) {
   }
   return null;
 }
+// "Link clips": one batch that links a picture clip and a sound clip into a synced pair, the
+// sound's offsets taken from the current positions and its speed / window matched to the
+// picture. A linked sound may not read past its file, and the pair shares one window: when
+// the sound has less left than the picture is long, both end where the sound's file ends.
+// null when the two cannot form a pair.
+export function linkPairBatch(p, pic, aud, linkId) {
+  const pc = findClipIn(p, pic.track, pic.id), ac = findClipIn(p, 'audio', aud.id);
+  if (!pc || !ac || pc.gap || pc.linkId || ac.linkId || aud.track !== 'audio' || !['video', 'overlay'].includes(pic.track)) return null;
+  const vStart = pic.track === 'video' ? videoLayout(p.videoClips).find((l) => l.clip.id === pc.id)?.start ?? 0 : pc.start;
+  const dur = p.media.find((m) => m.id === ac.mediaId)?.duration;
+  const full = pc.out - pc.in, len = Number.isFinite(dur) ? Math.min(full, dur - ac.in) : full;
+  if (!(len > 0)) return null;
+  return { type: 'batch', actions: [
+    { type: 'update', track: pic.track, id: pc.id, patch: { linkId, ...(len < full ? { out: pc.in + len } : {}) } },
+    { type: 'update', track: 'audio', id: ac.id, patch: { linkId, linkOff: ac.start - vStart, linkInOff: ac.in - pc.in, speed: pc.speed || 1, out: ac.in + len } },
+  ] };
+}
 function mapClip(p, track, id, fn) {
   const key = CLIP_LISTS[track];
   if (!key) return p;
@@ -1473,7 +1504,10 @@ export function actionLocked(p, a) {
       return a.track === 'video' && !!a.on && !p.magnet?.video && p.videoClips.some((c) => c.gap) && isLayerLocked(p, 'video', 0);
     case 'removeSrtCaptions': return p.textClips.some((c) => c.source === 'srt' && clipLocked(p, 'text', c));
     case 'styleSrtCaptions': return p.textClips.some((c) => c.source === 'srt' && clipLocked(p, 'text', c));
-    case 'styleCaptions': return p.textClips.some((c) => c.caption && (a.layer === undefined || layerOf(c) === a.layer) && clipLocked(p, 'text', c));
+    case 'styleCaptions': {
+      const like = a.of === undefined ? null : p.textClips.find((c) => c.id === a.of && c.caption);
+      return p.textClips.some((c) => c.caption && (!like || captionGroup(c) === captionGroup(like)) && clipLocked(p, 'text', c));
+    }
     case 'trimClip': return clipLocked(p, a.track, clipOf(a.track, a.id));
     case 'paste': {
       if (a.track === 'video') return isLayerLocked(p, 'video', 0);
@@ -1572,6 +1606,9 @@ function picStarts(p) {
 // by a negative time), nor a linked sound reading outside its file: a detached sound holds only
 // the picture's window at the time of the detach, so the picture cannot be extended past it.
 // Older projects may already break this; only a newly introduced or worsened breach is refused.
+// A file's probed length can fall a few milliseconds short of the range it was rendered for
+// (whole samples, container rounding): reading that far past its end is not a breach.
+export const LINK_FILE_SLACK = 0.005;
 function outOfBounds(before, next) {
   let media = null;
   for (const key of ['overlayClips', 'audioClips', 'textClips', 'effectClips']) {
@@ -1584,7 +1621,7 @@ function outOfBounds(before, next) {
       if (c.in < -1e-6 && !(o && o.in <= c.in + 1e-9)) return true;
       media ||= new Map(next.media.map((m) => [m.id, m]));
       const dur = media.get(c.mediaId)?.duration;
-      if (Number.isFinite(dur) && c.out > dur + 1e-6 && !(o && o.out >= c.out - 1e-9)) return true;
+      if (Number.isFinite(dur) && c.out > dur + LINK_FILE_SLACK && !(o && o.out >= c.out - 1e-9)) return true;
     }
   }
   return false;

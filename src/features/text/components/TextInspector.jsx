@@ -130,11 +130,12 @@ export default function TextInspector({ clip, dispatch, project = null }) {
   const st = useMemo(() => resolveStyle(clip), [clip]);
   const sharedToCaptions = clip.caption && applyAll;
 
-  // Style changes go to every caption on this caption's track when "Apply to all main captions" is on.
+  // Style changes go to every caption of this caption's group (the auto captions, or its own imported,
+  // translated or extension track) when "Apply to all main captions" is on.
   const set = (patch) => {
     const style = stylePatch(patch);
     const own = Object.fromEntries(Object.entries(patch).filter(([k]) => PER_CLIP.includes(k)));
-    if (sharedToCaptions && Object.keys(style).length) dispatch({ type: 'styleCaptions', patch: style, layer: clip.layer ?? 0 });
+    if (sharedToCaptions && Object.keys(style).length) dispatch({ type: 'styleCaptions', patch: style, of: clip.id });
     else if (Object.keys(style).length) dispatch({ type: 'update', track: 'text', id: clip.id, patch: style });
     if (Object.keys(own).length) dispatch({ type: 'update', track: 'text', id: clip.id, patch: own });
   };

@@ -106,6 +106,20 @@ const gesture = (p, actions) => run({ past: [], present: p, future: [] }, [{ typ
   ok(s.present.videoClips.length === 1 && s.present.videoClips[0].id === 'v1', 'v1 untouched by the delete');
 }
 
+// --- Playhead inside a transition: the store refuses that split, so Q / W must do nothing
+// (before, the group kept only its delete and the whole clip went).
+{
+  const p = project(); // v2 [3.3, 7.3], its incoming fade covers [3.3, 4.0]
+  for (const [t, side] of [[3.6, 'left'], [3.6, 'right']]) {
+    const acts = trimActions(p, { track: 'video', id: 'v2', t, side, newId: 'v2b' });
+    ok(acts.length === 0, `${side} trim at ${t} (inside v2's transition) yields no actions (got ${acts.map((a) => a.type).join('+') || 'none'})`);
+    const s = gesture(p, acts);
+    ok(s.present.videoClips.map((c) => c.id).join() === 'v1,v2' && s.present.videoClips[1].out === 4, `${side} trim at ${t} leaves both clips whole`);
+  }
+  const before = trimActions(p, { track: 'video', id: 'v1', t: 3.6, side: 'right', newId: 'v1b' });
+  ok(before.length === 0, 'W on the outgoing clip inside the same transition yields no actions');
+}
+
 // --- Non-video tracks: Q on an audio clip still splits + deletes as before.
 {
   const p0 = emptyProject();

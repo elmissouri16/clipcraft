@@ -106,6 +106,7 @@ async function runEditorFileJob(req, { signal, probeAll, choosePaths, outputDir,
     const parent = await fs.promises.realpath(path.dirname(file));
     file = path.join(parent, path.basename(file));
     const temporary = path.join(parent, `.clipcraft-${crypto.randomUUID()}.srt.part`);
+    let written;
     try {
       await fs.promises.writeFile(temporary, req.text, { encoding: 'utf8', flag: 'wx', signal });
       stop(signal);
@@ -121,9 +122,12 @@ async function runEditorFileJob(req, { signal, probeAll, choosePaths, outputDir,
           else throw error;
         }
       }
-      wrote?.(file);
-      return { path: file, name: path.basename(file), bytes: Buffer.byteLength(req.text), mime_type: 'application/x-subrip' };
+      written = { path: file, name: path.basename(file), bytes: Buffer.byteLength(req.text), mime_type: 'application/x-subrip' };
     } finally { await fs.promises.rm(temporary, { force: true }); }
+    // Recorded only once the temporary link is gone: removing it changes the file's ctime, which
+    // the overwrite guard's fingerprint includes, so a record taken before would already be stale.
+    wrote?.(file);
+    return written;
   }
   throw Error('Unknown editor file action.');
 }

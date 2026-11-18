@@ -14,16 +14,31 @@ const p = { ...emptyProject(), layers: { text: 3 }, textClips: [
   { id: 'title', text: 'Title', start: 0, duration: 2, layer: 0, font: 'anton', y: 0.2 },
 ] };
 let st = historyReducer({ past: [], present: p, future: [] }, { type: 'load', project: p });
-st = historyReducer(st, { type: 'styleCaptions', patch: { font: 'anton', y: 0.9 }, layer: 0 });
+st = historyReducer(st, { type: 'styleCaptions', patch: { font: 'anton', y: 0.9 }, of: 'en1' });
 const by = Object.fromEntries(st.present.textClips.map((c) => [c.id, [c.font, c.y]]));
 assert.deepEqual(by, { en1: ['anton', 0.9], en2: ['anton', 0.9], srt1: ['segoe', 0.1], ar1: ['cairo', 0.65], title: ['anton', 0.2] });
-st = historyReducer(st, { type: 'styleCaptions', patch: { color: '#ff0000' }, layer: 2 });
+st = historyReducer(st, { type: 'styleCaptions', patch: { color: '#ff0000' }, of: 'ar1' });
 assert.deepEqual(st.present.textClips.filter((c) => c.color).map((c) => c.id), ['ar1'], 'another track is styled on its own');
 // A lock on another track does not block restyling this one.
-const locked = historyReducer({ past: [], present: { ...st.present, layerState: { 'text:1': { locked: true } } }, future: [] }, { type: 'styleCaptions', patch: { size: 60 }, layer: 0 });
+const locked = historyReducer({ past: [], present: { ...st.present, layerState: { 'text:1': { locked: true } } }, future: [] }, { type: 'styleCaptions', patch: { size: 60 }, of: 'en2' });
 assert.equal(locked.present.textClips.find((c) => c.id === 'en1').size, 60);
 st = historyReducer(st, { type: 'styleCaptions', patch: { color: '#00ff00' } });
 assert.ok(st.present.textClips.filter((c) => c.caption).every((c) => c.color === '#00ff00'), 'without a layer every caption is styled');
 const inspector = fs.readFileSync(new URL('../../../src/features/text/components/TextInspector.jsx', import.meta.url), 'utf8');
-assert.match(inspector, /type: 'styleCaptions', patch: style, layer: clip\.layer \?\? 0/, 'the inspector limits Apply to all to the clip\'s track');
+assert.match(inspector, /type: 'styleCaptions', patch: style, of: clip\.id/, 'the inspector limits Apply to all to the clip\'s caption group');
+// Imported .srt cues and auto captions sharing layers (the placement rule spreads overlapping
+// cues): restyling an auto caption reaches every auto caption on any layer and no .srt cue.
+{
+  let s = historyReducer({ past: [], present: emptyProject(), future: [] }, { type: 'importSrtCaptions', style: {}, segments: [{ id: 's1', text: 'srt one', start: 0.5, end: 2.5 }, { id: 's2', text: 'srt two', start: 4, end: 6 }] });
+  s = historyReducer(s, { type: 'setCaptions', style: {}, segments: [0, 1, 2, 3, 4, 5].map((i) => ({ id: `a${i}`, text: `auto ${i}`, start: i * 2.5, end: i * 2.5 + 2, words: [] })) });
+  const caps = s.present.textClips;
+  const layersOf = (pred) => new Set(caps.filter(pred).map((c) => c.layer || 0));
+  const shared = [...layersOf((c) => c.source === 'srt')].some((l) => layersOf((c) => c.caption && c.source !== 'srt').has(l));
+  assert.ok(shared && layersOf((c) => c.caption && c.source !== 'srt').size > 1, 'the fixture puts .srt and auto cues on shared layers, auto cues on several');
+  s = historyReducer(s, { type: 'styleCaptions', patch: { color: '#ff0000' }, of: 'a4' });
+  const red = s.present.textClips.filter((c) => c.color === '#ff0000').map((c) => c.id).sort();
+  assert.deepEqual(red, ['a0', 'a1', 'a2', 'a3', 'a4', 'a5'], `every auto caption and no .srt cue is restyled (got ${red})`);
+  s = historyReducer(s, { type: 'styleCaptions', patch: { color: '#0000ff' }, of: s.present.textClips.find((c) => c.source === 'srt').id });
+  assert.deepEqual(s.present.textClips.filter((c) => c.color === '#0000ff').map((c) => c.source), ['srt', 'srt'], 'an .srt cue restyles its own track only');
+}
 console.log('caption apply-all scope OK');

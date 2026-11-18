@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { createRequire } from 'module';
-import { emptyProject, historyReducer, videoLayout } from "../../../src/state/store.js";
+import { LINK_FILE_SLACK, emptyProject, historyReducer, videoLayout } from "../../../src/state/store.js";
 
 const require = createRequire(import.meta.url);
 const { detach } = require("../../../electron/media/detach.cjs");
@@ -33,6 +33,26 @@ const state = (p) => ({ past: [], present: p, future: [] });
   ok(again === out, 'the same range is served from the cache');
   const other = await detach(item, { from: 0, to: 2, cacheDir: dir, ffmpegPath });
   ok(other !== out && fs.existsSync(other), 'a different range renders a different file');
+  // A range that is not whole milliseconds renders at least the clip's length (it was rounded
+  // down to 3.234 s before, and the pair check then refused the detach without a word).
+  const odd = await probe(await detach(item, { from: 1, to: 4.2344, cacheDir: dir, ffmpegPath }));
+  ok(odd.duration >= 3.2344 - 1e-6 && odd.duration < 3.2344 + 0.001, `a sub-millisecond range keeps its whole length (got ${odd.duration})`);
+  // A sound stream that ends before the picture is padded with silence to the clip's length.
+  const short = path.join(dir, 'short.mp4');
+  execFileSync(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', 'testsrc=size=64x36:rate=30:duration=6', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=4.5', '-pix_fmt', 'yuv420p', short]);
+  const padded = await probe(await detach({ path: short, duration: 6, hasAudio: true, type: 'video' }, { from: 2, to: 6, cacheDir: dir, ffmpegPath }));
+  ok(padded.duration >= 4 - 1e-6 && padded.duration < 4.001, `an early-ending sound is padded to the clip's 4 s (got ${padded.duration})`);
+  // The batch App's Detach builds from that file links (the window is the clip's whole length).
+  const want = 3.2344, sOut = odd.duration < want - LINK_FILE_SLACK ? odd.duration : want;
+  const p0 = { ...emptyProject(), media: [{ id: 'v', path: src, type: 'video', duration: 6, hasAudio: true }],
+    videoClips: [{ id: 'c', mediaId: 'v', in: 1, out: 4.2344, speed: 1, volume: 1, muted: false, transition: null }] };
+  const batch = { type: 'batch', actions: [{ type: 'addMedia', items: [{ id: 'd', path: '/c/d.wav', type: 'audio', duration: odd.duration, hasAudio: true, origin: 'detach' }] },
+    { type: 'update', track: 'video', id: 'c', patch: { muted: true, linkId: 'L' } },
+    { type: 'insertAudioClip', clip: { id: 's', mediaId: 'd', start: 0, in: 0, out: sOut, layer: 0, speed: 1, volume: 1, linkId: 'L', linkOff: 0, linkInOff: -1 } }] };
+  const linked = historyReducer(state(p0), batch);
+  ok(linked.present.audioClips.some((c) => c.id === 's' && c.linkId === 'L'), 'the detach batch for that range is accepted');
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // ---- Link sync through the store. The pair as App's detach flow builds it:
