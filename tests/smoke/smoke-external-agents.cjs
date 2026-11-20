@@ -133,6 +133,21 @@ module.exports = async (win, app, dir) => {
     check('list_projects lists the saved project with its file', !!entry && entry.name === 'Renamed by the user');
     const opened = await call(agent, 'open_project', { id: entry.id });
     check('open_project reopens it in the editor with its content', opened.status?.screen === 'editor' && await q('window.__fve.rawProject().textClips.length===3'));
+
+    // The Project button and save indicator share the toolbar with the connected agent.
+    const originalSize = win.getContentSize(), originalZoom = win.webContents.getZoomFactor();
+    for (const [width, zoom] of [[1506, 1], [1000, 1], [1000, 1.25]]) {
+      win.setContentSize(width, originalSize[1]); win.webContents.setZoomFactor(zoom);
+      await until(`Math.abs(innerWidth-${width/zoom})<=1 && !!document.querySelector('.save-state.saved')`);
+      const fits = await q(`(() => {
+        const rect = selector => document.querySelector(selector).getBoundingClientRect();
+        const boxes = ['.project-menu-btn','.save-state','.external-badge','.workspace-switch','.plugin-actions-toggle','.settings-btn','.top-export'].map(rect);
+        return document.querySelector('.project-menu-btn').innerText.trim() === 'Project' && boxes.every((a,i) => a.width > 0 && a.left>=0 && a.right<=innerWidth+1 &&
+          boxes.slice(i+1).every(b => a.right<=b.left+1 || b.right<=a.left+1 || a.bottom<=b.top+1 || b.bottom<=a.top+1));
+      })()`);
+      check(`the connected toolbar keeps Project visible and every control separate at ${width}px and ${zoom}x zoom`, fits);
+    }
+    win.webContents.setZoomFactor(originalZoom); win.setContentSize(...originalSize);
     const modalBefore = await q('document.querySelector(".modal-backdrop")?.innerText||""');
     const byPath = await call(agent, 'open_project', { path: path.join(dir, 'missing.clipcraft.json') });
     result.modals = { before: modalBefore, after: await q('document.querySelector(".modal-backdrop")?.innerText||""') };

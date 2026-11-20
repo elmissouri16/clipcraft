@@ -59,7 +59,7 @@ function ProjectDetails({ project, dispatch, duration }) {
   return (
     <div className="fields proj-card">
       <input className="proj-name" type="text" value={project.name} aria-label={t('topbar.project_name')}
-        onChange={(e) => set({ name: e.target.value })} />
+        onChange={(e) => dispatch({ type: 'setProject', patch: { name: e.target.value }, transient: true })} />
       <div className="proj-group">
         <span className="proj-label">{t('topbar.aspect_ratio')}</span>
         <div className="proj-ratios" role="radiogroup" aria-label={t('topbar.aspect_ratio')}>

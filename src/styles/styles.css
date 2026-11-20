@@ -170,34 +170,23 @@ input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--primary)
 /* ---------- App frame: flush panels separated by hairline dividers ---------- */
 .app {
   position: relative; display: grid; height: 100%; gap: 0; padding: 0;
-  grid-template-rows: 44px minmax(0, 1fr) minmax(250px, 38%);
+  grid-template-rows: auto minmax(0, 1fr) minmax(250px, 38%);
   grid-template-columns: minmax(0, 1fr);
   background: var(--canvas);
 }
 .app > * { min-width: 0; min-height: 0; }
 
-.topbar { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
-  column-gap: 12px; align-items: center; padding: 0 10px; container: editor-header / inline-size;
+.topbar { display: grid; min-height: 44px; grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px; align-items: center; padding: 0 10px; container: editor-header / inline-size; anchor-name: --editor-topbar;
   background: var(--surface-1); border-bottom: 1px solid var(--divider); }
-.top-center { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 0; }
-.top-center .project-meta { width: 320px; flex: 0 1 320px; }
+.top-center { display: flex; align-items: center; min-width: 0; }
+.top-center .project-meta { max-width: 100%; }
+.topbar .project-meta > * { flex: none; }
 .top-center .top-actions { flex: none; }
 .top-export { justify-self: end; }
-.brand { display: flex; align-items: center; gap: 8px; }
-.brand-logo { width: 22px; height: 22px; border-radius: var(--r-sm); }
-.brand-name { font-size: 13px; letter-spacing: -0.1px; color: var(--text-2); }
-.brand-name b { color: var(--text); font-weight: 600; }
 .project-meta { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.project-name {
-  width: 240px !important; flex: 1; min-width: 0; text-align: center; background: transparent !important; border-color: transparent !important;
-  font-weight: 600; height: var(--control-h) !important;
-}
-.project-name:hover { background: var(--hover) !important; }
-.project-name:focus { background: var(--bg) !important; border-color: var(--primary) !important; }
-.ratio-select { width: auto !important; flex: none; height: var(--control-h-sm) !important; font-size: 12px; padding: 0 6px !important; color: var(--text-2); }
 .top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; }
-/* The actions keep their intrinsic width, so they cannot spill over the project
-   pill. Collapse labels by the header's width before the name runs out of room. */
+/* Collapse secondary labels as the header narrows. */
 @container editor-header (max-width: 1400px) { .top-actions .top-word { display: none; } }
 /* The Support label is NOT a .top-word: the support ask must stay explicit at every
    width (Hamza, 2026-11-02). Shorten it only on narrow editor windows. */
@@ -864,6 +853,10 @@ input.switch:checked::after { transform: translateX(16px); }
 .ctx-label { flex: 1; white-space: nowrap; }
 .ctx-menu kbd { font: inherit; font-size: 11px; color: var(--text-2); }
 .ctx-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.ctx-heading {
+  max-width: 270px; padding: 6px 8px 9px; margin-bottom: 3px; border-bottom: 1px solid var(--divider);
+  font-weight: 600; overflow-wrap: anywhere;
+}
 .export-split { display: inline-flex; }
 .export-split .btn-export:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .export-split .caret { padding: 0 8px; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid rgba(255, 255, 255, 0.25); }
@@ -2097,7 +2090,9 @@ button.save-state.error:hover { background: var(--hover); }
 .pilot-latest button { border: 1px solid rgba(174,148,255,.25); border-radius: var(--r-2xl); background: rgba(153,119,255,.12); padding: 4px 10px; color: var(--text-2); font-size: 10px; cursor: default; }
 
 /* Edit and Agent are presentations of the same mounted editor surfaces. */
-.top-workspace-actions { display: flex; align-items: center; justify-self: end; gap: 10px; }
+.top-workspace-actions { display: flex; align-items: center; justify-self: end; gap: 12px; }
+.top-workspace-group { display: flex; align-items: center; gap: 8px; padding-right: 12px; border-right: 1px solid var(--divider); }
+.top-workspace-group .external-badge { max-width: clamp(100px, 13vw, 200px); }
 .workspace-switch { display: flex; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); }
 .workspace-switch button { border: 0; border-radius: var(--r-s); height: var(--control-h-sm); padding: 0 10px; background: transparent; color: var(--text-2); font: inherit; cursor: default; }
 .workspace-switch button[aria-pressed=true] { background: var(--surface-4); color: var(--text); }
@@ -2224,9 +2219,18 @@ button.save-state.error:hover { background: var(--hover); }
 .pilot-shell:not(.is-open) .pilot-fab { position: relative; width: auto; }
 @media (max-width: 1200px) {
   .top-workspace-actions { gap: 6px; }
-  .top-center .project-meta { width: 220px; flex-basis: 220px; }
-  .brand-name { display: none; }
+  .top-workspace-group { gap: 5px; padding-right: 6px; }
   .agent-workspace-tools .muted { display: none; }
+}
+
+/* At higher display zoom the two groups each need a full row. */
+@media (max-width: 950px) {
+  .app > .topbar { grid-template-columns: minmax(0, 1fr); grid-template-rows: 40px 36px; padding: 0 10px 3px; }
+  html[data-platform='darwin'] .app > .topbar { padding-left: 10px; }
+  html[data-platform='darwin'] .topbar .top-center { margin-left: 76px; }
+  .top-workspace-actions { grid-column: 1 / -1; justify-self: stretch; }
+  .top-workspace-group { margin-right: auto; padding-right: 0; border: 0; }
+  .topbar .external-badge { max-width: min(25vw, 200px); }
 }
 
 /* Docked tools leave the preview usable even at the minimum desktop width. */
@@ -3223,8 +3227,6 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 .plugin-action-dialog .plugin-command-fields { display: flex; flex-direction: column; gap: 12px; }
 .plugin-actions-toggle { flex: none; }
 
-@container editor-header (max-width: 1050px) { .plugin-actions-label { display: none; } }
-
 /* Native plugin contributions use host controls and the bounded action catalog. */
 .plugin-toolbar { display:flex; align-items:center; gap:2px; flex:none; }
 .plugin-inspector { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
@@ -3391,9 +3393,9 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 @media (max-width: 700px) { .extension-export-list { grid-template-columns: minmax(0, 1fr); } }
 
 /* Native extension controls keep workbench chrome bounded. */
-.extension-native-actions[data-extension-actions=toolbar]{flex-wrap:nowrap;flex-shrink:0;gap:2px}
-.extension-native-result{display:inline-flex;align-items:center;color:var(--text-2);width:20px;flex-shrink:0}
-.extension-native-result[data-failed=true]{color:var(--danger,#ef8898)}
+.extension-toolbar { position: relative; flex: none; anchor-name: --extension-toolbar; }
+.extension-toolbar .plugin-actions-toggle[data-failed=true]::after { content: ''; position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+.extension-toolbar-notice{position:fixed;position-anchor:--extension-toolbar;top:calc(anchor(--editor-topbar bottom, 44px) + 6px);right:clamp(8px,anchor(right, 12px),max(8px,100vw - 368px));width:min(360px,calc(100vw - 16px));z-index:110;-webkit-app-region:no-drag}
 .plugin-workbench{display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden}
 .extension-workbench-modes{display:flex;border-bottom:1px solid var(--border);padding:4px 10px;gap:4px;flex-shrink:0}
 .extension-workbench-modes button{background:none;border:0;color:var(--text-2);padding:7px 9px;font-size:12px;border-radius:5px;cursor:pointer}
@@ -3489,4 +3491,6 @@ input[type='range']::-moz-range-thumb { width: 15px; height: 15px; border: 0; bo
 .plugin-debugger{display:grid;gap:8px;min-width:0}.plugin-debugger .field{min-width:0}.plugin-debugger .field input{width:100%;min-width:0;font-family:monospace}
 
 .extension-native-actions>.btn{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:var(--control-h-sm);height:auto;white-space:normal;text-align:left}.extension-native-actions>.btn>span{min-width:0;overflow-wrap:anywhere}.extension-native-actions svg,.extension-export-option>svg{flex-shrink:0}
+.extension-toolbar-menu { max-height: min(460px, calc(100dvh - 96px)); }
+.extension-toolbar-menu .ctx-label { white-space: normal; overflow-wrap: anywhere; }
 .extension-inspector-group{margin-bottom:12px}.extension-inspector-group .fields{padding:0}.extension-inspector-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px}.extension-inspector-field output{color:var(--text-2);font-variant-numeric:tabular-nums}.extension-inspector-toggle{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px}.extension-inspector-field input[type=color]{width:100%;min-height:28px}.extension-inspector-field input[type=range]{width:100%}

@@ -108,8 +108,8 @@ function createWindow() {
     title: 'ClipCraft',
     show: false,
     ...(quietSmoke?{focusable:false}:{}),
-    // macOS: the window buttons sit inside ClipCraft's own top bar (one bar, not two).
-    ...(mac ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 22, y: 24 } } : {}),
+    // Align the close button with the Agent header icon and center the controls beside Project.
+    ...(mac ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } } : {}),
     // The .ico carries 16-256 px versions, so the title bar and taskbar stay sharp on Windows.
     icon: path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     autoHideMenuBar: true,

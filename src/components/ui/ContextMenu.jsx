@@ -5,7 +5,7 @@ import { t } from '../../i18n/index.js';
 // Floating menu at (x, y). items: [{ label, icon, shortcut, onClick, disabled, hint } |
 // { label, icon, submenu: [items], disabled, hint } | 'sep'].
 // Closes on a click outside, Escape, scroll or resize; stays inside the window.
-export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip_menu'),className='' }) {
+export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip_menu'), heading, className = '', triggerRef }) {
   const ref = useRef(null);
   const subRef = useRef(null);
   const [pos, setPos] = useState({ left: x, top: y });
@@ -48,7 +48,7 @@ export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip
   }, [openSub, subPos]);
 
   useEffect(() => {
-    const down = (e) => { if (!ref.current?.contains(e.target)) onClose('outside'); };
+    const down = (e) => { if (!ref.current?.contains(e.target) && !triggerRef?.current?.contains(e.target)) onClose('outside'); };
     const key = (e) => {
       const parent=ref.current?.querySelector('[data-sub-open="true"] > button');
       if(e.key==='ArrowRight'&&document.activeElement?.getAttribute('aria-haspopup')==='menu'&&ref.current?.contains(document.activeElement)){
@@ -77,7 +77,7 @@ export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip
       window.removeEventListener('resize', onClose);
       window.removeEventListener('wheel', wheel);
     };
-  }, [onClose,openSub]);
+  }, [onClose,openSub,triggerRef]);
 
   const renderItems = (list, sub = false) => list.map((it, i) => {
     if (it === 'sep') return <div key={i} className="ctx-sep" role="separator" />;
@@ -112,7 +112,8 @@ export default function ContextMenu({ x, y, items, onClose, label = t('menu.clip
   });
 
   return (
-    <div className={`ctx-menu ${className}`} role="menu" aria-label={label} ref={ref} style={pos} onContextMenu={(e) => e.preventDefault()}>
+    <div className={`ctx-menu ${className}`} role="menu" aria-label={label} aria-description={heading} ref={ref} style={pos} onContextMenu={(e) => e.preventDefault()}>
+      {heading && <div className="ctx-heading" aria-hidden="true">{heading}</div>}
       {renderItems(items)}
     </div>
   );

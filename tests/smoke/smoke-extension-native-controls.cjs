@@ -21,19 +21,21 @@ module.exports=async(win,app,dir)=>{
    await until(`!!document.querySelector('${field('picture','opacity')}')`);
    check('cold restart activates the installed extension and restores native controls',true);
    check('the bound control reads the saved clip property rather than a cached form value',Number(await q(`document.querySelector('${field('picture','opacity')}').value`))===saved.videoClips[0].opacity);
-   check('action icons and live selection enablement return after a real restart',await q(`!!document.querySelector('[data-extension-action="${pkg}.reset-opacity"] svg path')`));
+   await ui.openPluginMenu();
+   check('action icons and live selection enablement return after a real restart',await q(`!!document.querySelector('[id="extension-action-menu-${pkg}.reset-opacity"] svg path')`));
    check('native restart has no renderer errors',result.errors.length===0);result.ok=true;return;
   }
   await q(`window.__fve.load(${JSON.stringify(fixture.project)})`);
   const installed=await q('window.api.pluginsInstall()');const key=installed[0].key;await q(`window.api.pluginsExtensionTrust(${JSON.stringify(key)})`);await select('video','v1');
-  await until(`!!document.querySelector('${field('picture','opacity')}')&&!document.querySelector('[data-extension-action="${pkg}.reset-opacity"]').disabled`);
+  await ui.openPluginMenu();await until(`!!document.querySelector('${field('picture','opacity')}')&&document.getElementById('extension-action-menu-${pkg}.reset-opacity')?.disabled===false`);
   await wait(250);
   check('native inspector controls show the actual selected clip values',Number(await q(`document.querySelector('${field('picture','opacity')}').value`))===.8&&Number(await q(`document.querySelector('${field('picture','x')}').value`))===.1);
-  check('custom vector action artwork renders in the native toolbar',await q(`document.querySelectorAll('[data-extension-action="${pkg}.reset-opacity"] [data-extension-action-icon] path').length===2`));
-  check('action order controls direct toolbar placement',await q(`JSON.stringify([...document.querySelectorAll('[data-extension-actions=toolbar]>button[data-extension-action]')].map(node=>node.dataset.extensionAction))===${JSON.stringify(JSON.stringify([pkg+'.reset-opacity',pkg+'.middle']))}`));
+  check('custom vector action artwork renders in the Plugins menu',await q(`document.querySelectorAll('[id="extension-action-menu-${pkg}.reset-opacity"] [data-extension-action-icon] path').length===2`));
+  const ordered=()=>q(`[...document.querySelectorAll('.extension-toolbar-menu [id^="extension-action-menu-"]')].map(node=>node.id.slice('extension-action-menu-'.length))`);
+  check('the menu respects plugin action order',(await ordered())[0]===pkg+'.reset-opacity');
   await command('state',{enabled:false,disabledReason:'Choose a clip first',title:'Reset updated',order:500});
-  await ui.click('[data-extension-action-overflow]');await until(`!!document.getElementById('extension-action-menu-${pkg}.reset-opacity')`);
-  check('a live title/order change moves the action into overflow with its disabled reason',await q(`(()=>{const node=document.getElementById('extension-action-menu-${pkg}.reset-opacity');return node.disabled&&node.textContent==='Reset updated'&&node.title==='Choose a clip first';})()`));
+  await until(`document.getElementById('extension-action-menu-${pkg}.reset-opacity')?.disabled`);
+  check('the menu updates a running plugin’s action order, name and disabled reason',(await ordered()).at(-1)===pkg+'.reset-opacity'&&await q(`(()=>{const node=document.getElementById('extension-action-menu-${pkg}.reset-opacity');return node.querySelector('.ctx-label').firstChild.textContent==='Reset updated'&&node.title==='Choose a clip first';})()`));
   const denied=await q(`window.api.pluginsExtensionUiExecute('${pkg}.reset-opacity').then(()=>false,error=>error.message)`);check('disabled actions cannot be invoked through the native bridge',typeof denied==='string'&&denied.includes('Choose a clip first'));
   await command('state',{enabled:true,order:-100,title:'Reset picture opacity'});await q('document.body.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))');
   check('inspector action icons and disabled state render together',await q(`(()=>{const node=document.querySelector('[data-extension-action="${pkg}.disabled-inspector"]');return node.disabled&&!!node.querySelector('[data-extension-action-icon]');})()`));
@@ -54,7 +56,7 @@ module.exports=async(win,app,dir)=>{
   await until('window.__fve.rawProject().videoClips[0].opacity===.35');check('a range edit commits its property as one Undo step',await history()===start+1);
   await q('window.__fve.dispatch({type:"undo"})');await until(`Number(document.querySelector('${field('picture','opacity')}').value)===.8`);check('Undo updates the bound range from the project',await q('window.__fve.rawProject().videoClips[0].opacity===.8'));
   await q('window.__fve.dispatch({type:"redo"})');await until(`Number(document.querySelector('${field('picture','opacity')}').value)===.35`);check('Redo updates the bound range',true);
-  const resetHistory=await history();await ui.click(`[data-extension-action="${pkg}.reset-opacity"]`);await until('window.__fve.rawProject().videoClips[0].opacity===1');check('an enabled native action dispatches with its registration identity and one Undo step',await history()===resetHistory+1);await q('window.__fve.dispatch({type:"undo"})');await until('window.__fve.rawProject().videoClips[0].opacity===.35');
+  const resetHistory=await history();await ui.clickToolbarAction(pkg+'.reset-opacity');await until('window.__fve.rawProject().videoClips[0].opacity===1');check('an enabled native action dispatches with its registration identity and one Undo step',await history()===resetHistory+1);await q('window.__fve.dispatch({type:"undo"})');await until('window.__fve.rawProject().videoClips[0].opacity===.35');
   await type(field('picture','x'),'.4');await until('window.__fve.rawProject().videoClips[0].transform.x===.4');check('native typed numeric input edits the actual transform',true);const noOpHistory=await history();await type(field('picture','x'),'.4');await wait(100);check('typing the existing value creates no extra Undo entry',await history()===noOpHistory);
   await q('window.__fve.dispatch({type:"update",track:"video",id:"v1",patch:{opacity:.55}})');await until(`Number(document.querySelector('${field('picture','opacity')}').value)===.55`);check('manual edits outside the extension immediately update bound values',true);
   await draft(field('picture','x'),'.9');const staleHistory=await history();await select('video','v2');await q('document.activeElement?.blur()');await wait(100);
@@ -91,11 +93,12 @@ module.exports=async(win,app,dir)=>{
   await type(field('picture','opacity'),'.72');await until('window.__fve.rawProject().videoClips[0].opacity===.72');
   const saved=await q('window.__fve.rawProject()');fs.writeFileSync(path.join(dir,'saved.json'),JSON.stringify(saved));await q(`window.api.saveProjectAgent(${JSON.stringify(JSON.stringify(saved))},${JSON.stringify(path.join(dir,'controls.clipcraft.json'))},null)`);
   await q(`window.api.pluginsEnable(${JSON.stringify(key)},false)`);await until(`!document.querySelector('[data-extension-inspector="${pkg}.picture"]')`);
-  check('disabling the package removes native properties and actions',await q(`!document.querySelector('[data-extension-action="${pkg}.reset-opacity"]')`));
+  await ui.openPluginMenu();
+  check('disabling the package removes native properties and actions',await q(`!document.querySelector('[id="extension-action-menu-${pkg}.reset-opacity"]')`));
   await q(`window.api.pluginsEnable(${JSON.stringify(key)},true)`);await until(`!!document.querySelector('${field('picture','opacity')}')`);
   check('re-enabling rebuilds controls from the current project values',Number(await q(`document.querySelector('${field('picture','opacity')}').value`))===.72);
-  await ui.reveal(field('picture','opacity'));fs.writeFileSync(path.join(dir,'controls.png'),(await win.webContents.capturePage({},{stayHidden:true,stayAwake:true})).toPNG());
-  await q(`window.api.pluginsExtensionStop(${JSON.stringify(key)})`);await until(`!document.querySelector('[data-extension-inspector="${pkg}.picture"]')`);check('Stop removes both native action and property controls',await q(`!document.querySelector('[data-extension-action="${pkg}.reset-opacity"]')`));
+  await q('document.body.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))');await ui.reveal(field('picture','opacity'));fs.writeFileSync(path.join(dir,'controls.png'),(await win.webContents.capturePage({},{stayHidden:true,stayAwake:true})).toPNG());
+  await q(`window.api.pluginsExtensionStop(${JSON.stringify(key)})`);await until(`!document.querySelector('[data-extension-inspector="${pkg}.picture"]')`);await ui.openPluginMenu();check('Stop removes both native action and property controls',await q(`!document.querySelector('[id="extension-action-menu-${pkg}.reset-opacity"]')`));
   check('the native workflow keeps the window hidden',!win.isVisible());check('no renderer errors occurred',result.errors.length===0);result.ok=true;
  }catch(error){result.error=error.stack;try{result.dom=await q('document.body.innerText.slice(-6000)');result.project=await q('window.__fve.rawProject()');result.fields=await q('[...document.querySelectorAll("[data-extension-property]")].map(node=>({property:node.dataset.extensionProperty,value:node.value,disabled:node.disabled}))');}catch{}}
  finally{releaseGate?.();Ui.prototype.inspectorSet=originalSet;Commits.prototype.acquire=originalAcquire;dialog.showOpenDialog=original.open;dialog.showMessageBox=original.message;fs.writeFileSync(path.join(dir,process.env.FVE_NATIVE_CONTROLS_REOPEN==='1'?'reopen-result.json':'result.json'),JSON.stringify(result,null,2));app.exit(result.ok?0:1);}

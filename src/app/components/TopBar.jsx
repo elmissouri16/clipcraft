@@ -1,17 +1,12 @@
 import {ExtensionActions} from '../../features/plugins/components/ExtensionNativeUi.jsx';
 
-import { useState } from 'react';
-import { ArrowUpFromLine, AudioLines, Check, ChevronDown, CircleAlert, Film, FolderOpen, Home, Loader2, Save, Settings, PanelsTopLeft, Puzzle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ArrowUpFromLine, AudioLines, Check, ChevronDown, CircleAlert, Film, FolderOpen, Home, Loader2, Save, Settings } from 'lucide-react';
 import ContextMenu from "../../components/ui/ContextMenu.jsx";
-import { RATIOS, sizeFor } from "../../features/effects/effects.js";
 import { shortcutHint } from '../keymap.js';
 import { t } from '../../i18n/index.js';
 
-// The editor's top bar (docs/design/editor-usability.md, "Top bar"): brand on the left; in the centre the
-// project's name, its format and a quiet autosave status; on the right the workspace switch, Export and
-// Settings. File actions (Projects, Open, Save, Save as) live in the project menu behind the chevron next
-// to the name, as in the native menu and the shortcuts; the one visible Save button exists only while the
-// project has never been saved, since a project saves itself once it has a file.
+// Once a project has a file, its autosave status takes the place of the Save button.
 const SAVE_STATES = {
   new: ['', t('topbar.not_saved_yet_click_save_once')],
   saving: [t('topbar.saving'), t('topbar.saving_to_the_project_file')],
@@ -19,31 +14,29 @@ const SAVE_STATES = {
   error: [t('topbar.not_saved'), t('topbar.the_project_file_could_not_be_written')],
 };
 
-export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, dispatch, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, onPluginPanels,onManagePlugins }) {
+export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, onPluginPanels,onManagePlugins }) {
   const [menu, setMenu] = useState(null); // export menu
   const [projectMenu, setProjectMenu] = useState(null);
-  const set = (patch) => dispatch({ type: 'setProject', patch, transient: true });
+  const projectButton = useRef(null);
+  const projectName = String(project.name ?? '').trim() || t('home.untitled');
   const status = SAVE_STATES[saveState] || SAVE_STATES.new;
-  const openProjectMenu = (e) => { const r = e.currentTarget.getBoundingClientRect(); setProjectMenu({ x: r.left, y: r.bottom + 6 }); };
+  const toggleProjectMenu = (e) => {
+    const { left, bottom } = e.currentTarget.getBoundingClientRect();
+    setProjectMenu(open => open ? null : { x: left, y: bottom + 6 });
+  };
+  const closeProjectMenu = (reason) => {
+    setProjectMenu(null);
+    if (reason === 'escape') projectButton.current?.focus();
+  };
   return (
     <>
     <header className="topbar">
-      <div className="brand">
-        <img src="./logo.svg" alt="" className="brand-logo" draggable={false} />
-        <span className="brand-name">Clip<b>Craft</b></span>
-      </div>
-
       <div className="top-center">
         <div className="project-meta">
-          <input className="project-name" value={project.name} aria-label={t('topbar.project_name')} spellCheck={false}
-            onChange={(e) => set({ name: e.target.value })} />
-          <button type="button" className="icon-btn sm project-menu-btn" aria-label={t('topbar.project_menu')} title={t('topbar.project_menu')} aria-haspopup="menu" aria-expanded={!!projectMenu} onClick={openProjectMenu}>
-            <ChevronDown size={14} />
+          <button type="button" ref={projectButton} className="btn btn-sm btn-ghost project-menu-btn"
+            aria-label={t('topbar.project_menu')} title={projectName} aria-haspopup="menu" aria-expanded={!!projectMenu} onClick={toggleProjectMenu}>
+            {t('inspector.project')} <ChevronDown size={14} aria-hidden="true" />
           </button>
-          <select className="ratio-select" value={project.ratio} aria-label={t('topbar.aspect_ratio')}
-            onChange={(e) => dispatch({ type: 'setProject', patch: { ratio: e.target.value, ratioLocked: true, ...sizeFor(e.target.value, project.resolution) } })}>
-            {Object.keys(RATIOS).map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
           {saveState === 'new' ? (
             <button type="button" className="btn btn-sm save-now" onClick={(e) => onSave(e.altKey)} aria-label={t('close.save')} title={status[1]}><Save size={13} /> {t('close.save')}</button>
           ) : saveState === 'error' ? (
@@ -57,10 +50,14 @@ export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWo
       </div>
 
       <div className="top-workspace-actions top-actions">
-        {agentBadge}
-        <div className="workspace-switch" role="group" aria-label={t('topbar.workspace_mode')}>
-          {['edit', 'agent'].map(mode => <button key={mode} type="button" aria-pressed={workspaceMode === mode} onClick={() => onWorkspaceModeChange(mode)}>{mode === 'edit' ? t('timeline.edit') : t('topbar.agent')}</button>)}
+        <div className="top-workspace-group">
+          {agentBadge}
+          <div className="workspace-switch" role="group" aria-label={t('topbar.workspace_mode')}>
+            {['edit', 'agent'].map(mode => <button key={mode} type="button" aria-pressed={workspaceMode === mode} onClick={() => onWorkspaceModeChange(mode)}>{mode === 'edit' ? t('timeline.edit') : t('topbar.agent')}</button>)}
+          </div>
         </div>
+        <ExtensionActions location="toolbar" onManagePlugins={onManagePlugins} onPluginPanels={onPluginPanels}/>
+        <button type="button" className="btn btn-sm btn-ghost settings-btn" onClick={onSettings} aria-label={t('home.settings')}><Settings size={15} aria-hidden="true"/>{t('home.settings')}</button>
         <div className="export-split top-export">
           <button className="btn btn-export" onClick={onExport}><ArrowUpFromLine size={15} /> {t('topbar.export')}</button>
           <button className="btn btn-export caret" aria-label={t('topbar.more_export_options')} aria-haspopup="menu"
@@ -68,15 +65,13 @@ export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWo
             <ChevronDown size={15} />
           </button>
         </div>
-        <ExtensionActions location="toolbar"/>
-        <button type="button" className="btn btn-sm plugin-actions-toggle" aria-label={t('plugins.actions_manage')} title={t('plugins.actions_manage')} onClick={onManagePlugins}><Puzzle size={16}/><span className="plugin-actions-label">{t('plugins.actions_menu')}</span></button>
-        <button className="icon-btn plugin-panels-toggle" onClick={onPluginPanels} aria-label={t('plugins.extension_views')} title={t('plugins.extension_views')}><PanelsTopLeft size={17}/></button>
-        <button className="icon-btn settings-btn" onClick={onSettings} aria-label={t('home.settings')} title={t('home.settings')}><Settings size={17} /></button>
+
       </div>
     </header>
       {/* Fixed-position menus stay outside the header's size container. */}
       {projectMenu && (
-        <ContextMenu x={projectMenu.x} y={projectMenu.y} label={t('topbar.project_menu')} onClose={() => setProjectMenu(null)} items={[
+        <ContextMenu x={projectMenu.x} y={projectMenu.y} label={t('topbar.project_menu')} heading={projectName}
+          triggerRef={projectButton} onClose={closeProjectMenu} items={[
           { label: t('home.projects'), icon: Home, onClick: onHome },
           { label: t('topbar.open_project'), icon: FolderOpen, onClick: onOpen },
           'sep',

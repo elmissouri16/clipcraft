@@ -29,11 +29,15 @@ module.exports = async (win, app, dir) => {
 
     const fixture = path.join(dir, 'invalid-project.json');
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixture] });
-    for (const project of [{ videoClips: null }, { media: {} }, { textClips: [null] }]) {
+    for (const [project, message] of [
+      [{ videoClips: null }, /not a ClipCraft project file/],
+      [{ media: {} }, /not a ClipCraft project file/],
+      [{ media: [], videoClips: [], textClips: [null] }, /Invalid project/],
+    ]) {
       fs.writeFileSync(fixture, JSON.stringify(project));
       await q('window.__alerts = []'); await q(`document.querySelector('button[aria-label="Project menu"]').click()`); await until('!!document.querySelector(".ctx-menu")'); await q(`[...document.querySelectorAll('.ctx-menu button')].find((b) => b.textContent.trim().startsWith("Open project")).click()`);
       await until('window.__alerts.length > 0');
-      assert.match(await q('window.__alerts[0]'), /Invalid project/);
+      assert.match(await q('window.__alerts[0]'), message);
       assert.equal(await q('window.__fve.exportData().project.name'), 'Keep this edit');
       assert.equal(await q('!!document.querySelector(".timeline")'), true);
       assert.deepEqual(JSON.parse(fs.readFileSync(fixture, 'utf8')), project);
@@ -50,7 +54,7 @@ module.exports = async (win, app, dir) => {
 
     fs.writeFileSync(fixture, JSON.stringify({ name: 'Legacy project', media: [], videoClips: [] }));
     await q(`document.querySelector('button[aria-label="Project menu"]').click()`); await until('!!document.querySelector(".ctx-menu")'); await q(`[...document.querySelectorAll('.ctx-menu button')].find((b) => b.textContent.trim().startsWith("Open project")).click()`);
-    await until('document.querySelector(".project-name")?.value === "Legacy project"');
+    await until('document.querySelector(".project-menu-btn")?.title === "Legacy project"');
     assert.equal(await q('window.__fve.exportData().project.fps'), 30);
     result.checks.push('legacy project opens with compatible defaults');
 

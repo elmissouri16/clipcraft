@@ -3922,6 +3922,7 @@
   "tts.manage_extensions": "Gérer les plugins",
   "settings.automatic_voice_order": "Utilise le premier moteur configuré disponible. Actuel : {now}",
   "plugins.extension_more_actions": "Autres actions des extensions",
+  "plugins.action_details": "Détails de l’action",
   "plugins.preparing_save": "Préparation du projet à enregistrer…",
   "plugins.requested_by_extension": "Demandé par {name}",
   "plugins.preparing_export": "Préparation de la vidéo à exporter…",

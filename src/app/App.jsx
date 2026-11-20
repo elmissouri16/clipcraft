@@ -2415,7 +2415,7 @@ export default function App() {
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
-      <TopBar onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} dispatch={dispatch} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
+      <TopBar onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
         onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }} />
 
       <div className="agent-workspace-tools" hidden={!agentMode}>
