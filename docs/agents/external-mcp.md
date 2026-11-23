@@ -36,17 +36,21 @@ ClipCraft for these sessions. Design and decisions: [`docs/design/external-agent
 
 ## Tools
 
-The six project tools come first, then the native editor list (`nativeTools()` in
-`src/features/agent/runNativeAgent.js`):
+Use these tools to find, open and save projects. Once a project is open, the agent can also call the [native editing tools](native-agent-tools.md).
 
-| Tool | Does |
+| Tool | What it does |
 |---|---|
-| `get_status` | Home or editor, the open project (id, name, file, revision, save state), whether CraftAI is busy, whether an edit awaits `complete_edit` |
-| `list_projects` | Home's projects, newest first, each with an id for `open_project` |
-| `create_project` | a new project in one of Home's five formats (16:9, 9:16, 1:1, 4:5, 21:9) |
-| `open_project` | by id from `list_projects`, or by the path of a `.clipcraft.json` |
-| `save_project` | to the project's file, or with `path` to a new `.clipcraft.json` (never overwrites another file); the chat log goes beside it as `.clipcraft.chat.json` (docs/architecture/project-file.md) |
-| `close_project` | back to Home |
+| `get_status` | Reports whether ClipCraft is on Home or in the editor. Includes the open project's ID, name, file, revision and save state, plus CraftAI activity and any edit awaiting `complete_edit`. |
+| `list_projects` | Lists projects on Home, newest first. Pass a returned ID to `open_project`. |
+| `create_project` | Creates a project in 16:9, 9:16, 1:1, 4:5 or 21:9 format. |
+| `duplicate_project` | Opens an independent copy of the current project. Supply `name` to give the copy a title. Both projects appear on Home. |
+| `open_project` | Opens a project by ID or by the path to its `.clipcraft.json` file. |
+| `save_project` | Saves to the current file. Supply an unused `path` to save a new file. ClipCraft keeps the conversation beside it in a [chat sidecar](../architecture/project-file.md). |
+| `close_project` | Closes the current project and returns to Home. |
+
+To reuse an edit, ask your agent, “Open Episode 1, duplicate it as Episode 2, and work on Episode 2.”
+The copy has its own autosave and starts a fresh CraftAI conversation. Both projects reference the
+same source media. To keep a project file for the copy as well, call `save_project` with a new path.
 
 Image generation is offered only when CraftAI's assistant is Codex (it needs that sign-in). Your
 own MCP tool servers from Settings are not passed on; connect them to the outside agent directly.

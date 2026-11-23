@@ -1,0 +1,14 @@
+{
+  "name": "clipcraft-documentation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline reader for the ClipCraft editor and SDK manuals",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "markdown-it": "14.3.3",
+    "prismjs": "1.30.0"
+  }
+}

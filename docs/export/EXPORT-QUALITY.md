@@ -1,4 +1,4 @@
-# Export quality (implemented 2026-10-31)
+# Export quality
 
 One resolver — `src/features/export/exportQuality.js` — turns the stored settings (`project.exportSettings`) into the
 **effective** export configuration. Project Settings shows it, the Export dialog's pre-export summary
@@ -10,6 +10,9 @@ historical encoder behavior exactly (CRF `project.crf || 20`, veryfast, AAC 192k
 
 ## Presets
 
+The table describes the default MP4 settings. Selecting another container changes
+the available codecs. WebM uses VP9 with Opus audio. [Output formats](../architecture/export-experience.md#output-formats)
+
 | Preset | Mode | Encoder preset | Audio | Resolution cap |
 |---|---|---|---|---|
 | Low | CRF 28 | fast | AAC 96k | 720 (longest side) |
@@ -19,9 +22,11 @@ historical encoder behavior exactly (CRF `project.crf || 20`, veryfast, AAC 192k
 
 ## Custom
 
-Mode CRF (0–51) or target video bitrate (1–60 Mbps in the UI; resolver clamps 0.5–100), resolution
-cap Original/2160/1440/1080/720/480, fps Project/24/25/30/50/60, codec H.264/H.265, encoder preset
-ultrafast→veryslow, audio 96/128/192/256/320 kbps.
+Choose constant quality (CRF 0–51 for H.264/H.265 or 0–63 for VP9) or a
+target video bitrate. Set the longest-side resolution cap to Original, 2160,
+1440, 1080, 720 or 480 and keep the project frame rate or choose 24, 25, 30,
+50 or 60 fps. Available codecs follow the selected container and installed
+encoders. Audio bitrate choices are 96, 128, 192, 256 or 320 kbps.
 
 ## Stated rules (also shown as notes in the UI)
 
@@ -80,7 +85,7 @@ chroma round trip. Ultra's audio measures 222k because a pure 440 Hz sine cannot
 
 ## Cover picture (fixed 2026-11-09)
 
-The Export dialog's cover chooser scrubs a timeline time (`project.posterAt`). Three things follow
+In MP4 export, the cover chooser scrubs a timeline time (`project.posterAt`). Three things follow
 from it, and all three are the **composited** frame — main track, overlays, graphics and text:
 
 - **Preview:** `export:coverFrame` (main process) renders the timeline frame at that time with the

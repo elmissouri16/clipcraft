@@ -1,8 +1,9 @@
 # Trusted extension video export
 
 `workspace.read()` reports both overall `duration_sec` and native
-`export_duration_sec`. Video export is driven by the renderable main track;
-audio/text tails can extend the document without extending the video. The GIF
+`export_duration_sec`. The main picture and custom visual or audio tracks determine the native video
+export extent. Ordinary audio or text tails and custom metadata can extend the
+document without extending the video. The GIF
 and reviewed-upload sources choose and validate their ranges against the native
 export extent, including in private preparation drafts.
 
@@ -39,25 +40,58 @@ No project on Home is an error.
 | Option | Values / behavior |
 | --- | --- |
 | `name` | Optional output base name, at most 200 characters |
-| `file_path` | Optional absolute local `.mp4` destination with an existing parent folder |
+| `format` | `mp4`, `mov`, `mkv` or `webm`; defaults to MP4, or infers the supplied path suffix |
+| `file_path` | Optional absolute local destination whose suffix matches its format, with an existing parent folder |
 | `overwrite` | Defaults to false; true explicitly permits replacing an existing regular file |
 | `range` | `{start_sec, end_sec}`, finite increasing timeline seconds |
 | `quality` | `low`, `medium`, `high`, `ultra`; otherwise current project settings |
-| `codec` | `h264`, `h265`; capability fallback follows native export |
+| `codec` | `h264`, `h265`, or `vp9` where the container supports it; H.265 capability fallback follows native export |
 | `resolution` | Longest-side cap: `0` (original), 480, 720, 1080, 1440, 2160; never upscales |
 | `fps` | `0` (timeline), 24, 25, 30, 50, 60 |
 | `audio_kbps` | 96, 128, 192, 256, 320 |
-| `crf` | Integer 0–51 |
+| `crf` | Integer 0–51 for H.264/H.265, 0–63 for VP9 |
 | `bitrate_mbps` | Target 0.5–100 Mbps; mutually exclusive with `crf` |
 | `encoder_preset` | Native software presets from `ultrafast` through `veryslow` |
 
-Without `file_path`, the host chooses a unique MP4 name in Downloads. No picker
+Without `file_path`, the host chooses a unique name with the selected format's
+extension in Downloads. No picker
 opens. The return value has `{ok:true, file, size, metadata, elapsed_seconds,
 settings, warning?}`. Metadata is probed from the finished file and contains
-`duration_sec`, dimensions, fps, video/audio codecs and `has_audio`. Settings
+`container` (the actual ffprobe container name), `duration_sec`, dimensions, fps,
+video/audio codecs and `has_audio`. Settings
 describe the effective export configuration; they do not overwrite project export
 preferences. A returned file can be read with Node or imported with
 `context.media.import({path: result.file})` for the existing preview/insertion API.
+
+## Native containers and codecs
+
+| Format | Video | Audio |
+| --- | --- | --- |
+| MP4 | H.264 or H.265 | AAC |
+| QuickTime MOV | H.264 or H.265 | AAC |
+| Matroska MKV | H.264, H.265 or VP9 | AAC |
+| WebM | VP9 | Opus |
+
+WebM selects VP9 automatically. An explicitly incompatible codec or mismatched
+path suffix rejects before rendering. The host validates the reserved destination
+format again against the renderer's settings, and the encoder uses an explicit
+muxer plus a temporary filename with the matching extension. Outputs are native
+encodes, not MP4 files renamed to another suffix.
+
+VP9 requires the bundled `libvpx-vp9` and `libopus` encoders. The native selector
+disables unavailable WebM export; a saved unavailable preference remains readable
+and the export action explains its unavailable state. SDK calls reject rather
+than silently producing H.264. Discover the contract through `exports.formats`.
+Software speed presets map to VP9 `cpu-used` levels 0–5 with the `good` deadline;
+CRF uses `-b:v 0`, while bitrate mode uses the requested target. These controls
+are described by the [FFmpeg libvpx encoder documentation](https://ffmpeg.org/ffmpeg-all.html#libvpx).
+
+The native Export dialog stores its format independently of quality. Changing
+format clears an already chosen destination; Browse and renaming use the selected
+extension. Native summaries report the actual video and audio codecs. SDK format
+overrides affect only their render snapshot, and default to MP4 even when a
+different native format is saved. Review previews remain MP4. Embedded poster
+pictures remain an MP4 option; other containers use their ordinary first frame.
 
 Malformed options, stale document IDs, invalid sections, validation refusals and
 encoder failures reject. Cancellation rejects with `name === 'AbortError'`.
@@ -108,3 +142,24 @@ metadata, import/preview, preserved preferences, overwrite protection, both nati
 and SDK cancellation, stop/restart and default output selection. Exact results
 belong in `plugin-validation.json`; macOS development checks do not prove the
 remaining full regression, ASAR or Windows/Linux release gates.
+
+## Native-format expansion verification
+
+The real Electron workflow passed 40 checks, including SDK and native
+format selection, decoded MOV/MKV/WebM captions, suffix refusal, destination
+changes, actual VP9/Opus summaries, preserved preferences, cancellation and
+exclusive publication. Its format-selector screenshot was inspected. The custom
+GLSL scene also passed its WebM pixel comparison and cold-restart workflow.
+
+The standalone matrix encoded and decoded 8 format/codec/rate profiles,
+covering H.264, H.265 and VP9, both VP9 quality and bitrate modes, actual
+container signatures and audible audio. All 17 selected regressions and
+9 SDK suites passed. SDK source changes were empty during verification;
+only the matrix test was extended afterward, then passed independently. Product
+source and author declarations are unchanged from the SDK receipt. Renderer,
+structure, localization and whitespace checks passed.
+
+Receipts, measurements and the corrected Browse-label fixture failure are under
+`extensionNativeFormats` in the validation ledger. Subsequent
+[custom](plugin-custom-hooks.md) and [document lifecycle](plugin-document-lifecycle-hooks.md)
+hook slices have their own receipts. These are local macOS development checks.

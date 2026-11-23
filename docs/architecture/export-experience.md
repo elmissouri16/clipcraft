@@ -1,6 +1,27 @@
 # Export experience, efficiency and macOS compatibility
 
-Validated 2026-11-06T16:19:26.956Z. All changes remain local; no push or installer packaging was performed.
+## Output formats
+
+Choose the container in the video export dialog. The selected format determines the available video and audio codecs.
+
+| Output | Video | Audio when present |
+| --- | --- | --- |
+| MP4 | H.264 or H.265 | AAC |
+| QuickTime MOV | H.264 or H.265 | AAC |
+| Matroska (MKV) | H.264, H.265 or VP9 | AAC |
+| WebM | VP9 | Opus |
+
+MP4 supports an embedded cover from the composed frame. For an audio-only mix,
+choose MP3, WAV or M4A in the export menu. To generate an animated GIF, install
+the GIF export extension and select its range, size and frame rate.
+[GIF example](../../examples/extensions/gif-export/README.md)
+
+Extensions use `exports.render` for native video output. They can supply a range
+inside the renderable timeline, request progress, cancel a render and inspect the
+finished file's dimensions, duration and codecs. The output path suffix must
+match the container. [Extension export reference](../design/plugin-extension-exports.md)
+
+The export timing and platform observations below were recorded on 2026-11-06.
 
 ## Export experience
 

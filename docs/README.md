@@ -1,115 +1,34 @@
-# Contributor documentation
+# ClipCraft documentation
 
-- [Bundled, system and imported fonts](media/fonts.md) — loading, availability and export checks.
-- [Public plugin SDK and authoring tools](../packages/plugin-sdk/README.md) — typed helpers, scaffolding, checking, bundling, validation and packaging.
-- [Extension API guide](design/plugin-extension-api.md) — every context namespace with examples, lifecycle rules, limits and known gaps.
-- [Native extension actions and property controls](design/plugin-extension-native-controls.md) — live action state, icons and selected clip bindings with Undo.
-- [Pre-alpha SDK defect followup](design/plugin-api-hardening.md) — resolved registration, replay, configuration, picker and view defects.
-- [Adopted extension media retention](design/plugin-media-retention.md) — startup ownership cleanup and project/Undo protections.
-- [Author docs and packaged extension verification](design/plugin-authoring-packaged-followup.md) — current examples, packaged install/trust/Undo/views and cold restart.
-- [Plugin API review, 2026-11-18](design/plugin-api-review.md) — defects found and fixed, what was added and what remains.
-- [Current trusted Node extension contract](design/plugin-extension-host.md) — commands, events, services, hooks, jobs and native views.
-- [Runnable Node extensions](../examples/extensions/README.md) — speech, AI, media, export and editor features through general APIs.
-- [Creative content extensions](design/plugin-content-packs.md): sound/font assets, title/caption styles, LUT/color looks, motion and mixed effect/transition packs.
-- [Creative expansion audit](design/plugin-creative-expansion.md): native pack authoring, project dependency recovery and six-item acceptance evidence.
-- [Plugin usability expansion](design/plugin-usability-expansion.md): pack search/favorites/previews, reviewed preference migration, live rendering authoring and safe preview-cache cleanup.
-- [Runnable plugin examples](../examples/plugin-showcase/README.md): installable examples for every contribution type and an isolated eight-stage demo project.
-- [Historical managed local tools/models](design/plugin-local-tools.md) — retired speech recipe; current implementations use ordinary Node extensions.
-- [Plugin developer sessions](design/plugin-extension-development.md) — temporary Node snapshots, reload, build watching and runtime diagnostics.
-- [Picked media and destination jobs](design/plugin-media-jobs.md) — managed imports/process recipes and reviewed bounded HTTPS uploads.
-- [Reviewed panel actions](design/plugin-panel-reviewed-actions.md) — host AI/caption review and verified path-free GIF receipts.
-- [Historical native plugin controls](design/plugin-native-controls.md) — retired recipe toolbar actions and inspector drafts; use current Node registrations above.
-- [Plugin UI actions](design/plugin-ui-actions.md) — declarative menu entries, selection conditions and host command controls.
-- [Plugin edit transactions](design/plugin-edit-transactions.md) — atomic, permission-gated clip moves and trims.
-- [Plugin editor context](design/plugin-editor-context.md) — permission-gated selection, playback and bounded timeline metadata.
-- [Linked plugin split and trim](design/plugin-linked-edits.md) — explicit picture/audio partners and synchronized atomic edits.
-- [Main-track plugin split and trim](design/plugin-main-ranges.md) — source continuity, explicit gaps and retained transition overlap.
-- [Linked plugin reorder](design/plugin-linked-reorder.md) — explicit companion pairs, preserved offsets, transition policies and atomic sequencing.
-- [Plugin source automation](design/plugin-automation.md) — fixed-duration speed, source-time curves and validated effect-slot editing.
-- [Plugin static properties](design/plugin-properties.md) — typed text/style, picture geometry/opacity, volume/mute and edge fades.
-- [Plugin clip lifecycle](design/plugin-lifecycle.md) — bounded creation/deletion/duplication, explicit track creation and placement.
-- [Plugin ripple removal](design/plugin-ripple.md) — bounded clock removal, explicit free-clip/pair scope, gap and transition policies.
-- [Main-track plugin reorder](design/plugin-main-reorder.md) — explicit gap/transition policies and atomic transactions.
-- [SDK implementation contract](design/plugin-sdk.md)
-- [Trusted extension project inspection](design/plugin-project-inspection.md)
-- [Trusted extension workbench views](design/plugin-extension-views.md)
-- [Trusted extension messages](design/plugin-extension-messages.md)
-- [Trusted extension shortcuts](design/plugin-extension-shortcuts.md)
-- [Trusted extension save/export hooks](design/plugin-extension-hooks.md)
-- [Trusted extension video export](design/plugin-extension-exports.md)
-- [Trusted extension events](design/plugin-extension-events.md)
-- [Node extension development and diagnostics](design/plugin-extension-development.md)
-- [General marker edits, file pickers and host tools](design/plugin-extension-document-tools.md)
-- [Managed extension jobs and file publication](design/plugin-extension-jobs-files.md)
-- [CraftAI through ordinary extension services](design/plugin-extension-ai.md)
-- [Application services and atomic caption tracks](design/plugin-extension-host-services.md)
-- [Ordinary extension commands in CraftAI](design/plugin-extension-agent-commands.md)
-- [Plugin system and author contract](design/plugin-system.md)
-- [Sandboxed plugin command SDK](design/plugin-commands.md)
-- [Plugin AI workflows](design/plugin-ai-workflows.md) — caption sharing, bounded chapter generation and host review.
-- [Plugin caption translation](design/plugin-caption-translation.md) — enum inputs, source-track selection, side-by-side review and hidden translated tracks.
-- [Plugin GIF export jobs](design/plugin-gif-export.md) — bounded local rendering, destination protection, cancellation and verified artifacts.
-- [Plugin AI providers](design/plugin-ai-providers.md) — declarative services, scoped credentials, destination consent and host-owned requests.
-- [Custom plugin panels](design/plugin-panels.md) — isolated docked interfaces, read-only summary SDK, theme/focus contracts and failure recovery.
-- [Plugin implementation roadmap](design/plugin-roadmap.md)
-- [Plugin production-readiness audit](design/plugin-production-readiness.md) — prioritized release blockers, evidence gaps and acceptance criteria; v1 remains on hold.
-- [Plugin candidate release gate](design/plugin-release-readiness.md) — fixed-candidate full battery, integration fixes, artifact provenance and unresolved failures; production hold remains.
-- [Plugin permission and transaction review](design/plugin-transaction-review.md) — permission matrix, ordered mixtures, commit/revocation boundaries and bounded generated/app evidence.
-- [Project structure and development commands](architecture/project-structure.md)
-- [The project file and its chat sidecar](architecture/project-file.md)
-- [AI providers: one table, four protocols](agents/ai-providers.md)
-- [Localization: en, fr, es through one dictionary](design/localization.md)
-- [Reorganization validation](architecture/reorganization-validation.md)
-- [Agent editing](agents/agent-editing.md)
-- [Editorial agent: plans, transcript cuts, critique and beats](agents/editorial-agent.md)
-- [Long source clip discovery and reviewed preview cards](agents/source-discovery.md)
-- [Optional native analysis subagents](agents/analysis-subagents.md)
-- [Edit vocabulary and reference videos](agents/edit-vocabulary.md)
-- [Agent evaluation harness](agents/agent-eval.md)
-- [Agent editing validation](agents/agent-editing-validation.md)
-- [Agent loop reliability](agents/agent-loop-validation.md)
-- [Native agent tools](agents/native-agent-tools.md)
-- [External agents over MCP (Claude Code, Codex)](agents/external-mcp.md)
-- [Visual tool activity and inline exports](agents/tool-activity.md)
-- [AI thinking controls](agents/ai-thinking.md)
-- [Design system](design/DESIGN-SYSTEM.md)
-- [Editor usability and UI regression coverage](design/editor-usability.md)
-- [Word animation](design/WORD-MODE-ADDENDUM.md)
-- [Motion graphics plan](design/motion-graphics.md)
-- [Agent tool contract and adapters plan](design/agent-adapters.md)
-- [External agents over MCP plan](design/external-agent-mcp.md)
-- [Export quality](export/EXPORT-QUALITY.md)
-- [Effect export storage and failure handling](export/EFFECT-STORAGE.md)
-- [VoiceStudio as a local voice engine](media/voicestudio.md)
+Edit a video from local footage, work with CraftAI on the same timeline, or extend the editor with a creative pack or a Node plugin.
 
-Screenshots and demo media retain their existing paths so external README and
-documentation links remain usable.
+## Start here
 
-- [Historical executable retirement and compatibility](design/plugin-legacy-retirement.md).
+| Guide | What you will do |
+| --- | --- |
+| [Your first edit](editor/first-edit.md) | Assemble two shots, add a title and export an MP4. |
+| [Use a plugin](design/plugin-system.md) | Install a package and find its tools in the editor. |
+| [Build an extension](../packages/plugin-sdk/README.md) | Write a toolbar command that changes the timeline. |
+| [Create a pack](sdk/creative-packs.md) | Share a named export preset with another editor. |
 
-- [SDK capability discovery, typed services, project settings and debugger attach](design/plugin-sdk-general-contracts.md).
-- [SDK compatibility, data lifecycle and distribution](design/plugin-sdk-compatibility.md).
-- [Extension discovery, lifecycle and fixture stabilization](design/plugin-extension-stabilization.md).
-- [Portable package admission and live-library followup](design/plugin-extension-package-hardening.md).
-- [Creative intake and macOS/Linux development verification](design/plugin-extension-platform-followup.md).
-- [Native export reliability and lower-third example followup](design/plugin-extension-reliability-followup.md).
-- [Bounded package work and SDK source capture](design/plugin-extension-resource-admission.md).
-- [Native extension-view keyboard acceptance](design/plugin-extension-keyboard.md).
-- [Closed extension-view package retention](design/plugin-extension-view-cleanup.md).
-- [Native view layout and modal focus](design/plugin-extension-layout.md).
-- [Normal-session observations and remaining retention limits](design/plugin-extension-normal-session.md).
-- [Bounded private-session reuse and stable SDK payloads](design/plugin-extension-session-reuse.md).
-- [Bounded SDK archive publication](design/plugin-extension-package-publication.md).
-- [Archive boundaries, metadata and nested compression](design/plugin-extension-archive-limits.md).
-- [Native encoder FIFO handoff and recovery](design/plugin-extension-fifo-handoff.md).
-- [Combined full application regression and fixture corrections](design/plugin-extension-full-regression.md).
-- [SDK verification command and nonpublishing CI](design/plugin-sdk-validation.md).
-- [Fresh-cache SDK correction and Mac/Linux verification](design/plugin-sdk-cache-followup.md).
-- [Self-contained ASAR worker and native view](design/plugin-extension-asar-views.md).
-- [Unfinished gates skipped in the resumed pass](design/plugin-extension-unfinished.md).
-- [Remote SDK matrix, installed-app acceptance and release automation](design/plugin-remote-acceptance.md).
-- [Bounded inventory recovery enumeration](design/plugin-extension-recovery-bounds.md).
-- [Native-media ASAR paths and decoded exports](design/plugin-extension-native-media-paths.md).
-- [Preview/preference read bounds and final local plugin selection](design/plugin-extension-storage-bounds.md).
+## Editor handbook
 
-- [Plugin management layout](design/plugin-management-layout.md) — research, configuration hierarchy and packaged icons.
+| Guide | What you will learn |
+| --- | --- |
+| [Projects, media and recording](editor/media-projects.md) | Choose a format, bring in footage, record a screen, collect credits and move a project between machines. |
+| [Timeline editing](editor/timeline.md) | Place and trim clips, close gaps, manage layers, keep linked sound in sync and reuse a selection. |
+| [Picture and motion](editor/picture-motion.md) | Reframe a shot, animate a move, apply a mask, grade footage and control transitions. |
+| [Audio and narration](editor/audio.md) | Choose between extracting and detaching sound, preserve a mix, shape fades, clean dialogue and add a voiceover. |
+| [Titles and captions](editor/titles-captions.md) | Create a title, animate words, generate or import timed captions and control typography. |
+| [Working with CraftAI](editor/craftai.md) | Set up an agent, review a source range, direct an edit and revise a generated graphic. |
+| [Export and delivery](editor/export.md) | Choose a container and codec, check the render extent and deliver a video or an audio-only mix. |
+
+## Plugin developers
+
+Start with the [extension tutorial](../packages/plugin-sdk/README.md) or the [pack tutorial](sdk/creative-packs.md). Use the [API reference](design/plugin-extension-api.md) for method signatures, examples and failure conditions. The [capability index](design/plugin-sdk.md) maps features to their runtime keys. The [CLI guide](sdk/authoring.md) covers packaging and distribution.
+
+## Contributors
+
+For code layout, development commands and implementation history, see the [contributor index](contributors/README.md).
+
+[Build and open the local documentation reader](reader/README.md)
