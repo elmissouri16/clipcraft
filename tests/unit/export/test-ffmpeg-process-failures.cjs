@@ -12,6 +12,14 @@ const os = require('node:os');
 const path = require('node:path');
 
 const realSpawn = childProcess.spawn;
+const realExecFileSync = childProcess.execFileSync;
+// Exercise a build without a software HEVC encoder even when the test host has one.
+childProcess.execFileSync = (file, args, options) => {
+  const output = realExecFileSync(file, args, options);
+  return args.includes('-encoders')
+    ? Buffer.from(output.toString().split('\n').filter(line => !/\blibx265\b/.test(line)).join('\n'))
+    : output;
+};
 const probes = [];
 let mode = 'real';
 childProcess.spawn = (file, args, options) => {
@@ -20,10 +28,11 @@ childProcess.spawn = (file, args, options) => {
     setImmediate(() => p.emit('error', Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' })));
     return p;
   }
-  if (mode === 'disk-full') {
-    const p = new EventEmitter(); p.stderr = new PassThrough(); p.kill = () => {};
+  if (mode === 'disk-full' || mode === 'hevc-failure') {
+    const p = new EventEmitter(); p.stdout = new PassThrough(); p.stderr = new PassThrough(); p.kill = () => {};
     fs.writeFileSync(args.at(-1), 'partial encoded output');
-    setImmediate(() => { p.stderr.write('No space left on device'); p.emit('close', 1); });
+    const message = mode === 'disk-full' ? 'No space left on device' : 'Hardware HEVC encoder failed';
+    setImmediate(() => { p.stderr.write(message); p.emit('close', 1); });
     return p;
   }
   // The hardware probe encodes a test pattern: this one hangs like a wedged driver until killed.
@@ -62,5 +71,31 @@ const ff = require('../../../electron/media/ffmpeg.cjs');
   const pick = await Promise.race([ff.pickEncoder('h264'), new Promise((r) => setTimeout(() => r('still waiting'), 10000))]);
   assert.equal(pick, 'libx264', `a hanging hardware probe falls back to the software encoder (${pick})`);
   assert.ok(Date.now() - started < 5000, 'the fallback comes after the probe limit, not never');
+
+  mode = 'hevc-failure';
+  process.env.FVE_ENCODER = 'hevc_videotoolbox';
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hevc-atomic-'));
+  try {
+    const target = path.join(exportDir, 'previous.mp4'), source = path.join(exportDir, 'source.mp4');
+    fs.writeFileSync(target, 'previous export');
+    fs.writeFileSync(source, 'source bytes');
+    const project = { width: 160, height: 90, fps: 30, export: { format: 'mp4', codecFamily: 'h265' },
+      media: [{ id: 'm', type: 'video', path: source, width: 160, height: 90, duration: 1 }],
+      videoClips: [{ id: 'c', mediaId: 'm', in: 0, out: 1 }], audioClips: [], overlayClips: [], effectClips: [], textClips: [] };
+    const encoders = [];
+    await assert.rejects(ff.runExport(project, target, (_progress, detail) => {
+      if (detail?.encoder) encoders.push(detail.encoder);
+    }).promise, error => {
+      assert.match(error.message, /Could not encode H\.265/);
+      assert.match(error.cause.message, /Hardware HEVC encoder failed/);
+      return true;
+    });
+    assert.deepEqual(encoders, ['hevc_videotoolbox']);
+    assert.equal(fs.readFileSync(target, 'utf8'), 'previous export');
+    assert.deepEqual(fs.readdirSync(exportDir).sort(), ['previous.mp4', 'source.mp4']);
+  } finally {
+    delete process.env.FVE_ENCODER;
+    fs.rmSync(exportDir, { recursive: true, force: true });
+  }
   console.log(`FFMPEG PROCESS FAILURES OK (hardware probes timed out: ${probes.join(', ') || 'none on this machine'})`);
 })().catch((e) => { console.error(e.stack || e.message); process.exit(1); });

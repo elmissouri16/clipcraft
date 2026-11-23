@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
   pluginsExtensionCommitApply:id=>ipcRenderer.sendSync('plugins:extensionCommitApply',id),
   pluginsExtensionCommitFinish:(id,applied)=>ipcRenderer.invoke('plugins:extensionCommitFinish',id,applied),
   pluginsExtensionAuthorize: (key,generation,execution,jobOperation) => ipcRenderer.invoke('plugins:extensionAuthorize',key,generation,execution,jobOperation),
+  pluginsExtensionAuthorizeWrite: (...args) => ipcRenderer.sendSync('plugins:extensionAuthorizeWrite', ...args),
   pluginsExtensionReply: reply => ipcRenderer.invoke('plugins:extensionReply',reply),
   pluginsExtensionPublish: (name,value,metadata) => ipcRenderer.invoke('plugins:extensionPublish',name,value,metadata),
   pluginsDebugDevelopment:enabled=>ipcRenderer.invoke('plugins:debugDevelopment',enabled),

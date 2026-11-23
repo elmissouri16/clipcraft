@@ -78,13 +78,26 @@ async function publishPlugin(directory,{appVersion=APP_VERSION}={}){
   let owned=false;try{const metadata=await readJson(marker);owned=metadata.version===1&&(await validateFiles(await readFolder(output),appVersion)).key===metadata.key;}catch{}
   if(!owned)fail('OUTPUT_EXISTS','dist is not an unchanged SDK build. Move it aside before building.');
  }
- const stage=await fs.mkdtemp(path.join(root,'.clipcraft-stage-')),backup=path.join(root,'.clipcraft-backup-'+crypto.randomUUID());let moved=false,published=false;
+ const stage=await fs.mkdtemp(path.join(root,'.clipcraft-stage-')),backup=path.join(root,'.clipcraft-backup-'+crypto.randomUUID());
+ const temp=marker+'.'+crypto.randomUUID()+'.tmp';
+ let moved=false,published=false;
  try{
   for(const [file,bytes] of bundle.files){await fs.mkdir(path.dirname(path.join(stage,file)),{recursive:true});await fs.writeFile(path.join(stage,file),bytes,{flag:'wx'});}
+  await fs.writeFile(temp,JSON.stringify({version:1,key:bundle.key})+'\n',{flag:'wx'});
   if(exists){await fs.rename(output,backup);moved=true;}
-  try{await fs.rename(stage,output);published=true;}catch(error){if(moved)await fs.rename(backup,output);throw error;}
-  const temp=marker+'.'+crypto.randomUUID()+'.tmp';try{await fs.writeFile(temp,JSON.stringify({version:1,key:bundle.key})+'\n',{flag:'wx'});await fs.rename(temp,marker);}finally{await fs.rm(temp,{force:true});}
- }finally{await fs.rm(stage,{recursive:true,force:true});if(published&&moved)await fs.rm(backup,{recursive:true,force:true});}
+  try{
+   await fs.rename(stage,output);published=true;
+   await fs.rename(temp,marker);
+  }catch(error){
+   if(published)await fs.rename(output,stage);
+   if(moved)await fs.rename(backup,output);
+   throw error;
+  }
+  if(moved)await fs.rm(backup,{recursive:true,force:true});
+ }finally{
+  await fs.rm(temp,{force:true});
+  await fs.rm(stage,{recursive:true,force:true});
+ }
  return {directory:output,key:bundle.key,manifest:bundle.manifest,files:[...bundle.files.keys()],typecheck};
 }
 async function buildPlugin(directory,options={}){

@@ -22,7 +22,7 @@ export function createExtensionEditorTools(app) {
   const declarations = () => externalTools('').tools.filter((tool) => !EXCLUDED.has(tool.name) && !tool.name.startsWith('mcp_'));
   const list = () => declarations().map(({ name, description, parameters }) => ({ name, description, parameters }));
 
-  async function execute(input, check, extensionId) {
+  async function execute(input, check, extensionId, canWrite) {
     const host = app();
     if (!input || typeof input !== 'object' || !Array.isArray(input.calls) || !input.calls.length || input.calls.length > EDITOR_TOOL_LIMITS.calls) throw new Error(`Run 1 to ${EDITOR_TOOL_LIMITS.calls} editor tool calls at a time.`);
     const tools = declarations(), atomic = input.atomic !== false;
@@ -42,22 +42,33 @@ export function createExtensionEditorTools(app) {
     host.dispatch({ type: 'beginAgentEdit', token, ...(typeof extensionId === 'string' && extensionId ? { source: { kind: 'extension', extensionId } } : {}) });
     await host.settle();
     if (host.pilotApp.getAgentEdit?.()?.token !== token) throw new Error(BUSY);
-    let stopped = false, failure = null;
+    let stopped = false, revoked = false, failure = null;
     const isCurrent = () => app().screen() === 'editor' && app().project().id === before.id && app().loadVersion() === loadVersion;
     const ctx = makeAgentCtx({ app: host.pilotApp, provider: '', getProject: () => app().project(), dispatch: host.dispatch, settle: host.settle, requestId: token, isCurrent, isStopped: () => stopped });
-    const runner = createToolRunner({ ...ctx, requestId: token, isCanceled: () => stopped || !isCurrent() });
+    const checkActive = async () => {
+      try { await check?.(); }
+      catch (error) { revoked = true; throw error; }
+    };
+    const authorizeWrite = () => {
+      if (canWrite && !canWrite()) {
+        revoked = true;
+        throw new Error('Extension callback or job stopped');
+      }
+    };
+    const runner = createToolRunner({ ...ctx, requestId: token, isCanceled: () => stopped || revoked || !isCurrent(),
+      ...(check ? { checkActive } : {}), authorizeWrite });
     const results = [];
     try {
       for (const [index, call] of calls.entries()) {
         let result;
-        try { await check?.(); result = await runner.run(call.name, call.args); await host.settle(); }
+        try { await checkActive(); result = await runner.run(call.name, call.args); await host.settle(); }
         catch (error) { result = { error: error.message }; }
         if (!result || typeof result !== 'object') result = { error: 'The tool returned no result.' };
         if (JSON.stringify(result).length > EDITOR_TOOL_LIMITS.resultBytes) result = { error: 'The tool result is too large to return to an extension.' };
         results.push(result);
         // A user edit during the batch ends the agent edit: stop there and say so.
         if (!ctx.editActive()) { failure = { index, name: call.name, error: 'The project was changed by the user during this edit.', interrupted: true }; break; }
-        if (result.error && atomic) { failure = { index, name: call.name, error: result.error }; break; }
+        if (result.error && (atomic || revoked)) { failure = { index, name: call.name, error: result.error }; break; }
       }
       if (failure && atomic && !failure.interrupted) while (ctx.undoOwn()) await host.settle();
     } finally {
@@ -65,13 +76,13 @@ export function createExtensionEditorTools(app) {
       app().dispatch({ type: 'endAgentEdit', token });
       await app().settle();
     }
-    if (failure && (atomic || failure.interrupted)) throw new Error(`Editor tool ${failure.name} (call ${failure.index + 1}) failed: ${failure.error}${atomic && !failure.interrupted ? ' Nothing from this run was kept.' : ''}`);
+    if (failure) throw new Error(`Editor tool ${failure.name} (call ${failure.index + 1}) failed: ${failure.error}${atomic && !failure.interrupted ? ' Nothing from this run was kept.' : ''}`);
     return { results, changed: isCurrent() && !sameDoc(before, app().project()) };
   }
 
   return {
     list,
     // One run at a time: edit boundaries never interleave.
-    run(input, check, extensionId) { const task = queue.then(() => execute(input, check, extensionId)); queue = task.catch(() => {}); return task; },
+    run(input, check, extensionId, canWrite) { const task = queue.then(() => execute(input, check, extensionId, canWrite)); queue = task.catch(() => {}); return task; },
   };
 }

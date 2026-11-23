@@ -24,11 +24,25 @@ ipcRenderer.on('extensionView:message',(_event,message)=>{for(const callback of 
 ipcRenderer.on('extensionView:theme',(_event,value)=>{currentTheme=value;apply(value);for(const callback of themeListeners)try{callback(value);}catch{}});
 ipcRenderer.on('extensionView:shortcuts',(_event,value)=>{shortcuts=new Set(value);});
 window.addEventListener('DOMContentLoaded',()=>boot.then(info=>apply(currentTheme??info.theme)).catch(()=>{}),{once:true});
+// Sandboxed preloads cannot require the editor's keymap module. Keep physical
+// letter/digit handling here aligned with comboFromEvent in src/app/keymap.js.
+const keyAliases = { ' ': 'Space', Spacebar: 'Space', Esc: 'Escape', Del: 'Delete', Left: 'ArrowLeft', Right: 'ArrowRight', Up: 'ArrowUp', Down: 'ArrowDown' };
+function shortcutCombo(event) {
+ const code = event.code || '';
+ const letter = /^Key([A-Z])$/.exec(code)?.[1];
+ const digit = /^Digit([0-9])$/.exec(code)?.[1];
+ let key = Object.hasOwn(keyAliases, event.key) ? keyAliases[event.key] : event.key;
+ if (!key || key === 'Unidentified' || key === 'Dead') key = letter || digit || code;
+ if (!key) return null;
+ if ([...key].length === 1 && !/^[a-z0-9]$/i.test(key) && !event.getModifierState?.('AltGraph')) key = letter || digit || key;
+ if (key.length === 1) key = key.toUpperCase();
+ const ctrl = event.ctrlKey || (process.platform === 'darwin' && event.metaKey);
+ return [ctrl && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', key].filter(Boolean).join('+');
+}
 window.addEventListener('keydown',event=>{
  if(!event.isTrusted)return;
  const typing=event.composedPath().some(node=>['INPUT','TEXTAREA','SELECT'].includes(node?.tagName)||node?.isContentEditable);
- const key=event.key===' '?'Space':event.key.length===1?event.key.toUpperCase():event.key;
- const combo=[(event.ctrlKey||process.platform==='darwin'&&event.metaKey)&&'Ctrl',event.altKey&&'Alt',event.shiftKey&&'Shift',key].filter(Boolean).join('+');
+ const combo=shortcutCombo(event);
  if(!typing&&!event.repeat&&!event.isComposing&&shortcuts.has(combo)){event.preventDefault();event.stopImmediatePropagation();invoke('shortcut',combo).catch(()=>{});return;}
  if(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopImmediatePropagation();invoke('focus','escape').catch(()=>{});}
  if(event.key==='Tab'){const controls=tabControls(event.shiftKey);if(!controls.length||(event.shiftKey?document.activeElement===controls[0]||document.activeElement===document.body:document.activeElement===controls.at(-1))){event.preventDefault();invoke('focus',event.shiftKey?'backward':'forward').catch(()=>{});}}

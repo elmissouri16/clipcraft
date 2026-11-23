@@ -349,6 +349,8 @@ export default function Preview({
     // background, as the export's xfade with the gap's background frames does: the gap takes a
     // slot of its own, filled with the background colour, for the transition's length.
     const here = mainIndex.at(t), crossing = here.length === 2 && here[1].trans > 0;
+    // The exported audio uses a linear acrossfade, independent of the picture transition and easing.
+    const audioMix = crossing ? Math.max(0, Math.min(1, (t - here[1].start) / here[1].trans)) : null;
     const active = here.filter(l => mediaById[l.clip.mediaId] || (crossing && l.clip.gap));
     const incoming = active.length === 2 ? active[1] : null;
     const fxTr = incoming && incoming.trans > 0 ? fxTransition(incoming.clip.transition.type,incoming.clip.transition) : null;
@@ -408,10 +410,13 @@ export default function Preview({
         // Voice Enhancer: the video element goes silent and a hidden audio element plays the
         // enhanced file (which starts at the clip's in-point, so its time is the local time).
         const ep = enhPath(c);
-        syncMedia(v, toFileUrl(previewPath(m)), c.in + (t - item.start) * speed, isPlaying, ep || c.muted ? 0 : audioGain(c, t - item.start, item.end - item.start), speed);
+        const localTime = t - item.start;
+        const weight = audioMix === null ? 1 : item === here[1] ? audioMix : 1 - audioMix;
+        const gain = c.muted ? 0 : audioGain(c, localTime, item.end - item.start) * weight;
+        syncMedia(v, toFileUrl(previewPath(m)), c.in + localTime * speed, isPlaying, ep ? 0 : gain, speed);
         if (ep && enhEls.current[c.id]) {
           enhSounding.add(c.id);
-          syncMedia(enhEls.current[c.id], toFileUrl(ep), (t - item.start) * speed, isPlaying, c.muted ? 0 : audioGain(c, t - item.start, item.end - item.start), speed);
+          syncMedia(enhEls.current[c.id], toFileUrl(ep), localTime * speed, isPlaying, gain, speed);
         }
         // The playback clock anchors to the lead (non-incoming) clip's element.
         if (item !== incoming || !leadRef.current) leadRef.current = { el: v, item, clip: c };

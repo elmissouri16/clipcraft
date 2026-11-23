@@ -35,9 +35,10 @@ encoders. Audio bitrate choices are 96, 128, 192, 256 or 320 kbps.
 - **H.265 encoder choice:** on macOS the bundled FFmpeg has `hevc_videotoolbox`; `pickEncoder('h265')`
   test-encodes half a second with it once per session and uses it when that succeeds (the summary says
   "H.265 · VideoToolbox"), with `-tag:v hvc1` so QuickTime/iOS play the file. Elsewhere, and when the
-  probe fails, H.265 encodes in software with libx265 (same hvc1 tag). If libx265 were missing too, the
-  export falls back to H.264 and the summary says so (capabilities come from the main process via
-  `export:caps`: `{ libx265, h265Hardware }`).
+  probe fails, H.265 encodes in software with libx265 (same hvc1 tag). The summary shows H.264 before
+  export if neither H.265 encoder is available. If a configured H.265 export fails and libx265 is
+  unavailable, ClipCraft reports the failure and preserves any existing destination. Capabilities
+  come from `export:caps` as `{ libx265, h265Hardware }`.
 - Hardware H.264 encoders (when present) get mapped equivalents of the same intent: NVENC preset
   levels p1–p7 for the speed names + CQ = CRF+3, QSV takes the preset names + global_quality = CRF+3,
   AMF collapses to speed/balanced/quality + QP = CRF+2; bitrate mode passes the target bitrate.

@@ -434,7 +434,8 @@ export function createToolRunner(ctx) {
     return typeof value === 'function' ? (...args) => {
       if (ctx.isCanceled?.()) throw new Error('Editing stopped.');
       const result = value.apply(ctx.api, args);
-      return result && typeof result.then === 'function' ? result.then(output => {
+      return result && typeof result.then === 'function' ? result.then(async output => {
+        if (ctx.checkActive) await ctx.checkActive();
         if (ctx.isCanceled?.()) throw new Error('Editing stopped.');
         return output;
       }) : result;
@@ -459,6 +460,7 @@ export function createToolRunner(ctx) {
     const planned = prepareProjectAction(before, action), candidate = planned.project;
     const issues = newValidationIssues(validate(before), validate(candidate), candidate);
     if (issues.length) throw new Error(`Edit validation failed: ${issues.join(' ')}`);
+    ctx.authorizeWrite?.();
     operation?.actions.push(action);
     if (operation) operation.wrote = true;
     ctx.dispatch(planned.action);
@@ -467,6 +469,7 @@ export function createToolRunner(ctx) {
     if (ctx.isCanceled?.()) throw new Error('Editing stopped.');
     if (operation && !operation.wrote && projectRevision(ctx.getProject()) !== operation.revision) throw new Error('The project changed while media was being prepared. Its stale result was not applied.');
     if (ctx.editActive && !ctx.editActive()) throw new Error('The editor request no longer owns this edit.');
+    ctx.authorizeWrite?.();
     if (operation) operation.wrote = true;
     return ctx.addProbed?.(result);
   };

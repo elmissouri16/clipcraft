@@ -22,6 +22,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 
 const CAP = 24; // projects kept in the store; the brief's floor is 20
 const ID_OK = /^[A-Za-z0-9_-]{1,80}$/;
@@ -90,13 +91,19 @@ function prune(root, entries, keepId) {
   return entries.filter((e) => !evict.has(e.id));
 }
 
-// The identity of a project file on disk ({ mtimeMs, size }), or null when it cannot be read. A slot
+// The identity of a project file on disk, or null when it cannot be read. A slot
 // records it for its bound file each time it is written, so opening the slot later can tell whether
 // the file changed since (another computer, an outside tool, a backup restore) and open the file instead.
 function fileStamp(file) {
-  try { const st = fs.statSync(file); return st.isFile() ? { mtimeMs: st.mtimeMs, size: st.size } : null; } catch { return null; }
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) return null;
+    const digest = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    return { mtimeMs: st.mtimeMs, size: st.size, ctimeMs: st.ctimeMs, digest };
+  } catch { return null; }
 }
-const sameStamp = (a, b) => (!a && !b) || (!!a && !!b && a.mtimeMs === b.mtimeMs && a.size === b.size);
+const sameStamp = (a, b) => (!a && !b) || (!!a && !!b && a.mtimeMs === b.mtimeMs && a.size === b.size
+  && (b.digest === undefined || a.digest === b.digest));
 const readText = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
 
 // True when a slot's bound file exists and is not the file the slot last saw: its identity differs from
@@ -110,8 +117,8 @@ function fileChangedSince(slot, root) {
   const now = fileStamp(slot.file);
   if (!now) return false; // the file is gone: the slot is the only copy left
   const was = slot.fileStamp;
-  if (!(was && typeof was === 'object')) return now.mtimeMs > (Number(slot.updatedAt) || 0);
-  if (now.mtimeMs !== was.mtimeMs || now.size !== was.size) return true;
+  if (!(was && typeof was === 'object')) return Math.max(now.mtimeMs, now.ctimeMs) > (Number(slot.updatedAt) || 0);
+  if (!sameStamp(now, was) || (was.digest === undefined && now.ctimeMs > (Number(slot.updatedAt) || 0))) return true;
   if (!Object.hasOwn(slot, 'chatStamp')) return false; // a slot written before the sidecar was stamped
   const sidecarFile = require('./sidecar.cjs').chatPath(slot.file);
   if (sameStamp(fileStamp(sidecarFile), slot.chatStamp)) return false;

@@ -8,7 +8,7 @@ import {
   ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, AudioLines, Copy, CopyPlus, Eye, EyeOff, Film, Flag, GripVertical, Layers, Link2, Lock, LockOpen, Magnet, Mic, MoreHorizontal, MousePointer2, Music, Pencil, Plus, Scissors, Slice,
   Sparkles, Square, StretchHorizontal, Target, Trash2, Type, Undo2, Unlink, Volume2, VolumeX, Redo2, X, ZoomIn, ZoomOut, Captions, ScanLine, MessageSquarePlus, ChevronRight, Loader2,
 } from 'lucide-react';
-import { LAYERED, MIN_CLIP, clipLayer, effectObjects, findClipIn, findLinkPartner, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../../../state/store.js";
+import { LAYERED, MIN_CLIP, clipLayer, effectObjects, findClipIn, findLinkPartner, formatTime, freeLen, isLayerLocked, layerCount, layerFree, layerName, layerOf, layerStateOf, prepareProjectAction, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../../../state/store.js";
 import { animById, animOf, keyTimes, moveKeys } from '../anim.js';
 import { filterName } from "../../effects/filters.js";
 import { allTransitions, effectInfo } from "../../effects/effects.js";
@@ -691,7 +691,9 @@ export default function Timeline({
     const videoEnd = () => {
       if (toOverlay === null) return;
       setDrop(null);
-      dispatch({ type: 'moveToOverlay', id: clip.id, at: toOverlay });
+      const { project: next, action } = prepareProjectAction(projectRef.current, { type: 'moveToOverlay', id: clip.id, at: toOverlay });
+      if (!findClipIn(next, 'overlay', clip.id)) return;
+      dispatch(action);
       onSelect({ track: 'overlay', id: clip.id });
     };
     if (mode === 'move') drag(e, videoMove, videoEnd);
@@ -730,6 +732,11 @@ export default function Timeline({
     let toMain = null; // overlay clip dragged down onto the main track: insert index
     const freeMove = (d, ev) => {
       if (track === 'overlay' && mode === 'move' && laneAt(ev) === 'video') {
+        if (isLayerLocked(projectRef.current, 'video', 0)) {
+          toMain = null;
+          setDrop(null);
+          return;
+        }
         const t = timeFromEvent(ev);
         toMain = layout.filter((l) => (l.start + l.end) / 2 < t).length;
         setDrop({ lane: 'video', time: t, at: toMain < layout.length ? layout[toMain].start : layout.length ? layout[layout.length - 1].end : 0 });
@@ -789,7 +796,9 @@ export default function Timeline({
       setSnapAt(null);
       if (toMain === null) return;
       setDrop(null);
-      dispatch({ type: 'moveToMain', id: clip.id, index: toMain });
+      const { project: next, action } = prepareProjectAction(projectRef.current, { type: 'moveToMain', id: clip.id, index: toMain });
+      if (!findClipIn(next, 'video', clip.id)) return;
+      dispatch(action);
       onSelect({ track: 'video', id: clip.id });
     };
     if (mode === 'move') drag(e, freeMove, freeEnd);

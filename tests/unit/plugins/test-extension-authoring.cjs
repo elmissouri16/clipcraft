@@ -8,6 +8,23 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
  await fs.writeFile(entry,original.replace("await context.log('Extension activated');", "await context.editor.apply({documentId:23,revision:'bad',operations:[]});"));await assert.rejects(sdk.checkPlugin(source),e=>e.code==='TYPECHECK_FAILED'&&e.details.includes('not assignable'));checks.push('invalid SDK transaction shapes fail strict checking');
  await fs.writeFile(entry,original+'\nconst mustBeNumber:number="wrong";\n');await assert.rejects(sdk.buildPlugin(source),e=>e.code==='TYPECHECK_FAILED');checks.push('type errors stop the build before replacing prior output');assert.equal(await fs.readFile(path.join(source,'tsconfig.json'),'utf8'),config);checks.push('generated compiler configuration leaves the author project untouched');
  await fs.writeFile(entry,original);const archive=path.join(dir,'node.tgz');await sdk.packPlugin(built.directory,archive);assert.equal((await sdk.validatePlugin(archive)).key,built.key);checks.push('Node output retains exact fingerprint through packaging and validation');
+ const rollbackSource=path.join(dir,'rollback-preset');
+ await sdk.createPlugin(rollbackSource,{id:'studio.rollback',name:'Rollback',publisher:'Fixture',template:'export-preset'});
+ const beforeRollback=await sdk.buildPlugin(rollbackSource);
+ const rollbackManifest=path.join(rollbackSource,'plugin.json'),buildMarker=path.join(rollbackSource,'.clipcraft-build.json');
+ const nextManifest=JSON.parse(await fs.readFile(rollbackManifest,'utf8'));
+ await fs.writeFile(rollbackManifest,JSON.stringify({...nextManifest,description:'Changed preset package'}));
+ const rename=fs.rename;
+ try{
+  fs.rename=async (from,to)=>{
+   if(to===buildMarker)throw Object.assign(Error('Simulated marker publication failure'),{code:'ENOSPC'});
+   return rename(from,to);
+  };
+  await assert.rejects(sdk.buildPlugin(rollbackSource),{code:'ENOSPC'});
+ }finally{fs.rename=rename;}
+ assert.equal((await sdk.validatePlugin(beforeRollback.directory)).key,beforeRollback.key,'failed publication keeps the previous build');
+ assert.notEqual((await sdk.buildPlugin(rollbackSource)).key,beforeRollback.key,'the build can be retried');
+ checks.push('failed marker publication restores the previous build and remains retryable');
  const manifestPath=path.join(source,'plugin.json'),serviceOnly=JSON.parse(await fs.readFile(manifestPath,'utf8'));delete serviceOnly.contributes;await fs.writeFile(manifestPath,JSON.stringify(serviceOnly));await fs.writeFile(entry,"import type {ExtensionContext} from '@clipcraft/plugin-sdk/extension'; export async function activate(context:ExtensionContext){await context.log('Original declaration-free fixture');}\n");const declarationFree=await sdk.buildPlugin(source);assert.equal(declarationFree.manifest.main,'dist/extension.cjs');assert.deepEqual(Object.values(declarationFree.manifest.contributes).flat(),[]);assert.equal(JSON.parse(await fs.readFile(manifestPath,'utf8')).contributes,undefined);checks.push('general Node extensions build without declarative contributions');
  await fs.writeFile(entry,`import type {ExtensionContext} from '@clipcraft/plugin-sdk/extension';
  const contract={version:1,methods:{length:{input:{type:'object',properties:{text:{type:'string'},suffix:{type:'string'}},required:['text']},output:{type:'integer'}},chunks:{input:{type:'null'},output:{type:'bytes'},stream:true}}} as const;

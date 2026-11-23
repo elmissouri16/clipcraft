@@ -1064,7 +1064,8 @@ function videoCodec2(encoder, eff) {
       ...(eff.mode === 'bitrate' ? ['-b:v', `${eff.bitrateMbps}M`] : ['-q:v', String(Math.max(1, Math.round((51 - eff.crf) / 51 * 100)))]),
       ...(encoder === 'hevc_videotoolbox' ? ['-tag:v', 'hvc1'] : [])];
   }
-  if (eff.codecFamily === 'h265' && hasLibx265()) {
+  if (eff.codecFamily === 'h265') {
+    if (!hasLibx265()) throw Error(t('export.h265_encoder_failed'));
     const rate = eff.mode === 'bitrate' ? ['-b:v', `${eff.bitrateMbps}M`] : ['-crf', String(eff.crf)];
     return ['-c:v', 'libx265', '-preset', eff.encoderPreset, ...rate, '-tag:v', 'hvc1'];
   }
@@ -1097,7 +1098,10 @@ function videoCodec(encoder, crf) {
 // other platforms tries NVIDIA/Intel/AMD. FVE_ENCODER overrides this for tests.
 // Failed hardware exports retry with the matching software codec (see runExport).
 const encoderPicks = new Map();
-const softwareEncoder = family => family==='vp9'?'libvpx-vp9':family === 'h265' && hasLibx265() ? 'libx265' : 'libx264';
+const softwareEncoder = family => {
+  if (family === 'h265') return hasLibx265() ? 'libx265' : null;
+  return family === 'vp9' ? 'libvpx-vp9' : 'libx264';
+};
 function pickEncoder(family = 'h264') {
   if(family==='vp9'){if(!hasEncoder('libvpx-vp9')||!hasEncoder('libopus'))return Promise.reject(Error('VP9/Opus export is unavailable in this FFmpeg build.'));return Promise.resolve('libvpx-vp9');}
   if (process.env.FVE_ENCODER) return Promise.resolve(process.env.FVE_ENCODER);
@@ -1191,10 +1195,12 @@ ${log.slice(-3000)}`))));
       const family = effectiveExport(project).codecFamily, fallback = softwareEncoder(family);
       const encoder = await pickEncoder(family);
       if (canceled) throw stopped();
+      if (!encoder) throw Error(t('export.h265_encoder_failed'));
       try {
         await once(encoder);
       } catch (e) {
         if (canceled || encoder === fallback) throw e;
+        if (!fallback) throw new Error(t('export.h265_encoder_failed'), { cause: e });
         // The graphics card's encoder failed on this export (driver, size limit…): redo it on the CPU, and keep
         // using the CPU from now on.
         encoderPicks.set(family, Promise.resolve(fallback));

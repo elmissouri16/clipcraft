@@ -16,7 +16,7 @@ import { FILTER_CATS, filterFxLook, filterName } from "../../effects/filters.js"
 import { loadPresets, savePresets, upsertPreset, removePreset, presetPatch } from "../../effects/presets.js";
 import { BUNDLED_LUTS } from "../../effects/lut.js";
 import { loadLutLibrary, saveLutLibrary, addLutEntry, removeLutEntry } from "../../effects/lutlib.js";
-import { formatTime, previewPath, proxyPrefOn, toFileUrl, uid } from "../../../state/store.js";
+import { formatTime, isLayerLocked, prepareProjectAction, previewPath, proxyPrefOn, toFileUrl, uid } from "../../../state/store.js";
 import { COLLECTIONS, PACKS, COLLECTION_ITEMS, loadFavorites, saveFavorites, toggleFavorite } from "../../effects/collections.js";
 import { parseSRT, regroupSegments } from "../../text/subtitles.js";
 import { allEffects, EFFECT_GROUPS, FILTERS, TRANSITIONS, allTransitions } from "../../effects/effects.js";
@@ -591,15 +591,30 @@ function CaptionsTab({ onAddText, captions, project, dispatch, onOpenSettings, s
   const srtFileRef = useRef(null);
   const [srtTplId, setSrtTplId] = useState('cap-classic');
   const [srtNote, setSrtNote] = useState('');
+  const projectRef = useRef(project);
+  projectRef.current = project;
   const onSrtFile = async (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
     const cues = regroupSegments(parseSRT(await f.text()), wpl);
     if (!cues.length) { setSrtNote(t('library.no_subtitle_cues_were_found_in_that_file')); return; }
+    const current = projectRef.current;
+    if (current.id !== project.id) return;
+    if (isLayerLocked(current, 'text', 0)) {
+      setSrtNote(t('library.srt_track_locked'));
+      return;
+    }
     const style = templates.find((x) => x.id === srtTplId) || tpl;
-    dispatch({ type: 'importSrtCaptions', style: { ...style.patch, template: style.id }, segments: cues.map((c) => ({ ...c, id: uid() })) });
-    setSrtNote(tn('library.imported_count_subtitles_from_file', cues.length, { file: f.name }));
+    const prepared = prepareProjectAction(current, {
+      type: 'importSrtCaptions',
+      style: { ...style.patch, template: style.id },
+      segments: cues.map((cue) => ({ ...cue, id: uid() })),
+    });
+    const added = prepared.project.textClips.length - current.textClips.length;
+    if (!added) { setSrtNote(t('library.srt_import_failed')); return; }
+    dispatch(prepared.action);
+    setSrtNote(tn('library.imported_count_subtitles_from_file', added, { file: f.name }));
   };
   const pickSrtStyle = (t) => {
     setSrtTplId(t.id);

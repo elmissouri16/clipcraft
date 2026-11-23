@@ -112,10 +112,17 @@ const rec = (id, title, updatedAt, extra = {}) => ({
   const root = tmp();
   const file = path.join(root, 'trip.clipcraft.json');
   fs.writeFileSync(file, JSON.stringify({ id: 'p1', videoClips: [{ id: 'c1' }] }));
+  const originalTime = new Date('2020-01-01T12:00:00Z');
+  fs.utimesSync(file, originalTime, originalTime);
   store.writeSlot(root, rec('p1', 'Trip', Date.now(), { file }));
   let slot = store.readSlot(root, 'p1');
-  assert.deepEqual(slot.fileStamp, { mtimeMs: fs.statSync(file).mtimeMs, size: fs.statSync(file).size }, 'the slot records the file stamp');
+  assert.equal(slot.fileStamp.mtimeMs, +originalTime, 'the slot records the modification time');
+  assert.equal(slot.fileStamp.size, fs.statSync(file).size, 'the slot records the file size');
+  assert.match(slot.fileStamp.digest, /^[a-f0-9]{64}$/, 'the slot records the file contents');
   assert.equal(store.fileChangedSince(slot), false, 'an unchanged file keeps the slot');
+  fs.writeFileSync(file, JSON.stringify({ id: 'p1', videoClips: [{ id: 'c2' }] }));
+  fs.utimesSync(file, originalTime, originalTime);
+  assert.equal(store.fileChangedSince(slot), true, 'an external replacement remains detectable with the same size and mtime');
   fs.writeFileSync(file, JSON.stringify({ id: 'p1', videoClips: [{ id: 'c1' }, { id: 'c2-made-elsewhere' }] }));
   assert.equal(store.fileChangedSince(store.readSlot(root, 'p1')), true, 'a changed file is detected');
   // Same size, different time is a change too.

@@ -100,7 +100,7 @@ export function resolveExport(project, caps = {}) {
     codecFamily = 'h264';
     notes.push(t('export.h265_not_available_h264_instead'));
   } else if (codecFamily === 'h265') {
-    notes.push(hardware ? t('export.h265_apple_hardware_encoding') : t('export.h265_software_libx265'));
+    notes.push(hardware ? t(libx265 ? 'export.h265_apple_hardware_encoding' : 'export.h265_apple_hardware_only') : t('export.h265_software_libx265'));
   }
   if (resCap && longest <= resCap) notes.push(t('export.project_under_cap', { width: W, height: H, cap: resCap }));
   if (!resCap && stored.preset === 'ultra') notes.push(t('export.ultra_never_upscales', { width: W, height: H }));

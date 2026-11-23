@@ -238,8 +238,8 @@ export default function App() {
   const removeRecent = (path) => storeRecents(recents.filter((r) => r.path !== path));
   const hasContent = (p) => !!(p.media.length || p.videoClips.length || p.textClips.length || p.audioClips.length
     || (p.overlayClips || []).length || (p.customClips||[]).length || (p.customTracks||[]).length || hasChatContent(p));
-  const keepRecovery = async (unsaved) => {
-    const { project, file } = autosave.current;
+  const keepRecovery = async (unsaved, project = autosave.current.project) => {
+    const { file } = autosave.current;
     const version = autosave.current.recoveryVersion = (autosave.current.recoveryVersion || 0) + 1;
     try {
       const { compact } = await serializeProject(projectDoc(project));
@@ -270,7 +270,10 @@ export default function App() {
       a.writing = previous.catch(() => {}).then(async () => {
         const { pretty } = await serializeProject(projectDoc(project));
         const done = await window.api.autosaveProject(file, pretty, chatStale ? await chatText(project) : undefined);
-        if (done && chatStale && a.file === file) a.fileChat = project.craftAI;
+        if (done && a.file === file) {
+          a.fileSavedProject = project;
+          if (chatStale) a.fileChat = project.craftAI;
+        }
         return done;
       });
       ok = await a.writing;
@@ -289,7 +292,10 @@ export default function App() {
     try {
       a.writing = (a.writing || Promise.resolve()).catch(() => {}).then(async () => {
         const done = await window.api.autosaveProject(file, null, await chatText(project));
-        if (done && a.file === file) a.fileChat = project.craftAI;
+        if (done && a.file === file) {
+          a.fileChat = project.craftAI;
+          if (a.fileSavedProject) a.fileSavedProject = { ...a.fileSavedProject, craftAI: project.craftAI };
+        }
         return done;
       });
       return await a.writing;
@@ -352,9 +358,9 @@ export default function App() {
   };
   // Closing with "Don't save" on a project that existed before this session: its slot goes back to the
   // state it was loaded in (slot: the slot it was opened from, for its header; null when it had none).
-  const restoreLoadedSlot = async (base, slot) => {
+  const restoreLoadedSlot = async (base, slot, file = null) => {
     const { compact } = await serializeProject(projectDoc(base));
-    await window.api.slotWrite({ id: base.id, title: slot?.title || base.name || 'Untitled', file: null, ratio: slot?.ratio || base.ratio || '',
+    return window.api.slotWrite({ id: base.id, title: base.name || slot?.title || 'Untitled', file, ratio: base.ratio || slot?.ratio || '',
       thumb: slot ? slot.thumb || null : recentEntryFor(base, '', toFileUrl).thumb, updatedAt: slot?.updatedAt || Date.now(), projectJson: compact, chatJson: await chatText(base) });
   };
   // Force-write everything pending for the CURRENT project (its file, then its slot) —
@@ -382,7 +388,12 @@ export default function App() {
     // still embeds its chat gets its sidecar on the first write, and the last-written marks reset.
     const loaded = a.seenLoad !== projectLoadVersion, previous = a.seen;
     a.seen = project; a.seenLoad = projectLoadVersion;
-    if (loaded) { a.fileChat = undefined; a.slotChat = undefined; a.loadedProject = project; } // closing compares against it
+    if (loaded) {
+      a.fileChat = undefined;
+      a.slotChat = undefined;
+      a.loadedProject = project; // closing compares against it
+      a.fileSavedProject = a.file ? project : null;
+    }
     const change = classifyChange(previous, project);
     const docChanged = loaded || change.doc, chatChanged = loaded || change.chat;
     if (!docChanged && !chatChanged) return;
@@ -554,18 +565,22 @@ export default function App() {
     const { style, engine, wordsPerLine, ...engineOpts } = opts;
     // Transcribing takes a while: the result belongs to the project load it was made for, never to
     // one opened meanwhile (the same rule as clipJob below).
-    const pid = projectRef.current.id, version = loadVersionRef.current;
+    const source = projectRef.current, version = loadVersionRef.current;
     // Cloud engines return the same segment shape, so everything after this call —
     // caption clips, styling, apply-to-all — is the one shared path.
     let res;
     try {
       res = engine === 'cloud'
-        ? await window.api.runCaptionsCloud(project, engineOpts)
-        : await window.api.runCaptions(project, engineOpts);
+        ? await window.api.runCaptionsCloud(source, engineOpts)
+        : await window.api.runCaptions(source, engineOpts);
     } catch (e) { res = { error: e.message }; }
     off();
-    if (projectRef.current.id !== pid || loadVersionRef.current !== version) { setCaptions((c) => ({ ...c, busy: false })); return; }
+    if (loadVersionRef.current !== version) { setCaptions((c) => ({ ...c, busy: false })); return; }
     if (res.ok) {
+      if (!samePreparationDocument(source, projectRef.current)) {
+        setCaptions((c) => ({ ...c, busy: false, error: t('library.captions_project_changed') }));
+        return;
+      }
       // Words-per-line (when set) regroups the segments here, once, for every engine.
       dispatch({ type: 'setCaptions', style, segments: regroupSegments(res.segments, wordsPerLine).map((s) => ({ ...s, id: uid() })) });
       if (engine === 'cloud') {
@@ -1621,13 +1636,20 @@ export default function App() {
           onClick: () => dispatch({ type: 'update', ...sel, patch: { filter: 'none' } }) },
         sel.track === 'video'
           ? { label: t('app.move_to_overlay_track'), icon: Layers, onClick: () => {
-            const l = videoLayout(project.videoClips).find((x) => x.clip.id === c.id);
-            dispatch({ type: 'moveToOverlay', id: c.id, at: l ? l.start : readTime() });
+            const current = projectRef.current;
+            const item = videoLayout(current.videoClips).find((x) => x.clip.id === c.id);
+            if (!item) return;
+            const prepared = prepareProjectAction(current, { type: 'moveToOverlay', id: c.id, at: item.start });
+            if (!findClipIn(prepared.project, 'overlay', c.id)) return;
+            dispatch(prepared.action);
             setSelection({ track: 'overlay', id: c.id });
           } }
-          : { label: t('app.move_to_main_track'), icon: PanelBottom, onClick: () => {
-            const index = videoLayout(project.videoClips).filter((l) => (l.start + l.end) / 2 < c.start).length;
-            dispatch({ type: 'moveToMain', id: c.id, index });
+          : { label: t('app.move_to_main_track'), icon: PanelBottom, disabled: isLayerLocked(project, 'video', 0), onClick: () => {
+            const current = projectRef.current;
+            const index = videoLayout(current.videoClips).filter((l) => (l.start + l.end) / 2 < c.start).length;
+            const prepared = prepareProjectAction(current, { type: 'moveToMain', id: c.id, index });
+            if (!findClipIn(prepared.project, 'video', c.id)) return;
+            dispatch(prepared.action);
             setSelection({ track: 'video', id: c.id });
           } });
     }
@@ -1750,6 +1772,7 @@ export default function App() {
     clearTimeout(a.fileTimer);a.fileTimer = null;
     a.file = res;
     a.fileChat = p.craftAI;
+    a.fileSavedProject = p;
     if (!unchanged) a.fileTimer = setTimeout(writeFile, 1500);
     setSaveState(unchanged ? 'saved' : 'saving');
     pushRecent(recentOf(a.project, res));
@@ -2059,21 +2082,25 @@ export default function App() {
       return window.api.closeCancel();
     }
     if (choice === 'discard') {
-      await keepRecovery(false);
-      // A project with a file keeps its file as last written and its slot as it is.
-      if (failed) return finishWindowClose();
-      // No pending slot write may land after the answer.
-      clearTimeout(a.slotTimer);a.slotTimer = null;
-      try { await a.slotWriting; } catch { /* the slot is replaced below */ }
-      const id = a.project?.id;
-      if (id && !isTourId(id)) {
-        try {
-          // A project made in this session goes; one that existed before gets its slot back as it was
-          // loaded, so "Don't save" throws away this session's changes and never the project.
-          if (created || !base || base.id !== id) await window.api.slotDelete(id);
-          else await restoreLoadedSlot(base, a.origin.slot);
-        } catch { /* closing anyway */ }
+      // Drain queued writes before replacing the dirty slot and recovery copy.
+      for (const timer of ['fileTimer', 'slotTimer', 'timer']) {
+        clearTimeout(a[timer]);
+        a[timer] = null;
       }
+      await Promise.allSettled([a.writing, a.slotWriting]);
+      const id = a.project?.id;
+      let saved = base;
+      if (id && !isTourId(id)) {
+        if (a.file) {
+          // A successful earlier autosave may be newer than the document loaded at open.
+          const disk = await window.api.openProjectPath(a.file).catch(() => null);
+          saved = disk?.json ? { ...normalizeProject(mergeChat(JSON.parse(disk.json), disk.chat)), id } : (a.fileSavedProject || base);
+          if (!saved || !await restoreLoadedSlot(saved, null, a.file)) throw Error(t('close.discard_failed'));
+        } else if (created || !base || base.id !== id) {
+          await window.api.slotDelete(id);
+        } else if (!await restoreLoadedSlot(base, a.origin.slot)) throw Error(t('close.discard_failed'));
+      }
+      await keepRecovery(false, saved || a.project);
       return finishWindowClose();
     }
     return window.api.closeCancel();

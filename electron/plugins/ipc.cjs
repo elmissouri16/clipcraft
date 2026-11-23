@@ -203,7 +203,20 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,bu
   handle('extensionOperationComplete',id=>operations.completeEmpty(getWindow().webContents,id));
   handle('extensionOperationCancel',id=>operations.cancel(getWindow().webContents,id));
   handle('extensionExportProgress',(id,input)=>exports.progress(getWindow().webContents,id,input));
-  handle('extensionAuthorize',(key,generation,execution,jobOperation)=>{const job=extensions.active.get(key);return !!job&&job.generation===generation&&['running','activating'].includes(job.state)&&extensions.executionActive(job,execution)&&(jobOperation===undefined||extensions.jobsHost.available(job,jobOperation));});
+  const extensionAuthorized = (key, generation, execution, jobOperation) => {
+    const job = extensions.active.get(key);
+    return !!job && job.generation === generation && ['running', 'activating'].includes(job.state)
+      && extensions.executionActive(job, execution) && (jobOperation === undefined || extensions.jobsHost.available(job, jobOperation));
+  };
+  handle('extensionAuthorize', extensionAuthorized);
+  ipcMain.on('plugins:extensionAuthorizeWrite', (event, ...args) => {
+    let allowed = false;
+    try {
+      const owner = getWindow()?.webContents;
+      if (owner && event.sender === owner && event.senderFrame === owner.mainFrame) allowed = extensionAuthorized(...args);
+    } catch { /* A stopped view or worker cannot authorize a write. */ }
+    event.returnValue = allowed;
+  });
   handle('extensionReply',reply=>{const call=extensionCalls.get(reply?.id);if(!call)return false;clearTimeout(call.timer);extensionCalls.delete(reply.id);reply.error?call.reject(Error(reply.error)):call.resolve(reply.value);return true;});
   handle('extensionPublish',(name,value,metadata)=>{if(!['project.opened','project.closed','project.changed','editor.changed','selection.changed','playback.changed','export.changed','configuration.changed'].includes(name))throw Error('Invalid editor event');return extensions.emit(name,value,metadata);});
 

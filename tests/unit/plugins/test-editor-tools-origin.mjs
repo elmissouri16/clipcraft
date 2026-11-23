@@ -25,6 +25,25 @@ assert.equal(state.agentEdit, undefined, 'the run closed its edit');
 await assert.rejects(tools.run({ calls: [{ name: 'add_text', args: { text: 'Kept?', start_sec: 4, duration_sec: 1 } }, { name: 'delete_clip', args: { clip_id: 'missing' } }] }, undefined, 'acme.styler'));
 assert.deepEqual(historyOrigin(state).source, { kind: 'extension', extensionId: 'acme.styler' }, 'the rollback is attributed to the extension');
 
+// Authorization can end after a slow media operation starts and before it can publish its result.
+let releaseMedia;
+let started;
+const mediaStarted = new Promise(resolve => { started = resolve; });
+window.api.agentMediaJob = () => new Promise(resolve => { releaseMedia = resolve; started(); });
+app.pilotApp.addProbed = () => { assert.fail('a stopped extension must not publish media'); };
+let authorized = true;
+const check = async () => { if (!authorized) throw Error('Extension stopped'); };
+const beforeStop = state.present;
+const pending = tools.run({ calls: [
+  { name: 'add_text', args: { text: 'Roll back', start_sec: 5, duration_sec: 1 } },
+  { name: 'clip_tools', args: { clip_id: 'A', action: 'reverse' } },
+] }, check, 'acme.styler', () => authorized);
+await Promise.race([mediaStarted, pending]);
+authorized = false;
+releaseMedia({ path: '/reversed.mp4', type: 'video', duration: 30 });
+await assert.rejects(pending, /Extension stopped/);
+assert.deepEqual(state.present, beforeStop, 'an atomic batch restores earlier edits when authorization ends');
+
 // A CraftAI edit (no extension source) stays an agent edit; a forged source on an edit is ignored.
 state = historyReducer(state, { type: 'beginAgentEdit', token: 'craft' });
 state = historyReducer(state, { type: 'addText', clipId: 'c', at: 9, agentToken: 'craft' });
