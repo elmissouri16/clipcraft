@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 module.exports = async (win, app, dir) => {
   const { nativeImage, clipboard } = require('electron');
-  const library = require('../../electron/library/library.cjs'), originalSearch = library.search;
+  const library = require('../../electron/library/mediaSources.cjs').MediaSources.prototype, originalSearch = library.search;
   const priorClipboard = await clipboard.readText(); // the clipboard API is Promise-based since Electron 44
   library.search = async () => ({ results: [], page: 1, pages: 1 });
   const result = { checks: [], errors: [] }, q = js => win.webContents.executeJavaScript(js);

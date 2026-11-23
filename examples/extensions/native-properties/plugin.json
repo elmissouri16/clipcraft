@@ -5,5 +5,29 @@
   "version": "0.1.0",
   "apiVersion": 1,
   "main": "dist/extension.cjs",
-  "contributes": {"commands": [{"id": "reset-opacity", "name": "Reset selected picture opacity"}]}
+  "contributes": {
+    "commands": [
+      {
+        "id": "reset-opacity",
+        "name": "Reset selected picture opacity"
+      }
+    ],
+    "effects": [
+      {
+        "id": "gain",
+        "name": "Native gain",
+        "expression": "S(X,Y)*{{gain}}",
+        "parameters": [
+          {
+            "id": "gain",
+            "name": "Gain",
+            "min": 0,
+            "max": 2,
+            "step": 0.125,
+            "default": 1
+          }
+        ]
+      }
+    ]
+  }
 }

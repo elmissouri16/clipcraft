@@ -10,7 +10,8 @@ export function validateTransitionDefinition(value) {
 }
 export const validateTransitionExpression=source=>validateEffectExpression(source,'transition');
 export function transitionExpression(definition,params) {
-  const expression=effectExpression(definition,params);
+  const expression=effectExpression(definition,params,'transition');
+  if(typeof expression!=='string')return expression;
   // Guard endpoints even for an author expression that offsets or tints its inputs.
   return `if(lte(P,0),A(X,Y),if(gte(P,1),B(X,Y),(${expression})))`;
 }

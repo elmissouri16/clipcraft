@@ -3,7 +3,7 @@
 // export all behave exactly as for a manual edit. Tools return small JSON results (or { error }) so the
 // model can read them and correct itself.
 import { clipLen, projectDuration, videoLayout, uid, isLayerLocked, renderable, exportDuration, actionLocked, cutRanges, retimeVideoClip, retimeTransition, prepareProjectAction } from "../../state/store.js";
-import { FILTERS, EFFECTS, TRANSITIONS, RATIOS, DEFAULT_ADJUST, sizeFor } from "../effects/effects.js";
+import { FILTERS, allEffects, allTransitions, RATIOS, DEFAULT_ADJUST, sizeFor } from "../effects/effects.js";
 import { ANIM_IN, ANIM_LOOP, ANIM_OUT, BUBBLES, HIGHLIGHTS, TEXT_EFFECTS, TEXT_TEMPLATES } from '../text/catalog.js';
 import { ANIMATIONS, KEY_EASINGS, KEY_PROPS, baseAt, hasKeys } from "../timeline/anim.js";
 import { motionQuality } from '../timeline/motionQuality.js';
@@ -107,7 +107,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'list_options',
-    description: 'Ids you can use: what = text_templates, caption_styles, fonts, text_animations, text_effects, highlights, bubbles, filters, effects, transitions, clip_animations, blend_modes.',
+    description: 'Ids: media_sources, text_templates, caption_styles, fonts, text_animations, text_effects, highlights, bubbles, filters, effects, transitions, clip_animations, blend_modes.',
     parameters: { type: 'OBJECT', properties: { what: S }, required: ['what'] },
   },
   {
@@ -222,8 +222,8 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'search_sounds',
-    description: 'Find music/sfx/meme. licenses cc0 (default) or attribution (+CC BY; publish credits). Returns sound_id.',
-    parameters: { type: 'OBJECT', properties: { kind: S, query: S, licenses: S }, required: ['kind', 'query'] },
+    description: 'Find music/sfx/meme. Providers: list_options media_sources. Returns sound_id.',
+    parameters: { type: 'OBJECT', properties: { kind: S, query: S, provider: S, licenses: S }, required: ['kind', 'query'] },
   },
   {
     name: 'add_sound',
@@ -251,7 +251,7 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: 'search_stock',
-    description: 'Find photo (Openverse, no key) or video (Pixabay). provider: openverse/pixabay. licenses: cc0 (default), attribution adds CC BY; publish credits. Returns stock_id for add_stock.',
+    description: 'Find a photo/video. Providers: list_options media_sources. Returns stock_id.',
     parameters: { type: 'OBJECT', properties: { kind: S, query: S, provider: S, licenses: S }, required: ['kind', 'query'] },
   },
   {
@@ -989,7 +989,7 @@ export function createToolRunner(ctx) {
       const coveredSec = audible ? audible.reduce((n, a) => n + Math.max(0, Math.min(total, a.end) - Math.max(0, a.start)), 0) : total;
       const scope = audible && coveredSec < total - 0.05 ? { analyzed_sec: r2(coveredSec), note: `Only pauses inside the ${r2(coveredSec)} s where the selected audio plays were considered; the rest of the timeline was left untouched.` } : {};
       if (!ranges.length) return { ok: true, removed_count: 0, removed_sec: 0, ...scope, note: scope.note || 'No silence long enough was found.' };
-      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track, has no editable footage, or cuts inside a transition overlap (cut outside it or remove that transition first).' };
+      if (cutRanges(project(), ranges, { ripple: true, reportInvalidCustom: true }) === project()) return { error: 'The range edit is blocked by a locked related track, has no editable footage, or cuts inside a transition overlap (cut outside it or remove that transition first).' };
       dispatch({ type: 'cutRanges', ranges, ripple: true });
       await ctx.settle();
       return after({ removed_count: ranges.length, removed_sec: r2(total - exportDuration(project())), source, ...scope });
@@ -999,7 +999,7 @@ export function createToolRunner(ctx) {
       const total = exportDuration(project()), range = normalizedRange(start_sec, end_sec, total);
       if (range.error) return range;
       const ranges = [range];
-      if (cutRanges(project(), ranges, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or cuts inside a transition overlap (cut outside it or remove that transition first).' };
+      if (cutRanges(project(), ranges, { ripple: true, reportInvalidCustom: true }) === project()) return { error: 'The range edit is blocked by a locked related track or cuts inside a transition overlap (cut outside it or remove that transition first).' };
       dispatch({ type: 'cutRanges', ranges, ripple: true });
       await ctx.settle();
       return after({ removed_sec: r2(total - exportDuration(project())) });
@@ -1012,7 +1012,7 @@ export function createToolRunner(ctx) {
       const invalid = list.find(r => r.error); if (invalid) return invalid;
       const cuts = complementRanges(list, total);
       if (cuts.length) {
-        if (cutRanges(project(), cuts, { ripple: true }) === project()) return { error: 'The range edit is blocked by a locked related track or cuts inside a transition overlap (cut outside it or remove that transition first).' };
+        if (cutRanges(project(), cuts, { ripple: true, reportInvalidCustom: true }) === project()) return { error: 'The range edit is blocked by a locked related track or cuts inside a transition overlap (cut outside it or remove that transition first).' };
         dispatch({ type: 'cutRanges', ranges: cuts, ripple: true });
       }
       return after({ kept_ranges: list.length });
@@ -1124,8 +1124,8 @@ export function createToolRunner(ctx) {
     async set_effects({ clip_id, effect_ids }) {
       const f = needPicture(clip_id);
       if (f.error) return f;
-      const bad = (effect_ids || []).find((e) => !EFFECTS.some((x) => x.id === e));
-      if (bad) return { error: `Unknown effect "${bad}". Use: ${ids(EFFECTS)}.` };
+      const bad = (effect_ids || []).find((e) => !allEffects().some((x) => x.id === e));
+      if (bad) return { error: `Unknown effect "${bad}". Use: ${ids(allEffects())}.` };
       dispatch({ type: 'update', track: f.track, id: clip_id, patch: { effects: effect_ids || [] } });
       return after();
     },
@@ -1134,7 +1134,7 @@ export function createToolRunner(ctx) {
       const f = needVideoClip(clip_id);
       if (f.error) return f;
       if (project().videoClips[0].id === clip_id) return { error: 'The first clip has nothing before it. Pick a later clip.' };
-      if (type !== 'none' && !TRANSITIONS.some((x) => x.id === type)) return { error: `Unknown transition "${type}". Use none or one of: ${ids(TRANSITIONS)}.` };
+      if (type !== 'none' && !allTransitions().some((x) => x.id === type)) return { error: `Unknown transition "${type}". Use none or one of: ${ids(allTransitions())}.` };
       const transition = type === 'none' ? null : { type, duration: Math.min(2, Math.max(0.2, Number(duration_sec) || 0.5)) };
       const plan = retimeTransition(project(), clip_id, transition);
       if (plan.error) return { error: plan.error };
@@ -1282,10 +1282,10 @@ export function createToolRunner(ctx) {
       return place(m, { as, start_sec, main_index, name: m.name });
     },
 
-    async search_sounds({ kind, query, licenses = 'cc0' }) {
+    async search_sounds({ kind, query, provider, licenses = 'cc0' }) {
       const lib = { music: 'music', sfx: 'sfx', meme: 'trolls', memes: 'trolls', troll: 'trolls', trolls: 'trolls' }[String(kind || '').toLowerCase()];
       if (!lib) return { error: 'kind must be "music", "sfx" or "meme".' };
-      const res = await api.librarySearch({ requestId: ctx.requestId, kind: lib, licenses, q: String(query || ''), category: '', page: 1 });
+      const res = await api.mediaSearch({ requestId: ctx.requestId, kind: lib, provider, licenses, q: String(query || ''), category: '', page: 1 });
       if (res.error) return { error: res.error };
       const sounds = (res.results || []).slice(0, 12).map((it) => ({
         sound_id: keep('s', it), title: it.title, duration_sec: it.duration ? r2(it.duration) : undefined, by: it.creator,
@@ -1297,7 +1297,7 @@ export function createToolRunner(ctx) {
     async add_sound({ sound_id, start_sec = 0, duration_sec, volume = 1, fade_in_sec = 0, fade_out_sec = 0 }) {
       const item = found.get(sound_id);
       if (!item || !String(sound_id).startsWith('s')) return { error: `Unknown sound_id "${sound_id}". Use an id from search_sounds.` };
-      const res = await api.libraryAdd(item, { requestId: ctx.requestId });
+      const res = await api.mediaSourceAdd(item, { requestId: ctx.requestId });
       if (res.error) return { error: res.error };
       const added = await place(addProbed(res), { start_sec, name: item.title });
       if (added.error) return added;
@@ -1394,10 +1394,10 @@ export function createToolRunner(ctx) {
 
     async search_stock({ kind = 'video', query, provider, licenses = 'cc0' }) {
       const k = String(kind).toLowerCase().startsWith('p') ? 'photo' : 'video';
-      const res = await api.stockSearch({ requestId: ctx.requestId, kind: k, provider, licenses, q: String(query || '') });
+      const res = await api.mediaSearch({ requestId: ctx.requestId, kind: k, provider, licenses, q: String(query || '') });
       if (res.error) return { error: res.error };
       const items = (res.results || []).slice(0, 10).map((it) => ({
-        license: it.licenseName || 'Pixabay', source: it.landing || it.pageURL, ...(it.license === 'by' ? { needs_credit: true } : {}),
+        license: it.licenseName || it.license || 'Unknown', source: it.landing || it.pageURL, ...(it.license === 'by' ? { needs_credit: true } : {}),
         stock_id: keep(k === 'video' ? 'v' : 'p', it), tags: it.tags, ...(it.duration ? { duration_sec: it.duration } : {}), size: `${it.width}x${it.height}`,
       }));
       return items.length ? { items } : { items, note: 'Nothing found; try other English words.' };
@@ -1406,7 +1406,7 @@ export function createToolRunner(ctx) {
     async add_stock({ stock_id, as = 'overlay', start_sec = 0, duration_sec, main_index }) {
       const item = found.get(stock_id);
       if (!item || !/^[vp]/.test(String(stock_id))) return { error: `Unknown stock_id "${stock_id}". Use an id from search_stock.` };
-      const res = await api.stockAdd(item, { requestId: ctx.requestId });
+      const res = await api.mediaSourceAdd(item, { requestId: ctx.requestId });
       if (res.error) return { error: res.error };
       const added = await place(addProbed(res), { as, start_sec, main_index, name: res.name });
       if (added.error) return added;
@@ -1420,6 +1420,7 @@ export function createToolRunner(ctx) {
     async list_options({ what }) {
       const named = (list) => list.map((x) => (x.name && x.name !== x.id ? `${x.id} (${x.name})` : x.id));
       const lists = {
+        media_sources: async () => (await api.mediaSources()).map(({id,name,kinds,configured}) => ({id,name,kinds,configured})),
         text_templates: () => named(TEXT_TEMPLATES),
         caption_styles: () => named(CAPTION_STYLES),
         fonts: () => ctx.fontIds?.() || ['montserrat', 'poppins', 'anton', 'bebas', 'cairo', 'tajawal', 'almarai', 'amiri'],
@@ -1428,14 +1429,14 @@ export function createToolRunner(ctx) {
         highlights: () => HIGHLIGHTS.map((x) => x.id),
         bubbles: () => BUBBLES.map((x) => x.id),
         filters: () => named(FILTERS),
-        effects: () => named(EFFECTS),
-        transitions: () => named(TRANSITIONS),
+        effects: () => named(allEffects()),
+        transitions: () => named(allTransitions()),
         clip_animations: () => ({ in: ANIMATIONS.in.map((x) => x.id), out: ANIMATIONS.out.map((x) => x.id), combo: ANIMATIONS.combo.map((x) => x.id) }),
         blend_modes: () => BLEND_MODES.map((b) => b.id),
       };
       const fn = lists[String(what || '').toLowerCase()];
       if (!fn) return { error: `what must be one of: ${Object.keys(lists).join(', ')}.` };
-      return { [what]: fn() };
+      return { [what]: await fn() };
     },
 
     async edit_text(a) {
@@ -1456,7 +1457,7 @@ export function createToolRunner(ctx) {
     },
 
     async add_effect({ effect_id, start_sec, duration_sec = 3 }) {
-      if (!EFFECTS.some((x) => x.id === effect_id)) return { error: `Unknown effect "${effect_id}". Use one of: ${ids(EFFECTS)}.` };
+      if (!allEffects().some((x) => x.id === effect_id)) return { error: `Unknown effect "${effect_id}". Use one of: ${ids(allEffects())}.` };
       const clipId = uid();
       dispatch({ type: 'addEffectClip', clipId, fx: effect_id, at: Math.max(0, Number(start_sec) || 0), duration: Math.max(0.2, Number(duration_sec) || 3) });
       return after({ clip_id: clipId });

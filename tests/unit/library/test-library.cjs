@@ -6,13 +6,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { probe } = require("../../../electron/media/ffmpeg.cjs");
-const lib = require("../../../electron/library/library.cjs");
+const ov = require("../../../electron/bundled-media/openverse/dist/client.cjs");
+const lib = require("../../../electron/bundled-media/myinstants/dist/client.cjs");
 
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-lib-'));
   let searchEvidence;
 
-  if (!lib.hostOk('https://prod-1.storage.jamendo.com/?trackid=1') || lib.hostOk('https://evil.example/jamendo.com') || lib.hostOk('http://cdn.freesound.org/x')) {
+  if (!ov.hostOk('https://prod-1.storage.jamendo.com/?trackid=1') || lib.hostOk('https://evil.example/jamendo.com') || lib.hostOk('http://cdn.freesound.org/x')) {
     throw new Error('host allowlist');
   }
   await lib.download(fetch, dir, { id: '../../etc', url: 'https://cdn.freesound.org/x.mp3' }).then(() => { throw new Error('bad id accepted'); }, () => {});
@@ -27,11 +28,11 @@ const lib = require("../../../electron/library/library.cjs");
   if (await lib.download(noFetch, dir, { id: 'sfxmint-kept-sound-01', url: 'https://sfxmint.com/dl/kept-sound-01.mp3' }) !== kept) throw new Error('kept sound not reused');
 
   if (!process.argv.includes('--offline')) {
-    const sfx = await lib.search(fetch, { kind: 'sfx', q: 'whoosh' });
-    const defaultMusic = await lib.search(fetch, { kind: 'music', q: 'happy' });
+    const sfx = await ov.search(fetch, { kind: 'sfx', q: 'whoosh' });
+    const defaultMusic = await ov.search(fetch, { kind: 'music', q: 'happy' });
     // A valid CC0 query can have no matches. Exercise the explicit credit-required
     // option for positive music acceptance, without silently widening the default.
-    const music = await lib.search(fetch, { kind: 'music', q: 'happy', licenses: 'attribution' });
+    const music = await ov.search(fetch, { kind: 'music', q: 'happy', licenses: 'attribution' });
     searchEvidence = { query: 'happy', defaultMusic: { licenses: 'cc0', total: defaultMusic.total, items: defaultMusic.results.map(({ id, license }) => ({ id, license })) },
       explicitMusic: { licenses: 'attribution', total: music.total, items: music.results.map(({ id, license, licenseUrl }) => ({ id, license, licenseUrl })) } };
     fs.writeFileSync(path.join(dir, 'search-result.json'), JSON.stringify(searchEvidence, null, 2));
@@ -52,7 +53,7 @@ const lib = require("../../../electron/library/library.cjs");
     if ((await probe(await lib.download(fetch, dir, bruh.results[0]))).type !== 'audio') throw new Error('trolls download is not audio');
     if (/Freesound|Jamendo/.test(lib.creditLine(sfx.results[0]))) throw new Error('credit line names the source');
     const pick = sfx.results.find((r) => r.duration < 5) || sfx.results[0];
-    const file = await lib.download(fetch, dir, pick);
+    const {path:file} = await ov.download(fetch, dir, pick);
     const info = await probe(file);
     console.log(`downloaded "${pick.title}" ${info.duration.toFixed(2)}s · ${lib.creditLine(pick)}`);
     if (info.type !== 'audio') throw new Error('download is not audio');

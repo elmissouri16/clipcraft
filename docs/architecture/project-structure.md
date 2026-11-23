@@ -35,7 +35,8 @@ electron/
   audio/                   Speech, transcription and audio processing
   export/                  Layers, text streaming, render jobs and fonts
   graphics/                Motion graphics sandbox, runtime and renderer
-  library/                 Assets, stock, sounds and Openverse
+  library/                 Local assets and the online media source registry
+  bundled-media/           Installable Pixabay, Openverse, Soundza and MyInstants extension packages
   media/                   FFmpeg, proxies, geometry and media analysis
   project/                 Saved projects, their chat sidecars, autosaves and favorites
   recording/               Recording service, windows and preloads
@@ -63,13 +64,30 @@ preloads stay together. Frame inspection has its own agent preload and renderer
 entry component. Treat paths relative to the owning module, not the process's
 working directory, unless an API explicitly takes an application root.
 
-`electron/plugins/extensionViews.cjs` owns native workbench view lifetimes.
+`electron/plugins/extensionViews.cjs` owns native workbench, left-rail and library
+view lifetimes, including parented native floating/modal windows.
+`shared/extensionViewPlacement.cjs` validates destinations and geometry;
+`ExtensionWorkspaceViews.jsx` owns bottom docking and anchored overlay layout.
+`ExtensionViewSurface.jsx` and `extensionViewLayout.js` share the
+native layout, focus and modal-masking contract with the workbench.
+`shared/extensionProjectCommands.mjs` validates public project lifecycle requests;
+`App.jsx` applies them through native persistence with document ownership checks.
+`electron/plugins/extensionProcesses.cjs` owns bounded byte streams and persistent
+local helper servers, including readiness and activation cleanup.
+`electron/plugins/extensionCustomHooks.cjs` owns typed custom point definitions,
+ordered invocation records and cancellation. `shared/extensionHookContracts.cjs`
+validates portable schemas and shared native/custom ordering options.
 `extensionViewSessions.cjs` owns its bounded, exclusive private-session leases and
 fail-closed cleanup before reuse; it does not expose session objects to extensions.
 
 `shared/pluginLifecycle.mjs` validates bounded public clip/track lifecycle
 proposals. Private preparation and commit tokens remain in `src/state/store.js`.
 `shared/pluginProperties.mjs` similarly validates static typed clip properties.
+`shared/customTimeline.mjs` validates custom track/clip definitions, saved typed
+data, atomic edits and native render projection. The host's
+`electron/plugins/customTimeline.cjs` supplies exact installed definitions and a
+generated transparent rendering input. Native timeline and inspector controls
+live in the plugins feature.
 `shared/pluginAutomation.mjs` validates fixed-duration speed, source-time curves
 and existing effect-resource operations. The SDK build bundles these canonical validators.
 
@@ -82,6 +100,9 @@ Pure rendering projection, layer sound/visibility and main-track timing live in
 renderer callers. Host services import the shared module directly: `src/` is
 absent from the release payload. `npm run test:runtime-deps` checks literal
 Electron/shared imports against `build.files`; `test:structure` includes it.
+`shared/exportFormats.cjs` supplies the common container/codec and destination
+contract for native picks, SDK exports, renderer settings and the encoder. Its
+internal package bridge is prebundled by Vite, like the service/shortcut contracts.
 Computed resource paths, dependency pruning and ASAR/installer execution still
 need their separate distribution checks.
 
@@ -204,3 +225,8 @@ reference sets are replaceable. See [media retention](../design/plugin-media-ret
 maps them to canonical edit operations. `ExtensionInspector.jsx` reads actual
 clip values; `useExtensionHost.js` anchors writes to the document/selection and
 native registration instance before the ordinary private transaction commits.
+
+`shared/pluginShaders.mjs` validates authored fragment functions and builds a
+uniform-based GLSL wrapper. `FxGL` shares that wrapper across preview and export;
+`PreviewRenderErrors.jsx` surfaces compiler failures in the actual player.
+Installed definitions retain their ordinary effect/transition dependency IDs.

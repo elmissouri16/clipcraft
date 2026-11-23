@@ -1,3 +1,4 @@
+import {validateTimelineContributions} from './customTimeline.mjs';
 import {extensionManifest} from './pluginExtension.mjs';
 import {pluginIconPath} from './pluginIcon.mjs';
 import {validateMotionContributions} from './pluginMotion.mjs';
@@ -34,10 +35,11 @@ export function validateManifest(input, appVersion='2.0.0', allowEmpty=false){
   const a = appVersion.split('.').map(Number), b = minimum.split('.').map(Number);
   for (let i = 0; i < 3; i++) { if (a[i] > b[i]) break; if (a[i] < b[i]) fail(`requires ClipCraft ${minimum} or newer`); }
   if(input.permissions!==undefined&&(!Array.isArray(input.permissions)||input.permissions.length))fail('creative packs cannot request permissions');
-  keys(input.contributes,['exportPresets','effects','transitions','commands','sounds','fonts','textStyles','luts','colorPresets','motionPresets'],'contributes');
+  keys(input.contributes,['exportPresets','effects','transitions','commands','sounds','fonts','textStyles','luts','colorPresets','motionPresets','trackTypes','clipTypes'],'contributes');
   if(input.contributes.commands!==undefined&&(!Array.isArray(input.contributes.commands)||input.contributes.commands.length))fail('commands require a Node extension main entry');
   const motionPresets=validateMotionContributions(input.contributes.motionPresets),content=contentContributions(input.contributes);
   const colorPresets=validateColorContributions(input.contributes.colorPresets,content.luts?.map(l=>l.id)||[]),textStyles=validateTextStyleContributions(input.contributes.textStyles,content.fonts?.map(f=>f.id)||[]);
+  const timelineTypes=validateTimelineContributions(input.contributes);
   const presets = input.contributes.exportPresets ?? [];
   const effects = (input.contributes.effects ?? []);
   if(!Array.isArray(effects)||effects.length>100) fail('effects must be an array of at most 100 items');
@@ -47,7 +49,7 @@ export function validateManifest(input, appVersion='2.0.0', allowEmpty=false){
   if(!Array.isArray(transitions)||transitions.length>100)fail('transitions must be an array of at most 100 items');
   const transitionIds=new Set();
   const validatedTransitions=transitions.map(value=>{const transition=validateTransitionDefinition(value);if(transitionIds.has(transition.id))fail('duplicate transition ID');transitionIds.add(transition.id);return transition;});
-  if (!Array.isArray(presets) || presets.length > 100 || (!allowEmpty && !presets.length && !effects.length && !transitions.length && !content.sounds?.length && !content.fonts?.length && !textStyles.length && !content.luts?.length && !colorPresets.length && !motionPresets.length)) fail('contributes must contain at least one contribution, with at most 100 per kind');
+  if (!Array.isArray(presets) || presets.length > 100 || (!allowEmpty && !presets.length && !effects.length && !transitions.length && !content.sounds?.length && !content.fonts?.length && !textStyles.length && !content.luts?.length && !colorPresets.length && !motionPresets.length && !timelineTypes.trackTypes.length && !timelineTypes.clipTypes.length)) fail('contributes must contain at least one contribution, with at most 100 per kind');
   const ids = new Set();
   const exportPresets = presets.map(p => {
     keys(p, ['id','name','settings'], 'preset');
@@ -63,5 +65,5 @@ export function validateManifest(input, appVersion='2.0.0', allowEmpty=false){
     return { id:p.id, name:text(p.name, 'preset name'), settings:{...s} };
   });
   return { id:input.id, name:text(input.name, 'name'), publisher:text(input.publisher, 'publisher'), version:input.version,
-    apiVersion:1, minClipcraftVersion:minimum, ...(input.icon===undefined?{}:{icon:pluginIconPath(input.icon)}), description:input.description === undefined ? '' : text(input.description, 'description', 1000), permissions:[], contributes:{...content,...(motionPresets.length?{motionPresets}:{}),...(colorPresets.length?{colorPresets}:{}),...(textStyles.length?{textStyles}:{}),exportPresets,effects:validatedEffects,transitions:validatedTransitions,commands:[]} };
+    apiVersion:1, minClipcraftVersion:minimum, ...(input.icon===undefined?{}:{icon:pluginIconPath(input.icon)}), description:input.description === undefined ? '' : text(input.description, 'description', 1000), permissions:[], contributes:{...content,...(timelineTypes.trackTypes.length?{trackTypes:timelineTypes.trackTypes}:{}),...(timelineTypes.clipTypes.length?{clipTypes:timelineTypes.clipTypes}:{}),...(motionPresets.length?{motionPresets}:{}),...(colorPresets.length?{colorPresets}:{}),...(textStyles.length?{textStyles}:{}),exportPresets,effects:validatedEffects,transitions:validatedTransitions,commands:[]} };
 }

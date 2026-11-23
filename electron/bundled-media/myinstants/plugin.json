@@ -1,0 +1,13 @@
+{
+  "id": "clipcraft.myinstants",
+  "name": "MyInstants",
+  "publisher": "ClipCraft",
+  "version": "1.0.1",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Search and preview meme sounds.",
+  "activationEvents": [
+    "ui:media.sources"
+  ],
+  "contributes": {}
+}

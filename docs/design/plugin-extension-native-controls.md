@@ -53,7 +53,7 @@ await context.ui.registerInspector({
 
 A group contains 1–32 native fields; an extension may register eight groups.
 Groups share action ordering and appear in the clip inspector. `lanes` can
-restrict video, overlay, audio or text targets; otherwise applicable fields
+restrict video, overlay, audio, text or Effects-track targets; otherwise applicable fields
 appear for the selected primary clip. Other selected clips are not implicitly
 edited. Empty/inapplicable groups and gap targets do not render.
 
@@ -71,11 +71,42 @@ Supported property families use the canonical typed clip edit operations:
 - `text.content` and `text.style.*`: font, size, bold/italic/underline/uppercase,
   colour, alignment, tracking, line spacing, width, placement, rotation,
   opacity and nested stroke, shadow and background values.
+- `speed` for video/audio sources: preserves timeline duration, adjusts the
+  source window and validates complete linked pairs and actual media bounds.
+- `curve.scale`, `x`, `y`, `rot`, `opacity` for pictures and `curve.volume` for
+  sound-capable media: edits up to 64 source-time points through the canonical
+  automation transaction. Point controls expose time, value and easing; volume
+  supports linear interpolation. Apply replaces that curve in one Undo step;
+  Clear stages an explicit removal, and Cancel discards the local draft.
+- `effect.enabled`, `effect.strength`, `effect.parameter`: binds either
+  `effect: {id: exactEffectId}` or `effect: {index: 0}` for an attached slot.
+  Use `{index: null}` for a selected Effects-track resource. Parameter fields
+  also require `parameter: 'parameter-id'` in the selector. Inapplicable fields
+  do not render. Exact-ID selectors follow their resource across slot changes;
+  numeric selectors explicitly follow the current slot. Parameter bounds and
+  default step come from its exact installed definition. Numeric field bounds
+  may narrow them, and an explicit `step` overrides the package step.
 
 `NativeInspectorProperty` enumerates every supported binding. Text font choices
-currently use the existing bounded property contract. Curves, effect slots and
-other editor capabilities remain available through their existing APIs; a
-static field cannot erase an existing curve.
+use the existing bounded property contract. A static field cannot erase an
+existing curve; use the explicit curve editor. Raising effect strength from
+zero enables the effect. Re-enabling a zero-strength attached slot restores
+strength to one. Other parameters and effect slots remain unchanged.
+
+```ts
+await context.ui.registerInspector({
+  id: 'motion', title: 'Motion', lanes: ['video', 'overlay'], fields: [
+    {key: 'curve', label: 'Opacity curve', property: 'curve.opacity'},
+    {key: 'strength', label: 'First effect strength', property: 'effect.strength',
+      effect: {index: 0}, type: 'range'},
+    {key: 'gain', label: 'Gain', property: 'effect.parameter',
+      effect: {index: 0, parameter: 'gain'}},
+  ],
+});
+```
+
+[Custom timeline types](plugin-custom-timeline.md) also receive native typed
+property forms directly from their declared schemas.
 
 Types are inferred from the property: number, boolean, select, string or colour.
 Numbers can opt into `type: 'range'`. A field may narrow the property's min/max,
@@ -112,7 +143,8 @@ instance as well as the extension generation. Removing/replacing the group or
 stopping the extension revokes an unclaimed reservation. A new registration
 with the same ID cannot inherit the old pending write.
 
-Capability discovery advertises `ui.actions.state` and `ui.inspector` revision 1.
+Capability discovery advertises `ui.actions.state`, `ui.inspector`,
+`ui.inspector.automation` and `ui.inspector.effects` revision 1.
 The [native-properties example](../../examples/extensions/native-properties/README.md)
 demonstrates dynamic action state and picture, sound and text property groups.
 
@@ -144,3 +176,20 @@ the contract suite exercised all 42 declared bindings. Renderer compilation,
 structure/runtime dependencies and whitespace passed. Product/SDK source matches
 the SDK validation snapshot; only the example-index table formatting changed
 after that run. All receipts are retained in the validation ledger.
+
+## Effect, curve and speed expansion verification
+
+The expanded native workflow passed 46 checks plus 5 cold-restart
+checks, including parameter precision from exact installed metadata, effect
+enable/strength, native source-time point editing, clear/Undo, rejected source
+windows, fixed-duration speed, volume automation and inherited fieldset locks.
+A main-window screenshot of the curve controls was inspected.
+
+All 15 focused regression suites and 9 SDK suites passed with an empty
+SDK source-change list. Renderer, structure, localization and whitespace checks
+passed. The sparse-curve regression also hardens the shared automation validator.
+Receipts and the two corrected test-fixture failures are retained under
+`extensionInspectorAutomation` in the validation ledger. This closes the native
+binding slice. Subsequent [export formats](plugin-extension-exports.md),
+[custom hooks](plugin-custom-hooks.md) and
+[document lifecycle hooks](plugin-document-lifecycle-hooks.md) have their own receipts.

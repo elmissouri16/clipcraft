@@ -1,4 +1,4 @@
-// Soundza client (electron/library/soundza.cjs) against a local stub of the documented API
+// Soundza client (electron/bundled-media/soundza/dist/client.cjs) against a local stub of the documented API
 // (tests/fixtures/soundza-stub.cjs): search parsing, filters, download-once caching, and the error
 // mapping (no key / 401 / 429 with Retry-After). The sandbox cannot reach api.soundza.com from
 // Electron, and unit-level the real service needs a real key, so the documented shapes are
@@ -12,7 +12,7 @@ const stub = require("../../fixtures/soundza-stub.cjs");
 (async () => {
   const { server, port, hits } = await stub.start(0);
   process.env.CLIPCRAFT_SOUNDZA_URL = `http://127.0.0.1:${port}/v1`;
-  const soundza = require("../../../electron/library/soundza.cjs");
+  const soundza = require("../../../electron/bundled-media/soundza/dist/client.cjs");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fve-soundza-'));
   try {
     // Host rules: the real host is allowed; lookalikes are not. Localhost only via the override.

@@ -1,8 +1,8 @@
 const assert=require('node:assert/strict'),{EventEmitter}=require('node:events'),{ExtensionExports,exportInput}=require('../../../electron/plugins/extensionExports.cjs'),{ExtensionRuntime}=require('../../../electron/plugins/extensionRuntime.cjs');
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 (async()=>{
- for(const input of [{bitrate_mbps:101},{bitrate_mbps:2,crf:18},{quality:'custom'},{fps:12},{crf:52},{overwrite:1},{showCompletion:1},{file_path:'relative.mp4'},{file_path:'/tmp/wrong.mov'},{range:{start_sec:0,end_sec:NaN}},{range:{start_sec:1,end_sec:1}},{range:{start_sec:0,end_sec:5,extra:true}},{extra:true}])assert.throws(()=>exportInput(input));
- assert.deepEqual(exportInput({range:{start_sec:5,end_sec:65},crf:0,showCompletion:false}),{range:{start_sec:5,end_sec:65},crf:0,showCompletion:false});
+ for(const input of [{bitrate_mbps:101},{bitrate_mbps:2,crf:18},{quality:'custom'},{fps:12},{crf:52},{overwrite:1},{showCompletion:1},{file_path:'relative.mp4'},{file_path:'/tmp/wrong.avi'},{range:{start_sec:0,end_sec:NaN}},{range:{start_sec:1,end_sec:1}},{range:{start_sec:0,end_sec:5,extra:true}},{extra:true}])assert.throws(()=>exportInput(input));
+ assert.deepEqual(exportInput({range:{start_sec:5,end_sec:65},crf:0,showCompletion:false}),{range:{start_sec:5,end_sec:65},crf:0,showCompletion:false,format:'mp4'});
  const messages=[],owner=Object.assign(new EventEmitter(),{isDestroyed:()=>false,send:(name,value)=>messages.push({name,value})}),job={key:'one',generation:'generation',state:'running',manifest:{id:'fixture.export',name:'Render fixture'},child:{postMessage:value=>messages.push(value)}},other={...job,key:'two'},runtime={active:new Map([['one',job],['two',other]])};
  let request,finish,released=0,canceled=0,begins=0;
  const host=new ExtensionExports({runtime,getOwner:()=>owner,requestEditor:async value=>{request=value;return new Promise(resolve=>{finish=resolve;});}});host.configure({begin:async()=>{begins++;return {file:'/tmp/render.mp4',frameDir:'/tmp/frames'};},release:async()=>{released++;},cancel:()=>{canceled++;}});

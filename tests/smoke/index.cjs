@@ -8,6 +8,13 @@ const { runExport, probe } = require("../../electron/media/ffmpeg.cjs");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = async function smoke(win, app, dir) {
+  if (process.env.FVE_SMOKE_MODE === 'extension-document-hooks') return require('./smoke-extension-document-hooks.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'editor-regressions') return require('./smoke-editor-regressions.cjs')(win, app, dir);
+  if (process.env.FVE_SMOKE_MODE === 'custom-timeline') return require('./smoke-custom-timeline.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-custom-hooks') return require('./smoke-extension-custom-hooks.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-shaders') return require('./smoke-extension-shaders.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-open-surfaces') return require('./smoke-extension-open-surfaces.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'extension-expansion') return require('./smoke-extension-expansion.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'extension-native-controls') return require('./smoke-extension-native-controls.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'extension-api') return require('./smoke-extension-api.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'extension-sdk-additions') return require('./smoke-extension-sdk-additions.cjs')(win,app,dir);
@@ -29,6 +36,7 @@ module.exports = async function smoke(win, app, dir) {
   if (process.env.FVE_SMOKE_MODE === 'extension-host') return require('./smoke-extension-host.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-settings') return require('./smoke-plugin-settings.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-authoring') return require('./smoke-plugin-authoring.cjs')(win,app,dir);
+  if (process.env.FVE_SMOKE_MODE === 'media-sources') return require('./smoke-media-sources.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-showcase') return require('./smoke-plugin-showcase.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-usability') return require('./smoke-plugin-usability.cjs')(win,app,dir);
   if (process.env.FVE_SMOKE_MODE === 'plugin-content-packs') return require('./smoke-plugin-content-packs.cjs')(win,app,dir);

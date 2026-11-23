@@ -6,4 +6,4 @@ export class PluginError extends Error{
 }
 const fail=(code,message)=>{throw new PluginError(code,message);};
 export function definePlugin(manifest){try{validateManifest(manifest);return structuredClone(manifest);}catch(error){throw new PluginError('MANIFEST_INVALID',error.message,{cause:error});}}
-export {defineExtension,defineServiceContract} from './extension.mjs';
+export {defineExtension,defineServiceContract,defineHookContract} from './extension.mjs';

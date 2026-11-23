@@ -27,6 +27,8 @@ const probed = (name, type, duration) => ({ name, type, duration, path: `C:/fake
 const calls = [];
 let geminiConfigured = false; let extensionEnabled = true, extensionRunning = true; let voiceDefault = { engine: 'auto', voice: '' };
 const api = {
+  mediaSearch(input) { return ['photo','video'].includes(input.kind) ? this.stockSearch(input) : this.librarySearch(input); },
+  mediaSourceAdd(item) { return ['photo','video'].includes(item.kind) ? this.stockAdd(item) : this.libraryAdd(item); },
   librarySearch: async (o) => { calls.push(['librarySearch', o]); return { results: [{ id: 'freesound-1', title: 'Whoosh fast', duration: 1.2, creator: 'X', license: 'cc0', url: 'https://x' }, { id: 'jam-2', title: 'Happy', duration: 95, creator: 'Y', license: 'by' }] }; },
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
   // An ordinary installed extension service, with no vendor-specific host fields.

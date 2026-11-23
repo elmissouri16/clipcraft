@@ -1,6 +1,7 @@
 // Development-only bootstrap. Examples still pass through normal package validation.
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const {readFolder, validateFiles} = require('./package.cjs');
 async function loadExamplePlugins(manager, directory, report = message => console.warn(message)) {
   let entries;
   try { entries = await fs.readdir(directory, { withFileTypes: true }); }
@@ -10,7 +11,24 @@ async function loadExamplePlugins(manager, directory, report = message => consol
   }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
-    try { const folder=path.join(directory,entry.name),{readFolder,validateFiles}=require('./package.cjs'),bundle=await validateFiles(await readFolder(folder),manager.appVersion);if(bundle.manifest.legacyExecutable){report(`[plugins] Example ${entry.name}: retired executable; use its Node source under examples/extensions.`);continue;}const existing=(await manager.list()).find(row=>row.key===bundle.key&&!row.removing&&!row.error);if(existing){if(!existing.enabled&&!existing.recovered)await manager.setEnabled(existing.key,true);continue;}await manager.install(folder,true,{bootstrap:true}); }
+    try {
+      const folder = path.join(directory, entry.name);
+      const {key, manifest} = await validateFiles(await readFolder(folder), manager.appVersion);
+      if (manifest.legacyExecutable) {
+        report(`[plugins] Example ${entry.name}: retired executable; use its Node source under examples/extensions.`);
+        continue;
+      }
+      const rows = await manager.list();
+      const existing = rows.find(row => row.key === key && !row.removing && !row.error);
+      if (existing) {
+        if (!existing.enabled && !existing.recovered) await manager.setEnabled(key, true);
+        continue;
+      }
+      // A developer can have a customized copy of the same example release installed.
+      if (rows.some(row => row.manifest?.id === manifest.id && row.manifest.publisher === manifest.publisher &&
+          row.manifest.version === manifest.version && !!row.manifest.main === !!manifest.main)) continue;
+      await manager.install(folder, true, {bootstrap:true});
+    }
     catch (error) { report(`[plugins] Example ${entry.name}: ${error.message}`); }
   }
 }

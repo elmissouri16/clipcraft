@@ -13,7 +13,7 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
   await c.hooks.register('export.willRender',async(_input,{signal})=>{hookStarted=true;if(mode==='caption'){const editor=await c.editor.read();await c.captions.write({documentId:editor.documentId,revision:editor.revision,mode:'append',cues:[{text:'SDK render',start_sec:0,end_sec:1.8}]});}if(mode==='wait'){await new Promise<void>(resolve=>signal.addEventListener('abort',()=>resolve(),{once:true}));hookAborted=signal.aborted;}});
   function typeChecks(){
    // @ts-expect-error unsupported encoder
-   c.exports.render({codec:'vp9'});
+   c.exports.render({codec:'av1'});
    // @ts-expect-error callbacks receive progress rather than a file path
    c.exports.render({}, {onProgress:(file:string)=>{}});
   }

@@ -54,3 +54,13 @@ assert.equal(renderable(plain), plain, 'nothing deactivated: same object');
 
 assert.deepEqual(pickAttributes({ id: 'k', filter: 'bw', transform: { scale: 2 }, in: 3 }), { filter: 'bw', transform: { scale: 2 } });
 console.log('CLIP MENU OK');
+
+const { clipAudioMix, audioGain } = await import('../../../src/features/audio/fades.js');
+const originalMix = {in:2,out:6,speed:2,volume:.5,fadeIn:1,fadeOut:1,fadeInOffset:.25,fadeOutOffset:.1,
+  volumeKeys:[{t:1,v:.25},{t:4,v:.75},{t:10,v:1}],audioFx:{highpass:80},enhance:{on:true,path:'voice.wav',from:2,to:6}};
+const detachedMix = {...clipAudioMix(originalMix,true),in:0,out:4,speed:2};
+for (const at of [0,.25,.5,1,1.5,2]) assert.ok(Math.abs(audioGain(originalMix,at,2)-audioGain(detachedMix,at,2))<1e-9);
+assert.deepEqual(detachedMix.audioFx,originalMix.audioFx);
+assert.deepEqual(detachedMix.enhance,{...originalMix.enhance,from:0,to:4});
+assert.equal(clipAudioMix({...originalMix,out:5},true).enhance,undefined);
+assert.deepEqual(clipAudioMix(originalMix).volumeKeys,originalMix.volumeKeys);

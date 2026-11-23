@@ -1,3 +1,4 @@
+import CustomTypeProperties from '../../plugins/components/CustomTypeProperties.jsx';
 import ExtensionInspector from '../../plugins/components/ExtensionInspector.jsx';
 import {ExtensionActions} from '../../plugins/components/ExtensionNativeUi.jsx';
 import PluginEffectControls from '../../plugins/components/PluginEffectControls.jsx';
@@ -49,11 +50,12 @@ function ProjectDetails({ project, dispatch, duration }) {
   const setPreset = (id) => set(settingsPatch(project, { preset: id, custom: stored.custom }));
   const setCustom = (patch) => set(settingsPatch(project, { preset: 'custom', custom: { ...stored.custom, ...patch } }));
   const custom = stored.custom;
+  const audioCodec=eff.audioCodec==='opus'?'Opus':'AAC';
   const QROWS = [
-    { id: 'low', small: 'CRF 28 · ≤720 · AAC 96k' },
-    { id: 'medium', small: 'CRF 23 · ≤1080 · AAC 128k' },
-    { id: 'high', small: t('inspector.crf_18_full_size_aac_192k') },
-    { id: 'ultra', small: t('inspector.crf_14_full_size_aac_320k') },
+    { id: 'low', small: `CRF 28 · ≤720 · ${audioCodec} 96k` },
+    { id: 'medium', small: `CRF 23 · ≤1080 · ${audioCodec} 128k` },
+    { id: 'high', small: t('inspector.crf_18_full_size_aac_192k').replace('AAC',audioCodec) },
+    { id: 'ultra', small: t('inspector.crf_14_full_size_aac_320k').replace('AAC',audioCodec) },
     { id: 'custom', small: t('inspector.your_own_settings') },
   ];
   return (
@@ -109,8 +111,8 @@ function ProjectDetails({ project, dispatch, duration }) {
             </div>
             {custom.mode === 'crf' ? (
               <label className="field">
-                <span>{t('inspector.crf_value', { value: custom.crf })}</span>
-                <input type="range" min="0" max="51" step="1" value={custom.crf} aria-label={t('inspector.custom_crf')}
+                <span>{t('inspector.crf_value', { value: eff.crf })}</span>
+                <input type="range" min="0" max={eff.codecFamily==='vp9'?63:51} step="1" value={Math.min(custom.crf,eff.codecFamily==='vp9'?63:51)} aria-label={t('inspector.custom_crf')}
                   onChange={(e) => setCustom({ crf: Number(e.target.value) })} />
               </label>
             ) : (
@@ -141,14 +143,14 @@ function ProjectDetails({ project, dispatch, duration }) {
             <div className="export-custom-row">
               <span className="export-custom-label">{t('export.codec')}</span>
               <div className="proj-seg" role="radiogroup" aria-label={t('export.codec')}>
-                {[['h264', 'H.264'], ['h265', 'H.265']].map(([id, name]) => (
-                  <button key={id} type="button" role="radio" aria-checked={custom.codec === id}
-                    disabled={id === 'h265' && !caps.libx265}
-                    className={custom.codec === id ? 'on' : ''} onClick={() => setCustom({ codec: id })}>{name}</button>
+                {(eff.format==='webm'?[['vp9','VP9']]:eff.format==='mkv'?[['h264','H.264'],['h265','H.265'],['vp9','VP9']]:[['h264', 'H.264'], ['h265', 'H.265']]).map(([id, name]) => (
+                  <button key={id} type="button" role="radio" aria-checked={eff.codecFamily === id}
+                    disabled={id==='vp9'?caps.vp9===false:id === 'h265' && !caps.libx265&&!caps.h265Hardware}
+                    className={eff.codecFamily === id ? 'on' : ''} onClick={() => setCustom({ codec: id })}>{name}</button>
                 ))}
               </div>
             </div>
-            {!caps.libx265 && <p className="export-note-line">{t('inspector.h_265_is_not_available_in_this_build_h_264')}</p>}
+            {eff.format!=='webm'&&!caps.libx265&&!caps.h265Hardware && <p className="export-note-line">{t('inspector.h_265_is_not_available_in_this_build_h_264')}</p>}
             <Select label={t('inspector.encoder_preset')} value={custom.encoderPreset}
               options={ENCODER_PRESETS.map((p) => ({ id: p, name: p }))} onChange={(v) => setCustom({ encoderPreset: v })} />
             <div className="export-custom-row">
@@ -163,7 +165,7 @@ function ProjectDetails({ project, dispatch, duration }) {
           </div>
         )}
         <p className="export-effective">
-          {t('inspector.exports_at', { width: eff.outW, height: eff.outH, fps: eff.outFps, quality: eff.mode === 'crf' ? `CRF ${eff.crf}` : `${eff.bitrateMbps} Mbps`, codec: eff.codecLabel, audio: eff.audioKbps })}
+          {t('inspector.exports_at', { width: eff.outW, height: eff.outH, fps: eff.outFps, quality: eff.mode === 'crf' ? `CRF ${eff.crf}` : `${eff.bitrateMbps} Mbps`, codec: eff.codecLabel, audio: eff.audioKbps,audioCodec })}
         </p>
         {eff.notes.map((n) => <p key={n} className="export-note-line">{n}</p>)}
       </div>
@@ -392,6 +394,7 @@ export default function Inspector({ extensionInspectorSet,projectEpoch, collapse
   );
   // The transition and effect panels, like every clip panel below, are keyed by the selection: a value
   // being typed for one clip is dropped, not committed onto the clip selected next.
+  if(['custom','custom-track'].includes(selection?.track))return <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}><InspectorHeader Icon={Layers} title={t('plugins.custom_properties')} onCollapse={onCollapse}/><div className="inspector-body" ref={bodyRef}><CustomTypeProperties key={projectEpoch+':'+selection.id} {...{project,selection,dispatch,time}}/></div></aside>;
   if (selection?.track === 'transition') {
     return (
       <aside id="inspector-panel" className="inspector" aria-label={t('app.properties')} hidden={collapsed}>

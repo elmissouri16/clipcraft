@@ -281,8 +281,20 @@ function externalToken() {
 }
 
 // ---- Keys of other services (stock media). Same encryption, same rules as the AI keys. ----
-const SERVICES = ['pixabay', 'soundza', 'elevenlabs', 'gemini-tts', 'cap-groq', 'cap-openai', 'cap-deepgram', 'cap-elevenlabs'];
+const SERVICES = ['elevenlabs', 'gemini-tts', 'cap-groq', 'cap-openai', 'cap-deepgram', 'cap-elevenlabs'];
 
+// The extension secret store uses the same OS-encrypted base64 format. Move an old
+// entry after its destination confirms persistence, without decrypting it in transit.
+async function transferMediaKey(name, receive) {
+  if (!['pixabay','soundza'].includes(name)) return;
+  const encrypted = read().services?.[name]?.enc;
+  if (!encrypted || !await receive(encrypted)) return;
+  const current = read();
+  if (current.services?.[name]?.enc === encrypted) {
+    delete current.services[name];
+    write(current);
+  }
+}
 function getServiceKey(name) {
   if (!SERVICES.includes(name)) return '';
   return decryptEntry(read().services?.[name]);
@@ -478,4 +490,4 @@ function setFirstRun(patch) {
   return getFirstRun();
 }
 
-module.exports = { onChanged,warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, setSubagents, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getExtensionMigrations, getFirstRun, setFirstRun, get PROVIDERS(){return providerIds();},get DEFAULT_MODELS(){return defaultModels();} };
+module.exports = { transferMediaKey, onChanged,warmKeys, getLanguagePreference, setLanguagePreference, getWindowState, setWindowState, getShortcuts, setShortcuts, getQuality, setQuality, getPerfMode, setPerfMode, PERF_MODES, getPublic, getActive, save, setModel, setReasoningEffort, setSubagents, clearKey, saveProviderKey, getServiceKey, saveServiceKey, clearServiceKey, getMcpServers, setMcpServers, getExternalAgents, setExternalAgents, externalToken, getVoiceDefault, setVoiceDefault, getExtensionMigrations, getFirstRun, setFirstRun, get PROVIDERS(){return providerIds();},get DEFAULT_MODELS(){return defaultModels();} };

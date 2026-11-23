@@ -1,19 +1,15 @@
-// Audio library: free music / sound effects found through the Openverse API (Jamendo music,
-// Freesound effects). CC0 by default; CC BY is an explicit option with saved credits.
-// (The old built-in effects, synthesized here with FFmpeg, were removed on Hamza's call —
-// they sounded poor and synthetic next to real recordings.)
-// Pure module: the caller passes `fetch` (Electron's net.fetch in the app, the global fetch in tests).
 const fs = require('fs');
 const path = require('path');
 
-const openverse = require('./openverse.cjs');
+
 // Hosts files may come from (after redirects too).
-const FILE_HOSTS = ['jamendo.com', 'freesound.org', 'myinstants.com'];
+const FILE_HOSTS = ['myinstants.com'];
 const MAX_BYTES = 60 * 1024 * 1024;
 
 const hostOk = (url) => {
   try {
     const u = new URL(url);
+    if (process.env.FVE_SMOKE && process.env.FVE_MYINSTANTS_URL && u.origin === new URL(MYINSTANTS).origin) return true;
     return u.protocol === 'https:' && FILE_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
   } catch {
     return false;
@@ -23,7 +19,7 @@ const hostOk = (url) => {
 // ---- MyInstants (the "Trolls" section: meme sounds) ----
 // Read from the site's pages (the same thing the myinstants-api project does; its hosted copy sits behind a
 // browser check). People upload these sounds and they carry no license, so every one is marked 'unknown'.
-const MYINSTANTS = 'https://www.myinstants.com';
+const MYINSTANTS = process.env.FVE_SMOKE && process.env.FVE_MYINSTANTS_URL || 'https://www.myinstants.com';
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 const unescapeHtml = (t) => t.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => (e[0] === '#'
   ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10))
@@ -85,16 +81,8 @@ async function searchMyinstants(fetchImpl, { q, category, page = 1 }) {
   return { results, total: results.length, page: n, pages: hasNext && n < 50 ? n + 1 : n };
 }
 
-// kind: 'music' | 'sfx' (Freesound) | 'trolls' (MyInstants).
-// Returns { results, total, page, pages }.
-async function search(fetchImpl, { kind, q, category, page = 1, licenses }) {
-  if (kind === 'trolls') return searchMyinstants(fetchImpl, { q, category, page });
-  return openverse.search(fetchImpl, { kind, q, page, licenses });
-}
-
 // Downloads (once) an item from search() into dir/online; returns the file path.
 async function download(fetchImpl, dir, item) {
-  if (item?.origin === 'openverse') return (await openverse.download(fetchImpl, dir, item)).path;
   if (!item || !/^[\w-]{8,100}$/.test(String(item.id))) throw new Error('This sound cannot be downloaded.');
   const out = path.join(dir, 'online', `${item.id}.mp3`);
   // A file already kept stays usable, including saved sounds from a source that is no longer offered.
@@ -119,4 +107,4 @@ function creditLine(c) {
   return `"${c.title}" by ${c.creator}, ${c.licenseName}${c.licenseUrl ? ` ${c.licenseUrl}` : ''}${c.landing ? ` - ${c.landing}` : ''}`;
 }
 
-module.exports = { search, download, creditLine, hostOk, parseMyinstants };
+module.exports = { search: searchMyinstants, download, creditLine, hostOk, parseMyinstants };

@@ -1,3 +1,4 @@
+import {setCustomTimelineTypes} from '../../../shared/customTimeline.mjs';
 import {setPluginCreative} from './creativeRegistry.js';
 import {setPluginTransitions,subscribePluginTransitions,assertPluginTransitions} from './transitionRegistry.js';
 // Renderer-owned read-only definitions. Project files carry references/parameters, never expressions.
@@ -12,7 +13,7 @@ export function setPluginEffects(rows=[]) {
   const next=new Map();
   for(const row of rows){
     if(!/^[a-f0-9]{64}$/.test(row.digest)||typeof row.pluginId!=='string'||row.contributionId!==`${row.pluginId}/${row.id}`)throw Error('Invalid effect dependency identity.');
-    const def=validateEffectDefinition({id:row.id,name:row.name,expression:row.expression,parameters:row.parameters});
+    const def=validateEffectDefinition({id:row.id,name:row.name,...(row.fragment!==undefined?{fragment:row.fragment}:{expression:row.expression}),parameters:row.parameters});
     const item={...def,pluginId:row.pluginId,contributionId:row.contributionId,version:row.version,digest:row.digest,preferred:row.preferred===true};
     next.set(effectId(item),item);
   }
@@ -52,6 +53,7 @@ export function projectPluginProblems(project) {
 }
 export function assertPluginEffects(project) {
   assertPluginTransitions(project);
+  if(project.customRenderIssues?.length)throw Error('Custom timeline types need attention before export: '+project.customRenderIssues.join(' '));
   const issues=projectPluginProblems(project);
   if(issues.length)throw Error(`Plugin effects need attention before export: ${issues.map(i=>`${i.name}: ${i.reason}`).join(' ')} Reinstall the required version, explicitly upgrade, or disable the affected effect in the inspector.`);
 }
@@ -60,9 +62,9 @@ export function refreshPluginEffects() {
   const job=refreshQueue.then(async()=>{
     const api=globalThis.window?.api;if(!api)return;
     try{
-      const [effects,transitions,creative]=await Promise.all([api.pluginEffects?.(),api.pluginTransitions?.(),api.pluginCreative?.()]);
-      if(effects)setPluginEffects(effects);if(transitions)setPluginTransitions(transitions);if(creative)setPluginCreative(creative);
-    }catch(error){setPluginEffects([]);setPluginTransitions([]);setPluginCreative();throw error;}
+      const [effects,transitions,creative,types]=await Promise.all([api.pluginEffects?.(),api.pluginTransitions?.(),api.pluginCreative?.(),api.pluginTimelineTypes?.()]);
+      if(effects)setPluginEffects(effects);if(transitions)setPluginTransitions(transitions);if(creative)setPluginCreative(creative);if(types&&setCustomTimelineTypes(types)){revision++;listeners.forEach(fn=>fn());}
+    }catch(error){setPluginEffects([]);setPluginTransitions([]);setPluginCreative();if(setCustomTimelineTypes()){revision++;listeners.forEach(fn=>fn());}throw error;}
   });
   refreshQueue=job.catch(()=>{});return job;
 }

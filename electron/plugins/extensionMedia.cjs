@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const {pipeline} = require('node:stream/promises');
 const {Transform} = require('node:stream');
 const {inspect} = require('../media/inspectArtifact.cjs');
-const SUFFIXES = new Set(['.png','.jpg','.jpeg','.webp','.bmp','.mp4','.mov','.mkv','.webm','.avi','.m4v','.wav','.mp3','.m4a','.aac','.ogg','.flac','.aiff','.opus']);
+const SUFFIXES = new Set(['.png','.jpg','.jpeg','.webp','.bmp','.gif','.mp4','.mov','.mkv','.webm','.avi','.m4v','.wav','.mp3','.m4a','.aac','.ogg','.flac','.aiff','.opus']);
 const MAX_BYTES = 512 * 1024 * 1024;
 const check = signal => { if (signal.aborted) throw Error('Extension media operation canceled'); };
 

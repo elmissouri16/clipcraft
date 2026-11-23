@@ -145,6 +145,7 @@ first (`flushAutosave`), as when the user leaves it.
 | `get_status` | screen (home/editor), open project (id, name, file, revision, save state), connected client, running export | first call an agent should make |
 | `list_projects` | Home's merged list: autosave slots and file recents, newest first (id, name, format, file, modified, open) | the same list Home shows |
 | `create_project` | `{ format, fps?, name? }`, format being one of Home's five presets | `startNewProject` |
+| `duplicate_project` | `{ name? }` copies the open edit and switches to the copy | saves the source first, creates a separate Home slot and starts a fresh chat |
 | `open_project` | `{ id }` from `list_projects`, or `{ path }` to an existing `*.clipcraft.json` | `loadSlot` / `loadFile` (Home's open, returning errors instead of dialogs) |
 | `save_project` | saves to the project's file; `{ path }` saves to a new `.clipcraft.json` (parent folder must exist, never overwrites another file) | no dialog: the agent gives the path |
 | `close_project` | back to Home | flushes autosave |
@@ -201,7 +202,7 @@ Deleting projects stays a user action on Home.
 ## Acceptance
 
 - With the setting on, Install for an agent and a new session of it lists the native tool list plus
-  the six project tools and completes an edit that the user can undo as one step.
+  the project tools and completes an edit that the user can undo as one step.
 - Never two editors at once: a working agent blocks other agents and CraftAI, with a message naming
   it; an idle one gives way.
 - One implementation: the parity test passes, and `runNativeAgent` and the external host share

@@ -4,6 +4,7 @@ import {historyReducer,preparePluginEdits,projectDuration,exportDuration,rendera
 import {createEditorContext} from './editorContext.js';
 import {mediaInsertion,captionRead,captionWrite,editContextInput,markerApply} from './extensionOperations.js';
 import {pluginEffectsRevision} from './effectRegistry.js';
+import {customTimelinePage,customTimelineRequest,customTypesRevision} from '../../../shared/customTimeline.mjs';
 export const extensionEditPermissions=['editor.read','clips.write','clips.retime','clips.automation','clips.effects','clips.properties','clips.manage','tracks.write','timeline.ripple','clips.links','clips.linked','timeline.edit','timeline.reorder'];
 const carriedFields=new Set(['craftAI','posterImage','posterImageAt']);
 const mediaVisualFields=new Set(['thumb','thumbCount','thumbInterval','thumbW','thumbH','poster','wave','proxy','proxies','lightProxy','proxyRequired','proxyFailed','optimizing']);
@@ -27,13 +28,14 @@ export function carryPreparationMetadata(draft,current){
 // Native reads stay on the real editor; only calls carrying the operation grant
 // see this draft. Its intermediate reducer results never enter editor history.
 export class ExtensionDraft {
- constructor(history,{selection=null,playhead={time_sec:0,playing:false}}={}){Object.assign(this,{base:history,project:history.present,selection,playhead,steps:0,effectRevision:pluginEffectsRevision(),usesEffects:false});this.reader=createEditorContext();this.actions=[];}
- valid(){return !this.usesEffects||this.effectRevision===pluginEffectsRevision();}
+ constructor(history,{selection=null,playhead={time_sec:0,playing:false}}={}){Object.assign(this,{base:history,project:history.present,selection,playhead,steps:0,effectRevision:pluginEffectsRevision(),usesEffects:false,customRevision:customTypesRevision(),usesCustom:false});this.reader=createEditorContext();this.actions=[];}
+ valid(){return (!this.usesEffects||this.effectRevision===pluginEffectsRevision())&&(!this.usesCustom||this.customRevision===customTypesRevision());}
  capture(input){const snapshot=this.reader(this.project,this.selection,this.playhead,input);return {snapshot,targets:this.reader.targets(snapshot),rebase:value=>this.reader.rebase?.(value,snapshot)??value};}
  read(method,input,extensionId){
   if(method==='workspace.inspect')return this.reader.inspect(this.project,this.selection,this.playhead,input);
   if(method==='workspace.readValue')return this.reader.readValue(this.project,this.selection,this.playhead,input);
   const {snapshot,targets}=this.capture(method==='editor.read'?input:undefined);
+  if(method==='timeline.read')return customTimelinePage(this.project,this.reader.scope(),input);
   if(method==='configuration.get')return projectConfiguration(this.project,snapshot.documentId,extensionId,method,input).value;
   if(method==='editor.read')return snapshot;
   if(method==='workspace.read')return {documentId:snapshot.documentId,name:this.project.name,width:this.project.width,height:this.project.height,fps:this.project.fps,duration_sec:projectDuration(this.project),export_duration_sec:exportDuration(renderable(this.project))};
@@ -44,7 +46,11 @@ export class ExtensionDraft {
   if(this.steps>=128)throw Error('Save/export preparation exceeds 128 document edits');
   const {snapshot,targets,rebase}=this.capture(method==='editor.apply'?editContextInput(input):undefined);let action,value,verify;
   if(method==='editor.apply'||method==='captions.write')input=rebase(input);
-  if(method==='configuration.update'){
+  if(method==='timeline.apply'){
+   this.usesCustom=true;if(!this.valid())throw Error('Custom timeline types changed during preparation');
+   const plan=customTimelineRequest(this.project,this.reader.scope(),input);value=plan.value;
+   if(plan.next!==this.project){action={type:'customTimeline',base:this.project,catalogRevision:this.customRevision,operations:input.operations};verify=state=>JSON.stringify(state.present.customTracks)===JSON.stringify(plan.next.customTracks)&&JSON.stringify(state.present.customClips)===JSON.stringify(plan.next.customClips);}
+  }else if(method==='configuration.update'){
    const plan=projectConfiguration(this.project,snapshot.documentId,extensionId,method,input);action=plan.action;value=plan.value;verify=state=>state.present.extensionSettings===action.settings;
   }else if(method==='editor.apply'){
    if(input?.operations?.some(operation=>operation.type?.includes('effect')))this.usesEffects=true;

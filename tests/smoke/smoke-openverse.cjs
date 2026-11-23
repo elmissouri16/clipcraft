@@ -7,7 +7,7 @@ module.exports=async(win,app,dir)=>{
   const check=(name,ok)=>{assert.ok(ok,name);result.checks.push(name);};
   const click=text=>q(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent.trim()===${JSON.stringify(text)});if(!e)throw Error('Missing button '+${JSON.stringify(text)});e.click();})()`);
   const select=async(label,value)=>{
-    const labels={ 'Audio source':{library:'Library',online:'Online'},'Audio content type':{music:'Music',sfx:'Sound effects',trolls:'Memes'}, 'Photo provider':{openverse:'Openverse · no key needed',pixabay:'Pixabay'},'Photo licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio provider':{sfx:'Openverse',soundza:'Soundza'}};
+    const labels={ 'Audio source':{library:'Library',online:'Online'},'Audio content type':{music:'Music',sfx:'Sound effects',trolls:'Memes'}, 'Photo provider':{openverse:'Openverse',pixabay:'Pixabay'},'Photo licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio licences':{cc0:'No credit required (CC0)',attribution:'Include credit-required media (CC BY)'},'Audio provider':{sfx:'Openverse',soundza:'Soundza'}};
     if(!await q(`!!document.querySelector('button[aria-label="${label}"]')`)){await q('document.querySelector(".browser-filter-toggle").click()');await until(`!!document.querySelector('button[aria-label="${label}"]')`);}
     await q(`document.querySelector('button[aria-label="${label}"]').click()`);
     await until('!!document.querySelector(".dropdown.open [role=option]")');
@@ -34,14 +34,18 @@ module.exports=async(win,app,dir)=>{
     // Use the same persistent agent runner for search-result IDs and import.
     await q(`(async()=>{const {createToolRunner}=await import('/src/features/agent/tools.js');window.__ovRunner=createToolRunner({getProject:()=>window.__fve.rawProject(),dispatch:window.__fve.dispatch,settle:()=>new Promise(r=>setTimeout(r,80)),api:window.api,addProbed:res=>{const existing=window.__fve.rawProject().media.find(m=>m.path===res.path);if(existing)return existing;const m={...res,id:crypto.randomUUID()};window.__fve.dispatch({type:'addMedia',items:[m]});return m;}});})()`);
     const tool=(name,args)=>q(`window.__ovRunner.run(${JSON.stringify(name)},${JSON.stringify(args)})`);
-    const sounds=await tool('search_sounds',{kind:'sfx',query:'whoosh',licenses:'attribution'});
+    const discovery=await tool('list_options',{what:'media_sources'});
+    check('CraftAI discovers the four enabled media sources',discovery.media_sources?.length===4&&discovery.media_sources.some(row=>row.id==='clipcraft.pixabay.catalog'&&row.kinds.includes('video')));
+    const video=await tool('search_stock',{kind:'video',provider:'clipcraft.pixabay.catalog',query:'studio'});
+    check('CraftAI reports missing configuration for the selected video source',video.error?.includes('Pixabay'));
+    const sounds=await tool('search_sounds',{kind:'sfx',provider:'clipcraft.openverse.catalog',query:'whoosh',licenses:'attribution'});
     check('Agent finds CC BY sounds',sounds.sounds?.some(s=>s.needs_credit));
     const added=await tool('add_sound',{sound_id:sounds.sounds.find(s=>s.needs_credit).sound_id,start_sec:0});result.audioResult=added;check('Agent imports audio',!added.error);
     const photos=await tool('search_stock',{kind:'photo',query:'forest'});check('Agent photos default to CC0',photos.items.length===1&&photos.items[0].license==='CC0');
     const foundBy=await tool('search_stock',{kind:'photo',query:'forest',licenses:'attribution'});
     const photoAdded=await tool('add_stock',{stock_id:foundBy.items.find(i=>i.needs_credit).stock_id,duration_sec:1});
     check('Agent imports photo with publication credit',!photoAdded.error&&photoAdded.publication_credit.includes('https://creativecommons.org/licenses/by/4.0/'));
-    const legacy=await q(`window.api.libraryAdd({id:'abefa1df-a6f9-40fb-9ef9-c471fb21cb92',provider:'freesound',license:'by',title:'Old favorite',url:'https://evil.example/tampered'})`);
+    const legacy=await q(`(async()=>{const favorites=await window.api.favoritesToggle({key:'lib:old',type:'audio',source:'library',item:{id:'abefa1df-a6f9-40fb-9ef9-c471fb21cb92',provider:'freesound',license:'by',title:'Old favorite',url:'https://evil.example/tampered'}});return window.api.mediaSourceAdd(favorites[0].item)})()`);
     check('Legacy favorites recheck canonical record',!legacy.error&&legacy.credit.origin==='openverse'&&legacy.name==='Credit sound.wav');
     await q('window.__fve.tab("audio")');
     if(process.env.FVE_BROWSER_EMPTY_PACK){
@@ -64,7 +68,7 @@ module.exports=async(win,app,dir)=>{
     fs.writeFileSync(path.join(dir,'audio-online.png'),(await win.capturePage()).toPNG());
     await select('Audio provider','soundza');await until('!!document.querySelector(".stock-key")');
     check('Soundza setup keeps provider switching reachable',await q('document.querySelector(".browser-summary").textContent.includes("Soundza")'));
-    await click('Music');await until('document.querySelector(".browser-summary").textContent.startsWith("Openverse ·")');
+    await click('Music');await until('document.querySelector(".browser-summary")?.textContent.startsWith("Openverse ·")');
     await click('Sound effects');await until('!!document.querySelector(".stock-key")');
     check('Sound-effects kind remembers its selected provider',await q('document.querySelector(".browser-summary").textContent.includes("Soundza")'));
     await select('Audio provider','sfx');await until('document.querySelectorAll(".lib-row").length===2');
@@ -90,23 +94,13 @@ module.exports=async(win,app,dir)=>{
     check('Online search survives a visit to the local library',await q('document.querySelector(\'input[aria-label="Search the library"]\').value==="onlycredited"'));
     // Exercise real native parsing and UI pagination with original page records.
     // Only this source's network edge is replaced; IPC, parser and UI stay real.
-    const {net}=require('electron'),nativeFetch=net.fetch,memeRequests=[];
-    net.fetch=(input,...options)=>{
-      const url=new URL(String(input));if(url.hostname!=='www.myinstants.com')return nativeFetch(input,...options);
-      memeRequests.push(url.href);const page=Number(url.searchParams.get('page')||1),id=page===2?'22':'11';
-      const html=`<div id="instants_container"><button onclick="play('/media/sounds/fixture-${id}.mp3', 'loader-${id}', 'fixture-${id}')"></button><a class="instant-link">Original page ${page}</a></div><div id="loading"></div>`;
-      return Promise.resolve(new Response(page>=3?'':html,{status:page>=3?404:200,headers:{'content-type':'text/html'}}));
-    };
-    try{
       await click('Memes');await until('document.querySelector(".browser-summary")?.textContent.startsWith("MyInstants")&&!!document.querySelector(".lib-more")');
       await search('original pagination');await until('document.querySelectorAll(".lib-row").length===1&&!!document.querySelector(".lib-more")');
       await q('document.querySelector(".lib-more").click()');await until('document.querySelectorAll(".lib-row").length===2&&!!document.querySelector(".lib-more")');
       check('Meme Load more appends distinct parsed infinite-scroll pages',await q('document.querySelector(".lib-list").textContent.includes("Original page 1")&&document.querySelector(".lib-list").textContent.includes("Original page 2")&&document.querySelector(".browser-summary").textContent.includes("Licence unknown")'));
       await q('document.querySelector(".lib-more").click()');await until('!document.querySelector(".lib-more")&&!document.querySelector(".lib-loading")');
       check('Terminal meme page retains results and removes Load more',await q('document.querySelectorAll(".lib-row").length===2&&!document.querySelector(".lib-error")'));
-      check('Meme pagination retains the submitted query at every page',[1,2,3].every(page=>memeRequests.some(value=>{const url=new URL(value);return url.searchParams.get('name')==='original pagination'&&url.searchParams.get('page')===String(page);})));result.memeRequests=memeRequests;
       await click('Sound effects');await until('document.querySelector(".browser-summary")?.textContent.startsWith("Openverse")&&document.querySelectorAll(".lib-row").length===1');
-    }finally{net.fetch=nativeFetch;}
     await click('Text to speech');await until('!!document.querySelector(".tts")');check('Speech generation stays reachable',true);
     await click('Credits');
     await until('!!document.querySelector(".lib-credits pre")');

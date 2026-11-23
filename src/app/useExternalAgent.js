@@ -28,10 +28,7 @@ export function useExternalAgent(appRef, settingsVersion, craftBusy, onAgentFocu
     host.current = createExternalHost({
       screen: () => app().screen(), project: () => app().project(), loadVersion: () => app().loadVersion(),
       dispatch: (action) => app().dispatch(action), settle: () => app().settle(), get pilotApp() { return app().pilotApp; },
-      provider: () => provider.current, craftBusy: () => app().craftBusy(), projects: {
-        status: () => app().projects.status(), list: (q) => app().projects.list(q), create: (a) => app().projects.create(a),
-        open: (a) => app().projects.open(a), save: (p) => app().projects.save(p), close: () => app().projects.close(),
-      },
+      provider: () => provider.current, craftBusy: () => app().craftBusy(), get projects() { return app().projects; },
       onActivity: (event) => {
         const step = externalFocusStep(focus.current, event, `${app().project()?.id}:${app().loadVersion()}`);
         if (step.changed) { focus.current = step.focus; focusOut.current?.(step.focus); }

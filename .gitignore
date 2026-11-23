@@ -11,3 +11,6 @@ release/
 .env
 .env.*
 !.env.example
+
+# Bundled media extensions ship their authored CommonJS entries directly.
+!electron/bundled-media/*/dist/

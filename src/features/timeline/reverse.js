@@ -85,7 +85,7 @@ export function reverseUpdates(project, track, clip, media) {
 // gets its own data mirrored back.
 export function unreverseUpdates(project, track, clip) {
   const r = clip.reversed;
-  if (!r) return [];
+  if (!r || !project.media.some(m => m.id === r.mediaId && !m.missing)) return [];
   const w = forwardWindow(clip);
   const whole = near(w.in, r.in || 0) && near(w.out, r.out) && r.original;
   const data = whole ? { keyframes: r.original.keyframes, track: r.original.track, volumeKeys: r.original.volumeKeys }

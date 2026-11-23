@@ -30,7 +30,7 @@ assert.match(target.file, /My export-[a-z0-9-]+\.mp4$/);assert.equal(target.noOv
 const output = ff.runExport({ ...plan.project, textClips: [], export: plan.effective }, target.file, () => {}, { noOverwrite: true });
 await output.promise;const metadata = await ff.probe(target.file);assert.equal(metadata.width, 160);assert.equal(metadata.fps, 24);assert.ok(fs.statSync(target.file).size > 0);
 assert.throws(() => createEditorExportTarget({ requestId, file_path: target.file }, options), /already exists/);
-assert.throws(() => createEditorExportTarget({ requestId, file_path: path.join(dir, 'wrong.mov') }, options), /mp4/);
+assert.throws(() => createEditorExportTarget({ requestId, file_path: path.join(dir, 'wrong.avi') }, options), /mp4/);
 const exclusive = createEditorExportTarget({ requestId, file_path: path.join(dir, 'raced.mp4') }, options);
 fs.writeFileSync(exclusive.file, 'Keep existing file');
 await assert.rejects(ff.runExport({ ...plan.project, textClips: [], export: plan.effective }, exclusive.file, () => {}, { noOverwrite: true }).promise, /EEXIST/);

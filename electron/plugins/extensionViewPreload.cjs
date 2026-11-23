@@ -18,6 +18,7 @@ const tabControls=backward=>{
  const index=el=>el.tabIndex>0?el.tabIndex:Infinity;
  return controls.filter(el=>!skipped.has(el)).sort((a,b)=>index(a)-index(b));
 };
+ipcRenderer.on('extensionView:focusCycle',(_event,direction)=>{const controls=tabControls(direction==='backward');(direction==='backward'?controls.at(-1):controls[0])?.focus();});
 ipcRenderer.on('extensionView:pulse',(_event,sequence)=>{invoke('beat',sequence).catch(()=>{});});
 ipcRenderer.on('extensionView:message',(_event,message)=>{for(const callback of listeners)try{callback(structuredClone(message.value));}catch{}invoke('delivered',message.id).catch(()=>{});});
 ipcRenderer.on('extensionView:theme',(_event,value)=>{currentTheme=value;apply(value);for(const callback of themeListeners)try{callback(value);}catch{}});
@@ -29,7 +30,7 @@ window.addEventListener('keydown',event=>{
  const key=event.key===' '?'Space':event.key.length===1?event.key.toUpperCase():event.key;
  const combo=[(event.ctrlKey||process.platform==='darwin'&&event.metaKey)&&'Ctrl',event.altKey&&'Alt',event.shiftKey&&'Shift',key].filter(Boolean).join('+');
  if(!typing&&!event.repeat&&!event.isComposing&&shortcuts.has(combo)){event.preventDefault();event.stopImmediatePropagation();invoke('shortcut',combo).catch(()=>{});return;}
- if(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopImmediatePropagation();invoke('focus','backward').catch(()=>{});}
+ if(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();event.stopImmediatePropagation();invoke('focus','escape').catch(()=>{});}
  if(event.key==='Tab'){const controls=tabControls(event.shiftKey);if(!controls.length||(event.shiftKey?document.activeElement===controls[0]||document.activeElement===document.body:document.activeElement===controls.at(-1))){event.preventDefault();invoke('focus',event.shiftKey?'backward':'forward').catch(()=>{});}}
 },true);
 const subscribe=(set,callback)=>{if(typeof callback!=='function'||set.size>=32)throw Error('View listener limit reached');set.add(callback);return ()=>set.delete(callback);};

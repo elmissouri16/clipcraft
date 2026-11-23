@@ -1,3 +1,4 @@
+import {glslTemplate} from '../../../shared/pluginShaders.mjs';
 // GPU renderer for the animated effects and transitions. The expressions of catalog.js are compiled to GLSL
 // fragment shaders; the preview draws with them in real time and the export sends every frame through the same
 // shaders (src/features/export/fxExport.js), so both show the same picture.
@@ -227,13 +228,15 @@ export class FxGL {
   }
 
   prepared(src, mode) {
-    const expressionKey = `${mode}|${src}`;
+    const custom=src?.kind==='glsl'?glslTemplate(src,mode):null;
+    const expressionKey = custom?.key??`${mode}|${src}`;
     let template = this.templates.get(expressionKey);
     if (!template) {
-      template = shaderTemplate(src, mode);
+      template = custom??shaderTemplate(src, mode);
       this.templates.set(expressionKey, template);
       if (this.templates.size > 256) this.templates.delete(this.templates.keys().next().value);
     }
+    if(custom)template=custom;
     const parameterized = template.params.length / 4 <= this.maxParameterVectors;
     const key = parameterized ? template.key : expressionKey;
     let p = this.programs.get(key);
@@ -254,7 +257,7 @@ export class FxGL {
     p = gl.createProgram();
     try {
       gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT));
-      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, parameterized ? sourceOf(template.ast, mode, template.params.length / 4) : shaderSource(src, mode)));
+      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, custom?custom.source:parameterized ? sourceOf(template.ast, mode, template.params.length / 4) : shaderSource(src, mode)));
       gl.bindAttribLocation(p, 0, 'p');
       gl.linkProgram(p);
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`Effect shader: ${gl.getProgramInfoLog(p)}`);
@@ -490,7 +493,7 @@ export class FxGL {
     this.upload(1, b, w, h);
     // Reveal/slide formulas can leave a border at exactly 0/1. A junction
     // must start/end on the unmodified input.
-    const shader = this.prepared(P === 0 ? 'A(X,Y)' : P === 1 ? 'B(X,Y)' : src, 'transition');
+    const shader = this.prepared(src?.kind==='glsl'?src:P === 0 ? 'A(X,Y)' : P === 1 ? 'B(X,Y)' : src, 'transition');
     this.draw(shader.program, w, h, { P, params: shader.params });
     return this.canvas;
   }

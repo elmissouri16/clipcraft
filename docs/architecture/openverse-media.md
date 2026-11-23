@@ -1,7 +1,7 @@
 # Openverse media
 
 Stock Photos defaults to Openverse, with Pixabay available under Filters > Provider.
-Videos continue to use Pixabay. Audio separates installed Library collections
+Pixabay supplies videos. The four bundled Node extensions register at `media.sources`. Enable or disable each source and configure its API key in Settings → Plugins. Audio separates installed Library collections
 from Online music, effects and memes; provider and copyright options are under
 Filters. Queries and filter choices are retained during the mounted editor session. Music and Sound FX use the same Openverse service
 as photos. SFXMint results were withdrawn on 2026-11-18 after that service ended keyless
@@ -13,7 +13,7 @@ CC BY. Public Domain Mark, NC, ND and SA records are excluded. A search result's
 licence label is discovery metadata, not independent verification of rights;
 the UI links to the original source and says to check before publishing.
 
-`electron/library/openverse.cjs` handles bounded anonymous API searches, a small
+`electron/bundled-media/openverse/dist/client.cjs` handles bounded anonymous API searches, a small
 five-minute search cache, 429 cooldowns, supported download hosts, manually
 validated redirects, content types and streamed size limits. No API secret is
 distributed. Only supported HTTPS media hosts are imported; the integration

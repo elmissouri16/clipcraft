@@ -40,7 +40,7 @@ try {
   let state={past:[],future:[],present:{...emptyProject(),ratio:'9:16',width:180,height:320,
     media:[{...(await ff.probe(source)),id:'wide',name:'Wide',path:source},{...(await ff.probe(wideVideo)),id:'wide-video',name:'Stock video',path:wideVideo}]}};
   const dispatch=a=>{state=historyReducer(state,a);};
-  const api={stockAdd:async()=>state.present.media[1],stockSearch:async req=>({results:[{id:'stock',kind:req.kind}]})};
+  const api={mediaSourceAdd:async()=>state.present.media[1],mediaSearch:async req=>({results:[{id:'stock',kind:req.kind}]})};
   const runner=createToolRunner({getProject:()=>state.present,dispatch,api,settle:async()=>{},addProbed:res=>res});
   const main=await runner.run('add_media',{media_name:'Wide'});
   assert.ok(main.clip_id);assert.deepEqual([state.present.width,state.present.height,state.present.ratio],[180,320,'9:16'],'the first source cannot replace a template canvas');

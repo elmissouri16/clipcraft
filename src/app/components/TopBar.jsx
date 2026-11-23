@@ -1,4 +1,4 @@
-import {ExtensionActions} from '../../features/plugins/components/ExtensionNativeUi.jsx';
+import {ExtensionActions,useExtensionMenu} from '../../features/plugins/components/ExtensionNativeUi.jsx';
 
 import { useRef, useState } from 'react';
 import { ArrowUpFromLine, AudioLines, Check, ChevronDown, CircleAlert, Film, FolderOpen, Home, Loader2, Save, Settings } from 'lucide-react';
@@ -14,7 +14,8 @@ const SAVE_STATES = {
   error: [t('topbar.not_saved'), t('topbar.the_project_file_could_not_be_written')],
 };
 
-export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, onPluginPanels,onManagePlugins }) {
+export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWorkspaceModeChange, project, onOpen, onSave, saveState = 'new', onExport, onExportAudio, onSettings, onHome, onPluginPanels,onManagePlugins,onExtensionError }) {
+  const extensionProjectItems=useExtensionMenu('menu.project',{},onExtensionError);
   const [menu, setMenu] = useState(null); // export menu
   const [projectMenu, setProjectMenu] = useState(null);
   const projectButton = useRef(null);
@@ -77,6 +78,7 @@ export default function TopBar({ agentBadge = null, workspaceMode = 'edit', onWo
           'sep',
           { label: t('close.save'), icon: Save, onClick: () => onSave(false), shortcut: shortcutHint('save') },
           { label: t('keymap.save_as'), icon: Save, onClick: () => onSave(true), shortcut: shortcutHint('saveAs') },
+          ...(extensionProjectItems.length?['sep',...extensionProjectItems]:[]),
         ]} />
       )}
       {menu && (

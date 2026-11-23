@@ -119,8 +119,8 @@ const SECTION_GROUPS = [
 const SECTIONS = SECTION_GROUPS.flatMap(g => g.items);
 
 export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, initialSection = 'ai', project,onReplaceDependency,onApplyPack,onAuthorExport }) {
-  const [section, setSection] = useState(initialSection === 'stock' || initialSection.startsWith('services') ? 'services' : initialSection);
-  const [serviceTarget, setServiceTarget] = useState((initialSection.startsWith('services:') ? initialSection.slice('services:'.length) : '') || (initialSection === 'stock' ? 'pixabay' : ''));
+  const [section, setSection] = useState(initialSection.startsWith('plugins:') || initialSection === 'stock' ? 'plugins' : initialSection.startsWith('services') ? 'services' : initialSection);
+  const [serviceTarget, setServiceTarget] = useState(initialSection.startsWith('services:') ? initialSection.slice('services:'.length) : '');
   const openService = target => { setServiceTarget(target || ''); setSection('services'); };
   const [saved, setSaved] = useState(null); // public settings from the main process
   const PROVIDERS=[...PRESETS,...(saved?.providerPlugins||[])];
@@ -493,7 +493,7 @@ export default function SettingsDialog({ onClose, onProxiesCleared, onAbout, ini
 
         </SettingsPage>
         )}
-        {section === 'plugins' && <SettingsPage title={page.title} description={page.description}><PluginSettings onAuthorExport={onAuthorExport} project={project} onReplaceDependency={onReplaceDependency} onApplyPack={onApplyPack} /></SettingsPage>}
+        {section === 'plugins' && <SettingsPage title={page.title} description={page.description}><PluginSettings initialKey={initialSection.startsWith('plugins:') ? initialSection.slice(8) : null} onAuthorExport={onAuthorExport} project={project} onReplaceDependency={onReplaceDependency} onApplyPack={onApplyPack} /></SettingsPage>}
         {section === 'external' && <SettingsPage title={page.title} description={page.description}><ExternalAgentSettings /></SettingsPage>}
         {section === 'mcp' && <SettingsPage title={page.title} description={page.description}><McpSettings saved={saved} onSaved={(st) => setSaved(st)} /></SettingsPage>}
         {section === 'speech' && (

@@ -9,9 +9,9 @@ function processFile(binary,args,signal=new AbortController().signal){
 }
 async function inspect(file,signal){
  const info=JSON.parse(await processFile(ffprobePath,['-v','error','-protocol_whitelist','file,pipe','-enable_drefs','0','-use_absolute_path','0','-i',file,'-show_streams','-show_format','-of','json'],signal)),video=info.streams?.find(s=>s.codec_type==='video'&&!s.disposition?.attached_pic),audio=info.streams?.find(s=>s.codec_type==='audio');
- const image=['png_pipe','jpeg_pipe','webp_pipe','bmp_pipe','image2'].includes(info.format?.format_name),duration=image?0:Number(info.format?.duration);
+ const image=['png_pipe','jpeg_pipe','webp_pipe','bmp_pipe','image2','gif'].includes(info.format?.format_name),duration=image?0:Number(info.format?.duration);
  if(!info.streams?.length||info.streams.length>16||!image&&!Number.isFinite(duration)||duration<0||duration>86400||video&&(!Number.isInteger(video.width)||!Number.isInteger(video.height)||video.width<1||video.height<1||video.width>8192||video.height>8192)||!video&&!audio)throw Error('Unsupported or oversized picked media.');
- const allowed=['png_pipe','jpeg_pipe','webp_pipe','bmp_pipe','image2','mov,mp4,m4a,3gp,3g2,mj2','matroska,webm','avi','wav','mp3','aac','ogg','flac','aiff'];if(!allowed.includes(info.format?.format_name))throw Error('Unsupported media container.');
+ const allowed=['png_pipe','jpeg_pipe','webp_pipe','bmp_pipe','image2','gif','mov,mp4,m4a,3gp,3g2,mj2','matroska,webm','avi','wav','mp3','aac','ogg','flac','aiff'];if(!allowed.includes(info.format?.format_name))throw Error('Unsupported media container.');
  // A picture must actually decode: its header alone reports a size, and an undecodable looped
  // still would keep the export encoder retrying forever.
  if(image){const counted=JSON.parse(await processFile(ffprobePath,['-v','error','-protocol_whitelist','file,pipe','-count_frames','-i',file,'-show_streams','-of','json'],signal).catch(()=>'{}'));if(!(Number(counted.streams?.find(s=>s.codec_type==='video')?.nb_read_frames)>=1))throw Error('This picture is damaged or is not a readable image.');}

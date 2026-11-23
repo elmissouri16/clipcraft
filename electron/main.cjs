@@ -63,6 +63,8 @@ let win;
 const pluginManager = require('./plugins/ipc.cjs').registerPlugins({
   ipcMain, app, dialog, getWindow:()=>win, fontDirectory:()=>fontDir(),
   root:path.join(process.env.FVE_SMOKE || app.getPath('userData'),'plugins'),
+  bundledMediaDirectory: process.env.FVE_SMOKE && process.env.CLIPCRAFT_BUNDLED_MEDIA !== '1' ? undefined
+    : app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'bundled-media') : path.join(__dirname, 'bundled-media'),
   examplesDirectory:!app.isPackaged && process.env.CLIPCRAFT_DEV_EXAMPLES === '1' ? path.join(__dirname,'../examples/plugins') : undefined,
 });
 let currentExport = null;
@@ -512,98 +514,22 @@ ipcMain.handle('favorites:toggle', (_e, entry) => {
   }
 });
 
-// ---- Audio library (Openverse / MyInstants + Soundza). Files live in <userData>/library. ----
-const library = require("./library/library.cjs");
-const openverse = require("./library/openverse.cjs");
-const soundza = require("./library/soundza.cjs");
-const libraryDir = () => path.join(app.getPath('userData'), 'library');
-// The Soundza key only ever comes from the encrypted settings. Local-fixture override for
-// tests/development (cf. CLIPCRAFT_PACK_URL): while CLIPCRAFT_SOUNDZA_URL points the client
-// at a fixture server, a key may come from the environment, because the test sandbox has no
-// OS keyring to save one into. In normal runs the environment is never consulted.
-const soundzaKey = () => settings.getServiceKey('soundza')
-  || (process.env.CLIPCRAFT_SOUNDZA_URL ? process.env.CLIPCRAFT_SOUNDZA_KEY || '' : '');
-// Migrate saved Openverse audio favorites from before provider IDs were namespaced.
-const libraryItem = item => item?.origin === 'openverse' || !/^[a-f0-9-]{36}$/i.test(item?.id || '')
-  || !['freesound', 'jamendo'].includes(item?.provider) ? item
-  : { ...item, origin: 'openverse', openverseId: item.id, kind: item.provider === 'jamendo' ? 'music' : 'sfx', licenses: item.license === 'by' ? 'attribution' : 'cc0' };
-const libraryPath = async (raw, fetchImpl = net.fetch) => {
-  const item = libraryItem(raw);
-  if (item?.origin === 'openverse') return (await openverse.download(fetchImpl, libraryDir(), item)).path;
-  return String(item?.id || '').startsWith('soundza-')
-    ? soundza.download(fetchImpl, libraryDir(), item, soundzaKey())
-    : library.download(fetchImpl, libraryDir(), item);
-};
-
-ipcMain.handle('library:search', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
-  try {
-    return await library.search(scopedFetch(net.fetch, signal), opts || {});
-  } catch (e) {
-    return { error: /fetch|ENOTFOUND|ERR_INTERNET|network/i.test(e.message) ? 'No internet connection.' : e.message };
-  }
+// Online media flows through the same enabled extension services for the UI and CraftAI.
+const mediaLibraryRoot = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE,'library-test') : path.join(app.getPath('userData'),'library');
+const mediaSources = new (require('./library/mediaSources.cjs').MediaSources)(pluginManager, path.join(mediaLibraryRoot,'imports'), probeAll);
+ipcMain.handle('mediaSources:list', () => mediaSources.catalog());
+ipcMain.handle('mediaSources:search', (event, input) => withAgentJob(event, input.requestId, async signal => {
+  try { return await mediaSources.search(input, signal); } catch (e) { return {error:e.message}; }
 }));
-// Source links come from the API record, never an arbitrary renderer URL.
-ipcMain.handle('openverse:source', async (_event, item) => {
-  try {
-    const r = await openverse.resolve(net.fetch, item);
-    if (r.landing) return shell.openExternal(r.landing);
-    return false;
-  } catch (e) { return { error: e.message }; }
+ipcMain.handle('mediaSources:preview', async (_event, item) => {
+  try { return await mediaSources.preview(item); } catch (e) { return {error:e.message}; }
 });
-ipcMain.handle('library:file', async (_e, item) => {
-  try {
-    return { path: await libraryPath(item) };
-  } catch (e) {
-    return { error: e.message };
-  }
+ipcMain.handle('mediaSources:source', async (_event, item) => {
+  try { await shell.openExternal(await mediaSources.source(item)); return true; } catch (e) { return {error:e.message}; }
 });
-// Adds a library sound as a media item; online sounds keep their license and credit line.
-ipcMain.handle('library:add', (event, item, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
-  try {
-    item = libraryItem(item);
-    const ov = item?.origin === 'openverse' ? await openverse.download(scopedFetch(net.fetch, signal), libraryDir(), item) : null;
-    const file = ov?.path || await libraryPath(item, scopedFetch(net.fetch, signal));
-    if (ov) item = ov.item;
-    const [m] = await probeAll([file]);
-    if (m.error) return { error: m.error };
-    const credit = ov?.credit || {
-      title: item.title, creator: item.creator, license: item.license, licenseName: item.licenseName,
-      licenseUrl: item.licenseUrl, landing: item.landing, providerName: item.providerName,
-      line: item.provider === 'soundza' ? soundza.creditLine(item) : library.creditLine(item),
-    };
-    return { ...m, name: `${item.title}${path.extname(file) || '.mp3'}`, credit };
-  } catch (e) {
-    return { error: e.message };
-  }
+ipcMain.handle('mediaSources:add', (event, item, options={}) => withAgentJob(event, options.requestId, async signal => {
+  try { return await mediaSources.download(item, signal); } catch (e) { return {error:e.message}; }
 }));
-
-// ---- Sound effects (Soundza). The key stays in this process. ----
-ipcMain.handle('soundza:status', () => ({ hasKey: !!soundzaKey() }));
-// Tests a typed key (or the saved one) with a tiny search.
-ipcMain.handle('soundza:test', async (_e, key) => {
-  try {
-    const k = String(key || '').trim() || soundzaKey();
-    const r = await soundza.search(net.fetch, k, { q: 'whoosh' });
-    return { ok: true, text: `Soundza works (a test search found ${r.results.length} sounds).` };
-  } catch (e) {
-    return { ok: false, text: e.message };
-  }
-});
-ipcMain.handle('soundza:search', async (_e, opts) => {
-  try {
-    return await soundza.search(net.fetch, soundzaKey(), opts || {});
-  } catch (e) {
-    return { error: e.message };
-  }
-});
-// Preview MP3s are fetched once into the library folder (the page may only play local media).
-ipcMain.handle('soundza:preview', async (_e, item) => {
-  try {
-    return { path: await soundza.preview(net.fetch, libraryDir(), item) };
-  } catch (e) {
-    return { error: e.message };
-  }
-});
 
 // Project files the user picked in a Save or Open dialog: only these are written without asking (auto save).
 const projectFiles = new Set();
@@ -730,7 +656,7 @@ ipcMain.handle('project:readRecovery',async()=>{await pluginManager.ready;try{re
 // Closing the window: the interface saves the project, or asks (in its own dialog) about a project that never had
 // a file. If it does not answer (frozen), the window closes anyway after a few seconds; the next start offers the
 // autosaved copy.
-let allowClose = !!process.env.FVE_SMOKE && !['autosave','persistence-performance'].includes(process.env.FVE_SMOKE_MODE);
+let allowClose = !!process.env.FVE_SMOKE && !['autosave','persistence-performance','extension-document-hooks'].includes(process.env.FVE_SMOKE_MODE);
 let closeTimer = null;
 let relaunchOnClose = false; // Restart from Settings: relaunch only once the close went through
 const closeNow = () => {
@@ -741,6 +667,9 @@ const closeNow = () => {
 };
 ipcMain.handle('app:closeNow', () => closeNow());
 ipcMain.handle('app:closeCancel', () => { clearTimeout(closeTimer); relaunchOnClose = false; });
+// The responsive editor owns close preparation after acknowledging the request.
+// Preserve a pending Settings restart while extension hooks or Save are running.
+ipcMain.handle('app:closeDefer', () => { clearTimeout(closeTimer); });
 
 // Export happens in two steps: the UI renders the text layer to PNG frames (export:frame / export:blanks),
 // then FFmpeg composes everything (export:run). Frame folders are only accepted if created by export:begin.
@@ -788,22 +717,24 @@ ipcMain.handle('agent:exportBegin', (event, req = {}) => {
   } catch (error) { return { error: error.message }; }
 });
 
-ipcMain.handle('export:begin', async (_e, suggested) => {
+ipcMain.handle('export:begin', async (_e, suggested, formatId='mp4') => {
   if(currentExport||agentExportTargets.size||extensionExportTargets.size)throw Error('Another export is already running.');
-  let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'ui-export.mp4') : null;
+  const {videoFormat,formatFromPath}=require('../shared/exportFormats.cjs'),format=videoFormat(formatId);
+  let file = process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'ui-export.'+format.extension) : null;
   if (!file) {
     const base = String(suggested || 'export').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'export';
     const res = await dialog.showSaveDialog(win, {
       title: i18n.t('export.export_video'),
-      defaultPath: `${base}.mp4`,
-      filters: [{ name: i18n.t('main.filter_mp4_video'), extensions: ['mp4'] }],
+      defaultPath: `${base}.${format.extension}`,
+      filters: [{ name: format.name, extensions: [format.extension] }],
     });
     if (res.canceled) return { canceled: true };
     file = res.filePath;
   }
+  if(formatFromPath(file)?.id!==format.id)throw Error('Output path extension must match the selected export format');
   const frameDir = require('./system/workDirs.cjs').makeWorkDir('clipcraft-text-');
   frameDirs.add(frameDir);confirmedExportFiles.set(frameDir, file);
-  return { file, frameDir };
+  return { file, format:format.id, frameDir };
 });
 
 // Text layer: raw frames from the interface, packed by FFmpeg into <frameDir>/text.mov as they come (textstream.cjs).
@@ -885,7 +816,7 @@ app.on('will-quit', () => { fxJobs.clear();fxJobs.cache.clear();textRenderCache.
 // stated fallback). Cached: the encoder list does not change at runtime.
 let exportCapsCache = null;
 ipcMain.handle('export:caps', async () => {
-  exportCapsCache ||= (async () => ({ libx265: hasLibx265(), h265Hardware: (await pickEncoder('h265')) === 'hevc_videotoolbox' }))();
+  exportCapsCache ||= (async () => ({ vp9:require('./media/ffmpeg.cjs').hasVp9(),libx265: hasLibx265(), h265Hardware: (await pickEncoder('h265')) === 'hevc_videotoolbox' }))();
   return exportCapsCache;
 });
 
@@ -901,6 +832,8 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     if (owned?.controller.signal.aborted) return { canceled: true };
     if (currentExport) throw Error('Another video is already being encoded.');
     const project = fxJobs.resolve(projectIn);
+    const selectedFormat=require('../shared/exportFormats.cjs').exportSelection({format:owned?.format??target?.format,file_path:target?.file});
+    if(require('./media/ffmpeg.cjs').effectiveExport(project).format!==selectedFormat.id)throw Error('Rendered settings do not match the host export destination format');
     // No export writes over the project's source media; a user export replaces an existing file only
     // when the save dialog returned that path for this export (a typed Name was never confirmed).
     const targetProblem = require('./export/exportTarget.cjs').exportTargetProblem({ file: target?.file, mediaPaths: [...(projectIn?.media || []), ...(project.media || [])].map(m => m?.path), confirmed: confirmedExportFiles.get(target?.frameDir) || null, user: !owned });
@@ -928,7 +861,7 @@ ipcMain.handle('export:run', async (event, projectIn, target, textFrames) => {
     if (owned) {
       const probe = await require('./media/ffmpeg.cjs').probe(target.file);
       if (probe.type !== 'video' || !probe.width || !(probe.duration > 0) || !size) throw Error('The rendered file could not be verified as a video.');
-      metadata = { duration_sec: probe.duration, width: probe.width, height: probe.height, fps: probe.fps, video_codec: probe.vcodec, audio_codec: probe.acodec || null, has_audio: probe.hasAudio };
+      metadata = { container:probe.container,duration_sec: probe.duration, width: probe.width, height: probe.height, fps: probe.fps, video_codec: probe.vcodec, audio_codec: probe.acodec || null, has_audio: probe.hasAudio };
       if(!extensionOwned)agentExportOutputs.set(target.file, { owner: event.sender.id, requestId: owned.requestId, revision: owned.revision, timelineStart: owned.timelineStart || 0, metadata, fingerprint: fileFingerprint(target.file) });
       while (agentExportOutputs.size > 64) agentExportOutputs.delete(agentExportOutputs.keys().next().value);
     }
@@ -1017,6 +950,7 @@ ipcMain.handle('export:cover', async (event, file, mediaPath, at) => {
   const run = (args) => new Promise((resolve, reject) => execFile(ffmpegPath, args, (e) => (e ? reject(e) : resolve())));
   let tmp;
   try {
+    if(path.extname(file).toLowerCase()!=='.mp4')throw Error('Embedded cover pictures are supported only for MP4 exports.');
     if (!fs.existsSync(file) || !fs.existsSync(mediaPath)) throw new Error('missing file');
     tmp = fs.mkdtempSync(path.join(path.dirname(file), '.clipcraft-cover-'));
     const cover = path.join(tmp, 'cover.jpg');
@@ -1287,41 +1221,10 @@ ipcMain.handle('assets:list', async () => {
   return {...lib,items:[...lib.items,...sounds],total:lib.total+sounds.length,hasLibrary:lib.hasLibrary||sounds.length>0};
 });
 
-// ---- Stock photos (Openverse/Pixabay) and videos (Pixabay). Keys stay here. ----
-const stock = require("./library/stock.cjs");
-// UI tests keep their (fake) downloads apart from the real library.
-const stockDir = () => (process.env.FVE_SMOKE ? path.join(process.env.FVE_SMOKE, 'library-test') : path.join(app.getPath('userData'), 'library'));
-// Tests a typed key (or the saved one) with a tiny search.
-ipcMain.handle('stock:test', async (_e, key) => {
-  try {
-    const k = String(key || '').trim() || settings.getServiceKey('pixabay');
-    const r = await stock.search(net.fetch, k, { kind: 'photo', q: `nature ${Date.now() % 7}` });
-    return { ok: true, text: i18n.t('main.pixabay_works', { count: r.total }) };
-  } catch (e) {
-    return { ok: false, text: e.message };
-  }
-});
-ipcMain.handle('stock:search', (event, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
-  try {
-    if (opts.provider === 'openverse' && opts.kind === 'video') return { error: 'Openverse provides images and audio. Use photo, or Pixabay for videos.' };
-    return opts.provider === 'openverse' || (!opts.provider && opts.kind === 'photo')
-      ? await openverse.search(scopedFetch(net.fetch, signal), { ...opts, kind: 'photo' })
-      : await stock.search(scopedFetch(net.fetch, signal), settings.getServiceKey('pixabay'), opts || {});
-  } catch (e) {
-    return { error: e.message };
-  }
-}));
-ipcMain.handle('stock:thumb', async (_e, url) => {
-  try {
-    return { path: await (stock.hostOk(url) ? stock : openverse).thumbnail(net.fetch, stockDir(), url) };
-  } catch (e) {
-    return { error: e.message };
-  }
-});
 // Background pictures for scenes without footage (CraftAI's add_scene), kept with the library downloads.
 ipcMain.handle('scene:make', async (_e, opts) => {
   try {
-    const file = await require("./media/ffmpeg.cjs").makeScene(opts || {}, path.join(stockDir(), 'scenes'));
+    const file = await require("./media/ffmpeg.cjs").makeScene(opts || {}, path.join(mediaLibraryRoot, 'scenes'));
     const [m] = await probeAll([file]);
     if (m.error) return { error: m.error };
     const o = opts || {};
@@ -1416,7 +1319,8 @@ ipcMain.handle('detach:run', async (_e, item, from, to) => {
   const job = { canceled: false };
   detachJob = job;
   try {
-    const out = await detach(item, {
+    const channels = item.channels || (await probe(item.path)).channels;
+    const out = await detach({ ...item, channels }, {
       from, to, cacheDir: mediaCacheDir(), ffmpegPath: require("./media/ffmpeg.cjs").ffmpegPath,
       isCanceled: () => job.canceled,
       onProgress: (fraction) => { if (win && !win.isDestroyed()) win.webContents.send('detach:progress', { path: item.path, fraction }); },
@@ -1464,7 +1368,7 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
   try {
     if (!fs.existsSync(mediaPath)) return { error: i18n.t('main.media_file_not_found') };
     const st = fs.statSync(mediaPath);
-    const key = require('crypto').createHash('sha1').update(`${mediaPath}|${st.size}|${st.mtimeMs}|frame|${Number(at).toFixed(2)}`).digest('hex').slice(0, 16);
+    const key = require('crypto').createHash('sha1').update(`${mediaPath}|${st.size}|${st.mtimeMs}|frame|${Number(at).toFixed(6)}`).digest('hex').slice(0, 16);
     const dir = mediaCacheDir();
     fs.mkdirSync(dir, { recursive: true });
     const out = path.join(dir, `${key}-frame.png`);
@@ -1479,19 +1383,6 @@ ipcMain.handle('media:frameImage', async (_e, mediaPath, at) => {
   }
 });
 
-ipcMain.handle('stock:add', (event, item, opts = {}) => withAgentJob(event, opts.requestId, async signal => {
-  try {
-    const ov = item?.origin === 'openverse' ? await openverse.download(scopedFetch(net.fetch, signal), stockDir(), item) : null;
-    const file = ov?.path || await stock.download(scopedFetch(net.fetch, signal), stockDir(), item);
-    const [m] = await probeAll([file]);
-    if (m.error) return { error: m.error };
-    if (ov) return { ...m, name: `${ov.item.title}${path.extname(file)}`, credit: ov.credit };
-    const name = `${(item.tags || 'pixabay').split(',')[0].trim() || 'pixabay'} ${item.id}.${path.extname(file).slice(1)}`;
-    return { ...m, name, credit: { license: 'pixabay', providerName: 'Pixabay', creator: item.user, landing: item.pageURL, line: stock.creditLine(item) } };
-  } catch (e) {
-    return { error: e.message };
-  }
-}));
 // Tests the typed (not yet saved) values when given, otherwise the saved configuration.
 const draftConfig = (draft = {}) => {
   return ai.resolveDraft(settings.getActive(draft.provider), draft);
@@ -1560,7 +1451,7 @@ ipcMain.handle('agent:frameJob',async event=>{
   const job=frameRenderJobs.get(event.sender.id);
   if(!job)throw new Error('Unknown frame inspection renderer.');
   await pluginManager.ready;
-  return {...job.plan,pluginEffects:await pluginManager.effects(),pluginTransitions:await pluginManager.transitions()};
+  return {...job.plan,pluginEffects:await pluginManager.effects(),pluginTransitions:await pluginManager.transitions(),timelineTypes:await pluginManager.timelineTypes()};
 });
 ipcMain.handle('agent:frameReady',(event,error)=>{
   const job=frameRenderJobs.get(event.sender.id);

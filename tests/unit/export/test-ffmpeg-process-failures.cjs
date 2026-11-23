@@ -7,6 +7,9 @@ const assert = require('node:assert/strict');
 const childProcess = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const realSpawn = childProcess.spawn;
 const probes = [];
@@ -15,6 +18,12 @@ childProcess.spawn = (file, args, options) => {
   if (mode === 'missing') {
     const p = new EventEmitter(); p.stdout = new PassThrough(); p.stderr = new PassThrough(); p.kill = () => {};
     setImmediate(() => p.emit('error', Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' })));
+    return p;
+  }
+  if (mode === 'disk-full') {
+    const p = new EventEmitter(); p.stderr = new PassThrough(); p.kill = () => {};
+    fs.writeFileSync(args.at(-1), 'partial encoded output');
+    setImmediate(() => { p.stderr.write('No space left on device'); p.emit('close', 1); });
     return p;
   }
   // The hardware probe encodes a test pattern: this one hangs like a wedged driver until killed.
@@ -33,6 +42,20 @@ const ff = require('../../../electron/media/ffmpeg.cjs');
 (async () => {
   mode = 'missing';
   await assert.rejects(ff.toM4a('/nowhere/voice.webm', '/nowhere/voice.m4a'), /ENOENT/, 'a spawn failure rejects instead of throwing an unhandled error');
+
+  mode = 'disk-full';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-atomic-'));
+  try {
+    const out = path.join(dir, 'output.wav'), source = path.join(dir, 'input.wav');
+    fs.writeFileSync(out, 'previous export'); fs.writeFileSync(source, 'source bytes');
+    const project = { media:[{id:'a',path:source,type:'audio'}], videoClips:[], audioClips:[{id:'c',mediaId:'a',start:0,in:0,out:1}] };
+    await assert.rejects(ff.exportAudio(project,out,'wav'), /No space left/);
+    assert.equal(fs.readFileSync(out,'utf8'), 'previous export');
+    const alias = path.join(dir,'alias.wav'); fs.linkSync(source, alias);
+    await assert.rejects(ff.exportAudio(project,alias,'wav'), /source file/);
+    assert.equal(fs.readFileSync(source,'utf8'), 'source bytes');
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['alias.wav','input.wav','output.wav']);
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 
   mode = 'wedged';
   const started = Date.now();

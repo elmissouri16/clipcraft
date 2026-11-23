@@ -11,6 +11,8 @@
 // - Choosing an fps above the timeline's duplicates frames (the fps filter resamples) — noted.
 // - project.crf stays in sync for back-compat: picking a preset (or a Custom CRF) writes its CRF.
 import { t } from '../../i18n/index.js';
+import exportFormats from 'clipcraft/internal/export-formats';
+export const {VIDEO_FORMATS}=exportFormats;
 
 // name and blurb are display text (the language is settled before this module evaluates).
 export const EXPORT_PRESETS = {
@@ -33,12 +35,13 @@ const snap = (v, list) => list.reduce((best, x) => (Math.abs(x - v) < Math.abs(b
 // closest preset by CRF: 28 Light → Low, 23 Standard → Medium, 20 High → High, 16 Very high → Ultra.
 export function storedExportSettings(project) {
   const s = project && project.exportSettings;
+  const format=Object.hasOwn(VIDEO_FORMATS,s?.format)?s.format:'mp4';
   if (s && EXPORT_PRESET_ORDER.includes(s.preset)) {
-    return { preset: s.preset, custom: { ...CUSTOM_DEFAULTS, ...(s.custom || {}) }, ...(s.preset === 'custom' && validPluginPreset(s.pluginPreset) ? { pluginPreset: { ...s.pluginPreset } } : {}) };
+    return { format, preset: s.preset, custom: { ...CUSTOM_DEFAULTS, ...(s.custom || {}) }, ...(s.preset === 'custom' && validPluginPreset(s.pluginPreset) ? { pluginPreset: { ...s.pluginPreset } } : {}) };
   }
   const crf = (project && project.crf) || 20;
   const preset = crf >= 26 ? 'low' : crf >= 21 ? 'medium' : crf >= 17 ? 'high' : 'ultra';
-  return { preset, custom: { ...CUSTOM_DEFAULTS, crf } };
+  return { format, preset, custom: { ...CUSTOM_DEFAULTS, crf } };
 }
 
 // Provenance is display-only. The settings snapshot is always the encoder's authority.
@@ -53,7 +56,8 @@ export function pluginPresetPatch(project, preset) {
 
 // Stored-settings patch for picking a preset / editing Custom, keeping project.crf in sync.
 export function settingsPatch(project, next) {
-  const stored = { preset: next.preset, custom: { ...CUSTOM_DEFAULTS, ...(next.custom || {}) } };
+  const stored = { format:next.format??storedExportSettings(project).format, preset: next.preset, custom: { ...CUSTOM_DEFAULTS, ...(next.custom || {}) } };
+  exportFormats.videoFormat(stored.format);
   if (next.preset === 'custom' && validPluginPreset(next.pluginPreset)) stored.pluginPreset = { ...next.pluginPreset };
   const patch = { exportSettings: stored };
   const eff = stored.preset === 'custom' ? stored.custom : EXPORT_PRESETS[stored.preset];
@@ -67,14 +71,16 @@ export function resolveExport(project, caps = {}) {
   const libx265 = caps.libx265 !== false, hardware = caps.h265Hardware === true;
   const stored = storedExportSettings(project);
   const raw = stored.preset === 'custom' ? stored.custom : EXPORT_PRESETS[stored.preset];
+  const format=exportFormats.videoFormat(stored.format);
+  let codecFamily=format.codecs.includes(raw.codec)?raw.codec:format.codecs[0];
+  const available=codecFamily!=='vp9'||caps.vp9!==false;
   const mode = raw.mode === 'bitrate' ? 'bitrate' : 'crf';
-  const crf = clamp(Math.round(raw.crf ?? 20), 0, 51);
+  const crf = clamp(Math.round(raw.crf ?? 20), 0, codecFamily==='vp9'?63:51);
   const bitrateMbps = clamp(Number(raw.bitrateMbps) || 12, 0.5, 100);
   const encoderPreset = ENCODER_PRESETS.includes(raw.encoderPreset) ? raw.encoderPreset : 'veryfast';
   const audioKbps = AUDIO_RATES.includes(raw.audioKbps) ? raw.audioKbps : snap(raw.audioKbps || 192, AUDIO_RATES);
   const resCap = RES_CAPS.includes(raw.resCap) ? raw.resCap : 0;
   const fpsChoice = FPS_CHOICES.includes(raw.fps) ? raw.fps : 0;
-  let codecFamily = raw.codec === 'h265' ? 'h265' : 'h264';
 
   const W = project.width || 1280;
   const H = project.height || 720;
@@ -89,6 +95,7 @@ export function resolveExport(project, caps = {}) {
   const outFps = fpsChoice || project.fps || 30;
 
   const notes = [];
+  if(!available)notes.push(t('export.vp9_unavailable'));
   if (codecFamily === 'h265' && !libx265 && !hardware) {
     codecFamily = 'h264';
     notes.push(t('export.h265_not_available_h264_instead'));
@@ -102,8 +109,13 @@ export function resolveExport(project, caps = {}) {
   return {
     preset: stored.preset,
     presetName: stored.preset === 'custom' ? stored.pluginPreset?.name || t('curve-editor.custom') : EXPORT_PRESETS[stored.preset].name,
+    format:format.id,
+    formatLabel:format.name,
+    extension:format.extension,
+    available,
+    audioCodec:format.audioCodec==='libopus'?'opus':'aac',
     codecFamily,
-    codecLabel: codecFamily === 'h265' ? hardware ? 'H.265 · VideoToolbox' : 'H.265 · libx265' : 'H.264',
+    codecLabel: codecFamily==='vp9'?'VP9':codecFamily === 'h265' ? hardware ? 'H.265 · VideoToolbox' : 'H.265 · libx265' : 'H.264',
     mode,
     crf: mode === 'crf' ? crf : null,
     bitrateMbps: mode === 'bitrate' ? bitrateMbps : null,
@@ -137,6 +149,7 @@ export function estimateExport(eff, durationSec) {
 // The pre-export summary rows, rendered by the Export dialog from the resolved object.
 export function summaryRows(eff, project) {
   const rows = [
+    [t('home.format'),eff.formatLabel||'MP4'],
     [t('export.preset'), eff.presetName],
     [t('export.codec'), eff.codecLabel],
     [t('export.resolution'), eff.outW === project.width && eff.outH === project.height
@@ -145,7 +158,7 @@ export function summaryRows(eff, project) {
     [t('home.frame_rate'), eff.fpsChoice ? t('export.fps_from', { fps: eff.outFps, from: project.fps }) : t('export.fps_project', { fps: eff.outFps })],
     [t('export.quality'), eff.mode === 'crf' ? `CRF ${eff.crf}` : t('export.target_bitrate_mbps', { mbps: eff.bitrateMbps })],
     [t('inspector.encoder_preset'), eff.encoderPreset],
-    [t('edit-plan-card.audio'), `AAC ${eff.audioKbps} kbps`],
+    [t('edit-plan-card.audio'), `${eff.audioCodec==='opus'?'Opus':'AAC'} ${eff.audioKbps} kbps`],
   ];
   return rows;
 }

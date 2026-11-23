@@ -1,3 +1,4 @@
+import {projectCustomTimeline,customTimelineDuration} from './customTimeline.mjs';
 // Pure project rendering and main-track timing shared by the editor and shipped host.
 // No renderer, Node or Electron dependencies. Keep the store exports as compatibility aliases.
 
@@ -58,7 +59,7 @@ export function videoLayout(videoClips) {
 // function — never projectDuration(), which also counts text/audio/overlay ends.
 export function exportDuration(p) {
   const v = videoLayout(p.videoClips);
-  return v.length ? v[v.length - 1].end : 0;
+  return Math.max(v.length ? v[v.length - 1].end : 0,customTimelineDuration(p));
 }
 
 // What plays and exports: deactivated main clips become gaps (black, silent), other deactivated clips are left out.
@@ -67,6 +68,7 @@ export function exportDuration(p) {
 // silent in both: hidden picture layers are dropped (the main track leaves gaps), a
 // silenced picture layer keeps its picture with clip.muted set, silenced audio clips go.
 export function renderable(p) {
+  const main=videoLayout(p.videoClips);p=projectCustomTimeline(p,main.at(-1)?.end??0);
   const hasOff = [p.videoClips, p.overlayClips || [], p.audioClips, p.textClips, p.effectClips || []].some((l) => l.some((c) => c.disabled));
   const ls = p.layerState || {};
   const hasLayerFx = Object.values(ls).some((s) => s && (s.hidden || s.muted || s.solo));

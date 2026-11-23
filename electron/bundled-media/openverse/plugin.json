@@ -1,0 +1,13 @@
+{
+  "id": "clipcraft.openverse",
+  "name": "Openverse",
+  "publisher": "ClipCraft",
+  "version": "1.0.2",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "description": "Openly licensed photos, music and sound effects.",
+  "activationEvents": [
+    "ui:media.sources"
+  ],
+  "contributes": {}
+}

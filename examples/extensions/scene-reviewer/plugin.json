@@ -1,0 +1,10 @@
+{
+  "id": "clipcraft-examples.scene-reviewer",
+  "name": "Scene review hooks",
+  "publisher": "ClipCraft examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "activationEvents": ["hook:clipcraft-examples.sdk-workbench.scene-review"],
+  "contributes": {}
+}

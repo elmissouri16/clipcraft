@@ -1,3 +1,6 @@
+import {useExtensionUi} from '../../plugins/useExtensionUi.js';
+import ExtensionActionIcon from '../../plugins/components/ExtensionActionIcon.jsx';
+import ExtensionViewSurface from '../../plugins/components/ExtensionViewSurface.jsx';
 import {packTextTemplates,useCreativePacks,preferredPackLuts,preferredPackColors,colorPresetPatch} from '../../plugins/creativeRegistry.js';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -50,7 +53,9 @@ const SUB_DEFAULT = { media: 'yours', audio: 'auto', text: 'All' };
 export default function LeftPanel(props) {
   const { tab, setTab } = props;
   // A stale tab id (e.g. from an older version's saved UI state) falls back to Media.
-  const activeTab = TABS.some((t) => t.id === tab) ? tab : 'media';
+  const {items:extensionUi}=useExtensionUi('views'),extensionViews=extensionUi.filter(entry=>entry.kind==='view'&&['left-rail','library'].includes(entry.placement)),extension=extensionViews.find(entry=>tab==='extension:'+entry.id);
+  const activeTab = extension?tab:TABS.some((t) => t.id === tab) ? tab : 'media';
+  useEffect(()=>{if(typeof tab==='string'&&tab.startsWith('extension:')&&!extension)setTab('media');},[tab,extension,setTab]);
   const [sub, setSubState] = useState(SUB_DEFAULT);
   const setSub = (id) => setSubState((s) => ({ ...s, [activeTab]: id }));
   const browserMemory = useRef(new Map());
@@ -78,6 +83,7 @@ export default function LeftPanel(props) {
     if (top - pad < dock.scrollTop) dock.scrollTop = Math.max(0, top - pad);
     else if (top + btn.offsetHeight + pad > dock.scrollTop + dock.clientHeight) dock.scrollTop = top + btn.offsetHeight + pad - dock.clientHeight;
   }, [activeTab]);
+  useEffect(()=>{measure();},[extensionViews.length]);
   const scrollDock = (d) => dockRef.current.scrollBy({ top: d * 220, behavior: 'smooth' });
   return (
     <aside className="left">
@@ -87,16 +93,19 @@ export default function LeftPanel(props) {
           {TABS.map((t) => {
             const Icon = t.icon;
             return (
-              <button key={t.id} className={`dock-btn tab-btn ${activeTab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)} aria-pressed={activeTab === t.id} title={t.name}>
+              <button key={t.id} className={`dock-btn tab-btn ${(activeTab === t.id||t.id==='media'&&extension?.placement==='library') ? 'active' : ''}`} onClick={() => setTab(t.id)} aria-pressed={activeTab === t.id||t.id==='media'&&extension?.placement==='library'} title={t.name}>
                 <Icon size={19} strokeWidth={1.8} aria-hidden="true" />
                 <span>{t.name}</span>
               </button>
             );
           })}
+          {extensionViews.filter(entry=>entry.placement==='left-rail').map(entry=><button key={entry.id} className={`dock-btn tab-btn ${extension?.id===entry.id?'active':''}`} data-extension-rail={entry.id} aria-pressed={extension?.id===entry.id} title={entry.extensionName+' · '+entry.title} onClick={()=>setTab('extension:'+entry.id)}><ExtensionActionIcon entry={entry} size={19}/><span>{entry.title}</span></button>)}
         </nav>
         {scroll.down && <button className="dock-arrow tabbar-arrow down" onClick={() => scrollDock(1)} aria-label={t('library.more_tabs_below')}><ChevronDown size={14} /></button>}
       </div>
       <div className="library">
+        {(activeTab==='media'||extension?.placement==='library')&&extensionViews.some(entry=>entry.placement==='library')&&<div className="extension-library-tabs" role="tablist" aria-label={t('library.library')}><button className="btn btn-sm" role="tab" aria-selected={activeTab==='media'} onClick={()=>setTab('media')}>{t('app.media')}</button>{extensionViews.filter(entry=>entry.placement==='library').map(entry=><button key={entry.id} className="btn btn-sm" role="tab" data-extension-library={entry.id} aria-selected={extension?.id===entry.id} onClick={()=>setTab('extension:'+entry.id)}>{entry.title}</button>)}</div>}
+        {extension&&<ExtensionViewSurface entry={extension} onClose={()=>setTab('media')}/>}
         {activeTab === 'media' && <MediaTab {...p} />}
         {activeTab === 'audio' && <AudioTab {...p} />}
         {activeTab === 'assets' && <TabFrame><AssetsTab {...p} /></TabFrame>}
@@ -185,14 +194,14 @@ function MediaCard({ m, onAdd, onRemove, onOverlay, onPeek, peeking, onLocate })
   );
 }
 
-function MediaTab({ media, onImport, onAdd, onRemoveMedia, onLocateMedia, onAddAsOverlay, onStockAdd, onAddFile, onOpenSettings, stockKey, sub, setSub, onRecordScreen, onPeek, peekId, browserMemory }) {
+function MediaTab({ media, onImport, onAdd, onRemoveMedia, onLocateMedia, onAddAsOverlay, onStockAdd, onAddFile, onOpenSettings, settingsVersion, sub, setSub, onRecordScreen, onPeek, peekId, browserMemory }) {
   const visual = media; // videos, photos and audio
   // One source switcher replaces the old second rail: Yours / Favorites / Stock live in a
   // segmented control at the top of the panel; Stock adds a kind switch + category chips.
-  const [kind, chip] = sub.split(':');
+  const [kind] = sub.split(':');
   const view = sub === 'favorites' ? 'favorites' : (kind === 'video' || kind === 'photo') ? 'stock' : 'yours';
   const [lastStock, setLastStock] = useState(browserMemory.get('stock:last') || 'video:Trending');
-  const goStock = id => { setLastStock(id); browserMemory.set('stock:last', id); const [k, c] = id.split(':'); browserMemory.set(`stock:category:${k}`, c); setSub(id); };
+  const goStock = id => { setLastStock(id); browserMemory.set('stock:last', id); setSub(id); };
   // The kind tree over this project's media (Hamza's reference): Media by kind, plus a
   // Generated branch — Speech (text-to-speech output) and Processed (detach / reverse /
   // stabilize renders). Counts are computed live from the registry (src/features/library/assetsLib.js);
@@ -279,7 +288,7 @@ function MediaTab({ media, onImport, onAdd, onRemoveMedia, onLocateMedia, onAddA
         </div>
       ) : (
         <div className="pad-block">
-          <StockLibrary browserMemory={browserMemory} onNavigate={goStock} kind={kind} chip={chip} onStockAdd={onStockAdd} onOpenSettings={onOpenSettings} hasKey={stockKey} />
+          <StockLibrary browserMemory={browserMemory} onNavigate={goStock} kind={kind} onStockAdd={onStockAdd} onOpenSettings={onOpenSettings} settingsVersion={settingsVersion} />
         </div>
       )}
     </TabFrame>
@@ -297,9 +306,8 @@ function AudioTab(props) {
   const destination = pack ? 'library' : group === 'yours' && sub !== 'yours:favorites' ? 'project' : ['favorites', 'yours:favorites'].includes(sub) ? 'favorites' : 'online';
   const navigate = id => {
     const target = id.includes(':pack:') ? 'library' : id === 'yours' ? 'project' : ['favorites', 'yours:favorites'].includes(id) ? 'favorites' : ['tts', 'credits'].includes(id) ? null : 'online';
-    if (target === 'online' && ['sfx', 'soundza'].includes(id.split(':')[0])) browserMemory.set('audio:effects:selected', id);
     if (target) { browserMemory.set(`audio:destination:${target}`, id); browserMemory.set('audio:last', target); }
-    if (['music','sfx','soundza','trolls'].includes(id.split(':')[0])) browserMemory.set(`audio:kind:${id.includes(':pack:') ? 'library' : 'online'}:${id.split(':')[0]}`, id);
+    if (['music','sfx','trolls'].includes(id.split(':')[0])) browserMemory.set(`audio:kind:${id.includes(':pack:') ? 'library' : 'online'}:${id.split(':')[0]}`, id);
     setSub(id);
   };
   useEffect(() => {
@@ -317,8 +325,8 @@ function AudioTab(props) {
   }, [sub, lib]);
   const changeDestination = id => navigate(browserMemory.get(`audio:destination:${id}`) || ({ library: `music:pack:${packSubs[0] || 'Library'}`, online: 'music:All', project: 'yours', favorites: 'favorites' })[id]);
   const localKind = group === 'sfx' ? 'sfx' : 'music';
-  const onlineKind = group === 'soundza' ? 'sfx' : group;
-  const switchKind = id => (pack ? localKind : onlineKind) === id ? undefined : navigate((!pack && id === 'sfx' ? browserMemory.get('audio:effects:selected') : null) || browserMemory.get(`audio:kind:${pack ? 'library' : 'online'}:${id}`) || (pack ? `${id}:pack:${(id === 'music' ? packSubs : packSfxSubs)[0] || 'Library'}` : `${id}:${id === 'trolls' ? 'Trending' : 'All'}`));
+  const onlineKind = group;
+  const switchKind = id => (pack ? localKind : onlineKind) === id ? undefined : navigate(browserMemory.get(`audio:kind:${pack ? 'library' : 'online'}:${id}`) || (pack ? `${id}:pack:${(id === 'music' ? packSubs : packSfxSubs)[0] || 'Library'}` : `${id}:${id === 'trolls' ? 'Trending' : 'All'}`));
   const kinds = [['music', t('library.music')], ['sfx', t('library.sound_effects')], ...(pack ? [] : [['trolls', t('library.memes')]])];
   const navigation = <div className="browser-audio-kind">
     <div className="browser-kind-compact"><Dropdown ariaLabel={t('library.audio_content_type')} value={pack ? localKind : onlineKind} options={kinds.map(([value, label]) => ({ value, label }))} onChange={switchKind} /></div>
@@ -327,7 +335,6 @@ function AudioTab(props) {
     </div>
     {pack && <Dropdown ariaLabel={t('library.library_collection')} value={sub.slice(sub.indexOf(':pack:') + 6)} options={(localKind === 'music' ? packSubs : packSfxSubs).length ? (localKind === 'music' ? packSubs : packSfxSubs).map(value => ({ value, label: catalogLabel('pack_sub', value) })) : [{ value: 'Library', label: !lib ? t('library.loading_collections') : t('library.no_collections_installed') }]} onChange={value => navigate(`${localKind}:pack:${value}`)} />}
   </div>;
-  const providerControl = onlineKind === 'sfx' && <div className="browser-field"><span>{t('settings.provider')}</span><Dropdown ariaLabel={t('library.audio_provider')} value={group === 'soundza' ? 'soundza' : 'sfx'} options={[{ value: 'sfx', label: 'Openverse' }, { value: 'soundza', label: 'Soundza' }]} onChange={value => navigate(browserMemory.get(`audio:kind:online:${value}`) || `${value}:All`)} /></div>;
   const destinations = [['library', t('library.library')], ['online', t('library.online')], ['project', t('library.this_project')], ['favorites', t('library.favorites')]];
   return <TabFrame>
     <Head title={t('edit-plan-card.audio')} hint={tool ? sub === 'tts' ? t('library.generate_speech_for_your_video') : t('library.publication_credits_for_images_and_audio') : t('library.browse_your_library_or_find_audio_online')}>
@@ -336,7 +343,7 @@ function AudioTab(props) {
     <div className="browser-audio-source"><Dropdown ariaLabel={t('library.audio_source')} value={tool ? 'tool' : destination} options={[...(tool ? [{ value: 'tool', label: sub === 'tts' ? t('tts.text_to_speech') : t('audio.credits') }] : []), ...destinations.map(([value, label]) => ({ value, label }))]} onChange={id => id !== 'tool' && changeDestination(id)} /></div>
     <div className="seg-tabs browser-destinations" aria-label={t('library.audio_source')}>{destinations.map(([id,label]) => <button key={id} className={!tool && sub !== 'auto' && destination === id ? 'on' : ''} aria-pressed={!tool && sub !== 'auto' && destination === id} onClick={() => changeDestination(id)}>{label}</button>)}</div>
     <div className="pad-block">
-      {sub === 'auto' ? <p className="empty-note">{t('library.loading_your_audio_library')}</p> : <AudioLibrary {...props} MediaCard={MediaCard} onSectionChange={navigate} section={sub} browserMemory={browserMemory} navigation={navigation} providerControl={providerControl} onShowCredits={() => setSub('credits')} onAddMedia={props.onAdd} />}
+      {sub === 'auto' ? <p className="empty-note">{t('library.loading_your_audio_library')}</p> : <AudioLibrary {...props} MediaCard={MediaCard} onSectionChange={navigate} section={sub} browserMemory={browserMemory} navigation={navigation} onShowCredits={() => setSub('credits')} onAddMedia={props.onAdd} />}
     </div>
   </TabFrame>;
 }

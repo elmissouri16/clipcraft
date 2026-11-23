@@ -54,6 +54,8 @@ const { createExternalHost } = await import('../../../src/features/agent/externa
 const probed = (name, type, duration) => ({ name, type, duration, path: `/fake/${name}`, ...(type === 'audio' ? {} : { width: 1280, height: 720 }) });
 const requests = [];
 globalThis.window = { api: { agentCancel: async () => {}, externalProgress: () => {},
+  mediaSearch(input) { return ['photo','video'].includes(input.kind) ? this.stockSearch(input) : this.librarySearch(input); },
+  mediaSourceAdd(item) { return ['photo','video'].includes(item.kind) ? this.stockAdd(item) : this.libraryAdd(item); },
   librarySearch: async () => ({ results: [{ id: 'freesound-1', title: 'Whoosh', duration: 1.2, creator: 'X', license: 'cc0' }] }),
   libraryAdd: async (item) => probed(`${item.title}.mp3`, 'audio', item.duration),
   stockSearch: async (o) => ({ results: [{ id: '77', kind: o.kind, tags: 'city', duration: 12, width: 1920, height: 1080 }] }),

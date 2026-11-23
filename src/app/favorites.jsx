@@ -37,8 +37,8 @@ export function useFavorites() {
 }
 
 // Entries for the things the app shows.
-export const favLibrary = (item) => ({ key: `lib:${item.id}`, type: 'audio', source: 'library', item });
-export const favStock = (item) => ({ key: `stock:${item.kind}:${item.id}`, type: item.kind === 'video' ? 'video' : 'photo', source: 'stock', item });
+export const favLibrary = (item) => ({ key: `lib:${item.sourceId}:${item.id}`, type: 'audio', source: 'library', item });
+export const favStock = (item) => ({ key: `stock:${item.kind}:${item.sourceId}:${item.id}`, type: item.kind === 'video' ? 'video' : 'photo', source: 'stock', item });
 export const favFile = (m) => ({
   key: `file:${m.path}`,
   type: m.type === 'image' ? 'photo' : m.type,

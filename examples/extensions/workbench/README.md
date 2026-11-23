@@ -1,5 +1,9 @@
 # Workbench views example
 
+The `render` command accepts optional `{format: 'mp4' | 'mov' | 'mkv' | 'webm'}`
+when invoked through `commands.execute`. Omitted format exports MP4. WebM uses
+native VP9/Opus; see the [export contract](../../../docs/design/plugin-extension-exports.md).
+
 This optional general Node extension opens two independent sandboxed views. The
 views retain their drafts/counters while switching tabs, and inspect the current
 project by messaging their Node extension. They have no direct Node or editor IPC

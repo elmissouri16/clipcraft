@@ -2,8 +2,9 @@
 
 Explicit Save, Save as and native video export support validation and preparation
 by trusted Node extensions. This includes explicit saves/exports requested by an
-agent. Recovery autosaves, project loading and background cache writes do not run
-these hooks. App 2.0.0, SDK 0.8.0 and host API 1 remain unchanged.
+agent. Recovery autosaves and background cache writes do not run save/export
+hooks. Document transitions have the separate lifecycle hooks described below.
+App 2.0.0, SDK 0.8.0 and host API 1 remain unchanged.
 
 ## Registration and order
 
@@ -11,13 +12,24 @@ Register through `context.hooks.register(name, handler, {timeoutMs?})`. Declare
 `hook:<name>` in `activationEvents` for activation on demand. Installing or
 inspecting a package never activates it; package trust is still required.
 
+Native registrations also accept integer `order` from -10000 to 10000; lower
+orders run first, with extension ID breaking ties. A removed/replaced registration
+cannot retain a pending commit. For extension-defined, typed points, see
+[custom hooks](plugin-custom-hooks.md). Their callbacks inherit native drafts,
+including `timeline.read/apply` for custom clip/track data.
+
 | Operation | Read-only validation | Preparation |
 | --- | --- | --- |
 | Save / Save as | `project.validateSave` | `project.willSave` |
 | Export / section preview | `export.validate` | `export.willRender` |
+| Project switch / Home / normal quit | `project.validateClose` | `project.willClose` |
+
+The close phases and the read-only `project.didOpen`, `project.didCreate` and
+`project.didClose` notifications are detailed in
+[document lifecycle hooks](plugin-document-lifecycle-hooks.md).
 
 Every validation hook finishes before preparation begins. Within each phase,
-active participants run by extension ID. The document summary is refreshed before
+active participants run by order, then extension ID. The document summary is refreshed before
 each callback, so later hooks see earlier preparation edits. At most 128 callbacks
 run in an operation. The default callback deadline is 30 seconds; `timeoutMs` can
 be 1000–300000. The entire operation has a ten-minute deadline.

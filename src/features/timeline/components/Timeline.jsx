@@ -1,3 +1,6 @@
+import CustomTimelineTracks from '../../plugins/components/CustomTimelineTracks.jsx';
+import {ExtensionBottomViews} from '../../plugins/components/ExtensionWorkspaceViews.jsx';
+import {ExtensionStatus,useExtensionMenu} from '../../plugins/components/ExtensionNativeUi.jsx';
 import {pluginTransitionProblem} from '../../plugins/transitionRegistry.js';
 import { withShortcut } from '../../../app/keymap.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -63,7 +66,7 @@ export default function Timeline({
   project, time: pausedTime, duration, selection, onSelect, onSeek, dispatch, onSplit, onDelete, onDuplicate,
   onDropItem, onDropFiles, canUndo, canRedo, tool, setTool, onTrimSide, onMarker, recorder, onToggleRecord, onClipMenu, overlay, onAddText, clockRef, playing,
   onDetach, detachOk, onLinkToggle, linkMode, onAttachContext, contextVersion,
-  agentRun, agentOwnsEdit, agentHasChanges, onShowAgent, agentFocus,
+  agentRun, agentOwnsEdit, agentHasChanges, onShowAgent, agentFocus,onExtensionError,
 }) {
   // No clock subscription here: a 10 Hz sample would re-render every mounted clip during playback
   // for a readout and three buttons. Those subscribe on their own (ClockReadout and
@@ -580,6 +583,7 @@ export default function Timeline({
     e.preventDefault();setRangeMenu({ x: e.clientX, y: e.clientY });
   };
   const attachRange = () => onAttachContext?.({ kind: 'range', ...contextRange });
+  const extensionTimelineItems=useExtensionMenu('menu.timeline',()=>({range:contextRange,time_sec:pausedTime}),onExtensionError);
   const rangeMenuItems = contextRange ? [
     { label: t('timeline.add_selected_range_to_craftai'), icon: MessageSquarePlus, onClick: attachRange },
     { label: t('timeline.clear_selected_range'), icon: X, onClick: () => setContextRange(null) },
@@ -1160,7 +1164,7 @@ export default function Timeline({
         onDragOver={onDragOver} onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) setDrop(null);
       }} onDrop={onDrop}>
-        <div className="tl-content" ref={contentRef} style={{ width: width + HEADER }} onContextMenu={onAttachContext ? openRangeMenu : undefined}>
+        <div className="tl-content" ref={contentRef} style={{ width: width + HEADER }} onContextMenu={onAttachContext||extensionTimelineItems.length ? openRangeMenu : undefined}>
           {contextRange && <div className="tl-context-range" aria-hidden="true" style={{ left: HEADER + contextRange.start_sec * pps, width: (contextRange.end_sec - contextRange.start_sec) * pps }} />}
           {agentMarks.liveRanges.map((r, i) => <div key={`agent-live-${i}`} className="tl-agent-range" aria-hidden="true" style={{ left: HEADER + r.start * pps, width: Math.max(2, (r.end - r.start) * pps) }} />)}
           {agentMarks.doneRanges.map((r, i) => <div key={`agent-seam-${i}`} className="tl-agent-seam" aria-hidden="true" style={{ left: HEADER + r.start * pps }} />)}
@@ -1234,6 +1238,7 @@ export default function Timeline({
             );
           })}
 
+          <CustomTimelineTracks {...{project,selection,onSelect,onSeek,dispatch,pps}} header={HEADER}/>
           {visibleMarkers.map((m) => <div key={m.id} className="marker-line" style={{ left: HEADER + m.time * pps }} />)}
           {tool === 'razor' && razorAt != null && razorAt >= viewport.from && <div className="razor-line" style={{ left: HEADER + razorAt * pps }} />}
           {tool === 'razor' && razorAt != null && razorAt >= viewport.from && <div className="razor-time" style={{ left: HEADER + razorAt * pps }}>{formatTime(razorAt)}</div>}
@@ -1245,11 +1250,13 @@ export default function Timeline({
           )}
         </div>
       </div>
+      <ExtensionBottomViews/>
+      <ExtensionStatus/>
       </div>
       <AudioMeter active={playing} />
       {layerMenu && <ContextMenu x={layerMenu.x} y={layerMenu.y} items={layerMenuItems(layerMenu)}
         onClose={() => setLayerMenu(null)} label={t('timeline.layer_menu')} />}
-      {rangeMenu && <ContextMenu x={rangeMenu.x} y={rangeMenu.y} items={rangeMenuItems}
+      {rangeMenu && <ContextMenu x={rangeMenu.x} y={rangeMenu.y} items={[...rangeMenuItems,...(extensionTimelineItems.length?['sep',...extensionTimelineItems]:[])]}
         onClose={() => setRangeMenu(null)} label={t('timeline.timeline_context_menu')} />}
     </section>
   );

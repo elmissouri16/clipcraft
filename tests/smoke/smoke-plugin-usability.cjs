@@ -22,6 +22,24 @@ module.exports=async(win,app,dir)=>{
    result.filterControls=await q(`(()=>{const controls=[...document.querySelectorAll('.plugin-browser-filters input,.plugin-browser-filters select')];return controls.map(node=>{const r=node.getBoundingClientRect(),s=getComputedStyle(node);return {type:node.type,top:r.top,bottom:r.bottom,height:r.height,padding:s.padding,borderRadius:s.borderRadius,font:[s.fontFamily,s.fontSize,s.fontWeight,s.lineHeight].join('|'),background:s.backgroundColor,expectedHeight:parseFloat(s.getPropertyValue('--control-h'))};});})()`);
    const filters=result.filterControls;check('pack search and filters use aligned shared control geometry',filters.length===3&&filters[0].type==='search'&&filters.every(control=>control.height===control.expectedHeight&&Math.abs(control.top-filters[0].top)<.5&&Math.abs(control.bottom-filters[0].bottom)<.5&&control.padding===filters[0].padding&&control.borderRadius===filters[0].borderRadius&&control.font===filters[0].font&&control.background===filters[0].background));
    await require('./pluginSettingsUi.cjs')(win).reveal('[data-pack-search]');fs.writeFileSync(path.join(dir,'pack-filters.png'),(await win.webContents.capturePage(undefined,{stayHidden:true,stayAwake:true})).toPNG());
+   const catalog = await q(`(() => {
+     const list = document.querySelector('.plugin-browser-items');
+     const row = list.querySelector('[data-pack-item]');
+     const head = document.querySelector('.pack-result-head');
+     return {
+       fits: list.scrollHeight <= list.clientHeight + 1,
+       aligned: ['name', 'type', 'source'].every(field => {
+         const selector = '.pack-result-' + field;
+         return Math.abs(row.querySelector(selector).getBoundingClientRect().left - head.querySelector(selector).getBoundingClientRect().left) < 1;
+       })
+     };
+   })()`);
+   check('catalog rows align with their headers and use the settings pane for scrolling', catalog.fits && catalog.aligned);
+   await preview('sounds','tone');
+   check('opening a preview moves keyboard focus to the sample', await q('document.activeElement === document.querySelector("[data-pack-preview] h4")'));
+   await click('[data-close-pack-preview]');
+   await until('document.activeElement.matches(\'[data-pack-item="studio.usability/sounds/tone"] [data-preview-item]\')');
+   check('closing the preview returns keyboard focus to its catalog row', true);
    await preview('effects','dark');win.webContents.send('plugins:changed');await q('new Promise(resolve=>setTimeout(resolve,150))');check('unchanged inventory refresh preserves the selected rendered preview',await q('!!document.querySelector("[data-pack-preview] [data-preview-kind=effects] canvas")'));
    await until('(()=>{const canvas=document.querySelector("[data-pack-preview] canvas"),stage=document.querySelector("[data-pack-preview] .plugin-preview-stage"),style=getComputedStyle(stage),contentWidth=stage.getBoundingClientRect().width-parseFloat(style.borderLeftWidth)-parseFloat(style.borderRightWidth)-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),expected=Math.max(320,Math.min(1280,Math.round(contentWidth*Math.min(devicePixelRatio||1,2)/16)*16));window.__previewSizing={canvas:canvas.width,contentWidth,expected,borderBoxWidth:stage.getBoundingClientRect().width,devicePixelRatio};return canvas.width===expected&&Number(canvas.dataset.previewFrame)>0;})()');result.previewSizing=await q('window.__previewSizing');const effectPixels=await pixels(),preparations=await q('Number(document.querySelector("[data-pack-preview] canvas").dataset.previewPreparations)');
    await repaint(()=>click('[data-preview-original]'));const originalPixels=await pixels();result.comparisonPixels={effect:effectPixels,original:originalPixels};check('Original comparison bypasses the effect on the same sample',originalPixels.mean>effectPixels.mean*1.5);

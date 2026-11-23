@@ -10,7 +10,7 @@ import {ExtensionActions} from '../../plugins/components/ExtensionNativeUi.jsx';
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, CircleAlert, CircleCheck, Clapperboard, FolderOpen, ImagePlus, Play, X } from 'lucide-react';
 import {
-  AUDIO_RATES, CUSTOM_DEFAULTS, ENCODER_PRESETS, EXPORT_PRESETS, EXPORT_PRESET_ORDER, FPS_CHOICES,
+  VIDEO_FORMATS, AUDIO_RATES, CUSTOM_DEFAULTS, ENCODER_PRESETS, EXPORT_PRESETS, EXPORT_PRESET_ORDER, FPS_CHOICES,
   estimateExport, settingsPatch, storedExportSettings, summaryRows, pluginPresetPatch,
 } from '../exportQuality.js';
 import { exportDuration, toFileUrl } from "../../../state/store.js";
@@ -160,12 +160,12 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
       // full-width progress row underneath. No decorative specs: each row is pipeline truth.
       const dur = exportDuration(project);
       const est = estimateExport(eff, dur);
-      const fileName = state.target?.file ? String(state.target.file).split(/[\\/]/).pop() : `${state.name || 'export'}.mp4`;
+      const fileName = state.target?.file ? String(state.target.file).split(/[\\/]/).pop() : `${state.name || 'export'}.${eff.extension||'mp4'}`;
       const specs = [
         [t('home.name'), fileName],
         [t('animation-panel.duration'), fmtDur(dur)],
         [t('pack.video'), `${eff.outW}×${eff.outH} · ${eff.outFps} fps`],
-        [t('home.format'), `MP4 · ${eff.codecLabel}`],
+        [t('home.format'), `${eff.formatLabel||'MP4'} · ${eff.codecLabel}`],
       ];
       const extraSpecs = [
         [t('export.size'), est.exact ? t('export.size_mb', { size: fmtMB(est.mb) }) : t('export.approx_mb_estimate', { size: fmtMB(est.mb) })],
@@ -244,7 +244,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           <button type="button" className="icon-btn" onClick={onClose} aria-label={t('app.close')}><X size={16} /></button>
         </div>
         <div className="x-body">
-          <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={choosing} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} />
+          <Cover project={project} coverT={coverT} setCoverT={setCoverT} choosing={choosing} setChoosing={setChoosing} onPosterAt={onPosterAt} onPosterImage={onPosterImage} readOnly={eff.format!=='mp4'} />
           <div className="x-form">
             <MediaCredits project={project} />
             <Row label={t('home.name')}>
@@ -281,9 +281,9 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
                 </Row>
                 {custom.mode === 'crf' ? (
                   <Row label={t('export.crf')}>
-                    <input type="range" min="0" max="51" step="1" value={custom.crf} aria-label={t('export.crf')}
+                    <input type="range" min="0" max={eff.codecFamily==='vp9'?63:51} step="1" value={Math.min(custom.crf,eff.codecFamily==='vp9'?63:51)} aria-label={t('export.crf')}
                       onChange={(e) => setCustom({ crf: Number(e.target.value) })} />
-                    <span className="x-num">{custom.crf}</span>
+                    <span className="x-num">{eff.crf}</span>
                   </Row>
                 ) : (
                   <Row label={t('export.bitrate')}>
@@ -293,10 +293,11 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
                   </Row>
                 )}
                 <Row label={t('export.codec')}>
-                  <Dropdown value={custom.codec} onChange={(v) => setCustom({ codec: v })} ariaLabel={t('export.codec')}
+                  <Dropdown value={eff.codecFamily} onChange={(v) => setCustom({ codec: v })} ariaLabel={t('export.codec')}
                     options={[
-                      { value: 'h264', label: 'H.264' },
-                      { value: 'h265', label: state.caps && state.caps.libx265 === false && !state.caps.h265Hardware ? t('export.h265_not_in_this_build') : 'H.265', disabled: state.caps && state.caps.libx265 === false && !state.caps.h265Hardware },
+                      ...(eff.format==='webm'?[]:[{ value: 'h264', label: 'H.264' },
+                      { value: 'h265', label: state.caps && state.caps.libx265 === false && !state.caps.h265Hardware ? t('export.h265_not_in_this_build') : 'H.265', disabled: state.caps && state.caps.libx265 === false && !state.caps.h265Hardware }]),
+                      ...(['mkv','webm'].includes(eff.format)?[{value:'vp9',label:'VP9',disabled:state.caps?.vp9===false}]:[]),
                     ]} />
                 </Row>
                 <Row label={t('home.frame_rate')}>
@@ -313,7 +314,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
                 </Row>
               </div>
             )}
-            <Row label={t('home.format')}><span className="x-static">MP4</span></Row>
+            <Row label={t('home.format')}><Dropdown value={eff.format||'mp4'} ariaLabel={t('export.output_format')} options={Object.values(VIDEO_FORMATS).map(format=>({value:format.id,label:format.name,disabled:format.id==='webm'&&state.caps?.vp9===false}))} onChange={format=>onSettings(settingsPatch(project,{...stored,format}))}/></Row>
             <Row label={t('export.est_bitrate')}><span className="x-static">{est.exact ? t('export.mbps_value', { mbps: est.videoMbps }) : t('export.approx_mbps', { mbps: est.videoMbps.toFixed(1) })}</span></Row>
             <button type="button" className="x-details-toggle" onClick={() => setDetails(!details)} aria-expanded={details}>
               <ChevronDown size={14} style={{ transform: details ? 'rotate(180deg)' : 'none' }} /> {t('export.export_summary')}
@@ -335,7 +336,7 @@ export default function ExportDialog({ state, onCancel, onClose, onShow, onOpen,
           </span>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={onClose}>{t('app.cancel')}</button>
-            <button className="btn btn-primary" onClick={onStart}>{t('topbar.export')}</button>
+            <button className="btn btn-primary" disabled={eff.available===false} title={eff.available===false?t('export.vp9_unavailable'):undefined} onClick={onStart}>{t('topbar.export')}</button>
           </div>
         </div>
       </div>

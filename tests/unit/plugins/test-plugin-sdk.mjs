@@ -9,6 +9,7 @@ assert.throws(()=>definePlugin({...manifest,permissions:['project.read']}),error
 for(const kind of ['aiProviders','localTools','panels','exportDestinations','actions'])assert.throws(()=>definePlugin({...manifest,contributes:{[kind]:[]}}),error=>error.code==='MANIFEST_INVALID');
 assert.throws(()=>definePlugin({...manifest,main:undefined,entry:'commands.js'}),error=>error.code==='MANIFEST_INVALID');
 assert.ok(sdk.defineServiceContract({version:1,methods:{echo:{input:{type:'string'},output:{type:'string'}}}}));assert.throws(()=>sdk.defineServiceContract({version:0,methods:{}}));
+assert.ok(sdk.defineHookContract({version:1,input:{type:'string'},output:{type:'boolean'}}));assert.throws(()=>sdk.defineHookContract({version:0,input:{type:'string'},output:{type:'boolean'}}));
 assert.equal(sdk.defineCommand,undefined);assert.equal(sdk.connectPanel,undefined);
 const extension={activate:async()=>{}};assert.equal(defineExtension(extension),extension);assert.throws(()=>defineExtension({activate:1}),TypeError);assert.throws(()=>defineExtension(null),TypeError);
 console.log('Public SDK versions, manifest cloning, general activation and retired API rejection passed');

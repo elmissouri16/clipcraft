@@ -24,11 +24,21 @@ const state = (p) => ({ past: [], present: p, future: [] });
   execFileSync(ffmpegPath, ['-y', '-hide_banner', '-loglevel', 'error',
     '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=30:duration=6',
     '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', '-shortest', '-pix_fmt', 'yuv420p', src]);
-  const item = { path: src, duration: 6, hasAudio: true, type: 'video' };
+  const item = { path: src, duration: 6, hasAudio: true, type: 'video', channels: 1 };
   const out = await detach(item, { from: 2, to: 5, cacheDir: dir, ffmpegPath });
   ok(fs.existsSync(out) && out.endsWith('.wav'), 'extraction produced a wav file');
   const info = await probe(out);
   ok(info.type === 'audio' && Math.abs(info.duration - 3) < 0.15, `extracted duration ~3s (got ${info.duration})`);
+  const channelRms = (file, at, channel) => {
+    const samples = execFileSync(ffmpegPath, ['-v','error','-ss',String(at),'-i',file,'-t','1','-vn',
+      '-af','pan=mono|c0=c'+channel,'-ar','48000','-f','f32le','-']);
+    let power = 0;
+    for (let i=0; i<samples.length; i+=4) power += samples.readFloatLE(i)**2;
+    return Math.sqrt(power / (samples.length/4));
+  };
+  const originalLevel = channelRms(src,3,0);
+  ok([0,1].every(channel => Math.abs(channelRms(out,1,channel)/originalLevel - 1) < .005),
+    'both detached channels retain the mono source level');
   const again = await detach(item, { from: 2, to: 5, cacheDir: dir, ffmpegPath });
   ok(again === out, 'the same range is served from the cache');
   const other = await detach(item, { from: 0, to: 2, cacheDir: dir, ffmpegPath });

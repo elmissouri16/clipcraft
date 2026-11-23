@@ -132,3 +132,18 @@ function NativeSettings({entry,onChanged}){
 export function ExtensionSettings({location,extensionId,extensionKey,onChanged}){
  const {items,error}=useExtensionUi(location,extensionId,extensionKey);return <>{items.filter(i=>i.kind==='settings').map(entry=><NativeSettings key={entry.id+':'+entry.generation} entry={entry} onChanged={onChanged}/>)}{error&&<p role="alert" className="error-text">{error}</p>}<ExtensionActions location={location||'settings.plugins'} extensionId={extensionId} extensionKey={extensionKey} onChanged={onChanged}/></>;
 }
+
+export function useExtensionMenu(location,input={},onError){
+ const {items}=useExtensionUi(location);
+ return items.filter(entry=>entry.kind==='action').map(entry=>({id:'extension-menu-'+entry.id,label:entry.title,icon:props=><ExtensionActionIcon entry={entry} {...props}/>,disabled:entry.enabled===false,hint:entry.disabledReason,onClick:async()=>{
+  try{if(!await flushExtensionSettings())throw Error(t('plugins.extension_settings_failed'));await window.api.pluginsExtensionUiExecute(entry.id,{location,...(typeof input==='function'?input():input)},entry.instance);}catch(error){onError?.(extensionUiError(error));}
+ }}));
+}
+export function ExtensionStatus(){
+ const {items}=useExtensionUi('status'),[error,setError]=useState('');const entries=items.filter(entry=>entry.kind==='status');
+ if(!entries.length)return null;
+ const item=entry=>{const content=<><ExtensionActionIcon entry={entry} size={13}/><span>{entry.title}</span></>,title=entry.disabledReason||entry.tooltip||entry.extensionName;
+  return entry.command?<button key={entry.id} type="button" className="extension-status-item" data-extension-status={entry.id} disabled={entry.enabled===false} title={title} onClick={()=>window.api.pluginsExtensionStatusExecute(entry.id,entry.instance).catch(error=>setError(extensionUiError(error)))}>{content}</button>:<span key={entry.id} role="status" className="extension-status-item" data-extension-status={entry.id} title={title}>{content}</span>;
+ };
+ return <footer className="extension-statusbar" aria-label={t('plugins.extension_status')}><div>{entries.filter(entry=>entry.alignment==='left').map(item)}</div>{error&&<span className="error-text small" role="alert" onClick={()=>setError('')}>{error}</span>}<div>{entries.filter(entry=>entry.alignment==='right').map(item)}</div></footer>;
+}

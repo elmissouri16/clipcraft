@@ -1,3 +1,4 @@
+import {validateShaderFragment,shaderPass} from './pluginShaders.mjs';
 // Declarative effect contract. Parameter placeholders become finite numeric literals, never code.
 import {parse} from './effectExpression.mjs';
 const own=(v,k)=>Object.hasOwn(v,k);
@@ -29,7 +30,7 @@ export function validateEffectExpression(source, mode='effect') {
   };visit(ast);return ast;
 }
 export function validateEffectDefinition(value, mode='effect') {
-  fields(value,mode==='transition'?['id','name','expression','parameters','duration']:['id','name','expression','parameters']);
+  fields(value,mode==='transition'?['id','name','expression','fragment','parameters','duration']:['id','name','expression','fragment','parameters']);
   if(!local(value.id)||!text(value.name))throw Error('Invalid plugin effect ID or name.');
   const parameters=value.parameters??[];
   if(!Array.isArray(parameters)||parameters.length>8)throw Error('Effects support up to eight numeric parameters.');
@@ -40,6 +41,7 @@ export function validateEffectDefinition(value, mode='effect') {
     if(!['min','max','step','default'].every(k=>Number.isFinite(p[k])&&Math.abs(p[k])<=1e6)||p.min>=p.max||p.step<=0||p.step>p.max-p.min||p.default<p.min||p.default>p.max)throw Error('Invalid effect parameter limits.');
     return {...p};
   });
+  if(value.fragment!==undefined){if(value.expression!==undefined)throw Error('Choose a fragment shader or an expression, separately.');return {id:value.id,name:value.name,fragment:validateShaderFragment(value.fragment,mode,[...ids]),parameters:validated};}
   if(typeof value.expression!=='string'||value.expression.length>4096)throw Error('Invalid effect expression.');
   const template=value.expression.replace(/\{\{([a-z][a-z0-9-]*)\}\}/g,(_,id)=>{
     if(!ids.has(id))throw Error(`Unknown effect parameter ${id}.`);
@@ -55,7 +57,8 @@ export function effectParameters(definition,params={}) {
   for(const p of definition.parameters){const value=own(params,p.id)?params[p.id]:p.default;if(!Number.isFinite(value)||value<p.min||value>p.max)throw Error(`Invalid parameter ${p.name}.`);out[p.id]=value;}
   return out;
 }
-export function effectExpression(definition,params={}) {
+export function effectExpression(definition,params={},mode='effect') {
   const values=effectParameters(definition,params);
+  if(definition.fragment!==undefined)return shaderPass(definition,values,mode);
   return definition.expression.replace(/\{\{([a-z][a-z0-9-]*)\}\}/g,(_,id)=>`(${values[id]})`);
 }

@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 module.exports = async (win, app, dir) => {
   win.webContents.setBackgroundThrottling(false);
+  win.webContents.setAudioMuted(true);
   const result = { errors: [] };
   const q = async (js) => {
     new (require('node:vm').Script)(js);
@@ -111,9 +112,11 @@ module.exports = async (win, app, dir) => {
     result.mediaPeekShared = true;
     win.webContents.reload();
     await until('!!window.__fve && !!document.querySelector(".home-frame-card")');
+    assert.equal(await q("JSON.parse(localStorage.getItem('clipcraft.previewAudio')).volume"), 0.25);
     await click('.home-frame-card'); await until('!!document.querySelector(".topbar")');
-    assert.ok(await q(`document.querySelector('.player > .transport button[aria-label="Preview volume"]').title.includes('25%')`));
+    assert.ok(await q(`document.querySelector('.player > .transport button[aria-label="Preview volume"]').title.includes('50%')`));
     result.preferenceRestored = true;
+    result.newProjectResetsToHalf = true;
     result.ok = result.errors.length === 0;
   } catch (error) {
     result.ok = false; result.error = error.stack;

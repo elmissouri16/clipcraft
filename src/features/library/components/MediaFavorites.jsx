@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { Layers, Loader2, Plus, Star } from 'lucide-react';
 import { formatTime, toFileUrl } from "../../../state/store.js";
 import { FavStar, useFavorites } from "../../../app/favorites.jsx";
-import { Thumb, StockCard } from './StockLibrary.jsx';
+import { StockCard } from './StockLibrary.jsx';
 import { t } from '../../../i18n/index.js';
 
-// Favorite videos and photos: Pixabay results and imported files, ready to add to any project.
+// Favorite provider results and imported files are available across projects.
 export default function MediaFavorites({ onStockAdd, onAddFile }) {
   const favs = useFavorites().list.filter((e) => e.type === 'video' || e.type === 'photo');
   const [busy, setBusy] = useState({});
@@ -32,12 +32,11 @@ export default function MediaFavorites({ onStockAdd, onAddFile }) {
         {favs.map((e) => {
           const it = e.item;
           if (e.source === 'stock') return <StockCard key={e.key} item={it} favorite={e} busy={busy[e.key]} onAdd={where => add(e, where)} />;
-          const name = e.source === 'stock' ? it.tags : it.name;
+          const name = it.name;
           return (
             <div key={e.key} className={`stock-tile ${e.missing ? 'missing' : ''}`} title={e.missing ? t('favorites.file_moved_or_deleted_path', { path: it.path }) : name}
               onDoubleClick={() => !e.missing && add(e, 'main')}>
-              {e.source === 'stock' ? <Thumb url={it.thumb} alt={name} />
-                : e.type === 'photo' ? <img src={toFileUrl(it.path)} alt={name} draggable={false} />
+              {e.type === 'photo' ? <img src={toFileUrl(it.path)} alt={name} draggable={false} />
                   : it.thumb && it.thumbCount > 1 ? (
                     <div className="asset-sprite" style={{ backgroundImage: `url("${toFileUrl(it.thumb)}")`, backgroundSize: `${it.thumbCount * 100}% 100%`, backgroundPosition: '0 0' }} />
                   ) : <video src={toFileUrl(it.path) + '#t=0.5'} preload="metadata" muted />}

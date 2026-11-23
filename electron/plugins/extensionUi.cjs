@@ -3,7 +3,7 @@ const {randomUUID}=require('node:crypto');
 // executable packages have one Node runtime regardless of what they integrate.
 const ID=/^[a-z][\w.-]{0,159}$/;
 const text=(value,max=160)=>typeof value==='string'&&value.trim()&&value.length<=max&&!/[\u0000-\u001f]/.test(value);
-const LOCATIONS=new Set(['toolbar','inspector','context','export','settings.voice','settings.plugins']);
+const LOCATIONS=new Set(['toolbar','inspector','context','export','settings.voice','settings.plugins','menu.project','menu.timeline']);
 function field(input){
  if(!input||!ID.test(input.key)||!text(input.label)||!['string','secret','number','boolean','select'].includes(input.type))throw Error('Invalid native setting field');
  const result={key:input.key,label:input.label,type:input.type};
@@ -45,12 +45,16 @@ class ExtensionUi {
   }else if(kind==='view'){
    if(typeof input.entry!=='string'||input.entry.length>240||! /^(dist|assets)\/[a-zA-Z0-9_./-]+\.html$/.test(input.entry)||input.entry.split('/').some(part=>!part||part==='.'||part==='..'))throw Error('Invalid extension view entry');
    if([...this.entries.values()].filter(entry=>entry.job===job&&entry.data.kind==='view').length>=8)throw Error('Use at most eight views per extension');
-   data={...data,entry:input.entry,location:'views'};
+   const destination=require('../../shared/extensionViewPlacement.cjs').viewPlacement(Object.fromEntries(['placement','bounds','width','height'].filter(key=>input[key]!==undefined).map(key=>[key,input[key]])));
+   const options=actionOptions(input);data={...data,...destination,instance:randomUUID(),entry:input.entry,location:'views',order:options.order,icon:options.icon};
   }else if(kind==='integration'){
-   if(!['ai.engines','voice.engines'].includes(input.point)||!ID.test(input.service))throw Error('Unsupported UI integration point or service');
+   if(!['ai.engines','voice.engines','media.sources'].includes(input.point)||!ID.test(input.service))throw Error('Unsupported UI integration point or service');
    if(input.order!==undefined&&(!Number.isFinite(input.order)||input.order<0||input.order>1000))throw Error('Invalid UI integration order');
    if(input.aliases!==undefined){if(!Array.isArray(input.aliases)||input.aliases.length>10||input.aliases.some(id=>!ID.test(id)))throw Error('Invalid integration aliases');data.aliases=[...input.aliases];}
    Object.assign(data,{point:input.point,service:job.manifest.id+'.'+input.service,order:input.order??100});
+  }else if(kind==='status'){
+   if([...this.entries.values()].filter(entry=>entry.job===job&&entry.data.kind==='status').length>=16||input.command!==undefined&&!ID.test(input.command)||!['left','right'].includes(input.alignment??'left')||input.tooltip!==undefined&&input.tooltip!==''&&!text(input.tooltip,1000))throw Error('Invalid native status item');
+   data={...data,...actionOptions(input),location:'status',instance:randomUUID(),command:input.command?job.manifest.id+'.'+input.command:null,alignment:input.alignment??'left',tooltip:input.tooltip??''};
   }else if(kind==='inspector'){
    if([...this.entries.values()].filter(entry=>entry.job===job&&entry.data.kind==='inspector').length>=8)throw Error('Use at most eight inspector groups per extension');
    data={...data,location:'inspector',fields:input.fields,lanes:input.lanes,order:input.order??100,instance:randomUUID()};
@@ -112,22 +116,23 @@ class ExtensionUi {
   if(Object.keys(input).some(key=>!['id','title','fields','lanes','order'].includes(key)))throw Error('Invalid inspector registration');
   const {inspectorField}=await import('../../shared/extensionInspector.mjs'),fields=Array.from(input.fields,inspectorField);
   if(new Set(fields.map(field=>field.key)).size!==fields.length)throw Error('Duplicate inspector field key');
-  const lanes=input.lanes??['video','overlay','audio','text'];if(!Array.isArray(lanes)||!lanes.length||Array.from(lanes).some(lane=>!['video','overlay','audio','text'].includes(lane))||new Set(lanes).size!==lanes.length)throw Error('Invalid inspector lanes');
+  const lanes=input.lanes??['video','overlay','audio','text','effect'];if(!Array.isArray(lanes)||!lanes.length||Array.from(lanes).some(lane=>!['video','overlay','audio','text','effect'].includes(lane))||new Set(lanes).size!==lanes.length)throw Error('Invalid inspector lanes');
   if(input.order!==undefined&&(!Number.isFinite(input.order)||Math.abs(input.order)>10000))throw Error('Invalid inspector order');
   if(this.runtime.active.get(job.key)!==job||!['running','activating'].includes(job.state))throw Error('Extension stopped while registering inspector');
   return this.register(job,'inspector',{...input,fields,lanes:[...lanes]});
  }
- updateAction(job,input){const entry=this.entry('action',job.manifest.id+'.'+input?.id,job);if(entry.data.instance!==input?.instance)throw Error('Action registration changed');if(!input||Object.keys(input).some(key=>!['id','instance','title','enabled','disabledReason','order','icon'].includes(key)))throw Error('Invalid action update');const supplied=Object.fromEntries(Object.entries(input).filter(([,value])=>value!==undefined)),patch=actionOptions({...entry.data,...supplied});if(input.title!==undefined){if(!text(input.title))throw Error('Invalid action title');patch.title=input.title;}entry.data={...entry.data,...patch};this.changed();return true;}
+ updateAction(job,input,kind='action'){const entry=this.entry(kind,job.manifest.id+'.'+input?.id,job);if(entry.data.instance!==input?.instance)throw Error('Action registration changed');if(!input||Object.keys(input).some(key=>!['id','instance','title','enabled','disabledReason','order','icon',...(kind==='status'?['tooltip']:[])].includes(key)))throw Error('Invalid action update');const supplied=Object.fromEntries(Object.entries(input).filter(([,value])=>value!==undefined)),patch=actionOptions({...entry.data,...supplied});if(input.title!==undefined){if(!text(input.title))throw Error('Invalid action title');patch.title=input.title;}if(kind==='status'&&input.tooltip!==undefined){if(input.tooltip!==''&&!text(input.tooltip,1000))throw Error('Invalid status tooltip');patch.tooltip=input.tooltip;}entry.data={...entry.data,...patch};this.changed();return true;}
+ updateStatus(job,input){return this.updateAction(job,input,'status');}
  verifyInspector(job,guard){const entry=this.entries.get('inspector:'+guard?.id);return !!entry&&entry.job===job&&this.live(entry)&&entry.data.instance===guard.instance;}
  async inspectorSet(id,input){
   const entry=this.entry('inspector',id),{job,data}=entry;
   if(!input||Object.keys(input).some(key=>!['field','value','token'].includes(key))||typeof input.token!=='string'||!/^[a-f0-9-]{36}$/.test(input.token))throw Error('Invalid inspector write');
   const field=data.fields.find(field=>field.key===input.field);if(!field)throw Error('Unknown inspector field');
-  const {inspectorValue}=await import('../../shared/extensionInspector.mjs');inspectorValue(field,input.value);
+  const {inspectorValue}=await import('../../shared/extensionInspector.mjs');inspectorValue(field,input.value,{provisional:true});
   if(this.entry('inspector',id)!==entry)throw Error('Inspector registration changed');
   return this.runtime.invoke({key:job.key,generation:job.generation,extensionId:job.manifest.id,method:'ui.inspectorSet',args:{...input,field,lanes:data.lanes},inspector:{id,instance:data.instance}});
  }
- async execute(id,input={},instance){const entry=this.entry('action',id);if(instance!==undefined&&instance!==entry.data.instance)throw Error('Action registration changed');if(!entry.data.enabled)throw Error(entry.data.disabledReason||'Extension action is disabled');return this.runtime.execute(entry.data.command,input);}
+ async execute(id,input={},instance,kind='action'){const entry=this.entry(kind,id);if(!entry.data.command)throw Error('This status item has no command');if(instance!==undefined&&instance!==entry.data.instance)throw Error('Action registration changed');if(!entry.data.enabled)throw Error(entry.data.disabledReason||'Extension action is disabled');return this.runtime.execute(entry.data.command,input);}
 
 }
 module.exports={ExtensionUi,validateValue};

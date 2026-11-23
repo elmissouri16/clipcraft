@@ -18,7 +18,7 @@ const RATE = 48000;
 
 function outFile(item, from, to, cacheDir) {
   const st = fs.statSync(item.path);
-  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|detach3|${exact(from)}|${exact(to)}`).digest('hex').slice(0, 16);
+  const key = crypto.createHash('sha1').update(`${item.path}|${st.size}|${st.mtimeMs}|detach4|${item.channels || 0}|${exact(from)}|${exact(to)}`).digest('hex').slice(0, 16);
   return path.join(cacheDir, `${key}-detach.wav`);
 }
 
@@ -61,8 +61,9 @@ async function detach(item, { from = 0, to, cacheDir, ffmpegPath, onProgress = (
   // The result is padded with silence (a sound stream that ends before its picture) and cut to
   // exactly the clip's length rounded UP to a whole sample, so the file is never shorter.
   const samples = Math.ceil(len * RATE - 1e-6);
+  const pan = item.channels === 1 ? 'pan=stereo|c0=c0|c1=c0,' : '';
   const args = ['-ss', exact(a), '-t', exact(len), '-i', item.path,
-    '-map', '0:a:0', '-vn', '-af', `aresample=${RATE}:async=1:min_hard_comp=0.1:first_pts=0,apad=whole_len=${samples},atrim=end_sample=${samples}`,
+    '-map', '0:a:0', '-vn', '-af', `${pan}aresample=${RATE}:async=1:min_hard_comp=0.1:first_pts=0,apad=whole_len=${samples},atrim=end_sample=${samples}`,
     '-c:a', 'pcm_s16le', '-ar', String(RATE), '-ac', '2', '-y', part];
   try {
     await run(ffmpegPath, args, cacheDir, (t) => onProgress(Math.min(0.99, t / len)), isCanceled);

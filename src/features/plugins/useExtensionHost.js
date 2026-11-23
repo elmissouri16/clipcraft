@@ -1,4 +1,8 @@
-import {inspectorOperation,INSPECTOR_PROPERTIES} from '../../../shared/extensionInspector.mjs';
+import {customTimelineRequest,customTimelinePage,customTypesRevision} from '../../../shared/customTimeline.mjs';
+import {effectExpression} from '../../../shared/pluginEffects.mjs';
+import {fxGL} from '../effects/gl.js';
+import {inspectorOperation,inspectorRule} from '../../../shared/extensionInspector.mjs';
+import {pluginEffectDefinition} from './effectRegistry.js';
 import {ExtensionAgentSession} from './extensionAgentSession.js';
 import {projectConfiguration} from '../../../shared/extensionConfiguration.mjs';
 import {sameDoc} from '../../state/projectFile.js';
@@ -7,7 +11,7 @@ import {extensionUiError} from './useExtensionUi.js';
 import {flushSync} from 'react-dom';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {clipTransaction} from '../../../shared/pluginEdits.mjs';
-import {preparePluginEdits,projectDuration,exportDuration,renderable,pluginEditsApplied,historyReducer,prepareExtensionCommit,historyOrigin} from '../../state/store.js';
+import {preparePluginEdits,projectDuration,exportDuration,renderable,pluginEditsApplied,historyReducer,prepareExtensionCommit,prepareExtensionUndo,historyOrigin} from '../../state/store.js';
 import {mediaInsertion,captionRead,captionWrite,editContextInput,markerApply} from './extensionOperations.js';
 const permissions=['editor.read','clips.write','clips.retime','clips.automation','clips.effects','clips.properties','clips.manage','tracks.write','timeline.ripple','clips.links','clips.linked','timeline.edit','timeline.reorder'];
 export function useExtensionHost(options){
@@ -26,18 +30,18 @@ export function useExtensionHost(options){
  useEffect(()=>window.api.onExtensionExportCanceled?.(({id})=>{const controller=renders.current.get(id);if(controller)controller.abort();else{canceledRenders.current.add(id);if(canceledRenders.current.size>32)canceledRenders.current.delete(canceledRenders.current.values().next().value);}}),[]);
  const cancelBefore=useCallback(id=>{const stage=stages.current.get(id);if(stage){stage.controller.abort();window.api.pluginsExtensionOperationCancel(id).catch(()=>{});}},[]);
  useEffect(()=>window.api.onExtensionOperationCanceled?.(event=>{const stage=stages.current.get(event.id);if(stage)stage.error=event.error;}),[]);
- const before=useCallback(async(kind,{source,signal,allowAgent=false,agentToken,agentSession,destination,operationId}={})=>{
+ const before=useCallback(async(kind,{source,signal,allowAgent=false,agentToken,agentSession,destination,operationId,transition}={})=>{
   if(stages.current.size)throw Error('Another save/export preparation is in progress');
-  const current=latest.current,base=current.getHistory();if(!current.hasProject)throw Error('No project is open');
+  const current=latest.current,base=current.getHistory(),observeOnly=['opened','created','closed'].includes(kind);if(!current.hasProject&&!observeOnly)throw Error('No project is open');
   source??=base.present;const id=operationId||crypto.randomUUID(),controller=new AbortController(),draft=new ExtensionDraft({...base,present:source},{selection:current.selection?.(),playhead:current.capture().snapshot.playhead}),stage={id,base,source,draft,controller,epoch:current.epoch,error:null};
-  stage.check=()=>{const now=latest.current,state=now.getHistory();if(controller.signal.aborted)throw Object.assign(Error('Preparation canceled'),{name:'AbortError'});if(stage.error)throw Error(stage.error);if(!now.hasProject||now.epoch!==stage.epoch||!samePreparationDocument(source,base.present)||!samePreparationDocument(base.present,state.present)||state.gestureStart||(agentToken?state.agentEdit?.token!==agentToken:state.agentEdit)||now.isPreparationBusy?.(kind,allowAgent)||!draft.valid())throw Error('Project changed or is busy during preparation');return state;};
+  stage.check=()=>{const now=latest.current,state=now.getHistory();if(controller.signal.aborted)throw Object.assign(Error('Preparation canceled'),{name:'AbortError'});if(stage.error)throw Error(stage.error);if(now.hasProject!==current.hasProject||!now.hasProject&&!observeOnly||now.epoch!==stage.epoch||!observeOnly&&!samePreparationDocument(source,base.present)||!samePreparationDocument(base.present,state.present)||state.gestureStart||(agentToken?state.agentEdit?.token!==agentToken:state.agentEdit)||now.isPreparationBusy?.(kind,allowAgent)||!draft.valid())throw Error('Project changed or is busy during preparation');return state;};
   stages.current.set(id,stage);const preparingTimer=setTimeout(()=>setPreparing({id,kind}),180);let lease,finished=false,claimed=false,live=true;
   const abort=()=>cancelBefore(id);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
   try{
    if(controller.signal.aborted)throw Object.assign(Error('Preparation canceled'),{name:'AbortError'});
    const document=draft.read('workspace.read');if(document.name.length>1000)delete document.name;
-   const ready=await window.api.pluginsExtensionOperationBegin({id,kind,document,...(destination?{destination}:{})});
-   if(!ready.participants){if(controller.signal.aborted)throw Object.assign(Error('Preparation canceled'),{name:'AbortError'});await window.api.pluginsExtensionOperationComplete(id);finished=true;return source;}
+   const ready=await window.api.pluginsExtensionOperationBegin({id,kind,document,...(destination?{destination}:{}),...(transition?{transition}:{})});
+   if(!ready.participants||ready.readOnly){stage.check();await window.api.pluginsExtensionOperationComplete(id);finished=true;return source;}
    stage.check();lease=await window.api.pluginsExtensionOperationCommit(id);stage.check();
    // Flush any already queued user updates before capturing the exact history.
    flushSync(()=>{});const history=stage.check(),next=carryPreparationMetadata(draft.project,history.present);let result;
@@ -79,7 +83,19 @@ export function useExtensionHost(options){
  },[closePreview]);
  useEffect(()=>window.api.onExtensionRequest?.(async request=>{
   try{
-   const current=latest.current;if(!current.hasProject)throw Error('No project is open');
+   const current=latest.current;
+   if(request.method.startsWith('projects.')){
+    if(request.method==='projects.status'){if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension callback ended');const value=await current.projectCommand(request.method,request.args,{authorize:async()=>{}});await window.api.pluginsExtensionReply({id:request.id,value});return;}
+    if(request.operation||request.agentScope||stages.current.size)throw Error('Project lifecycle is unavailable during managed edits or preparation');
+    const authorize=async()=>{if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension stopped or callback ended');};
+    const value=await current.projectCommand(request.method,request.args,{authorize});await window.api.pluginsExtensionReply({id:request.id,value});return;
+   }
+   if(request.method==='rendering.validate'){
+    if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension callback stopped');
+    const {definition,mode,params,id}=request.args;fxGL().program(effectExpression(definition,params,mode),mode);
+    await window.api.pluginsExtensionReply({id:request.id,value:{valid:true,id}});return;
+   }
+   if(!current.hasProject&&!request.operation)throw Error('No project is open');
    const agentSession=request.agentScope?agentCommands.current.get(request.agentScope):undefined;if(request.agentScope&&!agentSession)throw Error('Agent command is no longer active');agentSession?.check();
    if(request.method==='exports.render'){
     const {id,input,target,title}=request.args,controller=new AbortController();renders.current.set(id,controller);if(canceledRenders.current.delete(id))controller.abort();
@@ -88,7 +104,7 @@ export function useExtensionHost(options){
    if(request.operation){
     if(!await window.api.pluginsExtensionAuthorize(request.key,request.generation,request.execution,request.jobOperation))throw Error('Extension callback or job stopped');
     const stage=stages.current.get(request.operation.id);if(!stage)throw Error('Save/export preparation is no longer active');stage.check();
-    const write=['editor.apply','media.insert','captions.write','markers.apply','configuration.update'].includes(request.method);if(write&&request.operation.phase!=='prepare')throw Error('Validation hooks cannot edit the document');
+    const write=['editor.apply','media.insert','captions.write','markers.apply','configuration.update','timeline.apply'].includes(request.method);if(write&&request.operation.phase!=='prepare')throw Error('Validation hooks cannot edit the document');
     const value=write?stage.draft.write(request.method,request.args,request.extensionId):stage.draft.read(request.method,request.args,request.extensionId);
     await window.api.pluginsExtensionReply({id:request.id,value});return;
    }
@@ -96,6 +112,7 @@ export function useExtensionHost(options){
    const inspectorAnchor=request.method==='ui.inspectorSet'?inspectorEdits.current.get(request.args.token):null;
    const checkInspector=()=>{if(request.method!=='ui.inspectorSet')return;const now=latest.current;if(!inspectorAnchor||!now.hasProject||now.epoch!==inspectorAnchor.epoch||!samePreparationDocument(inspectorAnchor.project,now.getHistory().present)||JSON.stringify(now.selection())!==JSON.stringify(inspectorAnchor.selection))throw Error('Inspector target changed before the edit committed');};
    checkInspector();
+   const customRevision=customTypesRevision();const checkCustomTypes=()=>{if(request.method==='timeline.apply'&&customRevision!==customTypesRevision())throw Error('Custom timeline types changed during the edit');};
    let value;const base=current.capture();
    const contextInput=request.method==='editor.read'?request.args:request.method==='editor.apply'?editContextInput(request.args):undefined;
    const {snapshot,targets,rebase}=contextInput===undefined?base:current.capture(contextInput),state=current.getHistory(),project=state.present;
@@ -111,16 +128,20 @@ export function useExtensionHost(options){
     try{
      if(!latest.current.hasProject||!samePreparationDocument(project,latest.current.getHistory().present)||(agentSession?latest.current.isAgentCommandBusy?.():current.isBusy()))throw Error('Editor changed while preparing the edit');
      agentSession?.check();const history=latest.current.getHistory(),candidate=carryPreparationMetadata(next,history.present);
-     const publish=value=>{checkInspector();const prepared=prepareExtensionCommit(history,value,()=>{if(agentSession)agentSession.check();return live&&latest.current.hasProject&&!(agentSession?latest.current.isAgentCommandBusy?.():latest.current.isBusy())&&window.api.pluginsExtensionCommitApply(lease.id);},agentSession?.agentToken,{kind:'extension',extensionId:request.extensionId});
+     const publish=value=>{checkInspector();checkCustomTypes();const prepared=prepareExtensionCommit(history,value,()=>{if(agentSession)agentSession.check();return live&&latest.current.hasProject&&!(agentSession?latest.current.isAgentCommandBusy?.():latest.current.isBusy())&&window.api.pluginsExtensionCommitApply(lease.id);},agentSession?.agentToken,{kind:'extension',extensionId:request.extensionId});
       flushSync(()=>current.dispatch(prepared));if(!pluginEditsApplied(latest.current.getHistory(),prepared))throw Error('Editor changed or extension stopped before the edit committed');};
      if(agentSession)agentSession.commit(action,candidate,publish);else publish(candidate);
     }finally{live=false;await window.api.pluginsExtensionCommitFinish(lease.id);}
    };
-   if(request.method==='ui.inspectorSet'){
+   if(request.method==='timeline.read')value=customTimelinePage(project,current.documentScope(),request.args);
+   else if(request.method==='timeline.apply'){
+    await canCommit();const plan=customTimelineRequest(project,current.documentScope(),request.args);if(plan.next!==project)await commit({type:'customTimeline',base:project,catalogRevision:customRevision,operations:request.args.operations});value=plan.value;
+   }else if(request.method==='ui.inspectorSet'){
+
     await canCommit();
     const selection=inspectorAnchor.selection,target=targets.find(target=>target.track===selection?.track&&target.id===selection?.id),field=request.args.field;
-    if(!target||!request.args.lanes.includes(target.track)||!INSPECTOR_PROPERTIES[field.property]?.lanes.includes(target.track))throw Error('Inspector property is unavailable for the current selection');
-    const clip=snapshot.timeline.clips.find(clip=>clip.id===target.handle),operation=inspectorOperation(field,request.args.value,target.handle,clip.link?.partnerId??null);
+    if(!target||!request.args.lanes.includes(target.track)||!inspectorRule(field.property)?.lanes.includes(target.track))throw Error('Inspector property is unavailable for the current selection');
+    const clip=snapshot.timeline.clips.find(clip=>clip.id===target.handle),native=project[`${target.track}Clips`].find(clip=>clip.id===target.id),operation=inspectorOperation(field,request.args.value,target.handle,clip.link?.partnerId??null,{clip:native,lane:target.track,media:project.media.find(item=>item.id===native.mediaId),effectDefinition:pluginEffectDefinition});
     const transaction=clipTransaction({documentId:snapshot.documentId,revision:snapshot.revision,operations:[operation]},snapshot,projectDuration(project),permissions),plan=preparePluginEdits(project,snapshot,targets,transaction,permissions);
     if(plan.action)await commit(plan.action);value={changed:!!plan.action};
    }else if(request.method==='configuration.get'||request.method==='configuration.update'){
@@ -154,6 +175,17 @@ export function useExtensionHost(options){
     // clipId is the saved clip id; handle is the public handle editor.read/apply use for it.
     const handle=latest.current.capture().targets.find(target=>target.id===plan.clipId)?.handle;
     value={mediaId:plan.mediaId,clipId:plan.clipId,lane:plan.lane,...(handle?{handle}:{})};
+   }else if(request.method==='editor.undo'){
+    if(agentSession||stages.current.size)throw Error('Undo is unavailable during managed edits or preparation');
+    const input=request.args,scope=current.documentScope();if(!input||Object.keys(input).some(key=>!['documentId','projectRevision'].includes(key))||input.documentId!==scope.documentId||input.projectRevision!==scope.projectRevision)throw Error('Undo context is stale or invalid');
+    await canCommit();
+    if(!state.past.length)value={applied:false};else{
+     const lease=await window.api.pluginsExtensionCommitAcquire(request.key,request.generation,request.execution,request.jobOperation);let claimed=false;
+     try{
+      const action=prepareExtensionUndo(state,()=>latest.current.getHistory()===state&&!latest.current.isBusy()&&(claimed=window.api.pluginsExtensionCommitApply(lease.id)),{kind:'extension',extensionId:request.extensionId});
+      flushSync(()=>current.dispatch(action));if(!pluginEditsApplied(latest.current.getHistory(),action))throw Error('Undo target changed before commit');value={applied:true};
+     }finally{await window.api.pluginsExtensionCommitFinish(lease.id,claimed).catch(()=>{});}
+    }
    }else if(request.method==='captions.read')value=captionRead(project,snapshot,targets,request.args);
    else if(request.method==='captions.write'){
     await canCommit();const plan=captionWrite(project,snapshot,request.args,request.extensionId,current.documentScope());

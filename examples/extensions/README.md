@@ -41,7 +41,9 @@ Building them checks their source; it does not verify a live provider.
 | `caption-translation` | Choose a source track/language, review original and translated text, then create one separate hidden caption track with Undo. |
 | `workbench` | Open two independent views, exchange messages, invoke commands and render the current project. |
 | `voicestudio` | Configure the optional service in Voice settings. Its transport runs in the extension and its ordinary service connects through `voice.engines`. |
+| `sdk-workbench` | Try native prompts/status/menus, left-rail and library views, binary streaming, a local helper server, project lifecycle and styled captions. |
 | `native-properties` | Edit selected clip properties directly in the native inspector; try the selection-aware toolbar action and Undo. |
+| `scene-reviewer` | Subscribe to the SDK workbench's typed scene-review hook and approve/refuse scene creation through native settings. |
 
 The first eleven sources replace historical sandbox recipes with the same IDs,
 publishers and versions. The host retains the old immutable package beside its

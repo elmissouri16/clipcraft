@@ -48,8 +48,19 @@ source is a few kilobytes each and is what lets them redraw themselves on anothe
   saved without it.
 - **Moving a project**: keep the two files together. A document without its sidecar opens with an
   empty chat; the timeline is complete.
+- **Extension project switches**: SDK create/open/close first flush pending file and
+  slot writes, then force a native slot snapshot for the open document. This also
+  preserves empty, marker-only and settings-only projects that ordinary
+  content-based autosave may skip. A failed write refuses the switch; close
+  returns Home without discarding the slot. The usual sidecar and media-pin
+  publication rules apply.
 - **Slot hygiene**: deleting a slot or evicting it past the cap removes its chat file too; the
   index rebuild ignores the `chat/` folder.
+- **Custom timeline types**: `customTracks` and `customClips` store fingerprinted
+  type IDs and schema-checked JSON data. The native render projection supplies
+  temporary media and shader bindings without saving either into the document.
+  Missing definitions preserve data and report an export-blocking error until
+  the exact package is restored or the affected clips are explicitly disabled.
 
 ## Safety
 

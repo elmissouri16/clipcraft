@@ -90,7 +90,7 @@
     "typescript": "7.0.2",
     "vite": "^6.0.7"
   },
-  "exports": {"./internal/shortcut-contract": "./shared/pluginShortcuts.cjs"},
+  "exports": {"./internal/export-formats": "./shared/exportFormats.cjs", "./internal/shortcut-contract": "./shared/pluginShortcuts.cjs", "./internal/service-contract": "./shared/extensionServices.cjs"},
   "scripts": {
     "assets:preview": "node scripts/fetch-preview-photos.cjs --required",
     "predev": "node scripts/fetch-preview-photos.cjs",
@@ -137,6 +137,7 @@
       "THIRD-PARTY-NOTICES.md"
     ],
     "asarUnpack": [
+      "electron/bundled-media/**/*",
       "node_modules/ffmpeg-static/**",
       "node_modules/ffprobe-static/**",
       "node_modules/@ffprobe-installer/**"

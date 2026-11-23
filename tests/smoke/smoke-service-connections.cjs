@@ -16,13 +16,11 @@ module.exports=async(win,app,dir)=>{
   win.webContents.on('console-message',(_event,level,text)=>{if(level>=3)result.errors.push(text);});
   const stub=(name,callback)=>{ipcMain.removeHandler(name);ipcMain.handle(name,callback);};
   let voiceTestFails=false;
-  stub('library:search',()=>({results:[],page:1,pages:1,total:0}));
   stub('tts:testKey',(_event,key)=>{result.tests.push('elevenlabs');if(voiceTestFails)throw Error('Fixture connection unavailable');return {ok:!!(key||settings.getServiceKey('elevenlabs')),text:'Fixture accepted the voice key.'};});
   stub('tts:geminiTestKey',(_event,key)=>({ok:!!(key||settings.getServiceKey('gemini-tts')),text:'Fixture accepted the speech key.'}));
   stub('tts:elevenVoices',()=>({voices:[{id:'fixture-voice',name:'Fixture voice'}]}));
   stub('captions:testCloud',(_event,provider,key)=>{result.tests.push('captions:'+provider);const ok=!!(key||settings.getServiceKey('cap-'+provider));return ok?{ok:true}:{ok:false,error:'No fixture key.'};});
   stub('ai:test',(_event,draft)=>{result.tests.push('assistant:'+draft.provider);return {ok:!!(draft.apiKey||settings.getActive(draft.provider).apiKey),reply:'Fixture OK',ms:1};});
-  stub('stock:test',()=>({ok:true,text:'Fixture accepted the media key.'}));
   try{
     settings.saveServiceKey('gemini-tts','fixture-existing-voice-OLD1');
     const active=settings.getActive();
@@ -53,12 +51,16 @@ module.exports=async(win,app,dir)=>{
     check('Saving an assistant key preserves the independent voice key',settings.getServiceKey('gemini-tts')==='fixture-existing-voice-OLD1');
     await button(slot('assistant:gemini'),'Assistant settings');await until('document.querySelector(\'select[aria-label="Provider"]\')?.value==="gemini"');check('Assistant configuration link selects its provider without activating it',settings.getActive().provider===active.provider);await page('services');
     await expand('groq');await save('cap-groq','fixture-caption-key-CAP1');await button(slot('cap-groq'),'Test key');await until('document.querySelector(\'[data-service-key="cap-groq"] [role=status]\').textContent.includes("Key accepted")');check('Caption key uses the common editor and test action',result.tests.includes('captions:groq'));
-    await fill('input[aria-label="Search API services"]','media libraries');await until('document.querySelectorAll("[data-connection]").length===2');check('Feature names find the matching service providers',true);await fill('input[aria-label="Search API services"]','Pixabay');await until('document.querySelectorAll("[data-connection]").length===1');
-    check('Services are searchable',await q('!!document.querySelector(\'[data-connection="pixabay"]\')'));
-    await expand('pixabay');await save('pixabay','fixture-media-key-MED1');check('Media key uses the same encrypted editor',settings.getServiceKey('pixabay')==='fixture-media-key-MED1');
+    await fill('input[aria-label="Search API services"]','subtitles');
+    await until(`!!document.querySelector('[data-connection="groq"]')`);
+    check('Feature names find matching caption providers',await q(`!!document.querySelector('[data-connection="deepgram"]')`));
+    await fill('input[aria-label="Search API services"]','Deepgram');
+    await until('document.querySelectorAll("[data-connection]").length===1');
+    check('Services are searchable',await q(`!!document.querySelector('[data-connection="deepgram"]')`));
+    await expand('deepgram');
     for(const [w,h]of [[1000,640],[1400,860]]){win.setContentSize(w,h);await wait(100);check('API keys page fits '+w,await q('(()=>{const p=document.querySelector(".set2-pane");return p.scrollWidth<=p.clientWidth+1})()'));fs.writeFileSync(path.join(dir,'connections-'+w+'.png'),(await win.capturePage()).toPNG());}
-    await click(slot('pixabay')+' button[title="Remove saved key"]');await until('document.querySelector(\'[data-service-key="pixabay"]\').textContent.includes("Key removed.")');
-    await click('button[aria-label="Close settings"]');await q('window.__fve.tab("media")');await until('!!document.querySelector(".src-seg")');await button('.src-seg','Stock');await until('!!document.querySelector(".stock-key")');await button('.stock-key','Add API key');await until('!!document.querySelector(\'[data-connection="pixabay"] .connection-details\')');check('Stock setup opens the matching API-key provider',true);
+    await fill('input[aria-label="Search API services"]','');
+    check('Media provider settings belong to Plugins',await q(`!document.querySelector('[data-connection="pixabay"],[data-connection="soundza"]')`));
     await click('button[aria-label="Close settings"]');await q('window.__fve.tab("audio")');await until('!!document.querySelector(".audio-browser-actions")');await click('.audio-browser-actions button[aria-label="Text to speech"]');await until('!!document.querySelector(".tts")');await button('.tts .seg-tabs','ElevenLabs');await until('document.querySelector(".tts .stock-key")?.textContent.includes("ElevenLabs key needed")');await button('.tts .stock-key','Add API key');await until('!!document.querySelector(\'[data-connection="elevenlabs"] .connection-details\')');check('Text-to-speech setup opens the matching API-key provider',true);
     await click('button[aria-label="Close settings"]');await q('window.__fve.tab("captions")');await until('!![...document.querySelectorAll("button")].find(e=>e.textContent.trim()==="Cloud · API key")');await button('.tab-content','Cloud · API key');await until('!!document.querySelector(".cap-key-status")');
     check('Caption feature shows status without another password editor',await q('!document.querySelector(".tab-content input[type=password]")&&document.querySelector(".cap-key-status").textContent.includes("CAP1")'));

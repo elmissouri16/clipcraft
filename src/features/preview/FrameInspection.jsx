@@ -1,10 +1,11 @@
+import {setCustomTimelineTypes} from '../../../shared/customTimeline.mjs';
 import {setPluginTransitions} from '../plugins/transitionRegistry.js';
 import {assertPluginEffects,setPluginEffects} from '../plugins/effectRegistry.js';
 import React,{useEffect,useState} from 'react';
 import Preview from './components/Preview.jsx';
 import {fontsReady} from "../text/fonts.js";
 import {loadProjectLuts} from "../effects/lut.js";
-import {projectDuration,setPlaybackQuality} from "../../state/store.js";
+import {projectDuration,setPlaybackQuality,renderable} from "../../state/store.js";
 import "../../styles/frameInspection.css";
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const paint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -13,7 +14,7 @@ export default function FrameInspection(){
   const [job,setJob]=useState(null);
   useEffect(()=>{const off=window.frameInspection.onFrame?.(update=>setJob(previous=>({...previous,...update})));window.frameInspection.load().then(async value=>{
     setPluginEffects(value.pluginEffects||[]);setPluginTransitions(value.pluginTransitions||[]);setPlaybackQuality('full');if(value.strict)assertPluginEffects(value.project);await fontsReady(value.project.textClips,{strict:!!value.strict});await loadProjectLuts(value.project,{strict:!!value.strict});
-    setJob(value);
+    if(value.timelineTypes)setCustomTimelineTypes(value.timelineTypes);setJob({...value,project:renderable(value.project)});
   }).catch(error=>window.frameInspection.ready(error.message));return()=>off?.();},[]);
   useEffect(()=>{
     if(!job)return;let canceled=false;
@@ -34,7 +35,7 @@ export default function FrameInspection(){
         if(performance.now()>end)throw new Error('Timed out decoding a frame for visual inspection.');
         if(canceled)return;await wait(30);
       }
-      await paint();if(job.strict){const failed=[...document.querySelectorAll('canvas[data-render-error]')].find(el=>el.dataset.renderError&&getComputedStyle(el).display!=='none'&&(!el.closest('.slot')||el.closest('.slot').style.visibility==='visible'));if(failed)throw Error(failed.dataset.renderError);}
+      await paint();{const failed=[...document.querySelectorAll('canvas[data-render-error]')].find(el=>el.dataset.renderError&&(el.classList.contains('fx-transition')||getComputedStyle(el).display!=='none')&&(!el.closest('.slot')||el.closest('.slot').style.visibility==='visible'));if(failed)throw Error(failed.dataset.renderError);}
       if(!canceled)await window.frameInspection.ready(undefined,job.sequence);
     })().catch(error=>!canceled&&window.frameInspection.ready(error.message,job.sequence));
     return()=>{canceled=true;window.removeEventListener('error',renderError);};

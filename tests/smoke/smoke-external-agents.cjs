@@ -44,7 +44,7 @@ module.exports = async (win, app, dir) => {
     check('the app serves MCP over HTTP and sends the native instructions', agent.getServerVersion().name === 'clipcraft' && /complete_edit/.test(agent.getInstructions()) && /get_status first/.test(agent.getInstructions()));
     const tools = (await agent.listTools()).tools.map((t) => t.name);
     result.tools = tools;
-    check('the agent is offered the project tools and the native editor tools', ['get_status', 'list_projects', 'create_project', 'open_project', 'save_project', 'close_project', 'get_project', 'add_text', 'edit_text', 'complete_edit', 'export_video'].every((n) => tools.includes(n)) && tools.length > 60);
+    check('the agent is offered the project tools and the native editor tools', ['get_status', 'list_projects', 'create_project', 'duplicate_project', 'open_project', 'save_project', 'close_project', 'get_project', 'add_text', 'edit_text', 'complete_edit', 'export_video'].every((n) => tools.includes(n)) && tools.length > 60);
     check('no image generation without a Codex sign-in, and no re-exported MCP servers', !tools.includes('generate_image') && !tools.some((n) => n.startsWith('mcp_')));
 
     // First call: the user is asked once.
@@ -148,6 +148,44 @@ module.exports = async (win, app, dir) => {
       check(`the connected toolbar keeps Project visible and every control separate at ${width}px and ${zoom}x zoom`, fits);
     }
     win.webContents.setZoomFactor(originalZoom); win.setContentSize(...originalSize);
+
+    const baseImage = path.join(dir, 'external-home-badge.png');
+    const imported = await call(agent, 'import_media', { paths: [baseImage], as: 'library' });
+    check('the source has a media reference to carry into the copy', !!imported.media?.length);
+    const copy = await call(agent, 'duplicate_project', { name: 'Episode 2' });
+    check('duplicate_project opens an independently named project with no file binding',
+      copy.source_id === entry.id && copy.created !== entry.id && copy.status?.project.id === copy.created && copy.status.project.name === 'Episode 2' && copy.status.project.file === null);
+    await q('document.querySelector(".project-menu-btn").click()');
+    await until('document.querySelector(".ctx-heading")?.textContent === "Episode 2"');
+    await q('document.querySelector(".project-menu-btn").click()');
+    await until('!document.querySelector(".ctx-heading")');
+    check('the Project menu identifies the active copy', true);
+    const sourceBytes = fs.readFileSync(target, 'utf8');
+    const source = JSON.parse(sourceBytes);
+    const snapshot = await q('window.__fve.rawProject()');
+    assert.deepEqual(snapshot.textClips, source.textClips);
+    check('the copy carries the timeline, format and original media reference', snapshot.ratio === source.ratio && snapshot.fps === source.fps
+      && snapshot.media.some(m => m.path === source.media[0].path && fs.realpathSync(m.path) === fs.realpathSync(baseImage)));
+    check('the copy starts with fresh chat and undo history',
+      !snapshot.craftAI?.sessions?.some(s => s.messages?.length) && await q('window.__fve.history().past.length===0'));
+    const both = (await call(agent, 'list_projects')).projects;
+    check('both projects are immediately available in Home with separate bindings', both.some(p => p.id === entry.id && p.file === target && !p.open)
+      && both.some(p => p.id === copy.created && p.file === null && p.open));
+    check('the copy cannot overwrite the base project file', /already exists/.test((await call(agent, 'save_project', { path: target })).error || ''));
+    const copyEdit = await call(agent, 'add_text', { text: 'Only in Episode 2', start_sec: 6, duration_sec: 1 });
+    check('a new edit goes to the copy', !!copyEdit.operation_id);
+    const third = await call(agent, 'duplicate_project');
+    check('an autosave-only project can be duplicated with its default name',
+      third.source_id === copy.created && third.created !== copy.created && third.status?.project.name === 'Episode 2 (copy)');
+    const reopenCopy = await call(agent, 'open_project', { id: copy.created });
+    const copyFile = path.join(dir, 'episode-2.clipcraft.json');
+    const savedCopy = await call(agent, 'save_project', { path: copyFile });
+    check('the edited copy reopens and saves to its own file', reopenCopy.opened === copy.created && savedCopy.file === copyFile
+      && JSON.parse(fs.readFileSync(copyFile, 'utf8')).textClips.some(c => c.text === 'Only in Episode 2'));
+    check('the original file is byte-for-byte unchanged after editing and saving the copy', fs.readFileSync(target, 'utf8') === sourceBytes);
+    const reopenedBase = await call(agent, 'open_project', { id: entry.id });
+    check('the original Home entry reopens its original timeline and file', reopenedBase.status?.project.file === target
+      && JSON.stringify(await q('window.__fve.rawProject().textClips')) === JSON.stringify(source.textClips));
     const modalBefore = await q('document.querySelector(".modal-backdrop")?.innerText||""');
     const byPath = await call(agent, 'open_project', { path: path.join(dir, 'missing.clipcraft.json') });
     result.modals = { before: modalBefore, after: await q('document.querySelector(".modal-backdrop")?.innerText||""') };

@@ -22,6 +22,22 @@ export async function activate(context:ExtensionContext){
   {key:'bold',label:'Bold',property:'text.style.bold'},
   {key:'align',label:'Alignment',property:'text.style.align'},
  ]});
+ const motion=await context.ui.registerInspector({id:'motion',title:'Animation and speed',lanes:['video','overlay','audio'],fields:[
+  {key:'speed',label:'Speed (keep timeline duration)',property:'speed'},
+  {key:'opacity-curve',label:'Opacity curve',property:'curve.opacity'},
+  {key:'x-curve',label:'Horizontal motion curve',property:'curve.x'},
+  {key:'volume-curve',label:'Volume curve',property:'curve.volume'},
+ ]});
+ await context.ui.registerInspector({id:'effects',title:'First effect slot',lanes:['video','overlay'],fields:[
+  {key:'enabled',label:'Enable effect',property:'effect.enabled',effect:{index:0}},
+  {key:'strength',label:'Effect strength',property:'effect.strength',effect:{index:0},type:'range'},
+  {key:'gain',label:'Gain parameter',property:'effect.parameter',effect:{index:0,parameter:'gain'}},
+ ]});
+ await context.ui.registerInspector({id:'free-effect',title:'Effects track resource',lanes:['effect'],fields:[
+  {key:'enabled',label:'Enable effect',property:'effect.enabled',effect:{index:null}},
+  {key:'strength',label:'Effect strength',property:'effect.strength',effect:{index:null}},
+  {key:'gain',label:'Gain parameter',property:'effect.parameter',effect:{index:null,parameter:'gain'}},
+ ]});
  const selected=async()=>{
   const editor=await context.editor.read(),clip=editor.timeline.clips.find(clip=>editor.selection.clipIds.includes(clip.id)&&!clip.gap&&['video','overlay'].includes(clip.trackId.split(':')[0]));
   return {editor,clip};

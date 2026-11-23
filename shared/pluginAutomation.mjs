@@ -5,6 +5,11 @@ const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const keys=(v,names)=>{if(!object(v)||Object.keys(v).some(k=>!names.includes(k))||names.some(k=>!Object.hasOwn(v,k)))throw Error('Invalid automation edit fields.');};
 const number=(v,lo,hi)=>Number.isFinite(v)&&v>=lo&&v<=hi;
 const index=v=>Number.isInteger(v)&&v>=0&&v<32;
+export function curvePoints(property,points){
+ const limits=Object.hasOwn(CURVE_LIMITS,property)?CURVE_LIMITS[property]:null;
+ if(!limits||!Array.isArray(points)||points.length>64)throw Error('Choose a supported source-time curve of at most 64 points.');
+ let previous=-Infinity;return Array.from(points,p=>{keys(p,['source_sec','value','easing']);if(!number(p.source_sec,0,1e9)||p.source_sec-previous<1e-6||!number(p.value,...limits)||!(property==='volume'?p.easing==='linear':['linear','in','out','inout','continuous'].includes(p.easing)))throw Error('Curve points need increasing source times, bounded values and supported easing.');previous=p.source_sec;return {...p};});
+}
 export function automationOperation(op,clips,tracks,permissions){
  const required=op.type==='set-speed'?'clips.retime':op.type==='set-keyframes'?'clips.automation':'clips.effects';
  if(!permissions.includes(required))throw Error(`Permission denied: ${required}`);
@@ -22,8 +27,7 @@ export function automationOperation(op,clips,tracks,permissions){
  }else if(op.type==='set-keyframes'){
   const limits=Object.hasOwn(CURVE_LIMITS,op.property)?CURVE_LIMITS[op.property]:null;
   if(!limits||!['video','overlay','audio'].includes(lane)||lane==='audio'&&op.property!=='volume'||op.timebase!=='source'||!Array.isArray(op.points)||op.points.length>64)throw Error('Choose a supported source-time curve of at most 64 points.');
-  let previous=-Infinity;const points=op.points.map(p=>{keys(p,['source_sec','value','easing']);if(!number(p.source_sec,0,1e9)||p.source_sec-previous<1e-6||!number(p.value,...limits)||!(op.property==='volume'?p.easing==='linear':['linear','in','out','inout','continuous'].includes(p.easing)))throw Error('Curve points need increasing source times, bounded values and supported easing.');previous=p.source_sec;return {...p};});
-  return {...op,points};
+  return {...op,points:curvePoints(op.property,op.points)};
  }else{
   if(!['video','overlay','effect'].includes(lane)||lane==='effect'&&op.type!=='set-effect')throw Error('Effect operations need picture clips or a direct free-effect target.');
   if(op.type==='attach-effect'){

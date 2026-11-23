@@ -70,6 +70,7 @@ class PluginManager {
       contributionId:`${row.manifest.id}/${p.id}`,
     })) : []);
   }
+  async timelineTypes() { return require('./customTimeline.cjs').timelineTypes(this); }
   async effects() { return this.renderContributions('effects'); }
   async transitions() { return this.renderContributions('transitions'); }
   async renderContributions(kind) {

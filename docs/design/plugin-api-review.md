@@ -143,7 +143,7 @@ UI:
 | Initial theme, repeated theme events and query assets | Fixed: initial theme is current, layout does not emit theme events, and packaged assets accept query strings/fragments. |
 | WebAssembly in a view is unverified | Verified: packaged view scripts can compile WebAssembly; JavaScript eval remains blocked. |
 | Adopted media is never collected | Startup cleanup reclaims newly tracked abandoned sources. Current-session Undo, saved project references and uncertain/legacy sources remain protected. |
-| Native controls lack live action state and property bindings | Implemented: vector icons, ordering, enabled state and static picture/audio/text bindings. |
+| Native controls lack live action state and property bindings | Implemented: vector icons, ordering, enabled state, static picture/audio/text bindings, source-time curves, speed and effect slots/parameters. |
 
 The defect rows are covered by [hardening](plugin-api-hardening.md); media and
 native-control behavior have their own linked contracts above. The original
@@ -154,6 +154,7 @@ These behaviors and limitations remain current:
 - Host calls started in a handler must finish before it returns; unawaited calls
   are cut off when the handler ends. See the [lifecycle rules](plugin-extension-api.md#2-lifecycle-rules).
 - `applied` in `editor.apply` and `markers.apply` counts submitted operations.
-- `ClipTextStyle` offers a bounded font list and `captions.write` uses a fixed
-  initial style; use editor tools for richer styling after creation.
+- `ClipTextStyle` offers a bounded font list. `captions.write` now accepts
+  builtin-font `CaptionStyle` defaults and per-cue overrides, including text
+  effects and animations; see [extension expansion](plugin-extension-expansion.md).
 - Additional capabilities remain listed in [current gaps](plugin-extension-api.md#5-what-an-extension-cannot-do-yet).

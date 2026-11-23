@@ -12,11 +12,11 @@ const prodOnlyCsp = {
 
 export default defineConfig({
   plugins: [react(), prodOnlyCsp],
-  resolve: { alias: { 'clipcraft/internal/shortcut-contract': fileURLToPath(new URL('./shared/pluginShortcuts.cjs', import.meta.url)) } },
+  resolve: { alias: { 'clipcraft/internal/export-formats': fileURLToPath(new URL('./shared/exportFormats.cjs', import.meta.url)), 'clipcraft/internal/service-contract': fileURLToPath(new URL('./shared/extensionServices.cjs', import.meta.url)), 'clipcraft/internal/shortcut-contract': fileURLToPath(new URL('./shared/pluginShortcuts.cjs', import.meta.url)) } },
   css: { postcss: { plugins: [fontFormats] } },
   server: { port: 5173, strictPort: true },
   // Only the app's page: otherwise the dependency scan also crawls build output such as android/build.
-  optimizeDeps: { entries: ['index.html'], include: ['clipcraft/internal/shortcut-contract'] },
+  optimizeDeps: { entries: ['index.html'], include: ['clipcraft/internal/export-formats','clipcraft/internal/shortcut-contract','clipcraft/internal/service-contract'] },
   base: './',
   build: { outDir: 'dist', emptyOutDir: true },
 });

@@ -3,7 +3,9 @@
 // downloaded (never hotlinked) when the user adds them, and the UI says where the media comes from.
 // The key is part of request URLs, so error messages never include a URL.
 // Pure module: the caller passes `fetch` (Electron's net.fetch in the app, a mock in tests).
-const crypto = require('crypto');
+const crypto = require('node:crypto');
+const {pipeline} = require('node:stream/promises');
+const {Transform} = require('node:stream');
 const fs = require('fs');
 const path = require('path');
 
@@ -84,12 +86,19 @@ async function fetchFile(fetchImpl, url, out, max) {
   if (!res.ok) throw new Error(`Download failed (${res.status}).`);
   if (res.url && !hostOk(res.url)) throw new Error('The download was redirected to an unknown site.');
   if (Number(res.headers.get('content-length') || 0) > max) throw new Error('The file is too large.');
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > max || buf.length < 100) throw new Error('The downloaded file is not valid.');
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(`${out}.part`, buf);
-  fs.renameSync(`${out}.part`, out);
-  return out;
+  if (!res.body) throw Error('The downloaded file is empty.');
+  await fs.promises.mkdir(path.dirname(out), {recursive:true});
+  const temp = out + '.' + crypto.randomUUID() + '.part';
+  let size = 0;
+  try {
+    await pipeline(res.body, new Transform({transform(chunk, encoding, done) {
+      size += chunk.length;
+      done(size > max ? Error('The file is too large.') : null, chunk);
+    }}), fs.createWriteStream(temp, {flags:'wx'}));
+    if (size < 100) throw Error('The downloaded file is not valid.');
+    await fs.promises.rename(temp, out);
+    return out;
+  } finally { await fs.promises.rm(temp, {force:true}); }
 }
 
 // Thumbnail of a search result, cached on disk (the page shows local files only).

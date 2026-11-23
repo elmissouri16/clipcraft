@@ -17,6 +17,17 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
   const client=await context.services.connect('studio.author.text',contract);const value:number=await client.call('length',{text:'hello'});
   for await(const chunk of client.stream('chunks',null)){const bytes:Uint8Array=chunk;}
   if(false){
+   const process=await context.processes.spawn({file:'node',args:[],encoding:'bytes',output:'both'});const binary:Uint8Array=(await process.result).stdout;
+   // @ts-expect-error captured bytes are not text
+   const wrongBinary:string=(await process.result).stdout;
+   await context.ui.registerStatus({id:'state',title:'Ready',alignment:'right',tooltip:''});
+   await context.ui.registerView({id:'rail',title:'Rail',entry:'assets/view.html',placement:'left-rail'});
+   // @ts-expect-error native setting groups cannot be menus
+   await context.ui.registerSettings({id:'bad',title:'Bad',location:'menu.project',fields:[]});
+   // @ts-expect-error lifecycle changes require an explicit document anchor
+   await context.projects.create({name:'Unanchored'});
+   // @ts-expect-error Undo requires the project revision
+   await context.editor.undo({documentId:'doc'});
    // @ts-expect-error method arguments must satisfy required properties
    await client.call('length',{});
    // @ts-expect-error unary methods cannot be called through stream

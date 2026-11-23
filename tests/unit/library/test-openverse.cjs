@@ -1,7 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-const ov = require('../../../electron/library/openverse.cjs');
-const lib = require('../../../electron/library/library.cjs');
+const ov = require('../../../electron/bundled-media/openverse/dist/client.cjs');
 const id = '98a11e0c-7e10-4610-9402-f3969126455a';
 const record = { id, title: 'Forest', creator: 'Artist', creator_url: 'https://example.org/artist', source: 'flickr',
   license: 'cc0', license_version: '1.0', license_url: 'https://creativecommons.org/publicdomain/zero/1.0/',
@@ -20,7 +19,7 @@ const response = body => ({ ok: true, status: 200, json: async () => body });
   await ov.search(search, { kind: 'photo', q: 'forest', orientation: 'vertical' }); assert.equal(calls.length, 1, 'cached browse');
   const b = await ov.search(search, { kind: 'photo', q: 'forest', licenses: 'attribution' });
   assert.deepEqual(b.results.map(r => r.license), ['cc0', 'by']);
-  await lib.search(search, { kind: 'sfx', q: 'whoosh' });
+  await ov.search(search, { kind: 'sfx', q: 'whoosh' });
   assert.equal(calls.at(-1).pathname, '/v1/audio/'); assert.equal(calls.at(-1).searchParams.get('source'), 'freesound');
   assert.equal(calls.at(-1).searchParams.get('license'), 'cc0');
   const musicCalls = [], musicSearch = async url => {
@@ -29,11 +28,11 @@ const response = body => ({ ok: true, status: 200, json: async () => body });
       { ...record, source: 'jamendo', url: 'https://prod-1.storage.jamendo.com/track.mp3', license: 'by', license_url: 'https://creativecommons.org/licenses/by/4.0/' },
       { ...record, license: 'by-nc' }] });
   };
-  assert.equal((await lib.search(musicSearch, { kind: 'music', q: 'music-license-policy' })).results.length, 0);
+  assert.equal((await ov.search(musicSearch, { kind: 'music', q: 'music-license-policy' })).results.length, 0);
   assert.equal(musicCalls.length, 1, 'empty CC0 music never triggers a broader fallback');
   assert.equal(musicCalls[0].searchParams.get('source'), 'jamendo'); assert.equal(musicCalls[0].searchParams.get('category'), 'music');
   assert.equal(musicCalls[0].searchParams.get('license'), 'cc0');
-  const creditedMusic = await lib.search(musicSearch, { kind: 'music', q: 'music-license-policy', licenses: 'attribution' });
+  const creditedMusic = await ov.search(musicSearch, { kind: 'music', q: 'music-license-policy', licenses: 'attribution' });
   assert.deepEqual(creditedMusic.results.map(r => r.license), ['by']); assert.equal(musicCalls.length, 2);
   assert.equal(musicCalls[1].searchParams.get('license'), 'cc0,by');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipcraft-openverse-unit-'));

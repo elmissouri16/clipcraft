@@ -3,3 +3,6 @@ export function defineExtension(extension){if(!extension||typeof extension.activ
 import contracts from '../../../shared/extensionServices.cjs';
 /** Validate a portable service contract while preserving its inferred types. */
 export function defineServiceContract(contract){contracts.serviceContract(contract);return contract;}
+import hooks from '../../../shared/extensionHookContracts.cjs';
+/** Validate a hook point contract while preserving its inferred types. */
+export function defineHookContract(contract){hooks.hookContract(contract);return contract;}

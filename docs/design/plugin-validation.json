@@ -36305,5 +36305,1445 @@
       "No new Windows/Linux/Intel Mac execution",
       "No installer, commit, push, publication, version or dependency change"
     ]
+  },
+  "extensionExpansion": {
+    "checkedAt": "2026-11-18T14:44:20.782812+00:00",
+    "scope": "Requested pre-alpha items 2, 3 and 4: native UI, managed processes and editor/project APIs",
+    "versions": {
+      "app": "2.0.0",
+      "sdk": "0.8.0",
+      "hostApi": 1
+    },
+    "native": {
+      "initial": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-expansion-KJDsDk/result.json",
+      "restart": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-expansion-KJDsDk/restart-result.json",
+      "checks": 39,
+      "normalQuitRequested": true,
+      "captureFailures": [
+        {
+          "name": "rail-content.png",
+          "error": "Error: UnknownVizError",
+          "quiet": true
+        },
+        {
+          "name": "library-content.png",
+          "error": "Error: UnknownVizError",
+          "quiet": true
+        }
+      ],
+      "gifMotion": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-expansion-KJDsDk/gif-motion.json"
+    },
+    "processes": {
+      "host": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-process-streaming-pAQFin/result.json",
+      "worker": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-harness-cFx5hK/streaming-result.json"
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-U6Tjkg/results.json",
+      "total": 137,
+      "pass": 136,
+      "fail": 1,
+      "failedSuites": [
+        "tests/unit/plugins/test-plugin-settings-ui.cjs"
+      ],
+      "reason": "Settings smoke attempted Install while activation still disabled the button; no second package was installed. The fixture now waits for the enabled native control. Product source was unchanged after this run.",
+      "focusedRerun": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-8fDvPp/results.json",
+      "focusedRerunPass": 1
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-3O6sru/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-3O6sru/source-before.json",
+      "sourceSha256": "2978a6c61d1942077b2c3d0de40d50dc24770c97e4c1783cfb5a9790d5f71321",
+      "artifact": {
+        "file": "artifacts/clipcraft-plugin-sdk-0.8.0.tgz",
+        "bytes": 106955,
+        "sha256": "7cbd9df80f6d0c7a57b6fe4ec6d0e51df2c75829b00dd295e761dd13272df2dd",
+        "files": [
+          "LICENSE",
+          "README.md",
+          "dist/authoring.cjs",
+          "dist/authoring.d.cts",
+          "dist/cli.cjs",
+          "dist/extension.d.ts",
+          "dist/extension.mjs",
+          "dist/index.d.ts",
+          "dist/index.mjs",
+          "package.json"
+        ]
+      }
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-sdk-expansion-renderer.log",
+      "structure": "/tmp/clipcraft-sdk-expansion-structure.log",
+      "localization": "/tmp/clipcraft-sdk-expansion-i18n.log"
+    },
+    "earlierFailures": [
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-u4S8oM/results.json",
+        "reason": "134/137: two curated examples intentionally used native monograms, while icon/showcase fixtures assumed PNG artwork; exact two-example monogram allowlist added without weakening the existing PNG checks. Settings selection required an explicit selected-package wait.",
+        "rerun": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-5JXiWC/results.json"
+      },
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-expansion-TkQwuj/gif-motion-with-audio.json",
+        "reason": "Supplementary frame-count check included audio rows; corrected video-only decoding retains the actual animation proof."
+      }
+    ],
+    "implementationFix": "SDK project switches force a native snapshot and refuse failed persistence, preserving marker-only and empty documents.",
+    "limits": [
+      "Local macOS development execution; no new installed Windows/Linux/Intel Mac verification",
+      "Quiet child-view capture returned UnknownVizError; native bounds, visibility, DOM content and interaction checks passed; main-window screenshots inspected",
+      "No full application battery rerun",
+      "No installer, commit, push, publication, version or dependency change"
+    ],
+    "remainingCapabilities": [
+      "Player/timeline overlays, floating/modal windows and unrestricted view docking",
+      "Additional native property bindings",
+      "Custom shader code and custom clip/track types",
+      "Native export formats beyond MP4 and custom hook points"
+    ]
+  },
+  "extensionOpenSurfaces": {
+    "checkedAt": "2026-11-18T15:49:31.408373+00:00",
+    "status": "view destinations verified; full goal remains active",
+    "scope": [
+      "player and timeline overlays",
+      "floating and modal native windows",
+      "state-preserving user/SDK docking and a resizable bottom dock"
+    ],
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-open-surfaces-OFO7CL/result.json",
+      "checks": 15,
+      "quiet": true
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-a8dQNx/results.json",
+      "pass": 15,
+      "fail": 0
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-zcugdG/result.json",
+      "pass": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-zcugdG/source-after.json",
+      "sha256": "bdd305ebcb778ca9750874de8a785072a212f342e5f9fd291dcf82a742c1e4e0"
+    },
+    "additionalUnit": "tests/unit/plugins/test-extension-view-destinations.cjs; final direct run covers floating focus-cycle and modal Escape routing",
+    "checks": {
+      "renderer": "/tmp/clipcraft-open-surfaces-renderer.log",
+      "structure": "/tmp/clipcraft-open-surfaces-structure.log",
+      "localization": "/tmp/clipcraft-open-surfaces-i18n.log"
+    },
+    "earlierRuns": [
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-open-surfaces-QNjnor/result.json",
+        "reason": "First native attempt used registration identity for layout; embedded surface now reads the native page-lifetime identity."
+      },
+      {
+        "path": "/tmp/clipcraft-open-surfaces-native-2.log",
+        "reason": "Fixture lacked the explicit native trust-dialog response used by existing SDK smoke tests; timed out without result.json."
+      },
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-open-surfaces-wFHBBM/result.json",
+        "reason": "Fixture called a nonexistent openSettings harness method; changed to the real Settings button."
+      },
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-open-surfaces-nVno5u/result.json",
+        "reason": "Fixture re-read WebContentsView.webContents after destruction; now retains the WebContents handle for its cleanup assertion."
+      }
+    ],
+    "limits": [
+      "Local macOS development execution only",
+      "Quiet native tests inspect content, geometry and interactions; visible floating/modal screenshots and OS focus traversal were not exercised",
+      "No installer, commit, push, publication, dependency or version change"
+    ],
+    "remaining": [
+      "custom shaders with preview/export parity",
+      "custom clip and track types with saved data, Undo and rendering",
+      "broader property bindings",
+      "native export formats beyond MP4",
+      "custom and additional document lifecycle hooks"
+    ],
+    "currentCompletion": "extensionGoalCompletion"
+  },
+  "extensionGlsl": {
+    "checkedAt": "2026-11-18T16:04:03.497Z",
+    "status": "GLSL effects and transitions verified; full goal remains active",
+    "scope": [
+      "authored GLSL ES 3 effect and transition functions",
+      "bounded typed rendering catalog and actual GPU validation",
+      "shared player/export/frame composition and dependency handling"
+    ],
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-glsl-pKzvAK/result.json",
+      "checks": 32,
+      "measurements": [
+        {
+          "oracleMaximumChannelError": 0.49984231478169505,
+          "tolerance": 2
+        },
+        {
+          "time": 0.25,
+          "meanAbsoluteRgbError": 2.696365740740741,
+          "tolerance": 9
+        },
+        {
+          "time": 0.75,
+          "meanAbsoluteRgbError": 2.694351851851852,
+          "tolerance": 9
+        },
+        {
+          "transitionTime": 0.625,
+          "meanAbsoluteRgbError": 3.2737731481481482,
+          "tolerance": 9
+        },
+        {
+          "transitionTime": 0.875,
+          "meanAbsoluteRgbError": 2.915787037037037,
+          "tolerance": 9
+        }
+      ],
+      "quiet": true
+    },
+    "regressions": {
+      "reports": [
+        "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-t8HZhv/results.json",
+        "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-WnpaZ3/results.json"
+      ],
+      "pass": 15,
+      "fail": 0
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-lwNuIj/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-lwNuIj/source-after.json",
+      "sha256": "4012ae4213854313b72720598d75d4bed17be552d830788e01acfc2f5cea9573",
+      "currentSourceMatches": true
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-glsl-renderer.log",
+      "structure": "/tmp/clipcraft-glsl-structure.log",
+      "localization": "/tmp/clipcraft-glsl-i18n.log"
+    },
+    "earlierRuns": [
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-glsl-MTy2oA/result.json",
+        "reason": "Real GPU test found the old expression endpoint shortcut forced alpha to opaque; custom transitions now use their RGBA-preserving host wrapper."
+      },
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-glsl-Jo3KSd/result.json",
+        "reason": "Fixture passed two statements to an expression-only evaluator; fixed the test expression and suppressed an optional export completion dialog."
+      }
+    ],
+    "limits": [
+      "Local macOS GPU execution only; other GPUs and installed platforms were not rerun",
+      "No full application battery rerun",
+      "No installer, commit, push, publication, dependency or version change"
+    ],
+    "remaining": [
+      "custom clip and track types with native timeline, typed data, Undo and rendering",
+      "broader native property bindings",
+      "native export formats beyond MP4",
+      "extension-defined and additional native lifecycle hooks"
+    ],
+    "currentCompletion": "extensionGoalCompletion"
+  },
+  "extensionCustomTimeline": {
+    "checkedAt": "2026-11-18T16:34:20.502790+00:00",
+    "status": "custom clip and track types verified; full goal remains active",
+    "scope": [
+      "fingerprinted visual/audio/metadata types with schema-checked saved JSON",
+      "native timeline controls and typed property forms",
+      "atomic revision-scoped SDK edits and Undo",
+      "shared shader/media render projection, audio mixing and range export"
+    ],
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-aw4QAl/result.json",
+      "checks": 25,
+      "restartReport": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-aw4QAl/restart-result.json",
+      "restartChecks": 3,
+      "measurements": [
+        {
+          "time": 0.5,
+          "meanAbsoluteRgbError": 2.443729665940453,
+          "tolerance": 9
+        },
+        {
+          "time": 1.25,
+          "meanAbsoluteRgbError": 2.4626752904865663,
+          "tolerance": 9
+        },
+        {
+          "rangeMeanAbsoluteRgbError": 2.4626752904865663,
+          "tolerance": 9
+        },
+        {
+          "customAudioRms": 0.12468739158938316
+        },
+        {
+          "mutedCustomAudioRms": 0
+        }
+      ],
+      "quiet": true,
+      "screenshot": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-aw4QAl/custom-properties.png",
+      "screenshotInspected": true
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-8uRhS4/results.json",
+      "suites": 143,
+      "pass": 141,
+      "fail": 2,
+      "failedSuites": [
+        "tests/unit/plugins/test-custom-timeline-ui.cjs",
+        "tests/unit/plugins/test-plugin-showcase.cjs"
+      ],
+      "rerunReport": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-sKMtmJ/results.json",
+      "rerunPass": 2,
+      "rerunFail": 0,
+      "explanation": "Both initial failures were test fixtures: FFmpeg seek .25 was changed to 0.25; showcase expected categories now includes custom clip/track types. Both passed after correction. Final CSS-only inspector button wrapping passed the custom native workflow again."
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-D9h6PV/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-D9h6PV/source-after.json",
+      "sha256": "3fd9242ccf67a20cc5147a556e9f440202c2a7ef315c2540012c323fc1684b67",
+      "currentSourceMatches": true,
+      "viteConfigSha256": "fac9ff7cb9db764c5576eb3a9d863795a4d4be9aab1bba4d2b6d12d64e4d6247"
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-custom-timeline-renderer-final.log",
+      "structure": "/tmp/clipcraft-custom-timeline-structure-final.log",
+      "unitAndLocalization": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-fR3QXt/results.json",
+      "diffWhitespace": "git diff --check passed"
+    },
+    "earlierRuns": [
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-ZMCROM",
+        "reason": "Direct CommonJS service-schema import broke Vite development startup. Uses the established internal-package bridge and Vite prebundle pattern."
+      },
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-ww4BaX",
+        "reason": "Range decode fixture used an invalid FFmpeg .25 seek value. Corrected to 0.25 and verified the actual source clock."
+      }
+    ],
+    "limits": [
+      "Local macOS development and GPU only; installed Windows/Linux workflows remain open",
+      "Pointer automation uses DOM events rather than operating-system input",
+      "Custom timeline draft edits are not yet available inside save/export hooks",
+      "No full app battery rerun, installer, commit, push or publication"
+    ],
+    "remaining": [
+      "broader native effect/curve property bindings",
+      "native export formats beyond MP4",
+      "extension-defined hooks and additional native document lifecycle hooks",
+      "installed/platform verification"
+    ],
+    "currentCompletion": "extensionGoalCompletion"
+  },
+  "extensionInspectorAutomation": {
+    "checkedAt": "2026-11-18T16:42:28.577837+00:00",
+    "status": "effect, curve and speed native bindings verified; export formats and hooks remain open",
+    "scope": [
+      "source-time picture and volume point controls with explicit Apply/Clear/Cancel",
+      "fixed-timeline-duration speed controls",
+      "effect enabled, strength and exact-package numeric parameter controls for attached slots and Effects-track resources",
+      "canonical transactions, linked guards, locks, registration lifetime and Undo"
+    ],
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-HSDrSk/result.json",
+      "checks": 46,
+      "restartReport": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-HSDrSk/reopen-result.json",
+      "restartChecks": 5,
+      "rendererErrors": [],
+      "quiet": true,
+      "screenshot": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-HSDrSk/automation-controls.png",
+      "inspectedScreenshot": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-NJVCpT/automation-controls.png"
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-26Yg0n/results.json",
+      "pass": 15,
+      "fail": 0
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-jLz2cN/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-jLz2cN/source-after.json",
+      "sha256": "ff1585c62a22b7a0cbd04395b2fdf85815d6d6b5f74d3ac5ebd3815ebe0810bb",
+      "currentSourceMatches": true
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-inspector-automation-renderer.log",
+      "structure": "/tmp/clipcraft-inspector-automation-structure.log",
+      "localization": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-26Yg0n/results.json",
+      "whitespace": "git diff --check passed"
+    },
+    "earlierRuns": [
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-fpQvCu/result.json",
+        "reason": "Fixture read the effect-strength map before its asynchronous first commit; the wait now uses optional access."
+      },
+      {
+        "path": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-q9v9yO/result.json",
+        "reason": "Fixture checked a child input disabled property instead of inherited fieldset disabled state; now checks :disabled."
+      }
+    ],
+    "limits": [
+      "Local macOS development only; installed/platform matrix remains separate",
+      "Curve input automation uses native browser controls; OS pointer/focus traversal was not tested",
+      "No full application battery, installer, commit, push or publication"
+    ],
+    "remaining": [
+      "native export formats beyond MP4",
+      "extension-defined and additional native document lifecycle hooks"
+    ],
+    "currentCompletion": "extensionGoalCompletion"
+  },
+  "extensionNativeFormats": {
+    "checkedAt": "2026-11-18T16:53:48.162954+00:00",
+    "status": "native MOV, Matroska and WebM exports verified; custom and lifecycle hooks remain open",
+    "scope": [
+      "SDK and native UI format selection with compatible codec validation",
+      "explicit host-owned muxer/path binding and atomic publication",
+      "VP9/Opus capability handling and accurate summaries",
+      "decoded container headers, codec streams, audio and composited pixels"
+    ],
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-j0GoAM/result.json",
+      "checks": 40,
+      "rendererErrors": [],
+      "quiet": true,
+      "screenshot": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-j0GoAM/native-format-selector.png",
+      "screenshotInspected": true,
+      "formats": [
+        {
+          "format": "mov",
+          "settings": {
+            "preset": "custom",
+            "presetName": "Custom",
+            "format": "mov",
+            "formatLabel": "QuickTime MOV",
+            "extension": "mov",
+            "available": true,
+            "audioCodec": "aac",
+            "codecFamily": "h264",
+            "codecLabel": "H.264",
+            "mode": "crf",
+            "crf": 18,
+            "bitrateMbps": null,
+            "encoderPreset": "ultrafast",
+            "audioKbps": 192,
+            "resCap": 0,
+            "fpsChoice": 0,
+            "outW": 320,
+            "outH": 180,
+            "outFps": 12,
+            "notes": []
+          },
+          "metadata": {
+            "container": "mov,mp4,m4a,3gp,3g2,mj2",
+            "duration_sec": 1.5,
+            "width": 320,
+            "height": 180,
+            "fps": 12,
+            "video_codec": "h264",
+            "audio_codec": "aac",
+            "has_audio": true
+          }
+        },
+        {
+          "format": "mkv",
+          "settings": {
+            "preset": "custom",
+            "presetName": "Custom",
+            "format": "mkv",
+            "formatLabel": "Matroska",
+            "extension": "mkv",
+            "available": true,
+            "audioCodec": "aac",
+            "codecFamily": "h264",
+            "codecLabel": "H.264",
+            "mode": "crf",
+            "crf": 18,
+            "bitrateMbps": null,
+            "encoderPreset": "ultrafast",
+            "audioKbps": 192,
+            "resCap": 0,
+            "fpsChoice": 0,
+            "outW": 320,
+            "outH": 180,
+            "outFps": 12,
+            "notes": []
+          },
+          "metadata": {
+            "container": "matroska,webm",
+            "duration_sec": 1.521,
+            "width": 320,
+            "height": 180,
+            "fps": 12,
+            "video_codec": "h264",
+            "audio_codec": "aac",
+            "has_audio": true
+          }
+        },
+        {
+          "format": "webm",
+          "settings": {
+            "preset": "custom",
+            "presetName": "Custom",
+            "format": "webm",
+            "formatLabel": "WebM",
+            "extension": "webm",
+            "available": true,
+            "audioCodec": "opus",
+            "codecFamily": "vp9",
+            "codecLabel": "VP9",
+            "mode": "crf",
+            "crf": 18,
+            "bitrateMbps": null,
+            "encoderPreset": "ultrafast",
+            "audioKbps": 192,
+            "resCap": 0,
+            "fpsChoice": 0,
+            "outW": 320,
+            "outH": 180,
+            "outFps": 12,
+            "notes": []
+          },
+          "metadata": {
+            "container": "matroska,webm",
+            "duration_sec": 1.508,
+            "width": 320,
+            "height": 180,
+            "fps": 12,
+            "video_codec": "vp9",
+            "audio_codec": "opus",
+            "has_audio": true
+          }
+        }
+      ]
+    },
+    "customGlslIntegration": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-vi08UH/result.json",
+      "checks": 26,
+      "restartReport": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-vi08UH/restart-result.json",
+      "restartChecks": 3,
+      "measurements": [
+        {
+          "webmMeanAbsoluteRgbError": 2.383187817719684,
+          "tolerance": 9
+        }
+      ]
+    },
+    "encodeMatrix": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/result.json",
+      "profiles": 8,
+      "checks": [
+        "actual outputs use the selected container, video/audio codecs, dimensions and frame rate; video and audible samples decode",
+        "invalid format/codec/path combinations and unavailable VP9 fail rather than silently producing another format",
+        "native format preferences survive quality changes while SDK defaults and overrides remain snapshot-only",
+        "cancellation preserves existing destinations for every additional format"
+      ],
+      "outputs": [
+        {
+          "format": "mp4",
+          "codec": "h264",
+          "mode": "crf",
+          "container": "mov,mp4,m4a,3gp,3g2,mj2",
+          "majorBrand": "isom",
+          "duration": 1,
+          "audio": "aac",
+          "audioRms": 0.1237623508099288,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/mp4-h264.mp4"
+        },
+        {
+          "format": "mov",
+          "codec": "h264",
+          "mode": "crf",
+          "container": "mov,mp4,m4a,3gp,3g2,mj2",
+          "majorBrand": "qt  ",
+          "duration": 1,
+          "audio": "aac",
+          "audioRms": 0.1237623508099288,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/mov-h264.mov"
+        },
+        {
+          "format": "mkv",
+          "codec": "h264",
+          "mode": "crf",
+          "container": "matroska,webm",
+          "duration": 1.021,
+          "audio": "aac",
+          "audioRms": 0.12246637482314619,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/mkv-h264.mkv"
+        },
+        {
+          "format": "webm",
+          "codec": "vp9",
+          "mode": "crf",
+          "container": "matroska,webm",
+          "duration": 1.008,
+          "audio": "opus",
+          "audioRms": 0.1239815194081396,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/webm-vp9.webm"
+        },
+        {
+          "format": "mov",
+          "codec": "h265",
+          "mode": "crf",
+          "container": "mov,mp4,m4a,3gp,3g2,mj2",
+          "majorBrand": "qt  ",
+          "duration": 1,
+          "audio": "aac",
+          "audioRms": 0.1237623508099288,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/mov-h265.mov"
+        },
+        {
+          "format": "mkv",
+          "codec": "h265",
+          "mode": "crf",
+          "container": "matroska,webm",
+          "duration": 1.021,
+          "audio": "aac",
+          "audioRms": 0.12246637482314619,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/mkv-h265.mkv"
+        },
+        {
+          "format": "mkv",
+          "codec": "vp9",
+          "mode": "crf",
+          "container": "matroska,webm",
+          "duration": 1.021,
+          "audio": "aac",
+          "audioRms": 0.12246637482314619,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/mkv-vp9.mkv"
+        },
+        {
+          "format": "webm",
+          "codec": "vp9",
+          "mode": "bitrate",
+          "container": "matroska,webm",
+          "duration": 1.008,
+          "audio": "opus",
+          "audioRms": 0.1239815194081396,
+          "file": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-export-formats-oay8Nz/webm-vp9-bitrate.webm"
+        }
+      ]
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-qnhtca/results.json",
+      "pass": 17,
+      "fail": 0
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-cldMsc/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-cldMsc/source-after.json",
+      "sha256": "2f88ab8227fb7c508e86040d839566f3c12a30a7b188e3ef5decc1159853455d",
+      "productSourceMatches": true,
+      "changesAfterValidation": [
+        "tests/unit/export/test-export-formats.mjs"
+      ],
+      "explanation": "After SDK validation only the format matrix test was extended to encode VP9 bitrate mode; the expanded matrix then passed. Product, public types and author documentation are unchanged.",
+      "finalMatrixTestSha256": "d4ecea26ca44c4f0c203368a81bb9e51ca1e8c514d7b50649f44dffc14653a85",
+      "viteConfigSha256": "e77b5fa36530af1fe8fcbe00fc3323a84f1362eda54997b454ce62adf116c497"
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-native-formats-renderer.log",
+      "structure": "/tmp/clipcraft-native-formats-structure.log",
+      "localization": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-qnhtca/results.json",
+      "whitespace": "git diff --check passed"
+    },
+    "earlierRuns": [
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-BU8nxP/result.json",
+        "reason": "All SDK format encodes passed, then the test failed to match Browse because the real label includes an ellipsis. Fixture now matches its actual label."
+      }
+    ],
+    "limits": [
+      "Local macOS bundled-FFmpeg/GPU development verification only; installed/platform matrix remains separate",
+      "MOV exports H.264/H.265 rather than ProRes; native formats are the documented container/codec matrix",
+      "Embedded cover pictures remain MP4-only",
+      "No full app battery, installer, commit, push, publication, dependency or version change"
+    ],
+    "remaining": [
+      "extension-defined hooks",
+      "additional native document lifecycle hooks"
+    ],
+    "currentCompletion": "extensionGoalCompletion"
+  },
+  "extensionCustomHooks": {
+    "checkedAt": "2026-11-18T17:12:50.173865+00:00",
+    "status": "typed custom hook points and native timeline draft inheritance verified; document lifecycle hooks remain open",
+    "scope": [
+      "owned typed point definitions, discovery and ordered participants",
+      "input/output schema checks and generation/registration instance guards",
+      "cancellation, bounded recursion, deadlines and nonresponding-handler cleanup",
+      "custom timeline reads/writes inside save/export private drafts"
+    ],
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-TGZYAC/result.json",
+      "checks": 12,
+      "restartReport": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-TGZYAC/restart-result.json",
+      "restartChecks": 2,
+      "quiet": true,
+      "screenshot": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-TGZYAC/private-hook-preparation.png",
+      "screenshotInspected": true
+    },
+    "worker": {
+      "report": "/tmp/clipcraft-custom-hooks-runtime-final.log",
+      "checks": 12,
+      "coverage": [
+        "a live owner invokes ordered typed handlers with lazy subscriber activation and attributed results",
+        "bounded catalog exposes normalized contracts without private definition handles",
+        "invocation cancellation does not wait for independent subscriber activation",
+        "input and output contracts are enforced before and after actual worker callbacks",
+        "all participant contracts are checked before any handler executes",
+        "same-ID replacement cannot inherit old definition or subscription handles",
+        "only the exact defining activation owns invocation and removal",
+        "completed hook callbacks reject detached editor calls and recursive invocation is bounded",
+        "AbortSignal reaches a live callback and clears invocation records",
+        "uncooperative canceled handlers are stopped after grace without stopping the owner",
+        "rejected quota overflow cannot retain empty registration maps",
+        "Stop removes owned definitions and pending hook resources"
+      ]
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-r4aiOp/results.json",
+      "pass": 146,
+      "fail": 0,
+      "note": "The final quota guard was tightened after the broad run began; its extended direct worker suite passed separately. Successful registration/native behavior did not change."
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-f8Pz8d/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-f8Pz8d/source-after.json",
+      "sha256": "0d6cc6f355728b2f81410cb61ffd261dcdf394fc6ed9c704a322d9d699a95868",
+      "currentSourceMatches": true,
+      "builtHelpers": "/tmp/clipcraft-custom-hooks-bundle.log"
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-custom-hooks-renderer.log",
+      "structure": "/tmp/clipcraft-custom-hooks-structure.log",
+      "whitespace": "git diff --check passed"
+    },
+    "earlierRuns": [
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-HLaaFA",
+        "reason": "Source examples used a runtime SDK helper without installing an SDK dependency. They now follow the repository source-example pattern: type-only imports and an inferred contract literal."
+      },
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-mjy0ob/result.json",
+        "reason": "Cancellation correctly preserved the timeline and left no file; the fixture expected an error instead of the documented canceled-save result."
+      }
+    ],
+    "limits": [
+      "Local macOS development execution; installed/platform matrix remains separate",
+      "Ordinary custom hook calls retain ordinary editor transaction semantics; only native preparation supplies a shared atomic draft",
+      "Independent Node side effects are not rolled back",
+      "No full application battery, installer, commit, push, publication, dependency or version change"
+    ],
+    "remaining": [
+      "additional native document lifecycle hooks with cancellation and cleanup"
+    ],
+    "currentCompletion": "extensionGoalCompletion"
+  },
+  "extensionDocumentLifecycle": {
+    "checkedAt": "2026-11-18T17:35:29.515387+00:00",
+    "status": "close validation/preparation and read-only open/create/close notifications verified in native Electron and cold restart",
+    "native": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-mTI7KA/result.json",
+      "checks": 21
+    },
+    "restart": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-mTI7KA/restart-result.json",
+      "checks": 2
+    },
+    "coverage": [
+      "SDK create notifies both ordered read-only observers",
+      "validateClose veto leaves the current project and Undo unchanged",
+      "failed willClose publishes no partial markers or history",
+      "close preparation remains private while the native document is open",
+      "native Cancel keeps the document open and discards its draft",
+      "a concurrent user edit refuses the stale close without its staged markers",
+      "failed persistence refuses close after one atomic preparation edit",
+      "one Undo restores every close-preparation marker",
+      "successful close orders validation then preparation then closed observers",
+      "didClose reads the closed snapshot while project status reports Home",
+      "close preparation is in the actual saved project bytes",
+      "reopening the current file loads preparation saved after the picker read",
+      "didOpen cannot write the newly opened document",
+      "observer failure is logged without undoing completed project creation",
+      "Stop revokes a pending close and discards its private edits",
+      "native Projects refuses a failed recovery slot",
+      "native Projects menu runs hooks and preserves settings-only preparation",
+      "native window close honors validateClose veto",
+      "responsive close preparation survives the native five-second fallback",
+      "canceling native quit leaves the saved document open",
+      "normal quit emits didClose before native window destruction"
+    ],
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pMr5fD/results.json",
+      "pass": 149,
+      "fail": 0
+    },
+    "persistenceRegressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-lz0zYj/results.json",
+      "pass": 2,
+      "fail": 0
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-dACBcj/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "currentSourceMatches": true,
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-dACBcj/source-after.json",
+      "sha256": "00e70429c1e9eebc977362bd274208e5131dc24586867c489e5c81d62d6ea18b"
+    },
+    "checks": {
+      "renderer": "/tmp/clipcraft-document-hooks-renderer.log",
+      "structure": "/tmp/clipcraft-document-hooks-structure.log",
+      "whitespace": "git diff --check passed"
+    },
+    "authorDocumentation": "docs/design/plugin-document-lifecycle-hooks.md",
+    "example": "examples/extensions/sdk-workbench",
+    "earlierRuns": [
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-TYKPC7",
+        "reason": "Superseded broad run began before the same-file fix; default native startup stalled in autosave/recovery with no app result. Its specific runner tree was stopped. Both suites passed quiet native reruns, and the final quiet plugin selection passed all suites."
+      },
+      {
+        "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-dnbUnz/result.json",
+        "reason": "First complete native lifecycle receipt; subsequent same-file re-read regression added and verified in the final broad run."
+      },
+      {
+        "reports": [
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-d6xT0B",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-CsO8qg",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-ZamrZ4",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-aoPeTA",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-u6u8Y1",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-jO48t7",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-KzAvbM",
+          "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-uLRmrb"
+        ],
+        "reason": "Fixture bring-up corrected TypeScript signatures, a status argument, diagnostics shape, quoted selector, page-alert stubbing and waiting for completed post-transition notifications. Failures were retained rather than counted as passes."
+      }
+    ],
+    "limits": [
+      "Local macOS development execution, quiet native windows; no claim of visible OS focus QA",
+      "Independent Node side effects and published preparation edits cannot be rolled back after persistence failure",
+      "OS force-kill, renderer crash and power loss cannot promise lifecycle notifications",
+      "No installer, commit, push, publication, dependency or version change"
+    ]
+  },
+  "extensionGoalCompletion": {
+    "checkedAt": "2026-11-18T17:35:29.515387+00:00",
+    "status": "complete for the requested local pre-alpha implementation; release/platform certification remains open",
+    "objective": "Player/timeline overlays, floating windows and flexible docking; custom shaders and custom clip/track types; more property bindings, native export formats and hook points.",
+    "requirements": [
+      {
+        "requirement": "overlaysWindowsDocking",
+        "status": "verified",
+        "sources": [
+          "electron/plugins/extensionViews.cjs",
+          "shared/extensionViewPlacement.cjs",
+          "src/features/plugins/components/ExtensionWorkspaceViews.jsx",
+          "src/features/plugins/extensionViewLayout.js"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-open-surfaces-H91dT4/result.json",
+          "checks": 15
+        },
+        "coverage": [
+          "SDK reparents the existing sandboxed page to a real floating window",
+          "moving to a native window preserves page state",
+          "native window resizing fills its content with the same page",
+          "moving back destroys the floating window and retains the sandbox page",
+          "native placement selector moves the page into the bottom dock",
+          "bottom dock has a working keyboard resize control",
+          "player overlay follows the requested normalized stage geometry",
+          "application settings mask the interactive native overlay",
+          "timeline overlay is anchored to the visible timeline viewport",
+          "stale layout from the former dock cannot hide or move the overlay",
+          "modal placement uses an actual parented native modal window",
+          "closing the native window releases its page and view registration lifetime",
+          "a closed native view can reopen in a new isolated page",
+          "Stop destroys floating windows and their sandboxed pages",
+          "quiet verification keeps the editor hidden"
+        ]
+      },
+      {
+        "requirement": "customShaders",
+        "status": "verified",
+        "sources": [
+          "shared/pluginShaders.mjs",
+          "src/features/effects/gl.js",
+          "electron/plugins/extensionRuntime.cjs"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-glsl-bnXKiO/result.json",
+          "checks": 32
+        },
+        "coverage": [
+          "SDK discovers shader definitions without exposing project data or source code",
+          "rendering discovery is bounded and reports its page",
+          "rendering pages continue within the requested kind",
+          "invalid rendering pages reject before a host reply",
+          "shader parameters are bounded again in the native host",
+          "SDK compiles an installed shader while the editor is on Home",
+          "SDK reports actual GPU compile diagnostics",
+          "a shader compile failure leaves its extension running",
+          "GPU shader samples top-down source pixels and preserves authored alpha",
+          "parameter and time uniforms change GPU output",
+          "uniform and region changes reuse the compiled program",
+          "zero strength preserves the exact source bytes",
+          "region masks preserve the unaffected half of the source",
+          "mixed GLSL/expression stacks preserve row orientation",
+          "custom transitions retain host-controlled exact endpoints",
+          "SDK editor tools add a real shader effect in one Undo step",
+          "actual player preview animates the shader",
+          "saved projects pin shader identities and parameters without embedding code",
+          "native reopen preserves the shader dependency",
+          "SDK export renders a verified file through the native pipeline",
+          "shader preview/export parity at 0.25 seconds",
+          "shader preview/export parity at 0.75 seconds",
+          "SDK tools accept installed custom transitions and pin their exact dependency",
+          "custom transitions export through the native GPU transition pipeline",
+          "custom transition preview/export parity at 0.625 seconds",
+          "custom transition preview/export parity at 0.875 seconds",
+          "hidden frame composition rejects a failing custom transition",
+          "the player displays an authored shader compile error",
+          "shader compilation failure refuses export rather than publishing a bypass",
+          "hidden frame composition receives the installed GLSL definitions",
+          "a disabled required shader blocks rendering instead of silently substituting",
+          "native shader verification keeps the editor hidden"
+        ],
+        "measurements": [
+          {
+            "oracleMaximumChannelError": 0.49984231478169505,
+            "tolerance": 2
+          },
+          {
+            "time": 0.25,
+            "meanAbsoluteRgbError": 2.696365740740741,
+            "tolerance": 9
+          },
+          {
+            "time": 0.75,
+            "meanAbsoluteRgbError": 2.694351851851852,
+            "tolerance": 9
+          },
+          {
+            "transitionTime": 0.625,
+            "meanAbsoluteRgbError": 3.2737731481481482,
+            "tolerance": 9
+          },
+          {
+            "transitionTime": 0.875,
+            "meanAbsoluteRgbError": 2.915787037037037,
+            "tolerance": 9
+          }
+        ]
+      },
+      {
+        "requirement": "customClipTrackTypes",
+        "status": "verified",
+        "sources": [
+          "shared/customTimeline.mjs",
+          "electron/plugins/customTimeline.cjs",
+          "src/features/plugins/components/CustomTimelineTracks.jsx",
+          "src/features/plugins/components/CustomTypeProperties.jsx",
+          "shared/projectRender.mjs"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-7e9N6q/result.json",
+          "checks": 26
+        },
+        "coverage": [
+          "SDK discovers visual, audio and metadata custom types",
+          "SDK creates a real custom-only scene as one Undo step",
+          "custom-only shader rasterizes at project resolution with transparency",
+          "native typed property editor changes custom rendering data",
+          "native custom properties edit nested schema data",
+          "SDK refuses an old custom document revision",
+          "SDK writes refuse a held native custom clip gesture",
+          "native custom timeline dragging commits a time move",
+          "native trimming preserves the source-time shader frame",
+          "native custom track lock does not add an Undo step",
+          "SDK honors custom track locks",
+          "Undo restores content while preserving the custom track lock",
+          "native custom inspector duplicates and splits with preserved data",
+          "native Save stores custom types and data without code or transient inputs",
+          "native reopen restores the typed custom scene",
+          "custom-only scene exports through native composition",
+          "custom generator preview/export parity at 0.5",
+          "custom generator preview/export parity at 1.25",
+          "custom GLSL generator exports through native WebM with preview parity",
+          "range export preserves the custom shader source clock",
+          "custom audio and metadata types create native timeline entities",
+          "custom audio reaches native mixing while metadata does not extend the video",
+          "native custom track mute removes its audio from export",
+          "missing custom type is visible and blocks export",
+          "missing custom types retain data and allow explicit native bypass",
+          "verification keeps the editor hidden"
+        ],
+        "restart": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-timeline-7e9N6q/restart-result.json",
+          "checks": 3
+        },
+        "measurements": [
+          {
+            "time": 0.5,
+            "meanAbsoluteRgbError": 2.443729665940453,
+            "tolerance": 9
+          },
+          {
+            "time": 1.25,
+            "meanAbsoluteRgbError": 2.4626752904865663,
+            "tolerance": 9
+          },
+          {
+            "webmMeanAbsoluteRgbError": 2.383187817719684,
+            "tolerance": 9
+          },
+          {
+            "rangeMeanAbsoluteRgbError": 2.4626752904865663,
+            "tolerance": 9
+          },
+          {
+            "customAudioRms": 0.12468739158938316
+          },
+          {
+            "mutedCustomAudioRms": 0
+          }
+        ]
+      },
+      {
+        "requirement": "propertyBindings",
+        "status": "verified",
+        "sources": [
+          "shared/extensionInspector.mjs",
+          "src/features/plugins/components/ExtensionInspector.jsx",
+          "src/features/plugins/components/ExtensionCurveField.jsx"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-GMSsfw/result.json",
+          "checks": 46
+        },
+        "coverage": [
+          "native inspector controls show the actual selected clip values",
+          "custom vector action artwork renders in the native toolbar",
+          "action order controls direct toolbar placement",
+          "a live title/order change moves the action into overflow with its disabled reason",
+          "disabled actions cannot be invoked through the native bridge",
+          "inspector action icons and disabled state render together",
+          "clip-context actions render their icon and disabled reason",
+          "export actions render custom artwork and disabled state",
+          "plugin settings actions retain their native disabled state and artwork",
+          "long action labels wrap inside the native settings pane",
+          "voice settings actions retain their native disabled state and artwork",
+          "a range edit commits its property as one Undo step",
+          "Undo updates the bound range from the project",
+          "Redo updates the bound range",
+          "an enabled native action dispatches with its registration identity and one Undo step",
+          "native typed numeric input edits the actual transform",
+          "typing the existing value creates no extra Undo entry",
+          "manual edits outside the extension immediately update bound values",
+          "changing selection drops the previous clip draft without writing either clip",
+          "a document edit discards a stale field draft",
+          "locked clip controls are disabled",
+          "text content and style controls bind directly to the text clip",
+          "checkbox, select and colour controls preserve their typed values",
+          "audio edge and mute properties use canonical sound edits",
+          "playhead movement while a write waits does not invalidate its document target",
+          "selection changes after sending a native write still prevent stale mutation",
+          "removing an inspector revokes its pending native commit reservation",
+          "invalid property values reject in the host before any editor request",
+          "a locked linked partner disables property controls too",
+          "an unlocked linked target commits with its whole private pair validated",
+          "a static control cannot erase existing property automation",
+          "effect parameter controls use the installed package step rather than a generic decimal grid",
+          "native effect strength and enable controls preserve other effect slots",
+          "native point controls apply a source-time opacity curve as one Undo step",
+          "clearing a native curve is explicit and Undo restores its point controls",
+          "a native curve outside the source window fails without partial history",
+          "native speed changes the source window while retaining timeline duration",
+          "native volume curve binds the existing sound automation and offers linear easing only",
+          "the same bound effect controls edit a direct Effects-track resource",
+          "track locks disable curve and effect controls together",
+          "reloading the same project ID drops drafts from the old document lifetime",
+          "disabling the package removes native properties and actions",
+          "re-enabling rebuilds controls from the current project values",
+          "Stop removes both native action and property controls",
+          "the native workflow keeps the window hidden",
+          "no renderer errors occurred"
+        ],
+        "restart": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-native-controls-ui-GMSsfw/reopen-result.json",
+          "checks": 5
+        }
+      },
+      {
+        "requirement": "nativeExportFormats",
+        "status": "verified",
+        "sources": [
+          "shared/exportFormats.cjs",
+          "electron/media/ffmpeg.cjs",
+          "electron/plugins/extensionExports.cjs",
+          "src/features/export/exportQuality.js",
+          "src/features/export/components/ExportDialog.jsx"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-LvhHUt/result.json",
+          "checks": 40
+        },
+        "coverage": [
+          "Home cannot render an absent document",
+          "malformed export options reject before rendering",
+          "stale explicit document IDs reject",
+          "native export UI attributes the requesting extension",
+          "SDK returns a verified completed MP4",
+          "render settings do not rewrite project export preferences",
+          "extension export runs native preparation with one Undo",
+          "SDK receives bounded monotonic real pipeline progress",
+          "hook-prepared caption appears in the actual SDK video",
+          "rendered files work with normal extension media import/preview",
+          "existing output requires explicit overwrite",
+          "encoder exit between FIFO probe and open returns an error without freezing or replacing output",
+          "editor responds after the injected FIFO reader exit",
+          "arbitrary section render uses exact timeline boundaries",
+          "section output contains the expected source frames",
+          "SDK mov uses the actual native container and codecs",
+          "mov retains composited caption pixels in its encoded frames",
+          "SDK mkv uses the actual native container and codecs",
+          "mkv retains composited caption pixels in its encoded frames",
+          "SDK webm uses the actual native container and codecs",
+          "webm retains composited caption pixels in its encoded frames",
+          "SDK refuses mismatched output suffix before publication",
+          "SDK default output selection uses the requested format extension",
+          "changing native formats clears the previously chosen destination",
+          "native WebM summary reports its actual VP9 and Opus settings",
+          "native format selector exports actual WebM and persists its format preference",
+          "explicit overwrite atomically publishes the new video",
+          "source media cannot be overwritten by an extension render",
+          "validation refusal prevents SDK output publication",
+          "AbortSignal cancels a pending native preparation",
+          "native Cancel rejects the SDK promise as cancellation",
+          "cancellation during encoding preserves the prior destination",
+          "Stop cancels an encoding job and preserves an older output",
+          "Stop drains extension rendering before returning",
+          "a restarted activation can render after cleanup",
+          "optional workbench example renders through its native Commands UI",
+          "example command reports the actual saved path",
+          "all temporary text encoders exit before the native workflow finishes",
+          "native frame folders and extension render records are released",
+          "generic export workflow has no renderer errors"
+        ],
+        "formats": [
+          {
+            "format": "mov",
+            "result": {
+              "ok": true,
+              "file": "/private/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-LvhHUt/native-format.mov",
+              "size": 6583,
+              "metadata": {
+                "container": "mov,mp4,m4a,3gp,3g2,mj2",
+                "duration_sec": 1.5,
+                "width": 320,
+                "height": 180,
+                "fps": 12,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "has_audio": true
+              },
+              "settings": {
+                "preset": "custom",
+                "presetName": "Custom",
+                "format": "mov",
+                "formatLabel": "QuickTime MOV",
+                "extension": "mov",
+                "available": true,
+                "audioCodec": "aac",
+                "codecFamily": "h264",
+                "codecLabel": "H.264",
+                "mode": "crf",
+                "crf": 18,
+                "bitrateMbps": null,
+                "encoderPreset": "ultrafast",
+                "audioKbps": 192,
+                "resCap": 0,
+                "fpsChoice": 0,
+                "outW": 320,
+                "outH": 180,
+                "outFps": 12,
+                "notes": []
+              },
+              "elapsed_seconds": 0.2440999999642372
+            },
+            "probe": {
+              "container": "mov,mp4,m4a,3gp,3g2,mj2",
+              "type": "video",
+              "duration": 1.5,
+              "hasVideo": true,
+              "hasAudio": true,
+              "fps": 12,
+              "width": 320,
+              "height": 180,
+              "rotation": 0,
+              "hdr": false,
+              "vcodec": "h264",
+              "acodec": "aac",
+              "pixFmt": "yuv420p",
+              "profile": "High",
+              "colorSpace": "bt709",
+              "channels": 2
+            }
+          },
+          {
+            "format": "mkv",
+            "result": {
+              "ok": true,
+              "file": "/private/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-LvhHUt/native-format.mkv",
+              "size": 5916,
+              "metadata": {
+                "container": "matroska,webm",
+                "duration_sec": 1.521,
+                "width": 320,
+                "height": 180,
+                "fps": 12,
+                "video_codec": "h264",
+                "audio_codec": "aac",
+                "has_audio": true
+              },
+              "settings": {
+                "preset": "custom",
+                "presetName": "Custom",
+                "format": "mkv",
+                "formatLabel": "Matroska",
+                "extension": "mkv",
+                "available": true,
+                "audioCodec": "aac",
+                "codecFamily": "h264",
+                "codecLabel": "H.264",
+                "mode": "crf",
+                "crf": 18,
+                "bitrateMbps": null,
+                "encoderPreset": "ultrafast",
+                "audioKbps": 192,
+                "resCap": 0,
+                "fpsChoice": 0,
+                "outW": 320,
+                "outH": 180,
+                "outFps": 12,
+                "notes": []
+              },
+              "elapsed_seconds": 0.2214000000357628
+            },
+            "probe": {
+              "container": "matroska,webm",
+              "type": "video",
+              "duration": 1.521,
+              "hasVideo": true,
+              "hasAudio": true,
+              "fps": 12,
+              "width": 320,
+              "height": 180,
+              "rotation": 0,
+              "hdr": false,
+              "vcodec": "h264",
+              "acodec": "aac",
+              "pixFmt": "yuv420p",
+              "profile": "High",
+              "colorSpace": "bt709",
+              "channels": 2
+            }
+          },
+          {
+            "format": "webm",
+            "result": {
+              "ok": true,
+              "file": "/private/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-extension-exports-ui-LvhHUt/native-format.webm",
+              "size": 8058,
+              "metadata": {
+                "container": "matroska,webm",
+                "duration_sec": 1.508,
+                "width": 320,
+                "height": 180,
+                "fps": 12,
+                "video_codec": "vp9",
+                "audio_codec": "opus",
+                "has_audio": true
+              },
+              "settings": {
+                "preset": "custom",
+                "presetName": "Custom",
+                "format": "webm",
+                "formatLabel": "WebM",
+                "extension": "webm",
+                "available": true,
+                "audioCodec": "opus",
+                "codecFamily": "vp9",
+                "codecLabel": "VP9",
+                "mode": "crf",
+                "crf": 18,
+                "bitrateMbps": null,
+                "encoderPreset": "ultrafast",
+                "audioKbps": 192,
+                "resCap": 0,
+                "fpsChoice": 0,
+                "outW": 320,
+                "outH": 180,
+                "outFps": 12,
+                "notes": []
+              },
+              "elapsed_seconds": 0.08819999998807906
+            },
+            "probe": {
+              "container": "matroska,webm",
+              "type": "video",
+              "duration": 1.508,
+              "hasVideo": true,
+              "hasAudio": true,
+              "fps": 12,
+              "width": 320,
+              "height": 180,
+              "rotation": 0,
+              "hdr": false,
+              "vcodec": "vp9",
+              "acodec": "opus",
+              "pixFmt": "yuv420p",
+              "profile": "Profile 0",
+              "colorSpace": "bt709",
+              "channels": 2
+            }
+          }
+        ]
+      },
+      {
+        "requirement": "customHooks",
+        "status": "verified",
+        "sources": [
+          "shared/extensionHookContracts.cjs",
+          "electron/plugins/extensionCustomHooks.cjs",
+          "electron/plugins/extensionWorker.cjs"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-9oaFKE/result.json",
+          "checks": 12
+        },
+        "coverage": [
+          "public example custom point runs before real scene creation",
+          "real utility processes run ordered typed custom hooks",
+          "a custom hook refusal leaves native timeline and history untouched",
+          "custom timeline hook writes stay in the private draft",
+          "native Save publishes the custom timeline draft once",
+          "custom hook preparation is one exact native Undo step",
+          "caught invalid custom output still rolls back staged timeline writes",
+          "custom hooks inherit native validation write restrictions",
+          "native Cancel rolls back custom point callbacks and their timeline draft",
+          "disposing the owner removes its point from discovery",
+          "disposed native point handles cannot invoke a replacement",
+          "native hook workflow keeps the editor hidden"
+        ],
+        "restart": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-custom-hooks-ui-9oaFKE/restart-result.json",
+          "checks": 2
+        }
+      },
+      {
+        "requirement": "documentLifecycleHooks",
+        "status": "verified",
+        "sources": [
+          "electron/plugins/extensionHooks.cjs",
+          "src/features/plugins/useExtensionHost.js",
+          "src/app/App.jsx",
+          "electron/main.cjs",
+          "electron/preload.cjs"
+        ],
+        "native": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-mTI7KA/result.json",
+          "checks": 21
+        },
+        "coverage": [
+          "SDK create notifies both ordered read-only observers",
+          "validateClose veto leaves the current project and Undo unchanged",
+          "failed willClose publishes no partial markers or history",
+          "close preparation remains private while the native document is open",
+          "native Cancel keeps the document open and discards its draft",
+          "a concurrent user edit refuses the stale close without its staged markers",
+          "failed persistence refuses close after one atomic preparation edit",
+          "one Undo restores every close-preparation marker",
+          "successful close orders validation then preparation then closed observers",
+          "didClose reads the closed snapshot while project status reports Home",
+          "close preparation is in the actual saved project bytes",
+          "reopening the current file loads preparation saved after the picker read",
+          "didOpen cannot write the newly opened document",
+          "observer failure is logged without undoing completed project creation",
+          "Stop revokes a pending close and discards its private edits",
+          "native Projects refuses a failed recovery slot",
+          "native Projects menu runs hooks and preserves settings-only preparation",
+          "native window close honors validateClose veto",
+          "responsive close preparation survives the native five-second fallback",
+          "canceling native quit leaves the saved document open",
+          "normal quit emits didClose before native window destruction"
+        ],
+        "restart": {
+          "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-document-hooks-ui-mTI7KA/restart-result.json",
+          "checks": 2
+        }
+      }
+    ],
+    "authorContract": {
+      "sources": [
+        "packages/plugin-sdk/src/extension.d.ts",
+        "shared/extensionCapabilities.cjs"
+      ],
+      "examples": [
+        "examples/extensions/sdk-workbench",
+        "examples/extensions/native-properties",
+        "examples/extensions/scene-reviewer"
+      ],
+      "scopeTracker": "docs/design/plugin-open-extension-surfaces.md",
+      "sdkReport": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-dACBcj/result.json"
+    },
+    "regressions": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-pMr5fD/results.json",
+      "pass": 149,
+      "fail": 0,
+      "selection": "All plugin suites plus native export format/quality/lifecycle, localization and agent tools/parity/export; FVE_SMOKE_QUIET=1"
+    },
+    "affectedPersistence": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-tests-lz0zYj/results.json",
+      "pass": 2,
+      "fail": 0,
+      "mode": "quiet native Electron"
+    },
+    "sdk": {
+      "report": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-dACBcj/result.json",
+      "suites": 9,
+      "sourceChanges": [],
+      "currentSourceMatches": true,
+      "sourceManifest": "/var/folders/_j/d8w7d_sn23348hmv9trrjm480000gn/T/clipcraft-sdk-validation-dACBcj/source-after.json",
+      "sha256": "00e70429c1e9eebc977362bd274208e5131dc24586867c489e5c81d62d6ea18b"
+    },
+    "sourceState": "Uncommitted local development tree; current source matches the final SDK verifier manifest.",
+    "releaseGatesOutsideGoal": [
+      "installed Windows/Linux and OS/architecture matrix",
+      "representative GPU/hardware and long-session acceptance",
+      "visible native focus and manual UX acceptance",
+      "full application battery and release workflow certification",
+      "explicitly requested publication/distribution"
+    ],
+    "notPerformed": [
+      "installer packaging",
+      "commit",
+      "push",
+      "publication"
+    ]
   }
 }

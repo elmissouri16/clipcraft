@@ -2,6 +2,16 @@ import {extensionUiError} from '../useExtensionUi.js';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {Info,TriangleAlert,CircleAlert,X} from 'lucide-react';
 import {t} from '../../../i18n/index.js';
+function InputPrompt({item}){
+ const [value,setValue]=useState(item.input.value),[busy,setBusy]=useState(false),[error,setError]=useState(''),field=useRef(null);
+ useEffect(()=>{field.current?.focus();field.current?.select();},[]);
+ const submit=async event=>{event.preventDefault();setBusy(true);setError('');try{await window.api.pluginsExtensionInputRespond(item.id,value);}catch(error){setError(extensionUiError(error));}finally{setBusy(false);}};
+ return <form className="extension-input-prompt" data-extension-input={item.id} onSubmit={submit}>
+  <input ref={field} aria-label={item.message} type={item.input.password?'password':'text'} autoComplete="off" value={value} minLength={item.input.minLength} maxLength={item.input.maxLength} placeholder={item.input.placeholder} disabled={busy} onChange={event=>setValue(event.target.value)}/>
+  {error&&<p className="error-text small" role="alert">{error}</p>}
+  <div className="extension-message-actions"><button type="submit" className="btn btn-sm" disabled={busy||value.length<item.input.minLength}>{t('plugins.extension_submit_input')}</button><button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={()=>window.api.pluginsExtensionInputRespond(item.id).catch(error=>setError(extensionUiError(error)))}>{t('app.cancel')}</button></div>
+ </form>;
+}
 export default function ExtensionMessages({hideJobs=false,onManage}){
  const [items,setItems]=useState([]),[busy,setBusy]=useState(new Set()),revision=useRef(-1),root=useRef(null),previousFocus=useRef(null);
  useEffect(()=>{
@@ -21,6 +31,7 @@ export default function ExtensionMessages({hideJobs=false,onManage}){
   {items.slice(0,3).map(item=>{const Icon=item.kind==='error'?CircleAlert:item.kind==='warning'?TriangleAlert:Info;return <article key={item.id} className={'extension-message extension-message-'+item.kind} data-extension-message={item.id} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();event.preventDefault();respond(item.id).catch(()=>{});}}}>
    <Icon size={16} className="extension-message-icon" aria-hidden="true"/>
    <div className="extension-message-content"><span className="extension-message-source">{item.extensionName}</span><div role={item.kind==='info'?'status':'alert'}><p>{item.message}</p>{item.detail&&<p className="extension-message-detail">{item.detail}</p>}</div>
+    {item.input&&<InputPrompt item={item}/>}
     {!!item.actions.length&&<div className="extension-message-actions">{item.actions.map(action=><button type="button" key={action.id} className="btn btn-sm" data-extension-message-action={action.id} disabled={busy.has(item.id)} onClick={()=>respond(item.id,action.id).catch(()=>{})}>{action.title}</button>)}</div>}
    </div><button type="button" className="icon-btn" data-extension-message-dismiss aria-label={t('plugins.extension_dismiss_message')} disabled={busy.has(item.id)} onClick={()=>respond(item.id).catch(()=>{})}><X size={14}/></button>
   </article>;})}

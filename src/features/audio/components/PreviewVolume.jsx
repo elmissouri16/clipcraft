@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Volume1, Volume2, VolumeX } from 'lucide-react';
-import { getPreviewAudio, setPreviewAudio, subscribePreviewAudio } from '../audioTap.js';
+import { DEFAULT_PREVIEW_VOLUME, getPreviewAudio, setPreviewAudio, subscribePreviewAudio } from '../audioTap.js';
 import { t } from '../../../i18n/index.js';
 
 export default function PreviewVolume({ onOpen }) {
@@ -37,7 +37,7 @@ export default function PreviewVolume({ onOpen }) {
           <div className="preview-volume-heading"><b>{t('preview-volume.preview_volume')}</b><output>{silent ? t('preview-volume.muted') : `${percent}%`}</output></div>
           <div className="preview-volume-row">
             <button type="button" className="icon-btn" aria-label={t(silent ? 'preview-volume.unmute_preview' : 'preview-volume.mute_preview')} aria-pressed={silent}
-              onClick={() => setPreviewAudio(silent ? { muted: false, volume: audio.volume || 1 } : { muted: true })}>
+              onClick={() => setPreviewAudio(silent ? { muted: false, volume: audio.volume || DEFAULT_PREVIEW_VOLUME } : { muted: true })}>
               <Icon size={16} />
             </button>
             <input ref={slider} type="range" min="0" max="100" step="1" value={percent}

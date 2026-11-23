@@ -43,3 +43,29 @@ assert.equal(overlay.present.overlayClips[0].mediaId, 'mA');assert.equal(overlay
 const text = historyReducer({ past: [], future: [], present: B() }, { type: 'paste', track: 'text', clip: { id: 't', text: 'Hi', start: 0, duration: 2 }, at: 1, newId: 'pt' });
 assert.equal(text.present.textClips[0].start, 1);
 console.log('paste across projects ok: the media item comes along (matched by path), unresolved media is refused');
+
+// A detached pair contains three media dependencies after reversing its picture.
+const source = vid('original', '/footage/original.mp4');
+const reversed = { ...clipboard.clip, reversed: { mediaId:source.id,in:0,out:4 }, linkId:'original-link', muted:true };
+const sound = { ...vid('sound', '/footage/detached.wav'), type:'audio' };
+const linkedItems = [
+  {track:'audio',start:1,clip:{id:'audio',start:1,in:0,out:4,mediaId:sound.id,linkId:reversed.linkId,linkOff:1,linkInOff:0},media:sound,newId:'cut-audio'},
+  {...clipboard,start:0,clip:reversed,originalMedia:source,newId:'cut-picture'},
+];
+const target = {...B(), media:[...B().media, vid('original','/footage/unrelated.mp4'), {...source,id:'original-here'}]};
+const grouped = {type:'pasteSelection',items:linkedItems,at:4};
+const originalState = {present:target,past:[],future:[]};
+const group = historyReducer(originalState,grouped), pic = group.present.videoClips[1], aud = group.present.audioClips[0];
+assert.deepEqual([pic.id,pic.reversed.mediaId,aud.mediaId,aud.start],['cut-picture','original-here','sound',6]);
+assert.ok(pic.linkId && pic.linkId===aud.linkId && pic.linkId!==reversed.linkId);
+assert.equal(group.past.length,1);
+assert.equal(historyReducer(group,{type:'removeMedia',id:'original-here'}),group);
+const locked = {...originalState,present:{...target,layerState:{'audio:0':{locked:true}}}};
+assert.equal(historyReducer(locked,grouped),locked);
+
+// Discontiguous main clips and a timed title retain their relative positions.
+const mainCopy = (id, start) => ({...clipboard,clip:{...clipboard.clip,id},start,newId:'copy-'+id});
+const spaced = historyReducer(originalState,{type:'pasteSelection',at:0,items:[mainCopy('a',2),mainCopy('b',10),
+  {track:'text',start:11,newId:'caption',clip:{id:'text',start:11,duration:1,text:'Later shot'}}]}).present;
+assert.equal(videoLayout(spaced.videoClips).find(row=>row.clip.id==='copy-b').start,8);
+assert.equal(spaced.textClips[0].start,9);

@@ -48,7 +48,7 @@ export function dependencyReplacementUpdates(project,{from,to}){
  let replacement;
  if(source.kind==='effect'||source.kind==='transition'){
   if(typeof to.pluginId!=='string'||!/^[a-z][a-z0-9-]{0,47}\.[a-z][a-z0-9-]{0,47}$/.test(to.pluginId)||typeof to.version!=='string'||!/^\d+\.\d+\.\d+$/.test(to.version)||!digest.test(to.digest)||!local.test(to.id)||to.contributionId!==`${to.pluginId}/${to.id}`)throw Error('Invalid replacement identity.');
-  const value=source.kind==='effect'?validateEffectDefinition({id:to.id,name:to.name,expression:to.expression,parameters:to.parameters}):validateTransitionDefinition({id:to.id,name:to.name,expression:to.expression,parameters:to.parameters,duration:to.duration});
+  const value=source.kind==='effect'?validateEffectDefinition({id:to.id,name:to.name,...(to.fragment!==undefined?{fragment:to.fragment}:{expression:to.expression}),parameters:to.parameters}):validateTransitionDefinition({id:to.id,name:to.name,...(to.fragment!==undefined?{fragment:to.fragment}:{expression:to.expression}),parameters:to.parameters,duration:to.duration});
   replacement={...value,pluginId:to.pluginId,digest:to.digest,version:to.version,contributionId:to.contributionId};
  }else if(source.kind==='font'){
   const pack=typeof to.id==='string'&&to.id.match(/^pack-font:([a-f0-9]{64}):([a-z][a-z0-9-]{0,63})$/);

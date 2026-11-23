@@ -14,15 +14,15 @@ async function closeContents(wc,force,owner){
  await gone;
 }
 class ExtensionViews{
- constructor({runtime,manager,ipcMain,WebContentsView,session,getWindow,sandboxEnabled=true,deadlineMs=10000}){
-  Object.assign(this,{runtime,manager,WebContentsView,session,getWindow,sandboxEnabled,deadlineMs});this.sessions=new ExtensionViewSessions(session);this.lifecycle=Symbol();this.active=new Map();this.activating=new Set();this.pending=new Map();this.selected=null;this.onChanged=()=>{};
+ constructor({runtime,manager,ipcMain,WebContentsView,BaseWindow,session,getWindow,sandboxEnabled=true,deadlineMs=10000}){
+  Object.assign(this,{runtime,manager,WebContentsView,BaseWindow,session,getWindow,sandboxEnabled,deadlineMs});this.sessions=new ExtensionViewSessions(session);this.lifecycle=Symbol();this.active=new Map();this.activating=new Set();this.pending=new Map();this.selected=null;this.onChanged=()=>{};
   const owned=(event,token,boot=false)=>{const job=this.senders?.get(event.sender.id);if(!job||job.closed||event.sender!==job.view.webContents||event.senderFrame!==event.sender.mainFrame||event.senderFrame?.origin!==job.origin||!this.live(job)||!boot&&job.token!==token)throw Error('Extension view is unavailable');return job;};this.senders=new Map();
   ipcMain.handle('extensionView:boot',(event,sandboxed)=>{const job=owned(event,null,true);if(job.booted||sandboxed!==true||event.sender.getOSProcessId()===job.owner.getOSProcessId()){this.close(job.id,'View requires a separate sandboxed renderer');throw Error('Extension view sandbox unavailable');}job.booted=true;job.lastBeat=Date.now();job.view.webContents.send('extensionView:shortcuts',[...(job.shortcuts||[])]);return {apiVersion:1,token:job.token,id:job.id,title:job.data.title,extensionId:job.extension.manifest.id,theme:job.theme};});
   ipcMain.handle('extensionView:call',async(event,token,method,input)=>{
    const job=owned(event,token);
    if(method==='beat'){if(Number.isSafeInteger(input)&&input>job.ack&&input<=job.sequence){job.ack=input;job.lastBeat=Date.now();}return true;}
    if(method==='delivered'){const pending=job.deliveries.get(input);if(pending){clearTimeout(pending.timer);job.deliveries.delete(input);pending.resolve(true);}return true;}
-   if(method==='focus'&&['forward','backward'].includes(input)){if(!job.view.getVisible())return false;job.owner.focus();this.notify({type:'focus',id:job.id,direction:input});return true;}
+   if(method==='focus'&&['forward','backward','escape'].includes(input)){if(!job.view.getVisible())return false;if(job.window){if(input==='escape'){if(job.data.placement==='modal')this.close(job.id);else job.owner.focus();}else job.view.webContents.send('extensionView:focusCycle',input);return true;}job.owner.focus();this.notify({type:'focus',id:job.id,direction:input});return true;}
    if(method==='shortcut'){if(!job.view.getVisible()||!job.shortcuts?.has(input))return false;this.notify({type:'shortcut',id:job.id,combo:input});return true;}
    if(method!=='message')throw Error('Unsupported extension view call');
    if(Date.now()-job.rateStart>60000){job.rateStart=Date.now();job.calls=0;job.incomingBytes=0;}if(++job.calls>6000||job.inflight>=8)throw Error('Extension view message limit reached');const value=viewPayload(input);job.incomingBytes+=Buffer.byteLength(JSON.stringify(value));if(job.incomingBytes>64*1024*1024)throw Error('Extension view byte limit reached');const controller=new AbortController();job.requests.add(controller);job.inflight++;
@@ -53,22 +53,45 @@ class ExtensionViews{
    ses.setPermissionRequestHandler(denyPermission);ses.setPermissionCheckHandler(denyPermissionCheck);ses.removeListener('will-download',preventNativeEvent);ses.on('will-download',preventNativeEvent);disposeProtocol=serveViewProtocol(ses,origin,bundle.files);
    view=new this.WebContentsView({webPreferences:{session:ses,preload:path.join(__dirname,'extensionViewPreload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false,nodeIntegrationInWorker:false,nodeIntegrationInSubFrames:false,webSecurity:true,backgroundThrottling:false,devTools:false,webgl:true,disableDialogs:true,autoplayPolicy:'document-user-activation-required',spellcheck:false,navigateOnDragDrop:false}});const wc=view.webContents;
    job={id,origin,instance:crypto.randomUUID(),requests:new Set(),deliveries:new Map(),deliverySequence:0,incomingBytes:0,outgoingBytes:0,outgoing:0,outgoingStart:Date.now(),data,local:id.slice(extension.manifest.id.length+1),extension,view,ownerWindow,owner:ownerWindow.webContents,session:ses,disposeProtocol,releaseSession:lease.release,token:crypto.randomBytes(24).toString('hex'),closed:false,theme,lastBeat:Date.now(),lastCheck:Date.now(),ack:0,sequence:0,inflight:0,calls:0,rateStart:Date.now()};
-   job.ownerGone=()=>this.close(id);job.resized=()=>{if(!job.closed){view.setVisible(false);this.notify({type:'layout',id});}};
+   job.ownerGone=()=>this.close(id);job.resized=()=>{if(!job.closed&&!job.window){view.setVisible(false);this.notify({type:'layout',id});}};
    this.active.set(id,job);this.senders.set(wc.id,job);markExtensionViewSender(wc);wc.setWindowOpenHandler(denyPopup);for(const event of ['will-navigate','will-frame-navigate','will-attach-webview'])wc.on(event,preventNativeEvent);
    // A view has no console the author can see. Script errors (a blocked inline script, an exception
    // in the view code) go to the owning extension's log, a bounded number per view.
    let reported=0;wc.on('console-message',(event,legacyLevel,legacyMessage)=>{const level=event?.level??legacyLevel,message=event?.message??legacyMessage;if((level==='error'||level===3)&&reported++<20)try{this.runtime.log(job.extension,('View '+id+': '+String(message)).slice(0,2000),'error');}catch{}});
    wc.once('render-process-gone',()=>this.close(id,'The extension view renderer stopped'));wc.once('destroyed',()=>this.close(id,'The extension view closed'));
-   for(const event of ['destroyed','render-process-gone','did-start-navigation'])job.owner.on(event,job.ownerGone);ownerWindow.on('resize',job.resized);ownerWindow.contentView.addChildView(view);view.setBounds({x:0,y:0,width:1,height:1});view.setVisible(false);
+   for(const event of ['destroyed','render-process-gone','did-start-navigation'])job.owner.on(event,job.ownerGone);ownerWindow.on('resize',job.resized);ownerWindow.contentView.addChildView(view);view.setBounds({x:0,y:0,width:1,height:1});view.setVisible(false);if(data.placement?.endsWith('-overlay'))view.setBackgroundColor('#00000000');
    job.timer=setInterval(()=>{if(!this.live(job))return this.close(id);const now=Date.now();if(now-job.lastCheck>2500)job.lastBeat=now;job.lastCheck=now;if(now-job.lastBeat>this.deadlineMs)return this.close(id,'The extension view stopped responding',true);if(job.booted)wc.send('extensionView:pulse',++job.sequence);},1000);
-   await wc.loadURL(origin+'/'+data.entry);if(!this.live(job)||!job.booted)throw Error('Extension view did not start');this.onChanged();return {id};
+   await wc.loadURL(origin+'/'+data.entry);if(!this.live(job)||!job.booted)throw Error('Extension view did not start');if(['floating','modal'].includes(data.placement))this.attachWindow(job);this.onChanged();return {id};
   }catch(error){
    if(job&&this.active.get(id)===job)this.close(id,error.message);
    else{try{disposeProtocol?.();}catch{}lease.release(view?closeContents(view.webContents,false,ownerWindow.webContents):undefined);}
    throw error;
   }
  }
- async reveal(id){if(this.activating.has(id)){this.selected=id;return true;}await this.open(id);const job=this.active.get(id);if(!job||!this.live(job))throw Error('Extension view stopped');this.selected=id;job.focusRequested=true;if(job.view.getVisible()){job.view.webContents.focus();job.focusRequested=false;}this.notify({type:'reveal',id});this.onChanged();return true;}
+ async reveal(id){if(this.activating.has(id)){this.selected=id;return true;}await this.open(id);const job=this.active.get(id);if(!job||!this.live(job))throw Error('Extension view stopped');this.selected=id;job.focusRequested=true;if(job.view.getVisible()){job.view.webContents.focus();job.focusRequested=false;}if(job.window&&!job.window.isDestroyed()){if(!process.env.FVE_SMOKE_QUIET||process.env.FVE_SMOKE_QUIET==='0'){job.window.show();job.window.focus();}job.view.webContents.focus();}this.notify({type:'reveal',id,placement:job.data.placement??'workbench'});this.onChanged();return true;}
+ detachWindow(job){
+  if(!job.window)return;
+  const win=job.window;job.window=null;win.removeListener('closed',job.windowClosed);win.removeListener('resize',job.windowLayout);
+  if(!win.isDestroyed()){win.contentView.removeChildView(job.view);win.destroy();}
+ }
+ attachWindow(job){
+  if(!this.BaseWindow)throw Error('Native extension windows are unavailable');
+  const win=new this.BaseWindow({parent:job.ownerWindow,modal:job.data.placement==='modal',title:job.data.title,width:job.data.width??640,height:job.data.height??480,minWidth:160,minHeight:160,show:false,skipTaskbar:true,backgroundColor:job.theme?.background||DEFAULT_THEME.background});
+  try{job.ownerWindow.contentView.removeChildView(job.view);win.contentView.addChildView(job.view);}catch(error){win.destroy();throw error;}
+  job.window=win;job.windowClosed=()=>this.close(job.id);job.windowLayout=()=>{if(job.closed||win.isDestroyed())return;const [width,height]=win.getContentSize();job.view.setBounds({x:0,y:0,width:Math.max(1,width),height:Math.max(1,height)});job.view.setVisible(true);};
+  win.on('closed',job.windowClosed);win.on('resize',job.windowLayout);job.windowLayout();
+  if(!process.env.FVE_SMOKE_QUIET||process.env.FVE_SMOKE_QUIET==='0')win.show();
+ }
+ async move(id,input){
+  const destination=require('../../shared/extensionViewPlacement.cjs').viewPlacement(input),entry=this.runtime.ui.entry('view',id),extension=entry.job;
+  await this.open(id);const job=this.active.get(id);if(!job||!this.live(job)||job.extension!==extension||this.runtime.ui.entry('view',id,extension)!==entry)throw Error('View registration changed while moving');
+  const previous=job.data;job.view.setVisible(false);this.detachWindow(job);
+  if(!job.ownerWindow.contentView.children?.includes(job.view))job.ownerWindow.contentView.addChildView(job.view);
+  const next={...previous,...destination};for(const key of ['bounds','width','height'])if(!Object.hasOwn(destination,key))delete next[key];
+  job.data=next;entry.data=next;job.view.setBackgroundColor?.(destination.placement.endsWith('-overlay')?'#00000000':job.theme?.background||DEFAULT_THEME.background);
+  try{if(['floating','modal'].includes(next.placement))this.attachWindow(job);}catch(error){job.data=previous;entry.data=previous;if(['floating','modal'].includes(previous.placement)){try{this.attachWindow(job);}catch{this.close(id,'Native window could not be restored');}}this.runtime.ui.changed();this.notify({type:'layout',id});throw error;}
+  this.runtime.ui.changed();await this.reveal(id);return true;
+ }
  post(extension,id,input){
   const job=this.active.get(id);if(!job||job.extension!==extension||!this.live(job))return Promise.resolve(false);
   if(Date.now()-job.outgoingStart>60000){job.outgoingStart=Date.now();job.outgoing=0;job.outgoingBytes=0;}
@@ -80,16 +103,18 @@ class ExtensionViews{
 
  layout(id,input){
   const job=this.active.get(id);if(!job||!this.live(job))return false;
-  if(!input||Object.keys(input).some(key=>!['x','y','width','height','visible','theme','shortcuts'].includes(key))||!['x','y','width','height'].every(key=>Number.isFinite(input[key])&&Math.abs(input[key])<=100000)||typeof input.visible!=='boolean')throw Error('Invalid extension view bounds');
+  if(!input||Object.keys(input).some(key=>!['x','y','width','height','visible','theme','shortcuts','placement','instance'].includes(key))||!['x','y','width','height'].every(key=>Number.isFinite(input[key])&&Math.abs(input[key])<=100000)||typeof input.visible!=='boolean')throw Error('Invalid extension view bounds');
+  if(input.placement!==undefined&&input.placement!==(job.data.placement??'workbench')||input.instance!==undefined&&input.instance!==job.instance)return false;
   if(input.shortcuts!==undefined){const {validCombo}=require('../../shared/pluginShortcuts.cjs');if(!Array.isArray(input.shortcuts)||input.shortcuts.length>4096||Array.from(input.shortcuts).some(combo=>!validCombo(combo)))throw Error('Invalid view shortcuts');job.shortcuts=new Set(input.shortcuts);job.view.webContents.send('extensionView:shortcuts',[...job.shortcuts]);}
   if(input.theme&&Object.keys(DEFAULT_THEME).every(key=>typeof input.theme[key]==='string'&&input.theme[key].length<=80&&/^(#[a-fA-F0-9]{3,8}|rgba?\([0-9.,% /]+\))$/.test(input.theme[key]))){const theme=Object.fromEntries(Object.keys(DEFAULT_THEME).map(key=>[key,input.theme[key]]));if(Object.keys(DEFAULT_THEME).some(key=>theme[key]!==job.theme?.[key])){job.theme=theme;job.view.webContents.send('extensionView:theme',theme);}}
+  if(job.window){job.window.setBackgroundColor?.(job.theme.background);return true;}
   const zoom=job.owner.getZoomFactor(),[width,height]=job.ownerWindow.getContentSize(),x=Math.max(0,Math.min(width,Math.round(input.x*zoom))),y=Math.max(44,Math.min(height,Math.round(input.y*zoom))),w=Math.max(0,Math.min(width-x,Math.round(input.width*zoom))),h=Math.max(0,Math.min(height-y,Math.round(input.height*zoom)));
   const visible=input.visible&&w>0&&h>0;job.view.setBounds({x,y,width:Math.max(1,w),height:Math.max(1,h)});job.view.setVisible(visible);if(visible&&job.focusRequested){job.focusRequested=false;job.view.webContents.focus();}return true;
  }
  close(id,error='',force=false){
   const job=this.active.get(id);if(!job||job.closed)return false;job.closed=true;for(const controller of job.requests)controller.abort();job.requests.clear();for(const pending of job.deliveries.values()){clearTimeout(pending.timer);pending.reject(Error('Extension view closed'));}job.deliveries.clear();this.active.delete(id);this.senders.delete(job.view.webContents.id);if(this.selected===id)this.selected=null;clearInterval(job.timer);
   for(const event of ['destroyed','render-process-gone','did-start-navigation'])job.owner.removeListener(event,job.ownerGone);job.ownerWindow.removeListener('resize',job.resized);
-  try{job.view.setVisible(false);job.ownerWindow.contentView.removeChildView(job.view);}catch{}
+  try{job.view.setVisible(false);this.detachWindow(job);job.ownerWindow.contentView.removeChildView(job.view);}catch{}
   try{job.disposeProtocol();}catch{}
   job.releaseSession(closeContents(job.view.webContents,force,job.owner));
   if(this.runtime.active.get(job.extension.key)===job.extension&&job.extension.state==='running')this.runtime.request(job.extension,{type:'invoke',kind:'view-closed',name:job.local,input:{id,error}},5000).catch(()=>{});

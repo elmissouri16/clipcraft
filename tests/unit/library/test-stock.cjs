@@ -4,12 +4,12 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const stock = require("../../../electron/library/stock.cjs");
+const stock = require("../../../electron/bundled-media/pixabay/dist/client.cjs");
 
 const KEY = 'test-key-123';
 const calls = [];
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body), headers: new Map(), url: '' });
-const file = (bytes, url) => ({ ok: true, status: 200, url, headers: { get: () => String(bytes.length) }, arrayBuffer: async () => bytes });
+const file = (bytes, url) => ({ ok: true, status: 200, url, headers: { get: () => String(bytes.length) }, body: require('node:stream').Readable.from([bytes]) });
 const fakeFetch = async (url) => {
   calls.push(url);
   const u = new URL(url);

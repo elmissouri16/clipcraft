@@ -135,6 +135,16 @@ export function stateAtPinned(project, fRef, lt, len) {
   };
 }
 
+// The still uses the source clip's look, with motion and clip-local shader time held at the captured frame.
+export function frozenAppearance(project, track, clip, localTime, length) {
+  const look = {};
+  for (const key of ['crop', 'chroma', 'mask', 'customMask', 'blend', 'filter', 'filterIntensity', 'adjust', 'grade',
+    'effects', 'pluginEffects', 'fxRegions', 'fxStrength']) {
+    if (clip[key] !== undefined) look[key] = clip[key];
+  }
+  return { ...look, ...stateAtPinned(project, { track, clip }, localTime, length), frozenEffectTime: clip.frozenEffectTime ?? localTime };
+}
+
 // ---- Export curves ----
 // The same sampling src/features/timeline/anim.js motionCurves does (same frame grid, rounding and simplification), but
 // through stateAtPinned, so a pinned clip's curves carry its own motion plus the track's. Unpinned clips

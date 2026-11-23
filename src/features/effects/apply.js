@@ -76,6 +76,7 @@ export function regionMaskExpr(region) {
 }
 // Wrap an effect expression so it only lands inside the region (identity when region is null).
 export function regionWrap(expr, region) {
+  if(expr?.kind==='glsl')return {...expr,region:region??null};
   if (!region) return expr;
   const i = expr.lastIndexOf(';');
   const head = i >= 0 ? expr.slice(0, i + 1) : '';
@@ -91,6 +92,7 @@ export function regionWrap(expr, region) {
 // alike (both run pixelPasses). A strength of 0 removes the pass entirely.
 export function fxWrap(expr, region, k) {
   const s = k == null ? 1 : k;
+  if(expr?.kind==='glsl')return {...expr,region:region??null,strength:s};
   if (s >= 1) return regionWrap(expr, region);
   const i = expr.lastIndexOf(';');
   const head = i >= 0 ? expr.slice(0, i + 1) : '';
@@ -109,6 +111,8 @@ const freeOn = (project, t) => (project.effectClips || []).filter((e) => !e.disa
 // The clip's color grade (Adjust) comes first, then its effects, then the free effects over it.
 export function pixelPasses(project, clip, clipStart, lt) {
   const list = [];
+  const clipTime = Number.isFinite(clip.frozenEffectTime) ? clip.frozenEffectTime : lt;
+  const effectTime = clip.customTime ? (clip.in || 0) + clipTime * (clip.speed || 1) : clipTime;
   // The filter first, then the LUT, then the Adjust settings on top of them.
   // A filter is one look: one of ours (an expression) or a LUT ("lut:<file>"), at the filter intensity.
   if (lutFilterRef(clip)) {
@@ -116,18 +120,18 @@ export function pixelPasses(project, clip, clipStart, lt) {
     if (l) list.push({ lut: l, K: (clip.filterIntensity ?? 100) / 100 });
   } else {
     const look = hasFilter(clip) ? filterExpr(clip) : null;
-    if (look) list.push({ expr: look, T: lt });
+    if (look) list.push({ expr: look, T: clipTime });
   }
   const lut = lutOn(clip.grade?.lut) ? getLut(clip.grade.lut.ref) : null;
   if (lut) list.push({ lut, K: (clip.grade.lut.intensity ?? 100) / 100 });
   const grade = hasGrade(clip) ? gradeSource(clip.grade) : null;
-  if (grade) list.push({ expr: grade, T: lt });
+  if (grade) list.push({ expr: grade, T: clipTime });
   for (const id of clip.effects || []) {
     const k = clip.fxStrength?.[id];
     if (k === 0) continue;
-    if (isPluginEffect(id)) { const source=pluginEffectSource(id,clip.pluginEffects?.[id]);if(source)list.push({expr:fxWrap(source,clip.fxRegions?.[id],k),T:lt}); }
-    else if (isPixel(id)) list.push({ expr: fxWrap(PIXEL[id], clip.fxRegions?.[id], k), T: lt });
-    else if (classicViaShader(clip, id)) list.push({ expr: fxWrap(TRACK_CLASSIC[id], clip.fxRegions?.[id], k), T: lt });
+    if (isPluginEffect(id)) { const source=pluginEffectSource(id,clip.pluginEffects?.[id]);if(source)list.push({expr:fxWrap(source,clip.fxRegions?.[id],k),T:effectTime}); }
+    else if (isPixel(id)) list.push({ expr: fxWrap(PIXEL[id], clip.fxRegions?.[id], k), T: clipTime });
+    else if (classicViaShader(clip, id)) list.push({ expr: fxWrap(TRACK_CLASSIC[id], clip.fxRegions?.[id], k), T: clipTime });
   }
   const t = clipStart + lt;
   for (const e of freeOn(project, t)) {
@@ -239,11 +243,11 @@ function drawStrength(ctx, k, draw) {
 export function drawOverlayPasses(ctx, project, t, W, H) {
   for (const l of videoLayout(project.videoClips)) {
     if (l.clip.gap || t < l.start || t >= l.end) continue;
-    for (const id of l.clip.effects || []) if (OVERLAY[id]) drawStrength(ctx, l.clip.fxStrength?.[id], (c1) => drawRegioned(c1, W, H, l.clip.fxRegions?.[id], (c2) => OVERLAY[id](c2, W, H, t - l.start)));
+    for (const id of l.clip.effects || []) if (OVERLAY[id]) drawStrength(ctx, l.clip.fxStrength?.[id], (c1) => drawRegioned(c1, W, H, l.clip.fxRegions?.[id], (c2) => OVERLAY[id](c2, W, H, l.clip.frozenEffectTime ?? (t - l.start))));
   }
   for (const c of project.overlayClips || []) {
     if (t < c.start || t >= c.start + freeLen('overlay', c)) continue;
-    for (const id of c.effects || []) if (OVERLAY[id]) drawStrength(ctx, c.fxStrength?.[id], (c1) => drawRegioned(c1, W, H, c.fxRegions?.[id], (c2) => OVERLAY[id](c2, W, H, t - c.start)));
+    for (const id of c.effects || []) if (OVERLAY[id]) drawStrength(ctx, c.fxStrength?.[id], (c1) => drawRegioned(c1, W, H, c.fxRegions?.[id], (c2) => OVERLAY[id](c2, W, H, c.frozenEffectTime ?? (t - c.start))));
   }
   for (const e of freeOn(project, t)) if (OVERLAY[e.fx]) drawStrength(ctx, e.strength, (c1) => drawRegioned(c1, W, H, e.region, (c2) => OVERLAY[e.fx](c2, W, H, t - e.start)));
 }

@@ -6,6 +6,13 @@ transform, sound volume/mute/fades and text content/style fields read and edit
 the actual clip. Each change supports Undo. The toolbar reset action uses its
 own original vector icon and follows the current picture selection and locks.
 
+The animation group edits source-time opacity, position and volume points, with
+explicit Apply, Clear and Cancel controls. Speed keeps timeline duration and
+validates the actual source window. The effect group binds the first attached
+effect's enabled state, strength and `gain` parameter when available; a second
+group handles a selected Effects-track resource. Apply this package's original
+Native gain effect to try parameter precision from the installed definition.
+
 Build with the repository's public SDK and install the compiled directory or
 archive, as described in the [examples index](../README.md). There is no view,
 service or separate settings form. The [native control contract](../../../docs/design/plugin-extension-native-controls.md)

@@ -1,19 +1,21 @@
 const {randomUUID}=require('node:crypto');
 const path=require('node:path');
-const enums={quality:['low','medium','high','ultra'],codec:['h264','h265'],resolution:[0,2160,1440,1080,720,480],fps:[0,24,25,30,50,60],audio_kbps:[96,128,192,256,320],encoder_preset:['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow']};
+const {exportSelection}=require('../../shared/exportFormats.cjs');
+const enums={quality:['low','medium','high','ultra'],codec:['h264','h265','vp9'],resolution:[0,2160,1440,1080,720,480],fps:[0,24,25,30,50,60],audio_kbps:[96,128,192,256,320],encoder_preset:['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow']};
 function exportInput(input={}){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Provide export options');
- const allowed=new Set(['documentId','name','file_path','overwrite','showCompletion','range','crf','bitrate_mbps',...Object.keys(enums)]);
+ const allowed=new Set(['documentId','name','file_path','format','overwrite','showCompletion','range','crf','bitrate_mbps',...Object.keys(enums)]);
  if(Object.keys(input).some(key=>!allowed.has(key)))throw Error('Unknown export option');
  for(const [key,values] of Object.entries(enums))if(input[key]!==undefined&&!values.includes(input[key]))throw Error('Invalid export '+key);
  for(const [key,limit] of [['documentId',100],['name',200],['file_path',32768]])if(input[key]!==undefined&&(typeof input[key]!=='string'||!input[key].trim()||input[key].length>limit||/[\x00-\x1f]/.test(input[key])))throw Error('Invalid export '+key);
- if(input.file_path!==undefined&&(!path.isAbsolute(input.file_path)||path.extname(input.file_path).toLowerCase()!=='.mp4'))throw Error('Choose an absolute .mp4 output path');
+ if(input.file_path!==undefined&&!path.isAbsolute(input.file_path))throw Error('Choose an absolute output path');
+ const format=exportSelection(input),vp9=format.id==='webm'||input.codec==='vp9';
  if(input.showCompletion!==undefined&&typeof input.showCompletion!=='boolean')throw Error('showCompletion must be true or false');
  if(input.overwrite!==undefined&&typeof input.overwrite!=='boolean')throw Error('overwrite must be true or false');
- if(input.crf!==undefined&&(!Number.isInteger(input.crf)||input.crf<0||input.crf>51))throw Error('crf must be an integer from 0 to 51');
+ if(input.crf!==undefined&&(!Number.isInteger(input.crf)||input.crf<0||input.crf>(vp9?63:51)))throw Error('crf must be an integer from 0 to '+(vp9?63:51));
  if(input.bitrate_mbps!==undefined&&(!Number.isFinite(input.bitrate_mbps)||input.bitrate_mbps<.5||input.bitrate_mbps>100||input.crf!==undefined))throw Error('Choose bitrate_mbps from 0.5 to 100, or crf, separately');
  if(input.range!==undefined){const range=input.range;if(!range||typeof range!=='object'||Array.isArray(range)||Object.keys(range).some(key=>!['start_sec','end_sec'].includes(key))||![range.start_sec,range.end_sec].every(Number.isFinite)||range.start_sec<0||range.end_sec<=range.start_sec)throw Error('Choose a valid export range');}
- return {...input,...(input.range?{range:{...input.range}}:{})};
+ return {...input,format:format.id,...(input.range?{range:{...input.range}}:{})};
 }
 class ExtensionExports {
  constructor({runtime,getOwner,requestEditor,cancelGraceMs=5000}){Object.assign(this,{runtime,getOwner,requestEditor,cancelGraceMs});this.records=new Map();}

@@ -1,3 +1,8 @@
+import {flushSync} from 'react-dom';
+import {samePreparationDocument} from '../features/plugins/extensionDraft.js';
+import {customTypesRevision} from '../../shared/customTimeline.mjs';
+import {projectCommandInput} from '../../shared/extensionProjectCommands.mjs';
+import {ExtensionOverlayViews} from '../features/plugins/components/ExtensionWorkspaceViews.jsx';
 import ExtensionActionIcon from '../features/plugins/components/ExtensionActionIcon.jsx';
 import ExtensionPreparation from '../features/plugins/components/ExtensionPreparation.jsx';
 import {useExtensionShortcuts} from '../features/plugins/useExtensionShortcuts.js';
@@ -14,7 +19,7 @@ import {refreshPluginEffects,subscribePluginEffects,pluginEffectsRevision,assert
 import { useMemo, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createTimelineAttachment } from '../features/agent/timelineContext.js';
 import { recentEntryFor } from './recents.js';
-import { LAYERED, LINK_FILE_SLACK, openLayer, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, linkPairBatch, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, markerNear, normalizeProject, parseEffectKey, pickAttributes, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
+import { LAYERED, LINK_FILE_SLACK, IMAGE_DEFAULT, openLayer, canvasFor, clipLocked, clipLayer, emptyProject, exportDuration, findClipIn, findLinkPartner, linkPairBatch, freeLen, historyReducer, isLayerLocked, layerCount, layerFree, layerName, layerOf, levelCopyState, lockedMediaUse, reverseSourceUsed, markerNear, normalizeProject, parseEffectKey, pickAttributes, prepareProjectAction, projectDuration, renderable, setPlaybackQuality, toFileUrl, trimActions, uid, videoClipAt, videoLayout } from "../state/store.js";
 import HomeScreen, { PRESETS } from './components/HomeScreen.jsx';
 import { ExternalAgentApproval, ExternalAgentBadge } from './components/ExternalAgent.jsx';
 import { useExternalAgent } from './useExternalAgent.js';
@@ -32,9 +37,11 @@ import {
 import { fillSlot, slotList } from "../features/templates/templates.js";
 import SlotStrip from "../features/templates/components/SlotStrip.jsx";
 import { useRecorder } from "../features/recording/useRecorder.js";
+import { clipAudioMix } from '../features/audio/fades.js';
+import { resetNewProjectPreviewVolume } from '../features/audio/audioTap.js';
 import { useLayout } from './useLayout.js';
 import { customMaskImages, decoImages, maskImages } from "../features/preview/visual.js";
-import { clipStartTl, motionDataPinned, trackedClips } from "../features/timeline/track.js";
+import { clipStartTl, frozenAppearance, motionDataPinned, trackedClips } from "../features/timeline/track.js";
 import { CROP_ASPECTS, aspectRatioOf, cropForAspect } from "../features/preview/cropMath.js";
 import { chromaOf, cropOf, transformOf } from "../features/preview/visual.js";
 import { isLookPatch, lookAction, selectedPictures } from "../features/effects/look.js";
@@ -76,7 +83,7 @@ import { catalogName } from '../i18n/catalog.js';
 // in R1 — emoji inside TEXT clips render through the text pipeline, not this helper.)
 
 export default function App() {
-  const [,setPluginRevision]=useState(pluginEffectsRevision);
+  const [pluginRevision,setPluginRevision]=useState(pluginEffectsRevision);
   useEffect(()=>{
     let live=true;
     const off=subscribePluginEffects(()=>{if(live)setPluginRevision(pluginEffectsRevision());});
@@ -115,6 +122,7 @@ export default function App() {
   const select = useCallback((sel) => {
     if (!sel) return setSelection(null);
     const p = projectRef.current;
+    if(sel.track==='overlay'&&p.customClips?.some(c=>c.id===sel.id))sel={track:'custom',id:sel.id};
     const items = sel.items ? [...sel.items] : [{ track: sel.track, id: sel.id }];
     const have = new Set(items.map((i) => `${i.track}:${i.id}`));
     for (const it of [...items]) {
@@ -127,7 +135,7 @@ export default function App() {
     }
     const kept = items.filter((it) => {
       const c = findClipIn(p, it.track, it.id);
-      return !c || !isLayerLocked(p, it.track, clipLayer(it.track, c));
+      return !c || !clipLocked(p,it.track,c);
     });
     setSelection(kept.length ? makeSelection(kept) : null);
   }, []);
@@ -174,7 +182,7 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('clipcraft.workspaceMode', workspaceMode); } catch {} }, [workspaceMode]);
   const { layout: panes, startDrag: startResize, reset: resetSize, nudge: nudgeSize, setRightCollapsed, setBottom: setTimelineHeight } = useLayout(workspaceMode, !!agentDrawer);
   const [tool, setTool] = useState('select'); // timeline tool: 'select' | 'razor'
-  const [clipboard, setClipboard] = useState(null); // { track, clip } for copy / cut / paste
+  const [clipboard, setClipboard] = useState(null); // Selected clips and their source media.
   const [attrClipboard, setAttrClipboard] = useState(null); // copied look and placement
   const [timelineContextRequest, setTimelineContextRequest] = useState(null);
   const [menu, setMenu] = useState(null); // right-click menu: { x, y, track, id }
@@ -229,7 +237,7 @@ export default function App() {
   const recentOf = (p, path) => recentEntryFor(p, path, toFileUrl);
   const removeRecent = (path) => storeRecents(recents.filter((r) => r.path !== path));
   const hasContent = (p) => !!(p.media.length || p.videoClips.length || p.textClips.length || p.audioClips.length
-    || (p.overlayClips || []).length || hasChatContent(p));
+    || (p.overlayClips || []).length || (p.customClips||[]).length || (p.customTracks||[]).length || hasChatContent(p));
   const keepRecovery = async (unsaved) => {
     const { project, file } = autosave.current;
     const version = autosave.current.recoveryVersion = (autosave.current.recoveryVersion || 0) + 1;
@@ -301,23 +309,23 @@ export default function App() {
   // The slot record for a project (defaults: the one in the editor). A project earns a slot
   // once it has content, or from the start when it is file-backed; a pristine empty project
   // has nothing to lose and stays slotless until the first real edit.
-  const slotRecord = async (p = autosave.current.project, file = autosave.current.file) => {
+  const slotRecord = async (p = autosave.current.project, file = autosave.current.file, force = false) => {
     if (!p || !p.id || isTourId(p.id)) return null;
-    if (!file && !hasContent(p)) return null;
+    if (!file && !force && !hasContent(p)) return null;
     const e = recentEntryFor(p, file || '', toFileUrl);
     const { compact } = await serializeProject(projectDoc(p));
     const chatStale = autosave.current.slotChat !== p.craftAI;
     return { id: p.id, title: p.name || 'Untitled', file: file || null, ratio: p.ratio || '', thumb: e.thumb, updatedAt: Date.now(), projectJson: compact,
       ...(chatStale ? { chatJson: await chatText(p) } : {}) };
   };
-  const writeSlotNow = async (p = autosave.current.project, file = autosave.current.file) => {
+  const writeSlotNow = async (p = autosave.current.project, file = autosave.current.file, force = false) => {
     const a = autosave.current;
     clearTimeout(a.slotTimer);
     a.slotTimer = null;
     a.slotDocDirty = false;
     try {
       a.slotWriting = (a.slotWriting || Promise.resolve()).catch(() => {}).then(async () => {
-        const rec = await slotRecord(p, file);if (!rec) return;
+        const rec = await slotRecord(p, file, force);if (!rec) return;
         // A failed write marks nothing as written: the next change writes the whole slot again.
         if (!await window.api.slotWrite(rec)) { a.slotDocDirty = true; return; }
         refreshSlots();
@@ -325,7 +333,7 @@ export default function App() {
         if (rec.chatJson !== undefined && a.project.craftAI === p.craftAI) a.slotChat = p.craftAI;
       });
       await a.slotWriting;
-    } catch { /* the next change retries */ }
+    } catch { a.slotDocDirty = true; /* the next change retries */ }
   };
   // Only the chat changed: write the slot's chat file alone (the whole slot when it has none yet).
   const writeSlotChatNow = async () => {
@@ -352,9 +360,9 @@ export default function App() {
   // Force-write everything pending for the CURRENT project (its file, then its slot) —
   // awaited before any switch (Home, new, open) so no edit hides inside a debounce window.
   // Resolves false when the project's file could not be written (its slot is still written).
-  const flushAutosave = async () => {
+  const flushAutosave = async (forceSlot = false) => {
     const written = await writeFile();
-    await writeSlotNow();
+    await writeSlotNow(undefined,undefined,forceSlot);
     return written;
   };
   // Opening a project FILE adopts the id of the slot bound to that file (if any), so the
@@ -369,6 +377,7 @@ export default function App() {
   };
   useEffect(() => {
     const a = autosave.current;
+    if (screenRef.current !== 'editor') return;
     // Which part changed (docs/architecture/project-file.md). A load counts as both: a file that
     // still embeds its chat gets its sidecar on the first write, and the last-written marks reset.
     const loaded = a.seenLoad !== projectLoadVersion, previous = a.seen;
@@ -428,8 +437,22 @@ export default function App() {
           if (slot?.project) {
             hasAutosavedSlot = true;
             snap = { savedAt: slot.updatedAt || saved.savedAt, project: slot.project, file: slot.file || null, unsaved: saved.unsaved };
+            if (slot.fileChanged && slot.file) {
+              // Keep the recovery copy independent if the newer file cannot be opened.
+              snap = { ...snap, project: { ...slot.project, id: uid() }, file: null, unsaved: true };
+              if (was) {
+                const disk = await window.api.openProjectPath(slot.file);
+                if (disk?.json) {
+                  const fresh = normalizeProject(mergeChat(JSON.parse(disk.json), disk.chat));
+                  snap = { ...snap, project: { ...fresh, id: pid }, file: slot.file, unsaved: false };
+                }
+              }
+            }
           }
-        } catch { /* slot unreadable: the snapshot stands */ }
+          else if (was && snap.file) snap = { ...snap, project: { ...snap.project, id: uid() }, file: null, unsaved: true };
+        } catch {
+          if (snap.file) snap = { ...snap, project: { ...snap.project, id: uid() }, file: null, unsaved: true };
+        }
       }
       // Startup IO must not replace or prompt over a project already opened/imported.
       if (autosave.current.project !== startupProject) return;
@@ -438,13 +461,12 @@ export default function App() {
         catch { return; } // A corrupt recovery record must not prevent startup.
       }
       if (was && snap?.project) {
-        // The window crashed and reloaded: same project, same file.
+        // Bind only a recovery document whose file was resolved above.
         autosave.current.file = snap.file || null;
         autosave.current.origin = { created: false, slot: null }; // it existed before this session
         if (snap.file) setSaveState('saved');
-        dispatch({ type: 'load', project: snap.project });
-        setRecoveredNote(true);
-        setScreen('editor');
+        flushSync(()=>{dispatch({ type: 'load', project: snap.project });setRecoveredNote(true);setScreen('editor');});
+        await notifyProjectLifecycle('opened',projectRef.current,{reason:'restore',...(snap.file?{path:snap.file}:{})});
       } else if (!hasAutosavedSlot && snap?.unsaved && snap.project && hasContent(snap.project)) {
         // Normal autosaved projects already have a resumable Home card. Only an
         // older recovery copy without a disk slot needs a separate offer.
@@ -683,7 +705,7 @@ export default function App() {
   // A sound from the audio library: one media item per file (reused), clip on the Audio track at the playhead.
   const libraryAdd = async (item) => {
     const still = projectStamp();
-    const res = await window.api.libraryAdd(item);
+    const res = await window.api.mediaSourceAdd(item);
     if (res.error) return res;
     if (!still()) return { canceled: true };
     let m = projectRef.current.media.find((x) => x.path === res.path);
@@ -708,14 +730,13 @@ export default function App() {
   };
 
   // Stock media (Pixabay): download once, then main track or overlay at the playhead.
-  const [stockKey, setStockKey] = useState(false);
   useEffect(() => {
-    window.api.settingsGet().then((st) => { setStockKey(!!st.serviceKeys?.pixabay); setActiveKeymap(st.shortcuts); });
+    window.api.settingsGet().then((st) => { setActiveKeymap(st.shortcuts); });
     window.api.proxyStatus?.().then((st) => { setPlaybackQuality(st.quality); setQuality(st.quality); }).catch(() => {});
   }, [settingsVersion]);
   const stockAdd = async (item, where) => {
     const still = projectStamp();
-    const res = await window.api.stockAdd(item);
+    const res = await window.api.mediaSourceAdd(item);
     if (res.error) return res;
     if (!still()) return { canceled: true };
     let m = projectRef.current.media.find((x) => x.path === res.path);
@@ -821,9 +842,10 @@ export default function App() {
     const p = projectRef.current;
     const m = p.media.find((x) => x.id === id);
     if (!m) return;
+    if (reverseSourceUsed(p, id)) { showAlert(t('app.media_reverse_source', { name: m.name })); return; }
     const lockedUse = lockedMediaUse(p, id);
     if (lockedUse) { showAlert(t('app.media_on_locked_layer', { name: m.name, layer: layerName(p, lockedUse.track, lockedUse.layer) })); return; }
-    const used = [p.videoClips, p.overlayClips || [], p.audioClips].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
+    const used = [p.videoClips, p.overlayClips || [], p.audioClips, p.customClips || []].reduce((n, list) => n + list.filter((c) => c.mediaId === id).length, 0);
     if (used && !askConfirm(tn('app.media_used_by_clips', used, { name: m.name }), t('home.remove'))) return;
     dispatch({ type: 'removeMedia', id });
   };
@@ -979,7 +1001,8 @@ export default function App() {
   };
 
   const split = useCallback(() => {
-    const at = readTime();
+    if (selection?.track === 'custom-track') return;
+    const at = readTime();if(selection?.track==='custom'){dispatch({type:'customTimeline',base:projectRef.current,catalogRevision:customTypesRevision(),operations:[{type:'split-clip',id:selection.id,newId:'xc-'+crypto.randomUUID(),at_sec:at}]});return;}
     if (selection?.items) {
       // Several clips: every selected clip under the playhead is cut, one undo step for all of
       // them (a linked partner is cut by its pair, so the second half of a pair is skipped).
@@ -1005,6 +1028,7 @@ export default function App() {
   // Delete everything left (or right) of the playhead in the selected clip when the playhead is inside it,
   // otherwise in the main-track clip under the playhead.
   const trimSide = useCallback((side) => {
+    if (selection?.track === 'custom-track' || selection?.track === 'custom') return;
     const targets = [];
     if (selection) targets.push(selection);
     const v = videoClipAt(project, readTime());
@@ -1032,6 +1056,7 @@ export default function App() {
   const remove = useCallback(() => {
     if (!selection) return;
     const removeOne = (sel) => {
+      if(['custom','custom-track'].includes(sel.track)){dispatch({type:'customTimeline',base:projectRef.current,catalogRevision:customTypesRevision(),operations:[{type:sel.track==='custom'?'delete-clip':'delete-track',id:sel.id,...(sel.track==='custom-track'?{removeClips:true}:{})}]});return;}
       if (sel.track === 'transition') dispatch({ type: 'update', track: 'video', id: sel.id, patch: { transition: null } });
       else if (sel.track === 'effect' && sel.id.includes('|')) dispatch({ type: 'removeEffect', id: sel.id });
       else dispatch({ type: 'delete', track: sel.track, id: sel.id });
@@ -1048,7 +1073,7 @@ export default function App() {
   }, [selection]);
 
   // What the player shows and exports: deactivated clips left out.
-  const playProject = useMemo(() => renderable(project), [project]);
+  const playProject = useMemo(() => renderable(project), [project,pluginRevision]);
 
   // ---- Copy / cut / paste and the right-click clip menu ----
   const findClip = (p, sel) => {
@@ -1068,26 +1093,53 @@ export default function App() {
       return !!now && now.mediaId === c.mediaId && (now.in || 0) === (c.in || 0) && now.out === c.out && (now.speed || 1) === (c.speed || 1);
     };
   };
-  const copy = useCallback(() => {
-    const c = findClip(project, selection);
-    // The clip's media item travels with it: a paste into another project adds it there (see 'paste').
-    if (c && !c.gap) setClipboard({ track: selection.track, clip: c, media: c.mediaId ? project.media.find((m) => m.id === c.mediaId) || null : null });
-    return !!(c && !c.gap);
-  }, [project, selection]);
-  const cut = useCallback(() => {
-    if (copy()) {
-      dispatch({ type: 'delete', ...selection });
-      setSelection(null);
+  const selectedClipboardItems = () => {
+    if (!selection) return [];
+    const items = new Map();
+    const add = (track, clip) => {
+      if (!clip || clip.gap) return false;
+      items.set(clip.id, {
+        track, clip, projectId: project.id, start: clipStartTl(project, track, clip),
+        media: project.media.find(m => m.id === clip.mediaId),
+        originalMedia: clip.reversed && project.media.find(m => m.id === clip.reversed.mediaId),
+      });
+      return true;
+    };
+    for (const sel of selection.items || [selection]) {
+      const clip = findClip(project, sel);
+      if (!add(sel.track, clip)) return [];
+      const partner = findLinkPartner(project, clip);
+      if (partner) add(partner.track, partner.clip);
     }
-  }, [copy, selection]);
-  const paste = useCallback(() => {
+    return [...items.values()];
+  };
+  const copy = () => {
+    const items = selectedClipboardItems();
+    if (items.length) setClipboard(items);
+  };
+  const cut = () => {
+    const items = selectedClipboardItems();
+    if (!items.length) return;
+    const actions = [...items].sort((a, b) => (b.track === 'audio') - (a.track === 'audio'))
+      .map(({ track, clip }) => ({ type: 'delete', track, id: clip.id }));
+    const prepared = prepareProjectAction(project, { type: 'batch', actions });
+    if (prepared.project === project) return;
+    setClipboard(items);
+    dispatch(prepared.action);
+    setSelection(null);
+  };
+  const paste = () => {
     if (!clipboard) return;
-    const p = projectRef.current, { clip, media } = clipboard;
-    if (clip.mediaId && !p.media.some((m) => m.id === clip.mediaId) && !media?.path) { showAlert(t('app.paste_media_missing')); return; }
-    const newId = uid();
-    dispatch({ type: 'paste', track: clipboard.track, clip, media, mediaId: uid(), at: readTime(), newId });
-    setSelection({ track: clipboard.track, id: newId });
-  }, [clipboard, time]);
+    const p = projectRef.current;
+    if (clipboard.some(({ clip, media, originalMedia }) => (clip.mediaId && !media) || (clip.reversed && !originalMedia))) {
+      showAlert(t('app.paste_media_missing')); return;
+    }
+    const items = clipboard.map(item => ({ ...item, newId: uid() }));
+    const prepared = prepareProjectAction(p, { type: 'pasteSelection', items, at: readTime() });
+    if (prepared.project === p) { showAlert(t('app.paste_position_refused')); return; }
+    dispatch(prepared.action);
+    setSelection(makeSelection(items.map(({ track, newId }) => ({ track, id: newId }))));
+  };
   // Detach audio: render the clip's sound to its own file (electron/media/detach.cjs, cached),
   // put it on the Audio track at the clip's position and LINK the pair — the store keeps
   // linked clips in sync (select / move / trim / split / speed together). One undo step.
@@ -1103,19 +1155,18 @@ export default function App() {
     });
     let res;
     try {
-      res = await window.api.detachRun({ path: m.path, duration: m.duration, hasAudio: m.hasAudio, type: m.type }, c.in || 0, c.out ?? m.duration);
+      res = await window.api.detachRun({ path: m.path, duration: m.duration, hasAudio: m.hasAudio, type: m.type, channels: m.channels }, c.in || 0, c.out ?? m.duration);
     } catch (e) { res = { error: e.message }; }
     off();
     if (res.canceled) { setRenderJob(null); return; }
     if (res.error) { setRenderJob({ error: res.error }); return; }
     setRenderJob(null);
     if (!current()) return; // another project, or the clip changed while rendering
-    const start = sel.track === 'video'
-      ? (videoLayout(projectRef.current.videoClips).find((l) => l.clip.id === c.id)?.start ?? 0)
-      : c.start;
+    const now = projectRef.current, source = findClip(now, sel);
+    if (source.linkId || source.muted || clipLocked(now, sel.track, source)) return;
+    const start = clipStartTl(now, sel.track, source);
     const linkId = uid();
     const audioId = uid();
-    const now = projectRef.current;
     let media = now.media.find((x) => x.path === res.path);
     const actions = [];
     if (!media) { media = { ...res, id: uid(), origin: 'detach' }; actions.push({ type: 'addMedia', items: [media] }); } // Media tree: Generated ▸ Processed
@@ -1127,7 +1178,7 @@ export default function App() {
     // The sound goes on the first audio layer with room that is not locked, hidden or muted.
     actions.push({ type: 'insertAudioClip', clip: {
       id: audioId, mediaId: media.id, start, in: 0, out, layer: openLayer(now, 'audio', start, out / speed),
-      speed, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0,
+      speed, ...clipAudioMix(source, true),
       linkId, linkOff: 0, linkInOff: -(c.in || 0),
     } });
     // All or nothing: one step that mutes the picture only together with the sound's insert.
@@ -1256,37 +1307,45 @@ export default function App() {
       start = l.start; len = l.end - l.start;
     } else { start = c.start || 0; len = freeLen('overlay', c); }
     const at = readTime() > start && readTime() < start + len ? readTime() : start;
-    const srcT = (c.in || 0) + (at - start) * (c.speed || 1);
+    const localTime = at - start, interior = localTime > 1e-7;
+    const splitId = uid();
+    const split = { type: 'split', track: sel.track, id: c.id, t: at, newId: splitId };
+    if (interior && prepareProjectAction(p, split).project === p) { showAlert(t('app.freeze_split_refused')); return; }
+    const srcT = (c.in || 0) + localTime * (c.speed || 1);
     const current = clipJob(sel, c);
     let fm;
-    try { fm = await window.api.frameImage(m.path, srcT); } catch (e) { fm = { error: e.message }; }
-    if (!fm || fm.error) { setRenderJob({ error: (fm && fm.error) || t('app.could_not_grab_the_frame') }); return; }
-    if (!current()) return; // another project, or the clip changed meanwhile
-    let media = projectRef.current.media.find((x) => x.path === fm.path);
-    const stillId = uid();
-    dispatch({ type: 'beginGesture', group: true });
-    if (!media) { media = { ...fm, id: uid() }; dispatch({ type: 'addMedia', items: [media] }); }
-    if (sel.track === 'video') {
-      const idx = videoLayout(p.videoClips).findIndex((x) => x.clip.id === c.id);
-      let insertIndex = idx;
-      if (at > start + 0.01) {
-        if (at < start + len - 0.01) dispatch({ type: 'split', track: 'video', id: c.id, t: at, newId: uid() });
-        insertIndex = idx + 1;
+    try { fm = m.type === 'image' ? m : await window.api.frameImage(m.path, srcT); } catch (e) { fm = { error: e.message }; }
+    if (!fm || fm.error) { setRenderJob({ error: fm?.error || t('app.could_not_grab_the_frame') }); return; }
+    const now = projectRef.current;
+    if (!current() || findClip(now, sel) !== c || clipStartTl(now, sel.track, c) !== start || clipLocked(now, sel.track, c)) return;
+    const actions = [];
+    let media = now.media.find(x => x.path === fm.path);
+    if (!media) { media = { ...fm, id: uid() }; actions.push({ type: 'addMedia', items: [media] }); }
+    if (interior) {
+      actions.push(split);
+      if (c.linkId) {
+        const sliced = prepareProjectAction(now, split).project;
+        const right = findClipIn(sliced, sel.track, splitId), partner = findLinkPartner(sliced, right);
+        if (!partner) { showAlert(t('app.freeze_split_refused')); return; }
+        actions.push({ type: 'update', track: partner.track, id: partner.clip.id, patch: { start: partner.clip.start + IMAGE_DEFAULT } });
       }
-      dispatch({ type: 'addToTimeline', mediaId: media.id, clipId: stillId, index: insertIndex });
-    } else {
-      const secondId = uid();
-      const interior = at > start + 0.01 && at < start + len - 0.01;
-      if (interior) {
-        dispatch({ type: 'split', track: 'overlay', id: c.id, t: at, newId: secondId });
-        dispatch({ type: 'update', track: 'overlay', id: secondId, patch: { start: at + 4 } });
-      } else {
-        dispatch({ type: 'update', track: 'overlay', id: c.id, patch: { start: (c.start || 0) + 4 } });
-      }
-      dispatch({ type: 'addOverlayClip', mediaId: media.id, clipId: stillId, at, layer: c.layer });
-      dispatch({ type: 'update', track: 'overlay', id: stillId, patch: { transform: c.transform || undefined } });
     }
-    dispatch({ type: 'endGesture', group: true });
+    const stillId = uid();
+    if (sel.track === 'video') {
+      const index = now.videoClips.findIndex(x => x.id === c.id) + Number(interior);
+      actions.push({ type: 'addToTimeline', mediaId: media.id, clipId: stillId, index, preserveCanvas: true });
+    } else {
+      actions.push({ type: 'update', track: 'overlay', id: interior ? splitId : c.id, patch: { start: at + IMAGE_DEFAULT } });
+      actions.push({ type: 'addOverlayClip', mediaId: media.id, clipId: stillId, at, layer: c.layer });
+    }
+    actions.push({ type: 'update', track: sel.track, id: stillId, patch: frozenAppearance(now, sel.track, c, localTime, len) });
+    const prepared = prepareProjectAction(now, { type: 'batch', actions });
+    const held = findClipIn(prepared.project, sel.track, stillId);
+    if (!held || Math.abs(clipStartTl(prepared.project, sel.track, held) - at) > 1e-6
+      || (interior && !findClip(prepared.project, { track: sel.track, id: splitId }))) {
+      showAlert(t('app.freeze_split_refused')); return;
+    }
+    dispatch(prepared.action);
     setSelection({ track: sel.track, id: stillId });
   };
 
@@ -1301,7 +1360,9 @@ export default function App() {
     if (!c || !m) return;
     if (c.reversed) {
       // Back to the original, on the part of it this clip (or this piece of it) plays now.
-      dispatch({ type: 'updateMany', updates: unreverseUpdates(p, sel.track, c) });
+      const updates = unreverseUpdates(p, sel.track, c);
+      if (!updates.length) { showAlert(t('app.reverse_source_missing')); return; }
+      dispatch({ type: 'updateMany', updates });
       return;
     }
     setRenderJob({ kind: 'reverse', label: t('app.reversing_clip'), fraction: 0 });
@@ -1639,7 +1700,8 @@ export default function App() {
 
   const duplicate = useCallback(() => {
     if (!selection) return;
-    const okItem = (it) => it.track !== 'transition' && !(it.track === 'effect' && it.id.includes('|'));
+    if(selection.track==='custom'){dispatch({type:'customTimeline',base:projectRef.current,catalogRevision:customTypesRevision(),operations:[{type:'duplicate-clip',id:selection.id,newId:'xc-'+crypto.randomUUID()}]});return;}
+    const okItem = (it) => ['video', 'overlay', 'text', 'audio', 'effect'].includes(it.track) && !(it.track === 'effect' && it.id.includes('|'));
     if (selection.items) {
       // Bulk duplicate: every selected clip, one undo step (locked layers refuse their own).
       // A linked pair is selected as two items but duplicated as one: the reducer copies the
@@ -1660,7 +1722,7 @@ export default function App() {
 
   // Saves to the project's file (asks where the first time, or always with saveAs). Returns true once saved.
   const manualSavePending=useRef(false);
-  const save = async (saveAs = false) => {
+  const save = async (saveAs = false, guard = async()=>{},reportError) => {
     if(manualSavePending.current)return false;manualSavePending.current=true;
     try{
     const a = autosave.current;
@@ -1670,15 +1732,17 @@ export default function App() {
     const target=await window.api.pickSaveProject(previousFile,{saveAs,name:p.name});
     if(!target)return false;if(target.error)throw Error(target.error);
     if(loadVersionRef.current!==epoch||autosave.current!==a)return false;
-    p=await extensionHost.before('save',{source:projectRef.current,destination:{path:target,saveAs}});
+    await guard();
+    p=await extensionHost.before('save',{source:projectRef.current,destination:{path:target,saveAs}});await guard(p);
     clearTimeout(a.fileTimer);a.fileTimer = null;
     const { doc, chat } = await serializeProjectParts(p);
     await a.writing?.catch(() => {});
+    await guard();
     const res = await window.api.saveProject(doc.pretty, target, { name: p.name, chat: chat ? chat.compact : null });
     if (!res) return false;
     if (res.error) {
       setSaveState('error');
-      showAlert(res.error);
+      showAlert(res.error);reportError?.(res.error);
       return false;
     }
     if (a.project.id !== p.id || a.file !== previousFile) return true; // project switched while Save was pending
@@ -1692,16 +1756,45 @@ export default function App() {
     await keepRecovery(false);
     await writeSlotNow(a.project, res); // closing after Save also waits for its slot
     return true;
-    }catch(error){if(error.name!=='AbortError'){setSaveState('error');showAlert(extensionUiError(error));}return false;}finally{manualSavePending.current=false;}
+    }catch(error){reportError?.(extensionUiError(error));if(error.name!=='AbortError'){setSaveState('error');showAlert(extensionUiError(error));}return false;}finally{manualSavePending.current=false;}
   };
 
-  const open = async () => {
-    try {
-      const res = await window.api.openProject();
-      if (!res) return;
-      if (res.error) { showAlert(res.error); return; }
-      const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
-      await flushAutosave(); // the current project keeps its last changes (file + slot)
+  const projectLifecycleBusy=useRef(false),quitLifecycleBusy=useRef(false);
+  const notifyProjectLifecycle=async(kind,source,transition,allowAgent=false)=>{
+    try{await extensionHost.before(kind,{source,transition,allowAgent,agentToken:allowAgent?historyRef.current.agentEdit?.token:undefined});}
+    catch(error){console.warn('Document lifecycle notification failed:',extensionUiError(error));}
+  };
+  const runProjectTransition=async(reason,apply,{guard,allowAgent=false,path,afterPreserve}={})=>{
+    if(projectLifecycleBusy.current||manualSavePending.current||exportRunning.current)throw Error('Another project operation or export is pending');
+    projectLifecycleBusy.current=true;
+    try{
+      setPlaying(false);await graphicEdits.flush();const open=screenRef.current==='editor',epoch=loadVersionRef.current,source=projectRef.current,previousFile=autosave.current.file;
+      const transition={reason,...(path?{path}:previousFile&&['home','quit'].includes(reason)?{path:previousFile}:{})};
+      const prepared=open?await extensionHost.before('close',{source,transition,allowAgent,agentToken:allowAgent?historyRef.current.agentEdit?.token:undefined}):null;
+      const base=projectRef.current;if(open&&!samePreparationDocument(prepared,base))throw Error('Prepared close target changed');
+      const check=()=>{if(loadVersionRef.current!==epoch||screenRef.current!==(open?'editor':'home')||!samePreparationDocument(base,projectRef.current)||historyRef.current.gestureStart||exportRunning.current)throw Error('Project changed during document transition');};
+      check();const written=open?await flushAutosave(true):true;check();if(open&&(!written||autosave.current.slotDocDirty))throw Error('Current project could not be preserved; project switch refused');if(guard)await guard(written,prepared);check();
+      if(afterPreserve){await afterPreserve();check();if(guard)await guard(written,prepared);check();}
+      const closedSource=projectRef.current;let result;flushSync(()=>{
+        result=apply();
+        if(reason==='create'||reason==='import')resetNewProjectPreviewVolume();
+      });await settle();
+      if(open)await notifyProjectLifecycle('closed',closedSource,transition,allowAgent);
+      if(reason!=='home')await notifyProjectLifecycle(['create','import'].includes(reason)?'created':'opened',projectRef.current,transition,allowAgent);
+      return result;
+    }finally{projectLifecycleBusy.current=false;}
+  };
+  const closeProjectToHome=options=>runProjectTransition('home',()=>{
+    const a = autosave.current;
+    clearTimeout(a.timer); clearTimeout(a.fileTimer); clearTimeout(a.slotTimer);
+    a.timer = a.fileTimer = a.slotTimer = null;
+    a.file = null;
+    refreshSlots(); setScreen('home'); return {screen:'home'};
+  },options);
+
+  const applyProjectOpen = async(res,guard,options={}) => {
+      let p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
+      return runProjectTransition('open',()=>{
       autosave.current.file = res.file;
       autosave.current.origin = { created: false, slot: null };
       dispatch({ type: 'load', project: p });
@@ -1712,21 +1805,31 @@ export default function App() {
       pushRecent(recentOf(p, res.file));
       writeSlotNow(p, res.file); // the slot syncs to the file's content under the shared id
       setScreen('editor');
+      return {opened:p.id};
+      },{...options,guard,path:res.file,afterPreserve:async()=>{
+        // Close preparation may have just saved this same file. Read its final
+        // bytes after preservation rather than loading the pre-hook snapshot.
+        const fresh=await window.api.openProjectPath(res.file);
+        if(!fresh||fresh.error)throw Error(fresh?.error||'Project file is no longer available');
+        p=await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(fresh.json),fresh.chat)),res.file);
+      }});
+  };
+  const open = async () => {
+    try {
+      const res = await window.api.openProject();
+      if (!res) return;
+      if (res.error) { showAlert(res.error); return; }
+      return await applyProjectOpen(res);
     } catch (e) {
       showAlert(t('app.invalid_project_file', { error: e.message }));
     }
   };
 
   // ---- Home screen actions ----
-  const startNewProject = async (preset, fps, name = 'Untitled') => {
-    await flushAutosave(); // the project being left keeps everything, slot included
-    const p = {
-      ...emptyProject(), name, ratio: preset.ratio,
-      ...sizeFor(preset.ratio, preset.short), resolution: preset.short, fps, ratioLocked: true,
-    };
+  const showNewProject = (p, origin = { created: true }) => {
     autosave.current.file = null;
     autosave.current.pendingRestore = false;
-    autosave.current.origin = { created: true };
+    autosave.current.origin = origin;
     dispatch({ type: 'load', project: p });
     setSaveState('new');
     setUnsavedNote(null);
@@ -1734,21 +1837,52 @@ export default function App() {
     setTime(0);
     setScreen('editor');
   };
+  const startNewProject = async (preset, fps, name = 'Untitled', guard,options={}) => {
+    const p = {
+      ...emptyProject(), name, ratio: preset.ratio,
+      ...sizeFor(preset.ratio, preset.short), resolution: preset.short, fps, ratioLocked: true,
+    };
+    return runProjectTransition('create', () => showNewProject(p), {...options,guard});
+  };
+
+  const duplicateProject = async ({ name }) => {
+    const sourceId = projectRef.current.id;
+    let copy, slot;
+    try {
+      return await runProjectTransition('create', () => {
+        showNewProject(copy, { created: false, slot });
+        refreshSlots();
+        return { created: copy.id, source_id: sourceId };
+      }, {
+        allowAgent: true,
+        afterPreserve: async () => {
+          const source = projectRef.current;
+          if (screenRef.current !== 'editor' || source.id !== sourceId) throw Error('The source project changed.');
+          const title = String(name || '').trim().slice(0, 120) || (source.name || 'Untitled').slice(0, 113) + ' (copy)';
+          copy = { ...structuredClone(projectDoc(source)), id: crypto.randomUUID(), name: title };
+          slot = await window.api.slotWrite(await slotRecord(copy, null, true));
+          if (!slot) throw Error('Could not save the project copy to Home.');
+        },
+      });
+    } catch (error) {
+      // The source may have changed while the new slot was being written.
+      if (copy && projectRef.current.id !== copy.id) await window.api.slotDelete(copy.id);
+      throw error;
+    }
+  };
 
   // Home quick tool: Record screen opens a fresh 16:9 project with the recorder up.
-  const startRecording = (fps) => {
-    startNewProject({ ratio: '16:9', short: 1080 }, fps);
-    setPlaying(false);
-    setScreenOpen(true);
+  const startRecording = async (fps) => {
+    try{await startNewProject({ ratio: '16:9', short: 1080 }, fps);setPlaying(false);setScreenOpen(true);}
+    catch(error){showAlert(extensionUiError(error));}
   };
 
   // Open a project from its autosave slot (the card may be slot-only or merged with the
   // file recent for the same project). The current project is flushed first, then the
   // slot's state is restored whole — media paths included, exactly like a file open.
   // Returns { error } instead of showing it, for external agents (open_project); openSlot shows it.
-  const loadSlot = async (slotId) => {
-    await flushAutosave(); // whatever is in the editor right now keeps its latest state
-    const slot = await window.api.slotRead(slotId);
+  const loadSlot = async (slotId,options={}) => {
+    let slot = await window.api.slotRead(slotId);
     if (!slot) {
       refreshSlots();
       return { error: t('app.auto_saved_project_not_found') };
@@ -1756,10 +1890,11 @@ export default function App() {
     if (slot.error) return { error: slot.error }; // its chat file is held by another program
     // Its file changed after the slot was last written (elsewhere, or by another program): the file
     // has work the slot lacks, so the file opens and the slot is rewritten from it.
-    if (slot.fileChanged && slot.file) return loadFile(slot.file);
+    if (slot.fileChanged && slot.file) return loadFile(slot.file,undefined,options);
     let p;
     try { p = { ...normalizeProject(slot.project), id: slot.id }; }
     catch (e) { return { error: t('app.invalid_auto_saved_project', { error: e.message }) }; }
+    try{return await runProjectTransition('open',()=>{
     autosave.current.file = slot.file || null;
     autosave.current.pendingRestore = false;
     autosave.current.origin = { created: false, slot }; // Don't save on close puts this slot back
@@ -1770,11 +1905,16 @@ export default function App() {
     setSelection(null);
     setScreen('editor');
     return { opened: p.id };
+    },{...options,...(slot.file?{path:slot.file}:{}),afterPreserve:async()=>{
+      const fresh=await window.api.slotRead(slotId);if(!fresh||fresh.error)throw Error(fresh?.error||t('app.auto_saved_project_not_found'));
+      if(fresh.fileChanged&&fresh.file){const file=await window.api.openProjectPath(fresh.file);if(!file||file.error)throw Error(file?.error||'Project file is no longer available');fresh.project=mergeChat(JSON.parse(file.json),file.chat);}
+      p={...normalizeProject(fresh.project),id:fresh.id};slot=fresh;
+    }});}catch(error){return {error:extensionUiError(error)};}
   };
   const openSlot = async (entry) => { const r = await loadSlot(entry.slotId); if (r?.error) showAlert(r.error); };
 
   // A project file by path (Home recents, external agents). Returns { error } instead of showing it.
-  const loadFile = async (filePath) => {
+  const loadFile = async (filePath,guard,options={}) => {
     const res = await window.api.openProjectPath?.(filePath);
     if (!res) {
       storeRecents(recentsRef.current.filter((x) => x.path !== filePath));
@@ -1782,19 +1922,7 @@ export default function App() {
     }
     if (res.error) return { error: res.error }; // not a ClipCraft project: the file is left alone
     try {
-      const p = await adoptFileBinding(normalizeProject(mergeChat(JSON.parse(res.json), res.chat)), res.file);
-      await flushAutosave();
-      autosave.current.file = res.file;
-      autosave.current.origin = { created: false, slot: null };
-      dispatch({ type: 'load', project: p });
-      setSaveState('saved');
-      setUnsavedNote(null);
-      setTime(0);
-      setSelection(null);
-      pushRecent(recentOf(p, res.file));
-      writeSlotNow(p, res.file); // the slot syncs to the file's content under the shared id
-      setScreen('editor');
-      return { opened: p.id };
+      return await applyProjectOpen(res,guard,options);
     } catch (e) {
       return { error: t('app.invalid_project_file', { error: e.message }) };
     }
@@ -1810,7 +1938,7 @@ export default function App() {
   const importFromHome = async () => {
     const items = await window.api.importMedia();
     if (!items?.some((i) => !i.error)) { if (items?.length) addItems(items); return; } // canceled, or only errors to show
-    await flushAutosave(); // the project being left keeps everything, slot included
+    try{return await runProjectTransition('import',()=>{
     autosave.current.file = null;
     autosave.current.pendingRestore = false;
     autosave.current.origin = { created: true };
@@ -1821,6 +1949,7 @@ export default function App() {
     setSelection(null);
     setTime(0);
     setScreen('editor');
+    });}catch(error){showAlert(extensionUiError(error));}
   };
 
   // The startup offer (a project the last session ended on, unsaved): restoring loads it
@@ -1832,7 +1961,7 @@ export default function App() {
     let p;
     try { p = normalizeProject(note.project); }
     catch (e) { showAlert(t('app.invalid_recovery_project', { error: e.message })); return; }
-    await flushAutosave();
+    try{return await runProjectTransition('restore',()=>{
     autosave.current.file = note.file || null;
     autosave.current.pendingRestore = false;
     autosave.current.origin = { created: false, slot: null }; // the last session's work: never deleted on close
@@ -1842,6 +1971,7 @@ export default function App() {
     setTime(0);
     setSelection(null);
     setScreen('editor');
+    },note.file?{path:note.file}:{});}catch(error){showAlert(extensionUiError(error));}
   };
   const discardUnsaved = () => {
     autosave.current.pendingRestore = false;
@@ -1878,19 +2008,36 @@ export default function App() {
     return list.sort((a, b) => (b.modifiedAt || 0) - (a.modifiedAt || 0));
   }, [autoSlots, recents]);
 
+  const finishWindowClose=async()=>{
+    if(screenRef.current==='editor')await notifyProjectLifecycle('closed',projectRef.current,{reason:'quit',...(autosave.current.file?{path:autosave.current.file}:{})});
+    return window.api.closeNow();
+  };
+
   // Closing the window: write the project's file, or ask about a project that never had one.
   useEffect(() => window.api.onCloseRequest(async () => {
+    if(quitLifecycleBusy.current||projectLifecycleBusy.current){window.api.closeCancel();return;}
+    quitLifecycleBusy.current=true;projectLifecycleBusy.current=true;
+    try{
+    await window.api.closeDefer();
+    if (screenRef.current === 'home') return finishWindowClose();
+    let preparationFailed=false;
+    if(screenRef.current==='editor'){
+      await graphicEdits.flush();const source=projectRef.current;
+      const prepared=await extensionHost.before('close',{source,transition:{reason:'quit',...(autosave.current.file?{path:autosave.current.file}:{})}});
+      if(!samePreparationDocument(prepared,projectRef.current))throw Error('Prepared close target changed');
+      if(prepared!==source)preparationFailed=!(await flushAutosave(true))||autosave.current.slotDocDirty;
+    }
     const a = autosave.current;
     // The file could not be written: closing now would lose the changes since its last write,
     // so the close waits for the save question like a project that never had a file.
-    const failed = !!a.file && !(await flushAutosave()); // Home restores the slot too, including the latest chat.
+    const failed = preparationFailed || (!!a.file && !(await flushAutosave()));
     if (a.file && !failed) {
       await keepRecovery(false);
-      return window.api.closeNow();
+      return finishWindowClose();
     }
     if (!failed && !hasContent(a.project)) {
       await keepRecovery(false);
-      return window.api.closeNow();
+      return finishWindowClose();
     }
     // A project that existed before this session (reopened from its Home card) and was not changed
     // since it was loaded closes without asking: there is nothing to save or to throw away.
@@ -1899,7 +2046,7 @@ export default function App() {
     if (!failed && unchanged) {
       await flushAutosave();
       await keepRecovery(false);
-      return window.api.closeNow();
+      return finishWindowClose();
     }
     window.api.closeCancel(); // the window waits for the answer
     if (a.asking) return; // already asking (the close button was clicked again)
@@ -1908,13 +2055,13 @@ export default function App() {
     a.asking = false;
     setCloseAsk(null);
     if (choice === 'save') {
-      if (await save()) return window.api.closeNow();
+      if (await save()) return finishWindowClose();
       return window.api.closeCancel();
     }
     if (choice === 'discard') {
       await keepRecovery(false);
       // A project with a file keeps its file as last written and its slot as it is.
-      if (failed) return window.api.closeNow();
+      if (failed) return finishWindowClose();
       // No pending slot write may land after the answer.
       clearTimeout(a.slotTimer);a.slotTimer = null;
       try { await a.slotWriting; } catch { /* the slot is replaced below */ }
@@ -1927,9 +2074,12 @@ export default function App() {
           else await restoreLoadedSlot(base, a.origin.slot);
         } catch { /* closing anyway */ }
       }
-      return window.api.closeNow();
+      return finishWindowClose();
     }
     return window.api.closeCancel();
+
+    }catch(error){window.api.closeCancel();if(error.name!=='AbortError')showAlert(extensionUiError(error));}
+    finally{quitLifecycleBusy.current=false;projectLifecycleBusy.current=false;}
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Legacy template projects retain replaceable clips through the slot strip.
@@ -1966,10 +2116,10 @@ export default function App() {
   // The dialog's own Browse: pick the output file up front (the frame folder comes with it).
   const pickExportTarget = async (name) => {
     const prev = exporting?.target;
-    const target = await window.api.exportBegin(name || exporting?.name);
+    const target = await window.api.exportBegin(name || exporting?.name,exporting?.eff.format);
     if (target.canceled) return;
     if (prev && prev.frameDir !== target.frameDir) window.api.exportAbort(prev.frameDir);
-    const base = String(target.file).split(/[\\/]/).pop().replace(/\.mp4$/i, '');
+    const base = String(target.file).split(/[\\/]/).pop().replace(/\.(mp4|mov|mkv|webm)$/i, '');
     setExporting((e) => e && { ...e, target, name: base || e.name });
   };
   const renameExport = (name) => {
@@ -1980,7 +2130,7 @@ export default function App() {
       if (target) {
         const file = String(target.file);
         const dir = file.slice(0, file.length - file.split(/[\\/]/).pop().length);
-        target = { ...target, file: `${dir}${clean || 'export'}.mp4` };
+        target = { ...target, file: `${dir}${clean || 'export'}.${e.eff.extension||'mp4'}` };
       }
       return { ...e, name: clean, target };
     });
@@ -1992,7 +2142,8 @@ export default function App() {
     setExporting((e) => {
       if (!e) return e;
       const project = { ...e.project, ...patch };
-      return { ...e, project, source:{...(e.source||projectRef.current),...patch},eff: resolveExport(project, e.caps) };
+      const eff=resolveExport(project,e.caps),changedFormat=eff.format!==e.eff.format;if(changedFormat&&e.target)window.api.exportAbort(e.target.frameDir);
+      return { ...e, project, target:changedFormat?null:e.target,source:{...(e.source||projectRef.current),...patch},eff };
     });
   };
   const changeExportResolution = (resCap) => {
@@ -2043,7 +2194,7 @@ export default function App() {
       documentId=readPluginContext().documentId;
       await refreshPluginEffects();
       assertPluginEffects(project);
-      target = presetTarget || await window.api.exportBegin(name);
+      target = presetTarget || await window.api.exportBegin(name,eff.format);
       if (target.canceled) return { canceled: true };
       stopIfCanceled();publishExport('preparing',{progress:0,review:!!review});preparation=new AbortController();exportPreparation.current=preparation;
       const prepared=await extensionHost.before('export',{source:presentation.source||projectRef.current,signal:preparation.signal,operationId,destination:{path:target.file,review:!!review},allowAgent:presentation.allowAgent===true,agentToken:presentation.agentToken,agentSession:presentation.agentSession});
@@ -2079,7 +2230,7 @@ export default function App() {
       if (res.canceled) exportCanceled.current = true;stopIfCanceled();
       if (!res.ok) throw new Error(res.error || t('app.the_video_could_not_be_exported'));
       progress.start('finish');let size = res.size, coverNote = null;
-      if (typeof project.posterAt === 'number') {
+      if (typeof project.posterAt === 'number'&&eff.format==='mp4') {
         try {
           // The embedded cover is the EXPORTED frame at the chosen time — overlays, graphics and
           // text included, what a viewer sees — never a frame of the main-track source.
@@ -2093,7 +2244,7 @@ export default function App() {
       // cover is best-effort. Cancel never discards a successfully saved video.
       const elapsedSeconds = progress.finish();
       publish({done:true,file:res.file,size,metadata:res.metadata,coverNote,review,progress:1,elapsedSeconds,stage:t(review?'app.preview_rendered':'app.video_saved')});
-      return { ok: true, file: res.file, size, metadata: res.metadata, elapsed_seconds: elapsedSeconds, ...(coverNote ? { warning: coverNote } : {}) };
+      return { ok: true, file: res.file, size, metadata: res.metadata, settings:eff,elapsed_seconds: elapsedSeconds, ...(coverNote ? { warning: coverNote } : {}) };
     } catch (error) {
       if(error.name==='AbortError')exportCanceled.current=true;
       if (exportCanceled.current) publish(null);
@@ -2154,7 +2305,7 @@ export default function App() {
       setPlaying(false);
       watch = setInterval(() => { if (request.isCanceled?.() && !exportCanceled.current) cancelExport(); }, 100);
       const result = await runExportFlow(snapshot, effective, target, options.name || snapshot.name, !!options.review, {inline:true,onProgress:request.onProgress,source,plan:draft=>agentExportPlan(draft,options,caps),allowAgent:true,agentToken:historyRef.current.agentEdit?.token});
-      return { ...result, settings: effective };
+      return { ...result, settings: result.settings??effective };
     } catch (error) { return { error: error.message }; }
     finally {
       clearInterval(watch);
@@ -2174,7 +2325,7 @@ export default function App() {
       if(input.documentId&&capturePluginEditContext().snapshot.documentId!==input.documentId)throw Error('The export document is no longer open.');
       const plan=agentExportPlan(source,input,caps);setPlaying(false);
       const result=await runExportFlow(plan.project,plan.effective,target,input.name||source.name,false,{source,extension:title,extensionId,operationId,onProgress,showCompletion:input.showCompletion,...(agentSession?{allowAgent:true,agentToken:agentSession.agentToken,agentSession}:{}),plan:draft=>agentExportPlan(draft,input,caps)});
-      return {...result,settings:plan.effective};
+      return {...result,settings:result.settings??plan.effective};
     }catch(error){return {error:error.message};}
     finally{signal.removeEventListener('abort',stop);}
   };
@@ -2226,7 +2377,7 @@ export default function App() {
     else if (command === 'save') save(false);
     else if (command === 'saveAs') save(true);
     else if (command === 'export') startExport();
-    else if (command === 'home') (async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); })();
+    else if (command === 'home') closeProjectToHome().catch(error=>showAlert(extensionUiError(error)));
   };
   useEffect(() => window.api.onAppCommand?.((command) => commandRef.current?.(command)), []);
   const startExportRef = useRef(null);
@@ -2263,6 +2414,7 @@ export default function App() {
   // ---- External agents over MCP (docs/design/external-agent-mcp.md): the project tools run through
   // the same functions Home and the top bar use, and return errors instead of showing them. ----
   const agentProjects = {
+    duplicate: duplicateProject,
     status: () => ({ file: autosave.current.file || null, save_state: saveState }),
     list: async (query) => {
       const slots = await window.api.slotList?.().catch(() => []) || [];
@@ -2280,7 +2432,7 @@ export default function App() {
       const preset = PRESETS.find((p) => p.ratio === format);
       if (!preset) return { error: `format must be one of ${PRESETS.map((p) => p.ratio).join(', ')}.` };
       setPlaying(false);
-      await startNewProject(preset, fps, String(name || '').trim().slice(0, 120) || 'Untitled');
+      await startNewProject(preset, fps, String(name || '').trim().slice(0, 120) || 'Untitled',undefined,{allowAgent:true});
       await settle();
       return { created: projectRef.current.id };
     },
@@ -2291,19 +2443,20 @@ export default function App() {
       // An outside agent opens project files only: any other file would become the auto save target.
       if (!slot && !/\.clipcraft\.json$/i.test(String(filePath || id))) return { error: 'Only a .clipcraft.json project file can be opened. Give the id from list_projects, or the path of a .clipcraft.json file.' };
       setPlaying(false);
-      const result = slot ? await loadSlot(id)
-        : await loadFile(filePath || id);
+      const result = slot ? await loadSlot(id,{allowAgent:true})
+        : await loadFile(filePath || id,undefined,{allowAgent:true});
       await settle();
       return result;
     },
-    save: async (target) => {
+    save: async (target,guard=async()=>{}) => {
       const a=autosave.current,epoch=loadVersionRef.current;if(!target&&!a.file)return {error:'This project has no file yet. Give an absolute path ending in .clipcraft.json.'};
       try{
-      const check=await window.api.preflightSaveProjectAgent(target||a.file,a.file);if(check.error)return check;
-      const p=await extensionHost.before('save',{source:projectRef.current,destination:{path:check.file,saveAs:check.file!==a.file},allowAgent:true,agentToken:historyRef.current.agentEdit?.token});
+      const check=await window.api.preflightSaveProjectAgent(target||a.file,a.file);if(check.error)return check;await guard();
+      const p=await extensionHost.before('save',{source:projectRef.current,destination:{path:check.file,saveAs:check.file!==a.file},allowAgent:true,agentToken:historyRef.current.agentEdit?.token});await guard(p);
       clearTimeout(a.fileTimer); a.fileTimer = null;
       const { doc, chat } = await serializeProjectParts(p);
       await a.writing?.catch(() => {});
+      await guard();
       const res = await window.api.saveProjectAgent(doc.pretty, target||a.file, a.file, chat ? chat.compact : null);
       if (res?.error) return { error: res.error };
       if(loadVersionRef.current!==epoch||autosave.current!==a)return {saved:true,file:res.file};
@@ -2318,12 +2471,7 @@ export default function App() {
     },
 
     close: async () => {
-      setPlaying(false);
-      await flushAutosave();
-      refreshSlots();
-      setScreen('home');
-      await settle();
-      return { screen: 'home' };
+      return closeProjectToHome({allowAgent:true});
     },
   };
   const externalApp = useRef(null);
@@ -2379,16 +2527,48 @@ export default function App() {
   if(!pluginContext.current||pluginContext.current.epoch!==projectLoadVersion)pluginContext.current={epoch:projectLoadVersion,read:createEditorContext()};
   const readPluginContext=(input)=>pluginContext.current.read(projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input);
   const capturePluginEditContext=(input)=>{const snapshot=readPluginContext(input);return {snapshot,targets:pluginContext.current.read.targets(snapshot),rebase:value=>pluginContext.current.read.rebase(value,snapshot)};};
+  const extensionProjectPending=useRef(false);
+  const extensionProjectStatus=()=>{if(screenRef.current!=='editor')return {open:false,documentId:null,file:null};const snapshot=readPluginContext();return {open:true,documentId:snapshot.documentId,name:projectRef.current.name,file:autosave.current.file||null};};
+  const projectCommand=async(method,raw,{authorize})=>{
+    const input=projectCommandInput(method,raw);await authorize();if(method==='projects.status')return extensionProjectStatus();
+    if(extensionProjectPending.current||manualSavePending.current||autosave.current.pendingRestore)throw Error('Another project operation or recovery decision is pending');
+    const initial=extensionProjectStatus(),epoch=loadVersionRef.current;let base=projectRef.current;
+    if(input.documentId!==initial.documentId)throw Error('Project target changed');
+    const check=async()=>{await authorize();if(loadVersionRef.current!==epoch||screenRef.current!==(initial.open?'editor':'home')||!sameDoc(base,projectRef.current)||agentRunRef.current||exportRunning.current||historyRef.current.agentEdit||historyRef.current.gestureStart)throw Error('Project changed, is busy, or extension stopped');};
+    const saveGuard=async prepared=>{if(prepared){if(projectRef.current!==prepared)throw Error('Prepared save target changed');base=prepared;}await check();};
+    const preserved=async(written,prepared)=>{if(prepared){if(projectRef.current!==prepared&&!samePreparationDocument(projectRef.current,prepared))throw Error('Prepared close target changed');base=projectRef.current;}if(initial.open&&(!written||autosave.current.slotDocDirty))throw Error('Current project could not be preserved; project switch refused');if(initial.open){const saved=await flushAutosave(true);if(!saved||autosave.current.slotDocDirty)throw Error('Current project could not be preserved; project switch refused');}await check();};
+    extensionProjectPending.current=true;
+    try{
+      await check();setPlaying(false);
+      if(method==='projects.create'){
+        const preset=PRESETS.find(preset=>preset.ratio===input.format);if(!preset)throw Error('Unsupported project format');
+        await startNewProject(preset,input.fps,input.name,preserved);await settle();return extensionProjectStatus();
+      }
+      if(method==='projects.open'){
+        let result;if(input.path)result=await loadFile(input.path,preserved);else{const picked=await window.api.openProject();await check();if(!picked)return {canceled:true};if(picked.error)throw Error(picked.error);result=await applyProjectOpen(picked,preserved);}
+        if(result?.error)throw Error(result.error);await settle();return extensionProjectStatus();
+      }
+      if(method==='projects.close'){
+        await closeProjectToHome({guard:preserved});return extensionProjectStatus();
+      }
+      if(method==='projects.save'){
+        if(!initial.open)throw Error('No project is open');
+        if(input.path){const result=await agentProjects.save(input.path,saveGuard);if(result?.error)throw Error(result.error);return result;}
+        let failure;const saved=await save(input.saveAs===true,saveGuard,error=>{failure=error;});if(failure)throw Error(failure);return saved?{saved:true,file:autosave.current.file}:{canceled:true};
+      }
+      throw Error('Unknown project command');
+    }finally{extensionProjectPending.current=false;}
+  };
   const {items:extensionContextUi}=useExtensionUi('context');
   const extensionContextActions=extensionContextUi.filter(entry=>entry.kind==='action');
-  useEffect(()=>window.api.onExtensionViewEvent?.(event=>{if(event.type==='reveal'){if(settingsOpen){setSettingsOpen(false);setSettingsVersion(version=>version+1);}setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}}),[agentMode,settingsOpen]);
+  useEffect(()=>window.api.onExtensionViewEvent?.(event=>{if(event.type==='reveal'){if(settingsOpen){setSettingsOpen(false);setSettingsVersion(version=>version+1);}if(['bottom','player-overlay','timeline-overlay','floating','modal'].includes(event.placement))return;if(event.placement&&event.placement!=='workbench'){setTab('extension:'+event.id);if(agentMode)setAgentDrawer('media');return;}setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}}),[agentMode,settingsOpen]);
   const extensionEditorTools=useRef(null);extensionEditorTools.current||=createExtensionEditorTools(()=>externalApp.current);
-  const extensionHost=useExtensionHost({editorTools:extensionEditorTools.current,capture:capturePluginEditContext,inspect:(method,input)=>pluginContext.current.read[method](projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input),getHistory:()=>historyRef.current,dispatch,startExport:startExtensionExport,hasProject:screen==='editor',epoch:projectLoadVersion,selection:()=>editorRef.current.selection,documentScope:()=>{readPluginContext();return pluginContext.current.read.scope();},isPreparationBusy:(kind,allowAgent)=>!!agentRunRef.current&&!allowAgent||kind==='save'&&exportRunning.current,isBusy:()=>!!agentRunRef.current||exportRunning.current,isAgentCommandBusy:()=>!!exportRunning.current||!!historyRef.current.gestureStart});
+  const extensionHost=useExtensionHost({projectCommand,editorTools:extensionEditorTools.current,capture:capturePluginEditContext,inspect:(method,input)=>pluginContext.current.read[method](projectRef.current,editorRef.current.selection,{time_sec:readTime(),playing:editorRef.current.playing},input),getHistory:()=>historyRef.current,dispatch,startExport:startExtensionExport,hasProject:screen==='editor',epoch:projectLoadVersion,selection:()=>editorRef.current.selection,documentScope:()=>{readPluginContext();return pluginContext.current.read.scope();},isPreparationBusy:(kind,allowAgent)=>!!agentRunRef.current&&!allowAgent||kind!=='export'&&exportRunning.current,isBusy:()=>!!agentRunRef.current||exportRunning.current,isAgentCommandBusy:()=>!!exportRunning.current||!!historyRef.current.gestureStart});
 
   if (screen === 'home') {
     return (
       <div className="app home-app">
-        <HomeScreen recents={homeProjects} onNew={startNewProject} onOpen={open} onOpenRecent={openRecent}
+        <HomeScreen recents={homeProjects} onNew={(...args)=>startNewProject(...args).catch(error=>showAlert(extensionUiError(error)))} onOpen={open} onOpenRecent={openRecent}
           onRemoveRecent={removeHomeEntry} onImportMedia={importFromHome}
           onRecordStart={startRecording}
           unsavedNote={unsavedNote}
@@ -2411,12 +2591,13 @@ export default function App() {
   // while this component (the project, its history and autosave) stays mounted.
   return (
     <ErrorBoundary name="the editor" message={t('error-boundary.editor_message')} onUndo={state.past.length || state.gestureStart ? () => { dispatch({ type: 'endGesture' }); dispatch({ type: 'undo' }); } : undefined}>
-    <div className={`app mode-${workspaceMode} ${dragOver ? 'drag-over' : ''} drawer-${agentDrawer || 'none'}`} style={{ gridTemplateRows: agentMode ? `44px 34px minmax(0, 1fr) ${panes.bottom}px` : `44px minmax(0, 1fr) ${panes.bottom}px`, ...(agentMode ? { gridTemplateColumns: `${panes.left}px minmax(0, 1fr)${agentDrawer ? ` ${panes.right}px` : ''}` } : {}), '--agent-bottom': `${panes.bottom}px`, '--agent-left': `${panes.left}px` }}
+    <div className={`app mode-${workspaceMode} ${dragOver ? 'drag-over' : ''} drawer-${agentDrawer || 'none'}`} style={{ gridTemplateRows: agentMode ? `auto 34px minmax(0, 1fr) ${panes.bottom}px` : `auto minmax(0, 1fr) ${panes.bottom}px`, ...(agentMode ? { gridTemplateColumns: `${panes.left}px minmax(0, 1fr)${agentDrawer ? ` ${panes.right}px` : ''}` } : {}), '--agent-bottom': `${panes.bottom}px`, '--agent-left': `${panes.left}px` }}
       onDragOver={(e) => { e.preventDefault(); if (isFiles(e) && !isInternal(e)) setDragOver(true); }}
       onDragLeave={(e) => { if (e.target === e.currentTarget) setDragOver(false); }}
       onDrop={onDrop}>
-      <TopBar onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
-        onHome={async () => { setPlaying(false); await flushAutosave(); refreshSlots(); setScreen('home'); }} />
+      <ExtensionOverlayViews/>
+      <TopBar onExtensionError={showAlert} onManagePlugins={()=>setSettingsOpen('plugins')} onPluginPanels={()=>{setPluginPanelsOpen(true);if(agentMode)setAgentDrawer('plugins');else setRightCollapsed(false);}} agentBadge={externalBadge} workspaceMode={workspaceMode} onWorkspaceModeChange={setWorkspaceMode} project={project} onOpen={open} onSave={save} saveState={saveState} onExport={startExport} onExportAudio={(f) => exportAudio(f)} onSettings={() => setSettingsOpen(true)}
+        onHome={() => closeProjectToHome().catch(error=>showAlert(extensionUiError(error)))} />
 
       <div className="agent-workspace-tools" hidden={!agentMode}>
         <button className="btn btn-sm" aria-expanded={agentDrawer === 'media'} onClick={() => { setTab('media'); setAgentDrawer(d => d === 'media' ? null : 'media'); }}>{t('app.media')}</button>
@@ -2427,7 +2608,7 @@ export default function App() {
       </div>
       <div className="workspace" style={{ gridTemplateColumns: panes.rightCollapsed ? `${panes.left}px minmax(0, 1fr)` : `${panes.left}px minmax(0, 1fr) ${panes.right}px` }}>
         <LeftPanel tab={tab} setTab={setTab} media={project.media} dispatch={dispatch} settingsVersion={settingsVersion}
-          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} stockKey={stockKey} onTtsAdd={ttsAdd} onTtsBegin={projectStamp} selectedText={selectedText}
+          onImport={importMedia} onAdd={addToTimeline} onAddAsOverlay={addAsOverlay} onLibraryAdd={libraryAdd} onStockAdd={stockAdd} onAddFile={addFile} onTtsAdd={ttsAdd} onTtsBegin={projectStamp} selectedText={selectedText}
           onOpenSettings={(section) => setSettingsOpen(typeof section === 'string' ? section : true)} onRemoveMedia={removeMedia} onLocateMedia={locateMedia} onPeek={peek} peekId={peekId} onPeekAsset={peekAsset}
           recorder={recorder} onStartRecord={startVoiceOver} onAddText={addText} onAddTextOver={addTextOver}
           onRecordScreen={() => { setPlaying(false); setScreenOpen(true); }}
@@ -2464,7 +2645,7 @@ export default function App() {
       </div>
       <Splitter which="bottom" style={{ bottom: panes.bottom - 3, ...(agentMode ? { left: panes.left } : {}) }} onStart={startResize} onReset={resetSize} onNudge={nudgeSize} label={t('app.resize_the_timeline')} />
 
-      <Timeline project={project} time={time} duration={duration} selection={selection} clockRef={clockRef} playing={playing}
+      <Timeline onExtensionError={showAlert} project={project} time={time} duration={duration} selection={selection} clockRef={clockRef} playing={playing}
         agentRun={agentRun?.runKey === `${project.id}:${projectLoadVersion}` ? agentRun : null}
         agentOwnsEdit={state.agentEdit?.token === agentRun?.requestId} agentHasChanges={!!state.agentEdit?.steps.length}
         agentFocus={agentFocus?.runKey === `${project.id}:${projectLoadVersion}` ? (agentFocus.live && state.agentEdit?.token !== agentFocus.requestId ? { ...agentFocus, live: null } : agentFocus) : null}

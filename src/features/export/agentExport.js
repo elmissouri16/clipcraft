@@ -1,9 +1,11 @@
 import { renderable, exportDuration, cutRanges } from '../../state/store.js';
 import { EXPORT_PRESETS, ENCODER_PRESETS, RES_CAPS, FPS_CHOICES, AUDIO_RATES, settingsPatch, storedExportSettings, resolveExport } from './exportQuality.js';
+import exportFormats from 'clipcraft/internal/export-formats';
 
 // Export settings affect only this snapshot. Asking for a render never silently
 // edits the document or changes the user's saved export preferences.
 export function agentExportPlan(project, options = {}, caps = {}) {
+  const format=exportFormats.exportSelection(options.review?{format:'mp4',codec:options.codec}:options).id;
   let p = renderable(project);
   if (!(exportDuration(p) > 0)) throw Error('The timeline is empty.');
   if (options.review || options.range) {
@@ -17,21 +19,22 @@ export function agentExportPlan(project, options = {}, caps = {}) {
     if (Math.abs(exportDuration(p) - (to - from)) > 1 / (p.fps || 30) + .001) throw Error('The requested section could not be represented exactly. Choose boundaries outside a transition.');
   }
   if (options.quality !== undefined && !Object.hasOwn(EXPORT_PRESETS, options.quality)) throw Error('quality must be low, medium, high or ultra.');
-  let settings = options.quality ? { preset: options.quality } : storedExportSettings(p);
+  let settings = options.quality ? { preset: options.quality,format } : {...storedExportSettings(p),format};
   const custom = { ...(settings.preset === 'custom' ? settings.custom : EXPORT_PRESETS[settings.preset]) };
   let changed = false;
-  for (const [input, output, allowed] of [['codec', 'codec', ['h264', 'h265']], ['resolution', 'resCap', RES_CAPS], ['fps', 'fps', FPS_CHOICES], ['audio_kbps', 'audioKbps', AUDIO_RATES], ['encoder_preset', 'encoderPreset', ENCODER_PRESETS]]) if (options[input] !== undefined) {
+  for (const [input, output, allowed] of [['codec', 'codec', ['h264', 'h265','vp9']], ['resolution', 'resCap', RES_CAPS], ['fps', 'fps', FPS_CHOICES], ['audio_kbps', 'audioKbps', AUDIO_RATES], ['encoder_preset', 'encoderPreset', ENCODER_PRESETS]]) if (options[input] !== undefined) {
     if (!allowed.includes(options[input])) throw Error(`Invalid export ${input}.`);custom[output] = options[input];changed = true;
   }
   if (options.crf !== undefined) {
-    if (!Number.isInteger(options.crf) || options.crf < 0 || options.crf > 51) throw Error('crf must be an integer from 0 to 51.');
+    const max=format==='webm'||custom.codec==='vp9'?63:51;if (!Number.isInteger(options.crf) || options.crf < 0 || options.crf > max) throw Error('crf must be an integer from 0 to '+max+'.');
     custom.crf = options.crf;custom.mode = 'crf';changed = true;
   }
   if(options.bitrate_mbps!==undefined){
     if(!Number.isFinite(options.bitrate_mbps)||options.bitrate_mbps<.5||options.bitrate_mbps>100||options.crf!==undefined)throw Error('Choose bitrate_mbps from 0.5 to 100, or crf, separately.');
     custom.bitrateMbps=options.bitrate_mbps;custom.mode='bitrate';changed=true;
   }
-  if (changed) settings = { preset: 'custom', custom };
+  if (changed) settings = { preset: 'custom', custom,format };
   p = { ...p, ...settingsPatch(p, settings) };
-  return { project: p, effective: resolveExport(p, caps) };
+  const effective=resolveExport(p,caps);if(!effective.available)throw Error('VP9/Opus export is unavailable in this FFmpeg build.');
+  return { project: p, effective };
 }

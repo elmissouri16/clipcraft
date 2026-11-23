@@ -1,3 +1,4 @@
+import {validateCustomTimeline,customTimelineEdit,customTimelineDuration,customTypesRevision} from '../../shared/customTimeline.mjs';
 import {AUTOMATION_OPERATIONS} from '../../shared/pluginAutomation.mjs';
 import {effectParameters} from '../../shared/pluginEffects.mjs';
 import {PROPERTY_OPERATIONS} from '../../shared/pluginProperties.mjs';
@@ -29,7 +30,7 @@ import { RATIOS, sizeFor, EFFECTS, FILTERS } from "../features/effects/effects.j
 import { cleanPins } from "../features/timeline/track.js";
 import { normalizeChatSessions } from "../features/agent/chatSessions.js";
 import { editWordTiming, cropWordTiming, captionWordTiming } from "../features/text/timing.js";
-import { sliceFades } from "../features/audio/fades.js";
+import { clipAudioMix, sliceFades } from "../features/audio/fades.js";
 import { markProjectSnapshot } from './projectIdentity.js';
 
 import {validateExtensionSettings} from '../../shared/extensionConfiguration.mjs';
@@ -74,7 +75,7 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const numbersIn = (o, fields) => fields.every((f) => o[f] == null || isNum(o[f]));
 function validateRenderFields(item, key, invalid) {
   const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-  for (const field of ['volume', 'opacity', 'fadeIn', 'fadeOut', 'fadeInOffset', 'fadeOutOffset']) if (!numbersIn(item, [field])) invalid(`${key}.${field}`);
+  for (const field of ['volume', 'opacity', 'frozenEffectTime', 'fadeIn', 'fadeOut', 'fadeInOffset', 'fadeOutOffset']) if (!numbersIn(item, [field])) invalid(`${key}.${field}`);
   const tr = item.transition;
   if (tr != null && (!record(tr) || (tr.type != null && !(typeof tr.type === 'string' && TRANSITION_TYPE.test(tr.type))) || !numbersIn(tr, ['duration', 'timelineOverlap']))) invalid(`${key}.transition`);
   if (item.blend != null && !(typeof item.blend === 'string' && /^[a-z-]{1,32}$/.test(item.blend))) invalid(`${key}.blend`);
@@ -115,6 +116,7 @@ export function validateProject(p) {
       validateRenderFields(item, key, invalid);
     }
   }
+  validateCustomTimeline(p);
   for (const key of ['name', 'id', 'ratio', 'background']) {
     if (p[key] !== undefined && typeof p[key] !== 'string') invalid(key);
   }
@@ -178,7 +180,7 @@ function normalizeGaps(list, { keepTrailing = false } = {}) {
 // An id for a new gap on the main track that no clip of p uses: a gap that took a clip's id
 // would answer every lookup of that clip (and a second gap with the same id would too).
 function freshGapId(p, base) {
-  const used = new Set(Object.values(TRACKS).flatMap((key) => (p[key] || []).map((c) => c.id)));
+  const used = new Set([...Object.values(TRACKS).flatMap((key) => (p[key] || []).map((c) => c.id)),...(p.customClips??[]).map(c=>c.id),...(p.customTracks??[]).map(c=>c.id)]);
   let id = `${base}-gap`;
   for (let n = 2; used.has(id); n++) id = `${base}-gap${n}`;
   return id;
@@ -211,11 +213,16 @@ export function layerName(p, track, layer) {
 // solo — are video (its clips' own sound), overlay (picture clips with sound) and audio.
 // The layer a clip sits on: layered lanes read clip.layer; every other track has layer 0.
 export const clipLayer = (track, c) => (LAYERED[track] ? layerOf(c) : 0);
-export const clipLocked = (p, track, c) => !!c && isLayerLocked(p, track, clipLayer(track, c));
+export const clipLocked = (p, track, c) => !!c && (track==='custom'?!!p.customTracks?.find(row=>row.id===c.trackId)?.locked:isLayerLocked(p, track, clipLayer(track, c)));
+// Keep originals in the library while any reversed clip can restore them.
+export function reverseSourceUsed(p, id) {
+  return [p.videoClips, p.overlayClips, p.audioClips].some(list => list?.some(c => c.reversed?.mediaId === id));
+}
 // removeMedia deletes every clip that uses the item, so it answers to the same lock as a
 // delete: the first use of the item that sits on a locked layer, or null. The library UI
 // names this layer when it refuses the removal.
 export function lockedMediaUse(p, mediaId) {
+  const custom=p.customClips?.find(c=>c.mediaId===mediaId&&clipLocked(p,'custom',c));if(custom)return {track:'custom',clip:custom};
   const lists = [['video', p.videoClips], ['overlay', p.overlayClips || []], ['audio', p.audioClips]];
   for (const [track, list] of lists) {
     for (const c of list) {
@@ -316,7 +323,7 @@ function placeLayers(p, previous) {
 
 export function projectDuration(p) {
   const v = videoLayout(p.videoClips);
-  const ends = [v.length ? v[v.length - 1].end : 0];
+  const ends = [v.length ? v[v.length - 1].end : 0,customTimelineDuration(p)];
   p.textClips.forEach((c) => ends.push(c.start + c.duration));
   p.audioClips.forEach((c) => ends.push(c.start + freeLen('audio', c)));
   (p.overlayClips || []).forEach((c) => ends.push(c.start + freeLen('overlay', c)));
@@ -370,6 +377,9 @@ function reduceProjectInner(p, a) {
       return a.actions.reduce((next, action) => reduceProject(next, action), p);
     case 'load':
       return normalizeProject(a.project);
+    case 'customTimeline':
+      if(a.base&&a.base!==p||a.catalogRevision!==undefined&&a.catalogRevision!==customTypesRevision())return p;
+      try{return customTimelineEdit(p,a.operations);}catch{return p;}
     case 'setExtensionSettings':
       validateExtensionSettings(a.settings);
       return { ...p, extensionSettings: a.settings };
@@ -392,12 +402,14 @@ function reduceProjectInner(p, a) {
       return changed ? { ...p, media } : p;
     }
     case 'removeMedia':
+      if (reverseSourceUsed(p, a.id)) return p;
       return {
         ...p,
         media: p.media.filter((m) => m.id !== a.id),
         videoClips: p.videoClips.filter((c) => c.mediaId !== a.id),
         audioClips: p.audioClips.filter((c) => c.mediaId !== a.id),
         overlayClips: p.overlayClips.filter((c) => c.mediaId !== a.id),
+        ...(p.customClips?{customClips:p.customClips.filter(c=>c.mediaId!==a.id)}:{}),
       };
     case 'addToTimeline': {
       const m = p.media.find((x) => x.id === a.mediaId);
@@ -699,6 +711,7 @@ function reduceProjectInner(p, a) {
     }
     case 'duplicate': {
       const key = TRACKS[a.track];
+      if (!key) return p;
       const i = p[key].findIndex((c) => c.id === a.id);
       if (i < 0 || p[key][i].gap) return p;
       const c = p[key][i];
@@ -771,37 +784,13 @@ function reduceProjectInner(p, a) {
       const m = c && p.media.find((x) => x.id === c.mediaId);
       if (!c || c.gap || !m || m.type !== 'video' || !m.hasAudio || c.muted) return p;
       const start = a.track === 'video' ? videoLayout(p.videoClips).find((l) => l.clip.id === c.id).start : c.start;
-      const audio = { id: a.newId, mediaId: m.id, start, in: c.in, out: c.out, speed: c.speed || 1, volume: c.volume ?? 1, fadeIn: 0, fadeOut: 0 };
+      const audio = { id: a.newId, mediaId: m.id, start, in: c.in, out: c.out, speed: c.speed || 1, ...clipAudioMix(c) };
       return { ...p, [key]: p[key].map((x) => (x.id === c.id ? { ...x, muted: true } : x)), audioClips: [...p.audioClips, audio] };
     }
-    case 'paste': {
-      // A copied clip at time `at`: main clips are inserted where `at` falls, others start at `at`.
-      const key = TRACKS[a.track];
-      if (!key || !a.clip) return p;
-      // The copy is independent: a pasted clip never shares its source's audio link
-      // (two clips with one linkId would fight over the partner).
-      let { linkId, linkOff, linkInOff, ...clip } = a.clip;
-      // A clip copied in another project (the clipboard outlives a project load) brings its media item
-      // (a.media): this project's item for the same file is used, or the item is added. Without it a
-      // clip whose media is not here is not pasted: the timeline would show a block the export drops.
-      let media = p.media;
-      if (clip.mediaId && !p.media.some((m) => m.id === clip.mediaId && (!a.media || m.path === a.media.path))) {
-        const same = a.media?.path && p.media.find((m) => m.path === a.media.path);
-        if (same) clip = { ...clip, mediaId: same.id };
-        else if (a.media?.id === clip.mediaId && typeof a.media.path === 'string') {
-          const id = p.media.some((m) => m.id === a.media.id) ? a.mediaId || `${a.newId}-media` : a.media.id;
-          media = [...p.media, { ...a.media, id }];
-          clip = { ...clip, mediaId: id };
-        } else return p;
-      }
-      if (a.track === 'video') {
-        const list = [...p.videoClips];
-        const index = videoLayout(list).filter((l) => (l.start + l.end) / 2 < a.at).length;
-        list.splice(index, 0, { ...clip, id: a.newId, transition: null });
-        return { ...p, media, videoClips: list };
-      }
-      return { ...p, media, [key]: [...p[key], { ...clip, id: a.newId, start: Math.max(0, a.at) }] };
-    }
+    case 'paste':
+      return pasteClips(p, [{ ...a, start: 0 }], a.at);
+    case 'pasteSelection':
+      return pasteClips(p, a.items, a.at);
     case 'cutRanges':
       return cutRanges(p, a.ranges, { ripple: a.ripple === true });
     case 'retimeVideo':
@@ -817,6 +806,79 @@ function reduceProjectInner(p, a) {
     default:
       return p;
   }
+}
+
+// Resolve both playback media and reverse originals against the destination library.
+function pasteClips(p, items, at) {
+  if (!items?.length || !Number.isFinite(at)) return p;
+  let media = p.media;
+  const resolve = (id, source, fallback) => {
+    const local = media.find(m => m.id === id);
+    if (local && (!source || local.path === source.path)) return id;
+    if (source?.id !== id || !source.path) return null;
+    const same = media.find(m => m.path === source.path);
+    if (same) return same.id;
+    let nextId = local ? fallback : id;
+    for (let n = 2; media.some(m => m.id === nextId); n++) nextId = fallback + '-' + n;
+    media = [...media, { ...source, id: nextId }];
+    return nextId;
+  };
+  const copies = [], links = new Map(), ids = new Map(items.map(item => [item.clip?.id, item.newId]));
+  for (const item of items) {
+    const { track, newId, clip } = item;
+    if (!TRACKS[track] || !clip || clip.gap || clipLocked(p, track, clip)) return p;
+    const { linkId, linkOff, linkInOff, ...copy } = clip;
+    copy.id = newId;
+    if (clip.mediaId && !(copy.mediaId = resolve(clip.mediaId, item.media, item.mediaId || newId + '-media'))) return p;
+    if (clip.reversed) {
+      const original = resolve(clip.reversed.mediaId, item.originalMedia, newId + '-original');
+      if (!original) return p;
+      copy.reversed = { ...clip.reversed, mediaId: original };
+    }
+    if (copy.pin && ids.has(copy.pin.to)) copy.pin = { ...copy.pin, to: ids.get(copy.pin.to) };
+    else if (copy.pin && item.projectId && item.projectId !== p.id) delete copy.pin;
+    if (linkId) {
+      const pair = links.get(linkId) || {};
+      pair[track === 'audio' ? 'sound' : 'picture'] = { track, copy, linkOff, linkInOff };
+      links.set(linkId, pair);
+    }
+    copies.push({ track, copy, start: item.start });
+  }
+
+  const main = copies.filter(item => item.track === 'video').sort((a, b) => a.start - b.start);
+  const first = Math.min(...copies.map(item => item.start));
+  let delta = Math.max(0, at) - first;
+  const next = { ...p, media };
+  if (main.length) {
+    const index = videoLayout(p.videoClips).filter(row => (row.start + row.end) / 2 < main[0].start + delta).length;
+    next.videoClips = [...p.videoClips];
+    const sequence = [];
+    let end = main[0].start;
+    for (const { start, copy } of main) {
+      const gap = start - end;
+      if (gap > 1e-7) sequence.push(newGap(freshGapId(p, copy.id), gap));
+      copy.transition = gap < -1e-7 && copy.transition ? { ...copy.transition, timelineOverlap: -gap } : null;
+      sequence.push(copy);
+      end = start + clipLen(copy);
+    }
+    next.videoClips.splice(index, 0, ...sequence);
+    delta = picStart(next, 'video', main[0].copy) - main[0].start;
+  }
+  for (const { track, start, copy } of copies) {
+    if (track === 'video') continue;
+    const key = TRACKS[track];
+    if (next[key] === p[key]) next[key] = [...p[key]];
+    copy.start = start + delta;
+    next[key].push(copy);
+  }
+  for (const { picture, sound } of links.values()) {
+    if (!picture || !sound) continue;
+    sound.copy.linkId = picture.copy.linkId = picture.copy.id + '~link';
+    sound.copy.linkOff = sound.linkOff ?? 0;
+    sound.copy.linkInOff = sound.linkInOff ?? sound.copy.in - picture.copy.in;
+    sound.copy.start = picStart(next, picture.track, picture.copy) + sound.copy.linkOff;
+  }
+  return next;
 }
 
 // Every reduction funnels through here so a motion-tracking pin can never dangle: deleting a clip (or
@@ -1023,7 +1085,7 @@ export const cutOrigins = (project) => (project && cutPieceOrigins.get(project))
 // Remove timeline intervals with one shared time map. Manual callers keep free
 // tracks fixed by default; the agent opts into ripple for captions, audio,
 // overlays, effects and markers. Linked audio always follows its picture.
-export function cutRanges(p, ranges, { ripple = false } = {}) {
+export function cutRanges(p, ranges, { ripple = false, reportInvalidCustom = false } = {}) {
   const total = exportDuration(p);
   if (!Array.isArray(ranges) || ranges.some(r => !r || !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.end <= r.start)) return p;
   const cuts = [];
@@ -1067,6 +1129,7 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
         next.out = clip.gap ? b - a : clip.in + (b - start) * speed;
       } else {
         next.duration = b - a;
+        if (track === 'custom') next.sourceIn = clip.sourceIn + (a - start) * clip.speed;
         if (clip.words?.length && (a > start || b < end)) {
           next.words = clip.words.filter(w => w.start < b - start && w.end > a - start)
             .map(w => ({ ...w, start: Math.max(0, w.start - (a - start)), end: Math.min(b - a, w.end - (a - start)) }));
@@ -1153,6 +1216,13 @@ export function cutRanges(p, ranges, { ripple = false } = {}) {
   }
   if (ripple) result.markers = (p.markers || []).filter(m => !cuts.some(r => m.time >= r.start && m.time < r.end))
     .map(m => ({ ...m, time: mapped(m.time) }));
+  if (p.customClips?.length) {
+    try { validateCustomTimeline(result); }
+    catch (error) {
+      if (reportInvalidCustom) throw Error(`Cannot cut the custom track: ${error.message}. Keep each custom clip at least 0.02 seconds long and within project limits.`);
+      return p;
+    }
+  }
   if (origins.size) cutPieceOrigins.set(result, origins);
   return result;
 }
@@ -1410,7 +1480,7 @@ function splitLinked(p, track, id, t, newId) {
   return res;
 }
 
-const CLIP_LISTS = { video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', effect: 'effectClips' };
+const CLIP_LISTS = { custom:'customClips', video: 'videoClips', overlay: 'overlayClips', text: 'textClips', audio: 'audioClips', effect: 'effectClips' };
 export function findClipIn(p, track, id) {
   const key = CLIP_LISTS[track];
   return key ? (p[key] || []).find((c) => c.id === id) : undefined;
@@ -1554,6 +1624,7 @@ export function actionLocked(p, a) {
 // clip ended up on a locked layer, the whole action is reverted.
 const PLACEMENT_CHECKED = { addToTimeline: 'clipId', addOverlayClip: 'clipId', addText: 'clipId', moveToOverlay: 'id', extractAudio: 'newId' };
 function placementBlocked(before, after, a) {
+  if (a.type === 'pasteSelection') return a.items.some(item => clipLocked(after, item.track, findClipIn(after, item.track, item.newId)));
   const idKey = PLACEMENT_CHECKED[a.type];
   if (!idKey || after === before) return false;
   const id = a[idKey];
@@ -1770,7 +1841,8 @@ export function prepareProjectAction(project, action) {
 }
 
 // Only trusted host planning can mint these tokens; plugin-authored actions cannot.
-const pluginEditPlans=new WeakMap(),pluginClipArrays=new WeakMap();
+const pluginEditPlans=new WeakMap(),pluginClipArrays=new WeakMap(),pluginUndoPlans=new WeakMap();
+export function prepareExtensionUndo(history,verify,source){const token={};pluginUndoPlans.set(token,{history,verify,source});return {type:'pluginHistoryUndo',token};}
 export const pluginEditsApplied=(history,action)=>!!action?.token&&!!history?.pluginEditReceipts?.includes(action.token);
 // Only the renderer's validated extension planner receives this function. Public
 // extension requests contain operations, never reducer actions or plan tokens.
@@ -2299,7 +2371,7 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
  if(bindings.size!==targets.length)throw Error('Duplicate private edit targets.');
  const originals=new Map(),updated=new Map();
  let main=project.videoClips,overlay=project.overlayClips,audio=project.audioClips;const approvedLinked=new Map(),managedTargets=new Set(),shiftedLinks=new Set(),movedMain=new Set(),reorderedLinked=new Set(),reorderedAudio=new Set();const beforeMain=videoLayout(main),mainById=new Map(beforeMain.map(l=>[l.clip.id,l]));
- const usedIds=new Set([...Object.values(TRACKS).flatMap(key=>(project[key]||[]).map(c=>c.id)),...(project.media||[]).map(m=>m.id),...(project.markers||[]).map(m=>m.id),...(project.stickerClips||[]).flatMap(c=>[c.id,c.linkId]),...Object.values(TRACKS).flatMap(key=>(project[key]||[]).map(c=>c.linkId))]);
+ const usedIds=new Set([...(project.customClips??[]).map(c=>c.id),...(project.customTracks??[]).map(c=>c.id),...Object.values(TRACKS).flatMap(key=>(project[key]||[]).map(c=>c.id)),...(project.media||[]).map(m=>m.id),...(project.markers||[]).map(m=>m.id),...(project.stickerClips||[]).flatMap(c=>[c.id,c.linkId]),...Object.values(TRACKS).flatMap(key=>(project[key]||[]).map(c=>c.linkId))]);
  const allocateId=()=>{for(let i=0;i<32;i++){const id='plugin-'+uid();if(!usedIds.has(id)){usedIds.add(id);return id;}}throw Error('Could not allocate a unique clip ID.');};
  const mainTarget=handle=>{
   const binding=bindings.get(handle),publicClip=context.timeline.clips.find(c=>c.id===handle),layout=binding&&mainById.get(binding.id);
@@ -2510,7 +2582,7 @@ export function preparePluginEdits(project,context,targets,value,permissions=['c
 const historyOrigins=new WeakMap(),initialHistoryOrigin=Object.freeze({sequence:0,cacheSequence:0,source:{kind:'system'},reason:'open'});
 export const historyOrigin=state=>historyOrigins.get(state)||initialHistoryOrigin;
 export function historyReducer(state,a,preview=false){
- const previous=historyOrigin(state),plan=a.type==='pluginClipEdits'?pluginEditPlans.get(a.token):null,next=reduceHistoryAction(state,a,preview);
+ const previous=historyOrigin(state),plan=a.type==='pluginClipEdits'?pluginEditPlans.get(a.token):a.type==='pluginHistoryUndo'?pluginUndoPlans.get(a.token):null,next=reduceHistoryAction(state,a,preview);
  if(next!==state){
   const before=state.present,after=next.present,keys=new Set([...Object.keys(before||{}),...Object.keys(after||{})]),changed=[...keys].some(key=>key!=='craftAI'&&before?.[key]!==after?.[key]);
   if(!changed)historyOrigins.set(next,previous);
@@ -2518,12 +2590,16 @@ export function historyReducer(state,a,preview=false){
   else{
    const owner=state.agentEdit&&(a.agentToken||(a.type==='undoAgentEdit'&&a.token))===state.agentEdit.token?state.agentEdit.source:null;
    const source=plan?.source||owner||(a.agentToken||a.type.startsWith('agent')?{kind:'agent'}:a.type.startsWith('plugin')?{kind:'extension'}:a.type==='load'?{kind:'system'}:{kind:'user'});
-   historyOrigins.set(next,{sequence:previous.sequence+1,cacheSequence:previous.cacheSequence,source,reason:['undo','redo'].includes(a.type)?a.type:a.type==='load'?'open':'edit'});
+   historyOrigins.set(next,{sequence:previous.sequence+1,cacheSequence:previous.cacheSequence,source,reason:a.type==='pluginHistoryUndo'?'undo':['undo','redo'].includes(a.type)?a.type:a.type==='load'?'open':'edit'});
   }
  }
  return next;
 }
 function reduceHistoryAction(state, a, preview = false) {
+  if(a.type==='pluginHistoryUndo'){
+    const plan=pluginUndoPlans.get(a.token);if(!plan||plan.history!==state||state.agentEdit||state.gestureStart||!state.past.length||pluginEditsApplied(state,a)||!plan.verify())return state;
+    const next=reduceHistoryAction(state,{type:'undo'},preview);return preview?next:{...next,pluginEditReceipts:[...(state.pluginEditReceipts||[]),a.token].slice(-256)};
+  }
   let editToken;
   if(a.type==='pluginClipEdits'){
     const plan=pluginEditPlans.get(a.token);
@@ -2553,6 +2629,9 @@ function reduceHistory(state, a, extensionEdit = false) {
   if (!state.gestureNest || !next.gestureNest || next.present === state.present || next.gestureStart !== state.gestureStart) return next;
   return { ...next, gestureStart: reduceHistoryStep({ past: [], present: state.gestureStart, future: [] }, a, extensionEdit).present };
 }
+function followCustomTrackState(current,restored){
+ if(!restored.customTracks)return {};const states=new Map((current.customTracks??[]).map(track=>[track.id,track]));return {customTracks:restored.customTracks.map(track=>{const now=states.get(track.id);return now&&now.typeId===track.typeId?{...track,...Object.fromEntries(['locked','hidden','muted','solo'].map(key=>[key,now[key]]))}:track;})};
+}
 function reduceHistoryStep(state, a,extensionEdit=false) {
   if (a.type === 'beginAgentEdit') {
     if (typeof a.token !== 'string' || !a.token || state.agentEdit || state.gestureStart) return state;
@@ -2576,7 +2655,7 @@ function reduceHistoryStep(state, a,extensionEdit=false) {
     // call: back to where the last call that changed something began; else one step.
     const start = a.call ? (edit.calls || []).filter(c => c < edit.steps.length).at(-1) ?? 0 : edit.steps.length - 1;
     const restored = edit.steps[start], steps = edit.steps.slice(0, start);
-    return { ...state, present: { ...restored, layerState: followLayerState(state.present, restored) },
+    return { ...state, present: { ...restored, layerState: followLayerState(state.present, restored), ...followCustomTrackState(state.present,restored) },
       future: steps.length ? [] : edit.future, agentEdit: { ...edit, steps, calls: (edit.calls || []).filter(c => c < start) } };
   }
   if (a.type === 'craftChat') {
@@ -2617,6 +2696,10 @@ function reduceHistoryStep(state, a,extensionEdit=false) {
         steps: state.agentEdit.steps.map(patch), future: state.agentEdit.future.map(patch) } } : {}),
     };
   }
+  if(a.type==='customTrackState'){
+    if(a.base!==state.present||!Array.isArray(a.operations)||a.operations.some(op=>op.type!=='update-track'||!op.patch||Object.keys(op.patch).some(key=>!['hidden','locked','muted','solo'].includes(key))))return state;
+    try{const present=customTimelineEdit(state.present,a.operations);return present===state.present?state:{...state,present};}catch{return state;}
+  }
   if (a.type === 'setLayerState') {
     // Lock / hide / mute / solo toggles are view-and-guard state, NOT document edits: they
     // never push an undo step, and undo / redo never change them (they are carried over
@@ -2646,12 +2729,12 @@ function reduceHistoryStep(state, a,extensionEdit=false) {
   if (a.type === 'undo') {
     if (!state.past.length) return state;
     const restored = state.past[state.past.length - 1];
-    return { past: state.past.slice(0, -1), present: { ...restored, layerState: followLayerState(state.present, restored) }, future: [state.present, ...state.future] };
+    return { past: state.past.slice(0, -1), present: { ...restored, layerState: followLayerState(state.present, restored), ...followCustomTrackState(state.present,restored) }, future: [state.present, ...state.future] };
   }
   if (a.type === 'redo') {
     if (!state.future.length) return state;
     const restored = state.future[0];
-    return { past: [...state.past, state.present], present: { ...restored, layerState: followLayerState(state.present, restored) }, future: state.future.slice(1) };
+    return { past: [...state.past, state.present], present: { ...restored, layerState: followLayerState(state.present, restored), ...followCustomTrackState(state.present,restored) }, future: state.future.slice(1) };
   }
   // Folds every undo step created since `from` (a past.length noted earlier) into one, so a whole AI request
   // can be undone with a single Undo.

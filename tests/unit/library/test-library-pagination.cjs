@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const {parseMyinstants,search}=require('../../../electron/library/library.cjs');
+const {parseMyinstants,search}=require('../../../electron/bundled-media/myinstants/dist/client.cjs');
 // Original minimal records; no third-party page scripts or assets are copied.
 const item=(id,name)=>`<button onclick="play('/media/sounds/fixture-${id}.mp3', 'loader-${id}', 'fixture-${id}')"></button><a class="instant-link">${name}</a>`;
 const infinite=content=>`<div id="instants_container">${content}</div><div id="loading"></div>`;

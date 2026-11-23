@@ -21,6 +21,12 @@ const assert = require('node:assert/strict');
   let origin;
   const server = http.createServer((req, res) => {
     requests.push(req.url); const u = new URL(req.url, origin);
+    if (u.pathname.startsWith('/en/')) {
+      const page = Number(u.searchParams.get('page') || 1), id = page === 2 ? '22' : '11';
+      const html = `<div id="instants_container"><button onclick="play('/media/sounds/fixture-${id}.mp3', 'loader-${id}', 'fixture-${id}')"></button><a class="instant-link">Original page ${page}</a></div><div id="loading"></div>`;
+      res.writeHead(page >= 3 ? 404 : 200, {'content-type':'text/html'});
+      return res.end(page >= 3 ? '' : html);
+    }
     const audio = u.pathname.includes('/audio/');
     if (u.pathname.endsWith('/thumb/') || u.pathname === '/photo.png' || u.pathname === '/sound.wav') {
       const sound = u.pathname === '/sound.wav'; res.setHeader('content-type', sound ? 'audio/wav' : 'image/png');
@@ -42,11 +48,12 @@ const assert = require('node:assert/strict');
   let electron;
   try {
     for(let i=0;i<100;i++){try{if((await fetch(url)).ok)break;}catch{}await new Promise(r=>setTimeout(r,80));}
-    electron=spawn(require('electron'),['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_QUIET:'0',FVE_SMOKE_MODE:'openverse',CLIPCRAFT_ASSETS_DIR:pack,CLIPCRAFT_BUNDLED_PACK_DIR:path.join(dir,'no-bundle'),FVE_OPENVERSE_API:`${origin}/v1/`,VITE_DEV_SERVER_URL:url}});
+    electron=spawn(require('electron'),['--no-sandbox',root],{cwd:root,stdio:['ignore',fd,fd],env:{...process.env,FVE_SMOKE:dir,FVE_SMOKE_QUIET:'0',FVE_SMOKE_MODE:'openverse',CLIPCRAFT_BUNDLED_MEDIA:'1',FVE_MYINSTANTS_URL:origin,CLIPCRAFT_ASSETS_DIR:pack,CLIPCRAFT_BUNDLED_PACK_DIR:path.join(dir,'no-bundle'),FVE_OPENVERSE_API:`${origin}/v1/`,VITE_DEV_SERVER_URL:url}});
     const code=await new Promise(resolve=>{const t=setTimeout(()=>{electron.kill('SIGKILL');resolve(-1);},120000);electron.once('exit',c=>{clearTimeout(t);resolve(c);});});
     fs.writeFileSync(path.join(dir,'requests.json'),JSON.stringify(requests,null,2));
     const result=JSON.parse(fs.readFileSync(path.join(dir,'result.json'))); assert.equal(code,0,result.error);assert.ok(!result.error,result.error);
     assert.ok(requests.some(r=>r.includes('/audio/'))); assert.ok(requests.some(r=>r.includes('license=cc0%2Cby')));
+    if (!process.env.FVE_BROWSER_EMPTY_PACK) assert.ok([1,2,3].every(page => requests.some(value => {const url = new URL(value, origin); return url.searchParams.get('name') === 'original pagination' && url.searchParams.get('page') === String(page);})));
     console.log('Real-app Openverse passed; evidence: '+dir);
   } finally { electron?.kill();vite.kill();server.close();fs.closeSync(fd); }
 })().catch(e=>{console.error(e);process.exitCode=1;});

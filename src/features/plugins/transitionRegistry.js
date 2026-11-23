@@ -8,7 +8,7 @@ export function setPluginTransitions(rows=[]) {
   const next=new Map();
   for(const row of rows){
     if(!/^[a-f0-9]{64}$/.test(row.digest)||typeof row.pluginId!=='string'||row.contributionId!==`${row.pluginId}/${row.id}`)throw Error('Invalid transition dependency identity.');
-    const definition=validateTransitionDefinition({id:row.id,name:row.name,expression:row.expression,parameters:row.parameters,duration:row.duration});
+    const definition=validateTransitionDefinition({id:row.id,name:row.name,...(row.fragment!==undefined?{fragment:row.fragment}:{expression:row.expression}),parameters:row.parameters,duration:row.duration});
     const item={...definition,pluginId:row.pluginId,contributionId:row.contributionId,version:row.version,digest:row.digest,preferred:row.preferred===true};
     next.set(transitionId(item),item);
   }

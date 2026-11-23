@@ -13,10 +13,33 @@ function file(dir) {
   return path.join(dir, 'favorites.json');
 }
 
+// Existing saved online favorites acquire the service identity used by the current browser.
+function onlineItem(item, type) {
+  if (!item || item.sourceId) return item;
+  const audio = type === 'audio';
+  const id = String(item.id || '');
+  let vendor, kind = item.kind;
+  if (item.origin === 'openverse' || id.startsWith('openverse-') || audio && ['freesound','jamendo'].includes(item.provider)) {
+    vendor = 'openverse';
+    kind ||= audio ? (item.provider === 'jamendo' ? 'music' : 'sfx') : 'photo';
+    item = {...item, openverseId:item.openverseId || id.replace(/^openverse-/, ''), licenses:item.licenses || (item.license === 'by' ? 'attribution' : 'cc0'), sourceLinks:true};
+  } else if (audio && id.startsWith('myinstants-')) { vendor = 'myinstants'; kind = 'trolls'; }
+  else if (audio && id.startsWith('soundza-')) { vendor = 'soundza'; kind = 'sfx'; }
+  else if (!audio && /^\d+$/.test(id)) { vendor = 'pixabay'; kind = type; }
+  return vendor ? {...item, kind, sourceId:'clipcraft.' + vendor + '.catalog'} : item;
+}
+function onlineEntry(entry) {
+  if (!entry || !['stock','library'].includes(entry.source)) return entry;
+  const item = onlineItem(entry.item, entry.type);
+  if (!item?.sourceId) return entry;
+  const prefix = entry.source === 'stock' ? 'stock:' + item.kind : 'lib';
+  return {...entry, item, key:[prefix,item.sourceId,item.id].join(':')};
+}
+
 function list(dir) {
   try {
     const data = JSON.parse(fs.readFileSync(file(dir), 'utf8'));
-    return Array.isArray(data) ? data : [];
+    return Array.isArray(data) ? data.map(onlineEntry) : [];
   } catch {
     return [];
   }
@@ -36,6 +59,7 @@ function valid(e) {
 
 // Adds the entry, or removes it when its key is already a favorite. Returns the new list.
 function toggle(dir, entry) {
+  entry = onlineEntry(entry);
   if (!valid(entry)) throw new Error('This item cannot be added to favorites.');
   const cur = list(dir);
   const next = cur.some((e) => e.key === entry.key)

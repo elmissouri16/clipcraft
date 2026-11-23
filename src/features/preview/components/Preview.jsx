@@ -1,3 +1,4 @@
+import PreviewRenderErrors from './PreviewRenderErrors.jsx';
 import { actionFor, shortcutHint, withShortcut } from '../../../app/keymap.js';
 import { audioGain } from '../../audio/fades.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -427,13 +428,14 @@ export default function Preview({
       src.style.visibility = processed ? 'hidden' : ''; // '' inherits: 'visible' would show through a hidden slot
       if (processed) {
         cv.style.transform = flip;
-        if (m.type === 'image') { if (img.complete) drawKeyed(cv, img, img.naturalWidth, img.naturalHeight, chroma, pfx, { crop, custom }); }
+        if (m.type === 'image') { if (img.complete) drawKeyed(cv, img, m.customInput?m.width:img.naturalWidth, m.customInput?m.height:img.naturalHeight, chroma, pfx, { crop, custom }); }
         else if (v.readyState >= 2) drawKeyed(cv, v, v.videoWidth, v.videoHeight, chroma, pfx, { crop, custom });
       }
     });
 
     // Animated transitions: both clips are drawn into small frames and mixed by the same expression the export uses.
     const tc = trCanvas.current;
+    if(!fxTr)tc.dataset.renderError='';
     if (fxTr) {
       const outgoing = active[0];
       const pw = Math.min(960, project.width);
@@ -531,7 +533,7 @@ export default function Preview({
       src.style.visibility = processed ? 'hidden' : ''; // '' inherits: 'visible' would show through a hidden slot
       if (processed) {
         el.cv.style.transform = flip;
-        if (live || m.type === 'image') { if (src.complete) drawKeyed(el.cv, src, src.naturalWidth, src.naturalHeight, chroma, pfx, { crop, custom }); }
+        if (live || m.type === 'image') { if (src.complete) drawKeyed(el.cv, src, m.customInput?m.width:src.naturalWidth, m.customInput?m.height:src.naturalHeight, chroma, pfx, { crop, custom }); }
         else if (el.v.readyState >= 2) drawKeyed(el.cv, el.v, el.v.videoWidth, el.v.videoHeight, chroma, pfx, { crop, custom });
       }
     });
@@ -595,6 +597,8 @@ export default function Preview({
   // from the DOM side, so it glides even when React renders drop frames.
   useEffect(() => {
     if (!playing) return;
+    // Position the decoders at the requested frame before consulting the media clock.
+    playbackFrame.current.apply(time, false);
     const master = { time, stamp: performance.now() };
     const controlVersion = clockRef?.current.controlVersion;
     let raf;
@@ -605,7 +609,7 @@ export default function Preview({
       const frame = playbackFrame.current;
       let t = interpolateTime(master.time, master.stamp, performance.now(), 1);
       const lead = leadRef.current;
-      if (lead?.el && lead.el.readyState >= 2 && !lead.el.paused && t >= lead.item.start && t < lead.item.end) {
+      if (lead?.el && lead.el.readyState >= 2 && !lead.el.seeking && !lead.el.dataset.swap && !lead.el.paused && t >= lead.item.start && t < lead.item.end) {
         const mt = lead.item.start + (lead.el.currentTime - lead.clip.in) / (lead.clip.speed || 1);
         const fix = Number.isFinite(mt) ? anchorCorrection(mt, t) : null;
         if (fix) { master.time = fix.time; master.stamp = performance.now(); t = fix.time; }
@@ -696,6 +700,7 @@ export default function Preview({
         </button>}
       </div>
       {peek && <MediaPeek m={peek} fps={project.fps} onClose={onClosePeek} onAdd={onAddPeek} />}
+      <PreviewRenderErrors root={playerRef} issues={project.customRenderIssues}/>
       <div className={`stage-wrap ${view.z > 1 ? 'zoomed' : ''}`} ref={wrapRef} onMouseDown={onStageMouseDown}>
         <div className="stage" ref={stageRef} style={{
           aspectRatio: `${project.width} / ${project.height}`, background: project.background,

@@ -14,7 +14,7 @@ const names = (tools) => tools.map((t) => t.name);
 const PROJECT = names(PROJECT_TOOLS);
 
 await check('the external list excludes CraftAI-only plugin commands', () => {
-  assert.deepEqual(PROJECT, ['get_status', 'list_projects', 'create_project', 'open_project', 'save_project', 'close_project']);
+  assert.deepEqual(PROJECT, ['get_status', 'list_projects', 'create_project', 'duplicate_project', 'open_project', 'save_project', 'close_project']);
   assert.deepEqual(names(externalTools('gemini').tools), [...PROJECT, ...names(nativeTools('claude-agent-sdk', [], { pluginCommands:false }).tools)]);
   assert.deepEqual(names(externalTools('codex-sdk').tools), [...PROJECT, ...names(nativeTools('codex-sdk', [], { pluginCommands:false }).tools)]);
 });
@@ -45,12 +45,14 @@ await check('on Home editor tools are refused; while CraftAI runs every change i
       open: async () => ({ opened: 'p1' }), save: async () => ({ saved: true }), close: async () => ({ screen: 'home' }) },
   });
   assert.match((await host.call({ callId: 'a', name: 'add_text', args: { text: 'x' } })).error, /No project is open/);
+  assert.match((await host.call({ callId: 'a-copy', name: 'duplicate_project' })).error, /No project is open/);
   const status = await host.call({ callId: 'b', name: 'get_status', args: {}, client: { name: 'Agent' } });
   assert.equal(status.screen, 'home'); assert.equal(status.connected_as, 'Agent'); assert.equal(status.project, null);
   assert.deepEqual((await host.call({ callId: 'c', name: 'list_projects', args: {} })).projects, [{ id: 'p1' }]);
   busy = true;
   assert.match((await host.call({ callId: 'd', name: 'create_project', args: { format: '9:16' } })).error, /CraftAI is editing/);
   screen = 'editor';
+  assert.match((await host.call({ callId: 'e-copy', name: 'duplicate_project' })).error, /CraftAI is editing/);
   assert.match((await host.call({ callId: 'e', name: 'add_text', args: { text: 'x' } })).error, /CraftAI is editing/);
   assert.equal((await host.call({ callId: 'f', name: 'get_status', args: {} })).craftai_busy, true, 'reads still answer');
   busy = false; screen = 'home';

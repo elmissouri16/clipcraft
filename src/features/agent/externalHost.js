@@ -14,8 +14,9 @@ export const PROJECT_TOOLS = [
   { name: 'create_project', description: 'Start a new empty project and open it in the editor. The current project is saved first.', parameters: { type: 'OBJECT', properties: {
     format: { ...S, enum: ['16:9', '9:16', '1:1', '4:5', '21:9'], description: '16:9 landscape, 9:16 vertical, 1:1 square, 4:5 portrait, 21:9 ultrawide.' },
     fps: { type: 'INTEGER', enum: [24, 30, 60] }, name: { ...S, description: 'Project name.' } }, required: ['format'] } },
+  { name: 'duplicate_project', description: 'Save the open project and open an independent copy with its own Home entry and autosave. The copy starts with the same timeline, settings and media references, a fresh chat and no file path.', parameters: { type: 'OBJECT', properties: { name: { ...S, description: 'Name for the copy. Defaults to the source name followed by " (copy)".' } } } },
   { name: 'open_project', description: 'Open a project in the editor by its id from list_projects, or by the path of a .clipcraft.json file. The current project is saved first.', parameters: { type: 'OBJECT', properties: { id: S, path: { ...S, description: 'Absolute path of a project file.' } } } },
-  { name: 'save_project', description: 'Save the open project to its file. Give path (absolute, ending in .clipcraft.json, in an existing folder) to save a project that has no file yet, or a copy under a new name; existing files are never overwritten. Every project is also auto-saved for Home.', parameters: { type: 'OBJECT', properties: { path: S } } },
+  { name: 'save_project', description: 'Save the open project to its file. Give an absolute path ending in .clipcraft.json in an existing folder to bind this project to a new file. To start an independent project from this one, use duplicate_project.', parameters: { type: 'OBJECT', properties: { path: S } } },
   { name: 'close_project', description: 'Save the open project and return to Home.', parameters: { type: 'OBJECT', properties: {} } },
 ];
 const PROJECT_NAMES = new Set(PROJECT_TOOLS.map((tool) => tool.name));
@@ -32,10 +33,10 @@ export function externalTools(provider) {
   return { catalog, tools: [...PROJECT_TOOLS, ...tools] };
 }
 export const externalInstructions = () => `${nativeSystemPrompt()}
-ClipCraft runs as a desktop app and you edit the project open in it while the user watches. Call get_status first. Use list_projects, open_project or create_project when no project is open. Each change you make is part of an edit that complete_edit validates; the user can undo each validated edit as one step. If a result says the project changed, the user edited it: read get_project and continue from the current timeline.`;
+ClipCraft runs as a desktop app and you edit the project open in it while the user watches. Call get_status first. Use list_projects, open_project or create_project when no project is open. To use an existing edit as a base, open it and call duplicate_project before making changes. Each change you make is part of an edit that complete_edit validates; the user can undo each validated edit as one step. If a result says the project changed, the user edited it: read get_project and continue from the current timeline.`;
 
 // app: what App.jsx provides (getters, never stale): screen(), project(), loadVersion(), dispatch,
-// settle, pilotApp, provider(), craftBusy(), projects { list, create, open, save, close, status },
+// settle, pilotApp, provider(), craftBusy(), projects { list, create, duplicate, open, save, close, status },
 // onActivity(event).
 export function createExternalHost(app) {
   let edit = null, queue = Promise.resolve(), client = null;
@@ -92,10 +93,18 @@ export function createExternalHost(app) {
     if (app.craftBusy()) return { error: CRAFT_BUSY };
     // Leaving the project ends the open edit; its changes stay (and can be undone).
     const pendingNote = edit?.host.pendingValidation() ? { note: 'The previous project had changes not validated with complete_edit; they were kept.' } : {};
-    if (name === 'save_project') { if (app.screen() !== 'editor') return { error: NO_PROJECT }; return app.projects.save(args.path); }
-    closeEdit('switched');
+    if ((name === 'save_project' || name === 'duplicate_project') && app.screen() !== 'editor') return { error: NO_PROJECT };
+    if (name === 'save_project') return app.projects.save(args.path);
+    if (edit || app.pilotApp.getAgentEdit?.()) {
+      const epoch = app.loadVersion(), screen = app.screen();
+      closeEdit('switched');
+      // Close hooks must see the committed transaction before they capture the source.
+      await app.settle();
+      if (app.loadVersion() !== epoch || app.screen() !== screen) return { error: 'The open project changed. Check get_status and try again.' };
+    }
     let result;
     if (name === 'create_project') result = await app.projects.create(args);
+    else if (name === 'duplicate_project') result = await app.projects.duplicate(args);
     else if (name === 'open_project') result = await app.projects.open(args);
     else result = await app.projects.close();
     return result?.error ? result : { ...result, ...pendingNote, status: status() };

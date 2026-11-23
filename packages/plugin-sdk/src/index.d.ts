@@ -1,3 +1,4 @@
+import type {CustomTrackTypeDefinition,CustomClipTypeDefinition} from './extension.js';
 /** ClipCraft SDK 0.8.0. Trusted Node extensions and declarative creative packs. */
 export declare const SDK_VERSION:'0.8.0';
 export declare const HOST_API_VERSION:1;
@@ -6,8 +7,8 @@ export declare class PluginError extends Error {readonly code:ErrorCode;construc
 export type JsonValue=null|boolean|number|string|JsonValue[]|{[key:string]:JsonValue};
 export interface NumericParameter {id:string;name:string;min:number;max:number;step:number;default:number;integer?:boolean;}
 export interface CommandDefinition {id:string;name:string;description?:string;}
-export interface EffectDefinition {id:string;name:string;expression:string;parameters?:Omit<NumericParameter,'integer'>[];}
-export interface TransitionDefinition extends EffectDefinition {duration?:number;}
+export type EffectDefinition={id:string;name:string;parameters?:Omit<NumericParameter,'integer'>[]}&({expression:string;fragment?:never}|{expression?:never;/** GLSL ES 3 function vec4 effect(vec2 uv). Values use {{parameter-id}} uniforms. */fragment:string});
+export type TransitionDefinition=EffectDefinition&{duration?:number};
 export interface ExportSettings {mode:'crf'|'bitrate';crf:number;bitrateMbps:number;encoderPreset:'ultrafast'|'superfast'|'veryfast'|'faster'|'fast'|'medium'|'slow'|'slower'|'veryslow';audioKbps:96|128|192|256|320;resCap:0|480|720|1080|1440|2160;fps:0|24|25|30|50|60;codec:'h264'|'h265';}
 export interface ExportPreset {id:string;name:string;settings:ExportSettings;}
 export interface SoundContribution {id:string;name:string;license:string;file:string;kind:'music'|'sfx';}
@@ -23,13 +24,13 @@ export type PackMotionInId='fade_in'|'zoom_in'|'zoom_out_in'|'slide_left'|'slide
 export type PackMotionOutId='fade_out'|'zoom_out'|'zoom_in_out'|'slide_left_out'|'slide_right_out'|'slide_up_out'|'slide_down_out'|'slide_up_smooth_out'|'slide_down_smooth_out'|'slide_left_smooth_out'|'slide_right_smooth_out'|'spin_out'|'twist_out'|'pop_out'|'swing_out'|'shake_out'|'rock_out';
 export type PackMotionComboId='pulse'|'heartbeat'|'wobble'|'sway'|'vibrate'|'bounce'|'kenburns'|'pullback'|'drift'|'orbit';
 export interface MotionPresetContribution {id:string;name:string;transform?:ClipPictureTransform;opacity?:number;animation?:{in?:{type:PackMotionInId;duration?:number};out?:{type:PackMotionOutId;duration?:number};combo?:{type:PackMotionComboId}};curves?:Partial<Record<'scale'|'x'|'y'|'rot'|'opacity',{at:number;value:number;ease?:PackMotionEase}[]>>;}
-export interface CreativeContributions {motionPresets?:MotionPresetContribution[];luts?:LutContribution[];colorPresets?:ColorPresetContribution[];textStyles?:TextStyleContribution[];sounds?:SoundContribution[];fonts?:FontContribution[];effects?:EffectDefinition[];transitions?:TransitionDefinition[];exportPresets?:ExportPreset[]}
+export interface CreativeContributions {trackTypes?:CustomTrackTypeDefinition[];clipTypes?:CustomClipTypeDefinition[];motionPresets?:MotionPresetContribution[];luts?:LutContribution[];colorPresets?:ColorPresetContribution[];textStyles?:TextStyleContribution[];sounds?:SoundContribution[];fonts?:FontContribution[];effects?:EffectDefinition[];transitions?:TransitionDefinition[];exportPresets?:ExportPreset[]}
 export type PluginManifest={permissions?:[];id:string;name:string;publisher:string;version:string;apiVersion:1;minClipcraftVersion?:string;description?:string;/** Local static PNG, at most 256 KiB and 1024×1024. */icon?:string}&(
  {main:'dist/extension.cjs';activationEvents?:string[];contributes:CreativeContributions&{commands?:CommandDefinition[];views?:{id:string;name:string}[];shortcuts?:{id:string;name:string;command:string;keys:string[];scope?:'editor'|'app'}[]}}|
  {main?:never;activationEvents?:never;contributes:CreativeContributions}
 );
 export declare function definePlugin<T extends PluginManifest>(manifest:T):T;
-export {defineExtension,defineServiceContract} from './extension.js';
+export {defineExtension,defineServiceContract,defineHookContract} from './extension.js';
 export type * from './extension.js';
 export interface Marker {time:number;label:string;}
 export type EditorLane='video'|'overlay'|'audio'|'text'|'effect';

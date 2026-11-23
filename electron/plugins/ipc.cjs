@@ -1,11 +1,15 @@
 const {PluginManager}=require('./manager.cjs');
-function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fontDirectory}) {
+function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,bundledMediaDirectory,fontDirectory}) {
   const manager=new PluginManager(root,app.getVersion());
   let ready=examplesDirectory ? require('./examples.cjs').loadExamplePlugins(manager,examplesDirectory) : Promise.resolve();
   manager.ready=ready;
   const extensions=new (require('./extensionRuntime.cjs').ExtensionRuntime)({manager,utilityProcess:require('electron').utilityProcess,safeStorage:require('electron').safeStorage});
-  manager.extensions=extensions;manager.extensionMedia=null;extensions.prepareSettings=info=>require('./extensionMigrations.cjs').prepare(info,require('../system/settings.cjs').getExtensionMigrations());
+  manager.extensions=extensions;manager.extensionMedia=null;extensions.prepareSettings = async info => {
+    await require('./extensionMigrations.cjs').prepare(info,require('../system/settings.cjs').getExtensionMigrations());
+    await require('./bundledMedia.cjs').prepareBundledKey(manager, info);
+  };
   const agentCommands=new (require('./extensionAgentCommands.cjs').ExtensionAgentCommands)({runtime:extensions,manager,approve:async({manifest,command,signal})=>{const i18n=require('../system/i18n.cjs');const answer=await dialog.showMessageBox(getWindow(),{type:'question',title:i18n.t('plugins.agent_command_title'),signal,message:i18n.t('plugins.agent_command_message',{command:command.name,name:manifest.name}),detail:i18n.t('plugins.agent_command_detail',{version:manifest.version}),buttons:[i18n.t('app.cancel'),i18n.t('plugins.run_command')],defaultId:0,cancelId:0,noLink:true});return answer.response===1;}});extensions.agentCommands=agentCommands;manager.extensionAgentCommands=agentCommands;
+  if (bundledMediaDirectory) ready = ready.then(() => require('./bundledMedia.cjs').installBundledMedia(manager, bundledMediaDirectory));
   const extensionCalls=new Map();
   const commits=new (require('./extensionCommits.cjs').ExtensionCommits)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});extensions.commits=commits;manager.extensionCommits=commits;
   app.on?.('will-quit',()=>commits.dispose());
@@ -15,8 +19,9 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   ready=Promise.all([ready,retention.ready]);manager.ready=ready;
   const media=new (require('./extensionMedia.cjs').ExtensionMedia)({root:mediaRoot,retention,isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state)});
   manager.extensionMedia=media;
+  app.on?.('before-quit',()=>processes.dispose());
   const operations=new (require('./extensionHooks.cjs').ExtensionHooks)({runtime:extensions,commits,media,describe:async(_op,job,operation)=>{const document=await extensions.invoke({key:job.key,generation:job.generation,method:'workspace.read',operation});if(document.name.length>1000)delete document.name;return document;}});extensions.operations=operations;manager.extensionHooks=operations;
-  const views=new (require('./extensionViews.cjs').ExtensionViews)({runtime:extensions,manager,ipcMain,WebContentsView:require('electron').WebContentsView,session:require('electron').session,getWindow,sandboxEnabled:!app.commandLine?.hasSwitch?.('no-sandbox'),deadlineMs:process.env.FVE_SMOKE?4000:10000});extensions.views=views;manager.extensionViews=views;views.onChanged=()=>views.notify({type:'catalog'});
+  const views=new (require('./extensionViews.cjs').ExtensionViews)({runtime:extensions,manager,ipcMain,WebContentsView:require('electron').WebContentsView,BaseWindow:require('electron').BaseWindow,session:require('electron').session,getWindow,sandboxEnabled:!app.commandLine?.hasSwitch?.('no-sandbox'),deadlineMs:process.env.FVE_SMOKE?4000:10000});extensions.views=views;manager.extensionViews=views;views.onChanged=()=>views.notify({type:'catalog'});
   app.on?.('before-quit',()=>views.dispose());
   const messages=new (require('./extensionMessages.cjs').ExtensionMessages)({isActive:job=>extensions.active.get(job.key)===job&&['running','activating'].includes(job.state),getWindow});
   messages.onChanged=(owner,value)=>{try{if(owner&&!owner.isDestroyed()&&!owner.webContents.isDestroyed())owner.webContents.send('plugins:extensionMessagesChanged',value);}catch{}};
@@ -47,15 +52,39 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
     const callSignal=extensions.callSignal(job,request.execution,request.jobOperation),follow=(promise,abort)=>{if(!callSignal)return promise;callSignal.addEventListener('abort',abort,{once:true});if(callSignal.aborted)abort();return promise.finally(()=>callSignal.removeEventListener('abort',abort));};
     if(request.method==='files.publish'){const value=await files.publish(job,request.args,{signal:callSignal,verify:recheck});if(request.agentScope)agentCommands.receipt(request.agentScope,{kind:'file',extensionId:job.manifest.id,...value});return value;}
     if(request.method==='files.cancel')return files.cancel(job,request.args?.token);
+    if(request.method==='timeline.types'){const catalog=await manager.timelineTypes();recheck();const input=request.args??{};if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['kind','pluginId','cursor','limit'].includes(key))||input.kind!==undefined&&!['track','clip'].includes(input.kind)||input.pluginId!==undefined&&(typeof input.pluginId!=='string'||input.pluginId.length>100)||input.cursor!==undefined&&(!Number.isSafeInteger(input.cursor)||input.cursor<0)||input.limit!==undefined&&(!Number.isInteger(input.limit)||input.limit<1||input.limit>64))throw Error('Invalid custom type catalog page');const rows=[...catalog.tracks.map(row=>({...row,typeId:`custom-track:${row.contributionId}@${row.digest}`,category:'track'})),...catalog.clips.map(row=>({...row,typeId:`custom-clip:${row.contributionId}@${row.digest}`,category:'clip'}))].filter(row=>(!input.kind||row.category===input.kind)&&(!input.pluginId||row.pluginId===input.pluginId)),cursor=input.cursor??0;if(cursor>rows.length)throw Error('Custom type catalog cursor is stale');const items=[];let bytes=0;for(const row of rows.slice(cursor,cursor+(input.limit??16))){const size=Buffer.byteLength(JSON.stringify(row));if(bytes+size>256*1024)break;items.push(row);bytes+=size;}return {items,total:rows.length,next:cursor+items.length<rows.length?cursor+items.length:null};}
+    if(request.method==='rendering.list'){
+      const input=request.args??{};
+      if(!input||Array.isArray(input)||typeof input!=='object'||Object.keys(input).some(key=>!['cursor','limit','kind','pluginId','preferred'].includes(key))||input.cursor!==undefined&&(!Number.isSafeInteger(input.cursor)||input.cursor<0)||input.limit!==undefined&&(!Number.isInteger(input.limit)||input.limit<1||input.limit>128)||input.kind!==undefined&&!['effect','transition'].includes(input.kind)||input.pluginId!==undefined&&(typeof input.pluginId!=='string'||!/^[a-z][a-z0-9-]{0,47}\.[a-z][a-z0-9-]{0,47}$/.test(input.pluginId))||input.preferred!==undefined&&typeof input.preferred!=='boolean')throw Error('Invalid rendering catalog page');
+      const [effects,transitions]=await Promise.all([manager.effects(),manager.transitions()]);recheck();
+      const rows=[...effects.map(row=>({...row,kind:'effect'})),...transitions.map(row=>({...row,kind:'transition'}))].filter(row=>(!input.kind||input.kind===row.kind)&&(!input.pluginId||input.pluginId===row.pluginId)&&(input.preferred===undefined||input.preferred===row.preferred));
+      const cursor=input.cursor??0;if(cursor>rows.length)throw Error('Rendering catalog cursor is outside the current catalog');
+      const items=[];let bytes=0;for(const row of rows.slice(cursor,cursor+(input.limit??32))){const item={id:(row.kind==='effect'?'plugin:':'plugin-transition:')+row.contributionId+'@'+row.digest,kind:row.kind,name:row.name,program:row.fragment!==undefined?'glsl':'expression',pluginId:row.pluginId,digest:row.digest,version:row.version,preferred:row.preferred,parameters:row.parameters,...(row.duration?{duration:row.duration}:{})},size=Buffer.byteLength(JSON.stringify(item));if(bytes+size>256*1024)break;items.push(item);bytes+=size;}
+      return {items,total:rows.length,next:cursor+items.length<rows.length?cursor+items.length:null};
+    }
+    if(request.method==='rendering.validate'){
+      const input=request.args;if(!input||typeof input.id!=='string'||input.id.length>400||Object.keys(input).some(key=>!['id','params'].includes(key)))throw Error('Choose an installed rendering definition');
+      const mode=input.id.startsWith('plugin-transition:')?'transition':'effect',rows=await(mode==='effect'?manager.effects():manager.transitions()),prefix=mode==='effect'?'plugin:':'plugin-transition:';
+      const definition=rows.find(row=>prefix+row.contributionId+'@'+row.digest===input.id);if(!definition)throw Error('Rendering definition is unavailable');
+      const params=(await import('../../shared/pluginEffects.mjs')).effectParameters(definition,input.params);recheck();
+      const result=await requestEditor({...request,args:{id:input.id,mode,definition,params}});recheck();return result;
+    }
     if(request.method==='host.capabilities')return require('../../shared/extensionCapabilities.cjs').capabilities();
     if(request.method==='host.read'){const tools=require('../media/ffmpeg.cjs');return {appVersion:app.getVersion(),apiVersion:1,platform:process.platform,arch:process.arch,tools:{ffmpeg:tools.ffmpegPath,ffprobe:tools.ffprobePath}};}
     if(request.method==='ui.showOpenDialog'||request.method==='ui.showSaveDialog')return dialogs.show(job,request.method==='ui.showOpenDialog'?'open':'save',request.args,{signal:callSignal});
     if(request.method==='ui.cancelDialog')return dialogs.cancel(job,request.args?.token);
     if(request.method==='exports.render')return follow(exports.render(job,request.args,request.agentScope),()=>exports.cancel(job,request.args?.token));
     if(request.method==='exports.cancel')return exports.cancel(job,request.args?.token);
-    if(request.method==='ui.showMessage'){const result=messages.show(job,request.args,request.args?.token);if(!operation)return follow(result,()=>messages.dismiss(job,request.args?.token));const signal=operations.signal(operation),abort=()=>messages.dismiss(job,request.args?.token);signal.addEventListener('abort',abort,{once:true});return result.finally(()=>signal.removeEventListener('abort',abort));}
+    if(['ui.showMessage','ui.showInput'].includes(request.method)){const {token,...input}=request.args??{};const result=messages.show(job,input,token,request.method==='ui.showInput');if(!operation)return follow(result,()=>messages.dismiss(job,request.args?.token));const signal=operations.signal(operation),abort=()=>messages.dismiss(job,request.args?.token);signal.addEventListener('abort',abort,{once:true});return result.finally(()=>signal.removeEventListener('abort',abort));}
     if(request.method==='ui.dismissMessage')return messages.dismiss(job,request.args?.token);
     if(request.method==='processes.start'){const value=await processes.start(job,request.args);try{recheck();if(request.agentScope&&job.state!=='activating'){const scope=request.agentScope,signal=agentCommands.signal(scope),abort=()=>{try{processes.kill(job,value.id);}catch{}};signal.addEventListener('abort',abort,{once:true});agentCommands.track(scope,()=>signal.removeEventListener('abort',abort));}if(operation&&job.state!=='activating'){const signal=operations.signal(operation),abort=()=>{try{processes.kill(job,value.id);}catch{}};signal.addEventListener('abort',abort,{once:true});operations.track(operation,()=>signal.removeEventListener('abort',abort));}return value;}catch(error){try{processes.kill(job,value.id);}catch{}throw error;}}
+    if(request.method==='processes.serverStart'){
+      if(operation||request.agentScope||request.jobOperation)throw Error('Start persistent helpers from activation or an ordinary command, outside managed edit/job scopes');
+      const value=await follow(processes.startServer(job,request.args),()=>processes.cancelServerStart(job,request.args?.token));try{recheck();return value;}catch(error){processes.kill(job,value.id);throw error;}
+    }
+    if(request.method==='processes.cancelStart')return processes.cancelServerStart(job,request.args?.token);
+    if(request.method==='processes.read')return follow(processes.read(job,request.args?.id),()=>processes.cancelRead(job,request.args?.id));
+    if(request.method==='processes.closeOutput')return processes.closeOutput(job,request.args?.id);
     if(request.method==='processes.wait')return follow(processes.wait(job,request.args?.id),()=>{try{processes.kill(job,request.args?.id);}catch{}});
     if(request.method==='processes.kill')return processes.kill(job,request.args?.id);
     if(request.method==='media.import'){const value=await media.import(job,request.args);try{recheck();return value;}catch(error){await media.release(job,value.id).catch(()=>{});throw error;}}
@@ -139,6 +168,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   handle('icon',key=>manager.icon(key));
   handle('extensionViews',()=>views.catalog());
   handle('extensionViewOpen',id=>views.reveal(id));
+  handle('extensionViewMove',(id,value)=>views.move(id,value));
   handle('extensionViewClose',id=>views.close(id));
   handle('extensionViewLayout',(id,value)=>views.layout(id,value));
   handle('extensionUi',async(location,key)=>{
@@ -153,10 +183,12 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   handle('extensionSettingsRead',id=>extensions.ui.settings(id));
   handle('extensionSettingsUpdate',(id,key,value)=>extensions.ui.update(id,key,value));
   handle('extensionInspectorSet',(id,input)=>extensions.ui.inspectorSet(id,input));
+  handle('extensionStatusExecute',(id,instance)=>extensions.ui.execute(id,{},instance,'status'));
   handle('extensionUiExecute',(id,input,instance)=>extensions.ui.execute(id,input,instance));
   handle('extensionShortcuts',()=>extensions.ui.shortcuts());
   handle('extensionShortcutExecute',id=>extensions.ui.executeShortcut(id));
   handle('extensionMessages',()=>messages.list());
+  handle('extensionInputRespond',(id,value)=>messages.finishInput(id,value,getWindow()));
   handle('extensionMessageRespond',(id,action)=>messages.finish(id,action,getWindow()));
   handle('extensionCancelJob',(key,generation,operation)=>extensions.cancel(key,operation,generation));
   handle('extensionStatus',()=>extensions.status());
@@ -190,6 +222,7 @@ function registerPlugins({ipcMain,app,dialog,getWindow,root,examplesDirectory,fo
   handle('recover',token=>manager.recover(token));
   handle('showRecoveryArchive',async id=>require('electron').shell.openPath(await manager.inventoryStore.archivePath(id)));
   handle('presets',()=>manager.presets());
+  handle('timelineTypes',()=>manager.timelineTypes());
   handle('effects',()=>manager.effects());
   handle('creative',()=>manager.creative());
   handle('transitions',()=>manager.transitions());

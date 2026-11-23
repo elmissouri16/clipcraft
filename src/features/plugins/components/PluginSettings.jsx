@@ -14,10 +14,30 @@ import React, {useEffect, useRef, useState} from 'react';
 import {SettingsGroup} from '../../../app/components/SettingsLayout.jsx';
 import {t} from '../../../i18n/index.js';
 const pluginError=error=>String(error.message||error).replace(/^Error invoking remote method 'plugins:[^']+': (?:Error: )?/,'');
+const identity=manifest=>JSON.stringify([manifest.id,manifest.publisher]);
+const hasIssue=row=>row.error||row.removing||row.recovered||row.manifest?.legacyExecutable&&!row.manifest.legacyExecutable.creative;
 
-export default function PluginSettings({project,onReplaceDependency,onApplyPack,onAuthorExport}) {
-  const [rows,setRows]=useState([]),[busy,setBusy]=useState(true),[error,setError]=useState(''),[selected,setSelected]=useState(null),[removing,setRemoving]=useState(null),[developer,setDeveloper]=useState(false),[clearing,setClearing]=useState(null),[storageNotice,setStorageNotice]=useState(''),[creating,setCreating]=useState(false);
+function installedPlugins(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const id = row.manifest ? identity(row.manifest) : row.key;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(row);
+  }
+  return Array.from(groups, ([id, versions]) => {
+    // The enabled release wins even after an intentional downgrade.
+    versions.sort((a,b) => Number(!!b.enabled) - Number(!!a.enabled)
+      || Number(!!hasIssue(a)) - Number(!!hasIssue(b))
+      || Number(!!a.manifest?.legacyExecutable) - Number(!!b.manifest?.legacyExecutable)
+      || (b.manifest?.version || '').localeCompare(a.manifest?.version || '', 'en', {numeric:true}));
+    return {id, versions, current:versions[0]};
+  }).sort((a,b) => (a.current.manifest?.name || a.id).localeCompare(b.current.manifest?.name || b.id) || a.id.localeCompare(b.id));
+}
+
+export default function PluginSettings({initialKey=null,project,onReplaceDependency,onApplyPack,onAuthorExport}) {
+  const [rows,setRows]=useState([]),[busy,setBusy]=useState(true),[error,setError]=useState(''),[selected,setSelected]=useState(initialKey),[removing,setRemoving]=useState(null),[developer,setDeveloper]=useState(false),[clearing,setClearing]=useState(null),[storageNotice,setStorageNotice]=useState(''),[creating,setCreating]=useState(false);
   const [query,setQuery]=useState(''),[kind,setKind]=useState('all'),[status,setStatus]=useState('all'),[view,setView]=useState('installed'),[development,setDevelopment]=useState(null),[developerBusy,setDeveloperBusy]=useState(false),details=useRef(null),inventory=useRef(null);
+  const [inspected,setInspected]=useState(null);
   const run=async fn=>{setBusy(true);setError('');try{const result=await fn();if(result)setRows(result);}catch(e){setError(pluginError(e));}finally{setBusy(false);}};
   useEffect(()=>{
     let live=true;
@@ -29,10 +49,10 @@ export default function PluginSettings({project,onReplaceDependency,onApplyPack,
   },[]);
   useEffect(()=>{details.current?.scrollTo({top:0});},[selected]);
   useEffect(()=>{if(view==='installed')inventory.current?.querySelector('.plugin-row.on')?.scrollIntoView({block:'nearest'});},[selected,query,kind,status,view]);
-  const remove=key=>run(async()=>{const value=await window.api.pluginsRemove(key);setSelected(null);setRemoving(null);return value;});
+  const remove=key=>run(async()=>{const value=await window.api.pluginsRemove(key);setInspected(null);setRemoving(null);return value;});
   const installedBusy=false;
   const sessionActive=development&&development.status!=='ended';
-  const replacements=new Map(),identity=manifest=>JSON.stringify([manifest.id,manifest.publisher]);
+  const replacements=new Map();
   for(const row of rows)if(row.manifest?.main&&!row.error&&!row.removing&&!row.recovered){const id=identity(row.manifest);if(!replacements.has(id)||row.enabled)replacements.set(id,row);}
   const replacementFor=row=>row.manifest?.legacyExecutable&&replacements.get(identity(row.manifest));
   // Identity artwork may come from the enabled version of the same publisher's
@@ -41,24 +61,37 @@ export default function PluginSettings({project,onReplaceDependency,onApplyPack,
   for(const row of rows)if(row.manifest?.icon&&!row.error&&!row.removing&&!row.recovered){const id=identity(row.manifest);if(!artwork.has(id)||row.enabled)artwork.set(id,row);}
   const artworkFor=row=>row.manifest?.icon?row:row.manifest&&artwork.get(identity(row.manifest))||row;
   const isExtension=row=>!!row.manifest?.main||!!row.manifest?.legacyExecutable&&!row.manifest.legacyExecutable.creative;
-  const visible=rows.filter(row=>{const m=row.manifest,search=[m?.name,m?.publisher,m?.id].join(' ').toLocaleLowerCase();return search.includes(query.trim().toLocaleLowerCase())&&(kind==='all'||(kind==='extension')===isExtension(row))&&(status==='all'||status==='enabled'&&row.enabled||status==='disabled'&&!row.enabled||status==='issues'&&(row.error||row.removing||row.recovered||row.manifest?.legacyExecutable&&!row.manifest.legacyExecutable.creative));}).sort((a,b)=>(a.manifest?.name||a.key).localeCompare(b.manifest?.name||b.key)||a.key.localeCompare(b.key));
-  useEffect(()=>{if(!visible.some(row=>row.key===selected))setSelected(visible[0]?.key||null);},[rows,query,kind,status,selected]);
-  const selectedRow=visible.find(row=>row.key===selected);
+  const groups=React.useMemo(()=>installedPlugins(rows),[rows]);
+  const term=query.trim().toLocaleLowerCase();
+  const visible=groups.filter(({current,versions})=>{
+    const m=current.manifest;
+    return [m?.name,m?.publisher,m?.id].join(' ').toLocaleLowerCase().includes(term)
+      && (kind==='all'||(kind==='extension')===isExtension(current))
+      && (status==='all'||status==='enabled'&&current.enabled||status==='disabled'&&!current.enabled||status==='issues'&&versions.some(hasIssue));
+  });
+  const selectedGroup=visible.find(group=>group.id===selected||group.versions.some(row=>row.key===selected))||visible[0];
+  const selectedRow=selectedGroup && (selectedGroup.versions.find(row=>row.key===inspected)
+    || (status==='issues' && selectedGroup.versions.find(hasIssue)) || selectedGroup.current);
+  useEffect(()=>{if(!busy && selected!== (selectedGroup?.id||null)){setSelected(selectedGroup?.id||null);setInspected(null);}},[busy,selectedGroup?.id,selected]);
   const rowStatus=item=>item.removing?t('plugins.removal_pending'):item.error?t('plugins.unavailable'):item.recovered?t('plugins.recovered_disabled'):item.manifest?.legacyExecutable?t(replacementFor(item)?'plugins.legacy_replacement_installed':'plugins.legacy_migration_required'):item.enabled?t('plugins.enabled'):item.available?t('plugins.retained'):t('plugins.disabled');
-  const select=key=>{setSelected(key);setRemoving(null);setClearing(null);setStorageNotice('');};
+  const select=(key,inspect=false)=>{const row=rows.find(item=>item.key===key);setSelected(row?.manifest?identity(row.manifest):key);setInspected(inspect?key:null);setRemoving(null);setClearing(null);setStorageNotice('');};
   const renderDetails=row=><div ref={details} data-plugin-details className="plugin-package-details" role="region" aria-label={row.manifest?.name||t('plugins.package_details')}>
     <header className="plugin-detail-heading"><PluginIdentityIcon row={row} artwork={artworkFor(row)} large/><div className="plugin-detail-identity"><h4>{row.manifest?.name||row.key.slice(0,12)}</h4>{row.manifest&&<><p>{t('plugins.publisher',{publisher:row.manifest.publisher})}</p><span className="plugin-detail-meta">{t(isExtension(row)?'plugins.kind_extension':'plugins.kind_pack')}<span>·</span>{row.manifest.version}<span>·</span>{rowStatus(row)}</span></>}</div></header>
     {row.recovered&&!row.removing&&<p className="set2-note">{t('plugins.recovered_hint')}</p>}
     {row.removing?<p role="status" data-removal-pending>{t('plugins.removal_pending_hint')}</p>:row.error?<p role="alert" className="error-text">{row.error}</p>:<>
       <div className="plugin-package-overview"><p>{row.manifest.description}</p><button type="button" className="btn btn-sm" data-enable-plugin disabled={busy||!!row.manifest.legacyExecutable&&!row.manifest.legacyExecutable.creative} onClick={()=>run(()=>window.api.pluginsEnable(row.key,!row.enabled))}>{t(row.enabled?'plugins.disable':'plugins.enable')}</button></div>
       <div className="plugin-activation" hidden={!row.manifest.main}><h5 className="set2-group-label">{t('plugins.activation')}</h5>{row.manifest.main&&<ExtensionLifecycle key={row.key} row={row} disabled={busy||!row.enabled} act={fn=>run(async()=>{await fn();return window.api.pluginsList();})}/>}</div>
-      {row.manifest.legacyExecutable?<div data-legacy-migration><p className="set2-note" role="status">{t(replacementFor(row)?'plugins.legacy_replacement_hint':'plugins.legacy_migration_hint')}</p>{replacementFor(row)&&<button type="button" className="btn btn-sm" data-open-plugin-replacement onClick={()=>select(replacementFor(row).key)}>{t('plugins.open_replacement')}</button>}</div>:null}
+      {row.manifest.legacyExecutable?<div data-legacy-migration><p className="set2-note" role="status">{t(replacementFor(row)?'plugins.legacy_replacement_hint':'plugins.legacy_migration_hint')}</p>{replacementFor(row)&&<button type="button" className="btn btn-sm" data-open-plugin-replacement onClick={()=>select(replacementFor(row).key,true)}>{t('plugins.open_replacement')}</button>}</div>:null}
       {row.manifest.main&&row.enabled&&<div className="plugin-selected-settings" data-plugin-configuration><ExtensionSettings extensionId={row.manifest.id} extensionKey={row.key}/></div>}
       {row.manifest.main&&!!row.manifest.contributes.commands.length&&<details className="plugin-disclosure" data-plugin-tools><summary>{t('plugins.commands')} <span className="muted">{row.manifest.contributes.commands.length}</span></summary><div className="plugin-disclosure-body"><ExtensionCommands key={row.key} row={row}/></div></details>}
     </>}
     <details className="plugin-disclosure" data-plugin-advanced>
       <summary>{t('plugins.package_details')}</summary>
       <div className="plugin-disclosure-body">
+        {selectedGroup.versions.length>1&&<label className="field">{t('plugins.installed_versions')}
+          <select data-plugin-version value={row.key} onChange={e=>select(e.target.value,true)}>
+            {selectedGroup.versions.map(version=><option key={version.key} value={version.key}>{version.manifest.version} · {rowStatus(version)}</option>)}
+          </select></label>}
         {row.manifest&&!row.manifest.legacyExecutable&&<p className="set2-note plugin-permissions">{t(row.manifest.main?'plugins.extension_access':'plugins.no_permissions')}</p>}
         {row.manifest&&<><p className="set2-note">{row.manifest.id} · {t('plugins.api_version',{version:row.manifest.apiVersion})}</p><p className="set2-note">{t('plugins.minimum',{version:row.manifest.minClipcraftVersion})}</p>
           <details><summary>{t('plugins.package_contents')}</summary><ul>{Object.entries(row.manifest.contributes).flatMap(([kind,items])=>items.map(p=><li key={`${kind}/${p.id}`}>{p.name}{p.license&&<details><summary>{t('plugins.asset_license')}</summary><p className="plugin-license">{p.license}</p></details>}</li>))}</ul></details></>}
@@ -81,13 +114,13 @@ export default function PluginSettings({project,onReplaceDependency,onApplyPack,
     {/* Keep task workspaces mounted: switching views must not invoke job cleanup. */}
     <div className="plugin-settings-view" data-plugin-view-panel="installed" hidden={view!=='installed'}>
       <div className="plugin-inventory-toolbar"><label className="plugin-search"><Search size={14}/><input type="search" data-plugin-search aria-label={t('plugins.search_installed')} placeholder={t('plugins.search_installed')} value={query} onChange={e=>setQuery(e.target.value)}/></label><button type="button" className="btn btn-sm btn-primary" data-install-plugin disabled={busy} onClick={()=>run(async()=>{const value=await window.api.pluginsInstall();const added=value?.find(item=>!rows.some(row=>row.key===item.key));if(added)select(added.key);return value;})}><PackagePlus size={14}/>{t('plugins.install')}</button></div>
-      <div className="plugin-inventory-filters"><span className="plugin-inventory-count">{t('plugins.installed_count',{count:rows.length})}</span><select data-plugin-kind aria-label={t('plugins.filter_kind')} value={kind} onChange={e=>setKind(e.target.value)}>{['all','extension','pack'].map(value=><option key={value} value={value}>{t('plugins.filter_'+value)}</option>)}</select><select data-plugin-status aria-label={t('plugins.filter_status')} value={status} onChange={e=>setStatus(e.target.value)}>{['all','enabled','disabled','issues'].map(value=><option key={value} value={value}>{t('plugins.status_'+value)}</option>)}</select></div>
+      <div className="plugin-inventory-filters"><span className="plugin-inventory-count">{t('plugins.installed_count',{count:groups.length})}</span><select data-plugin-kind aria-label={t('plugins.filter_kind')} value={kind} onChange={e=>setKind(e.target.value)}>{['all','extension','pack'].map(value=><option key={value} value={value}>{t('plugins.filter_'+value)}</option>)}</select><select data-plugin-status aria-label={t('plugins.filter_status')} value={status} onChange={e=>{setInspected(null);setStatus(e.target.value);}}>{['all','enabled','disabled','issues'].map(value=><option key={value} value={value}>{t('plugins.status_'+value)}</option>)}</select></div>
       {busy&&<p className="set2-note" role="status">{t('plugins.working')}</p>}
       {error&&<p className="error-text" role="alert">{error}</p>}
       <div className="plugin-manager" data-plugin-manager>
         <div ref={inventory} className="plugin-list" role="group" aria-label={t('plugins.installed')}>
-          {visible.map(item=><div className="plugin-entry" key={item.key}>
-            <button type="button" className={`btn btn-ghost plugin-row ${selected===item.key?'on':''}`} aria-pressed={selected===item.key} title={item.manifest?.name} onClick={()=>select(item.key)}>
+          {visible.map(({id,current:item})=><div className="plugin-entry" key={id}>
+            <button type="button" className={`btn btn-ghost plugin-row ${selectedGroup.id===id?'on':''}`} aria-pressed={selectedGroup.id===id} title={item.manifest?.name} onClick={()=>select(item.key)}>
               <PluginIdentityIcon row={item} artwork={artworkFor(item)}/><span className="plugin-row-description"><b>{item.manifest?.name||item.key.slice(0,12)}</b><span className="plugin-row-meta"><small>{item.manifest?.publisher||t('plugins.unavailable')}</small><span className="plugin-row-status" data-state={item.error||item.removing?'issue':item.enabled?'enabled':'disabled'}>{rowStatus(item)}</span></span></span>
             </button>
           </div>)}

@@ -6,6 +6,7 @@ import { formatTime, toFileUrl } from "../../../state/store.js";
 import { assetAddWhere } from "../../library/assetsLib.js";
 import { useAssets } from "../../library/useAssets.js";
 import { t } from '../../../i18n/index.js';
+import { followPreviewAudio } from '../audioTap.js';
 
 // The asset pack's AUDIO, inside the Audio tab (Hamza's IA: pack audio goes with the
 // music, NOT to Assets) — the Music place serves the pack's Music collections, and the
@@ -23,10 +24,11 @@ export default function PackMusic({ collection, onAddFile, group = 'Music', navi
   const releasePreview=()=>{const token=previewLease.current;previewLease.current=null;if(token)window.api.pluginsReleaseSoundPreview(token).catch(()=>{});};
   useEffect(() => {
     const a = new Audio();
+    const unsubscribe = followPreviewAudio(a);
     a.onended = () => {releasePreview();setPlaying('');};
     a.onerror = () => {releasePreview();setPlaying('');setErr(t('plugins.preview_audio_failed'));};
     audio.current = a;
-    return () => {previewGeneration.current++;a.pause();releasePreview();};
+    return () => {previewGeneration.current++;a.pause();unsubscribe();releasePreview();};
   }, []);
   const availablePaths=(lib?.items||[]).map(i=>i.path).join('\0');
   useEffect(() => { previewGeneration.current++;audio.current?.pause();releasePreview(); setPlaying(''); }, [collection, availablePaths]);

@@ -3,7 +3,7 @@ import { toFileUrl } from '../../../state/store.js';
 import { safeLocalPath } from '../activityEvidence.js';
 import { activityTime } from '../toolActivity.js';
 import { formatElapsed, formatRemaining } from '../../export/exportProgress.js';
-import { getPreviewAudio, setPreviewAudio, subscribePreviewAudio } from '../../audio/audioTap.js';
+import { followPreviewAudio, setPreviewAudio } from '../../audio/audioTap.js';
 import { t, tn } from '../../../i18n/index.js';
 
 // Rendered videos in the chat play at the preview's listening volume, and changing the
@@ -13,11 +13,9 @@ function usePreviewListening() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const apply = () => { const a = getPreviewAudio(); el.volume = a.volume; el.muted = a.muted; };
     const changed = () => setPreviewAudio({ volume: el.volume, muted: el.muted });
-    apply();
+    const stop = followPreviewAudio(el);
     el.addEventListener('volumechange', changed);
-    const stop = subscribePreviewAudio(apply);
     return () => { el.removeEventListener('volumechange', changed); stop(); };
   });
   return ref;

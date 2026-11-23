@@ -23,15 +23,25 @@ const gains = new WeakMap();
 // An element can be sourced only once in its life: its source node is kept for a re-wire after unwireElement.
 const sources = new WeakMap();
 const listeners = new Set();
-let previewAudio = { volume: 1, muted: false };
+export const DEFAULT_PREVIEW_VOLUME = 0.5;
+let previewAudio = { volume: DEFAULT_PREVIEW_VOLUME, muted: false };
 try {
   const saved = JSON.parse(localStorage.getItem('clipcraft.previewAudio') || 'null');
   if (typeof saved?.volume === 'number' && Number.isFinite(saved.volume)) previewAudio.volume = Math.max(0, Math.min(1, saved.volume));
   if (typeof saved?.muted === 'boolean') previewAudio.muted = saved.muted;
-} catch { /* unavailable storage uses full listening volume */ }
+} catch { /* use the default listening level when storage is unavailable */ }
 const monitorLevel = () => previewAudio.muted ? 0 : previewAudio.volume;
 export const getPreviewAudio = () => previewAudio;
 export const subscribePreviewAudio = (listener) => { listeners.add(listener); return () => listeners.delete(listener); };
+// Library auditions play outside the timeline mix and follow its listening controls.
+export function followPreviewAudio(element) {
+  const sync = () => { element.volume = previewAudio.volume; element.muted = previewAudio.muted; };
+  sync();
+  return subscribePreviewAudio(sync);
+}
+export function resetNewProjectPreviewVolume() {
+  setPreviewAudio({ volume: DEFAULT_PREVIEW_VOLUME, muted: previewAudio.muted || previewAudio.volume === 0 });
+}
 export function setPreviewAudio(patch) {
   const volume = typeof patch.volume === 'number' && Number.isFinite(patch.volume)
     ? Math.max(0, Math.min(1, patch.volume)) : previewAudio.volume;

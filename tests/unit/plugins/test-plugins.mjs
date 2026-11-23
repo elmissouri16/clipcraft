@@ -77,6 +77,9 @@ try {
  const exampleKey=(await developer.list())[0].key;await developer.setEnabled(exampleKey,false);
  await loadExamplePlugins(developer,examples,()=>{});
  assert.equal((await developer.list()).length,1);assert.equal((await developer.presets()).length,1);checks++;
+ await fs.writeFile(path.join(examples,'valid','plugin.json'),JSON.stringify({...sample,name:'Edited example'}));
+ const reloadReports=[];await loadExamplePlugins(developer,examples,message=>reloadReports.push(message));
+ assert.equal((await developer.list())[0].key,exampleKey);assert.equal(reloadReports.length,1);assert.match(reloadReports[0],/Example invalid/);checks++;
  const ipc={on(){},handlers:new Map(),handle(name,fn){this.handlers.set(name,fn);}};
  const frame={},sender={mainFrame:frame};
  require('../../../electron/plugins/ipc.cjs').registerPlugins({ipcMain:ipc,app:{getVersion:()=> '2.0.0'},dialog:{},getWindow:()=>({webContents:sender}),root:path.join(root,'ipc')});

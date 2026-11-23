@@ -1,4 +1,5 @@
 const { audioFadeFilters, audioAutomationFilters } = require('../audio/fades.cjs');
+const {videoFormat,formatFromPath}=require('../../shared/exportFormats.cjs');
 // Builds FFmpeg arguments for exporting a project to MP4.
 // Media and argument helpers also run from plain Node for standalone tests.
 const fs = require('fs');
@@ -115,6 +116,7 @@ function probe(file) {
         if (!(duration >= MIN_CLIP_LEN)) return reject(new Error(t(v || a ? 'main.media_no_length' : 'main.media_no_streams')));
       }
       resolve({
+        container:info.format?.format_name??'',
         type: isImage ? 'image' : v ? 'video' : 'audio',
         duration,
         hasVideo: !!v,
@@ -854,11 +856,11 @@ function buildExportArgs(project, outFile, opts = {}) {
     // The pipeline works in BT.709 SDR throughout (HDR inputs are tone-mapped to BT.709 above);
     // tag it explicitly — untagged yuv420p otherwise probes as color_* "unknown".
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
-    '-c:a', 'aac', '-b:a', `${eff.audioKbps}k`,
+    '-c:a', videoFormat(eff.format).audioCodec, '-b:a', `${eff.audioKbps}k`,
     '-t', num(total),
-    '-movflags', '+faststart',
+    ...(['mp4','mov'].includes(eff.format)?['-movflags', '+faststart']:[]),
     '-progress', 'pipe:1', '-nostats',
-    outFile,
+    '-f',videoFormat(eff.format).muxer,outFile,
   ];
   return { args, total };
 }
@@ -930,21 +932,27 @@ function buildAudioExportArgs(project, outFile, format = 'mp3') {
   return ['-y', '-hide_banner', '-loglevel', 'error', ...inputs, '-filter_complex', filters.join(';'), '-map', '[out]', ...codec, '-t', num(total), outFile];
 }
 
-function exportAudio(project, outFile, format) {
-  return new Promise((resolve, reject) => {
-    let args;
-    try {
-      args = buildAudioExportArgs(project, outFile, format);
-    } catch (e) {
-      return reject(e);
+async function exportAudio(project, outFile, format = 'mp3') {
+  const { exportTargetProblem } = require('../export/exportTarget.cjs');
+  const args = buildAudioExportArgs(project, outFile, format);
+  const mediaPaths = [...project.media.map(m => m.path), ...args.filter((_, i) => args[i - 1] === '-i')];
+  const checkTarget = () => {
+    if (exportTargetProblem({ file: outFile, mediaPaths, confirmed: outFile })) {
+      throw Error(t('main.export_target_is_source', { name: path.basename(outFile) }));
     }
-    const run = longGraph(args);
-    const p = spawn(ffmpegPath, run.args, { windowsHide: true });
-    let err = '';
-    p.stderr.on('data', (d) => (err += d));
-    p.on('error', (error) => { run.done(); reject(error); });
-    p.on('close', (code) => { run.done(); code === 0 ? resolve(outFile) : reject(new Error(err.slice(-3000))); });
-  });
+  };
+  checkTarget();
+  const dir = fs.mkdtempSync(path.join(path.dirname(outFile), '.clipcraft-audio-'));
+  try {
+    const workingFile = path.join(dir, path.basename(outFile));
+    args[args.length - 1] = workingFile;
+    await runFfmpeg(graphFile(args, dir));
+    checkTarget();
+    fs.renameSync(workingFile, outFile);
+    return outFile;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // A run's arguments with a long filter graph moved to a file (graphFile) in a folder of its own; done() removes it.
@@ -979,13 +987,15 @@ function effectiveExport(project) {
   const H = Math.round(positive(project.height, 720));
   const fps = positive(project.fps, 30);
   if (!e || typeof e !== 'object') {
-    return { codecFamily: 'h264', mode: 'crf', crf: Math.min(51, Math.max(0, positive(project.crf, 20))), bitrateMbps: null, encoderPreset: 'veryfast', audioKbps: 192, outW: W, outH: H, outFps: fps };
+    return { format:'mp4',codecFamily: 'h264', mode: 'crf', crf: Math.min(51, Math.max(0, positive(project.crf, 20))), bitrateMbps: null, encoderPreset: 'veryfast', audioKbps: 192, outW: W, outH: H, outFps: fps };
   }
   const clampN = (v, lo, hi, dflt) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : dflt);
+  const format=videoFormat(e.format??'mp4'),codec=e.codecFamily??format.codecs[0];
+  if(!format.codecs.includes(codec))throw Error('Video codec is incompatible with the selected export format');
   return {
-    codecFamily: e.codecFamily === 'h265' ? 'h265' : 'h264',
+    format:format.id,codecFamily:codec,
     mode: e.mode === 'bitrate' ? 'bitrate' : 'crf',
-    crf: clampN(e.crf, 0, 51, 20),
+    crf: clampN(e.crf, 0, codec==='vp9'?63:51, 20),
     bitrateMbps: e.bitrateMbps == null ? null : clampN(e.bitrateMbps, 0.5, 100, 12),
     encoderPreset: X264_PRESETS.includes(e.encoderPreset) ? e.encoderPreset : 'veryfast',
     audioKbps: clampN(e.audioKbps, 32, 512, 192),
@@ -1033,6 +1043,7 @@ function hasEncoder(name) {
   return encoderSet.has(name);
 }
 const hasLibx265 = () => hasEncoder('libx265');
+const hasVp9=()=>hasEncoder('libvpx-vp9')&&hasEncoder('libopus');
 
 const HW_ENCODERS = {
   h264_videotoolbox: (crf) => ['-c:v', 'h264_videotoolbox', '-allow_sw', '0', '-q:v', String(Math.max(1, Math.round((51 - crf) / 51 * 100)))],
@@ -1047,6 +1058,7 @@ const HW_ENCODERS = {
 // for both codec families; software HEVC uses libx265 when it is available.
 const NVENC_PRESET = { ultrafast: 'p1', superfast: 'p1', veryfast: 'p2', faster: 'p2', fast: 'p3', medium: 'p4', slow: 'p5', slower: 'p6', veryslow: 'p7' };
 function videoCodec2(encoder, eff) {
+  if(eff.codecFamily==='vp9')return ['-c:v','libvpx-vp9','-deadline','good','-cpu-used',String({ultrafast:5,superfast:5,veryfast:4,faster:4,fast:3,medium:2,slow:1,slower:0,veryslow:0}[eff.encoderPreset]??4),'-row-mt','1',...(eff.mode==='bitrate'?['-b:v',`${eff.bitrateMbps}M`]:['-crf',String(eff.crf),'-b:v','0'])];
   if (encoder === 'h264_videotoolbox' || encoder === 'hevc_videotoolbox') {
     return ['-c:v', encoder, '-allow_sw', '0',
       ...(eff.mode === 'bitrate' ? ['-b:v', `${eff.bitrateMbps}M`] : ['-q:v', String(Math.max(1, Math.round((51 - eff.crf) / 51 * 100)))]),
@@ -1085,8 +1097,9 @@ function videoCodec(encoder, crf) {
 // other platforms tries NVIDIA/Intel/AMD. FVE_ENCODER overrides this for tests.
 // Failed hardware exports retry with the matching software codec (see runExport).
 const encoderPicks = new Map();
-const softwareEncoder = family => family === 'h265' && hasLibx265() ? 'libx265' : 'libx264';
+const softwareEncoder = family => family==='vp9'?'libvpx-vp9':family === 'h265' && hasLibx265() ? 'libx265' : 'libx264';
 function pickEncoder(family = 'h264') {
+  if(family==='vp9'){if(!hasEncoder('libvpx-vp9')||!hasEncoder('libopus'))return Promise.reject(Error('VP9/Opus export is unavailable in this FFmpeg build.'));return Promise.resolve('libvpx-vp9');}
   if (process.env.FVE_ENCODER) return Promise.resolve(process.env.FVE_ENCODER);
   if (!encoderPicks.has(family)) encoderPicks.set(family, (async () => {
     const names = family === 'h265' ? (process.platform === 'darwin' ? ['hevc_videotoolbox'] : [])
@@ -1172,7 +1185,9 @@ ${log.slice(-3000)}`))));
       // Publish only a completed video. Cancel/failure preserves an older file
       // at the chosen destination, and the rename stays on the same filesystem.
       outputDir = fs.mkdtempSync(path.join(path.dirname(outFile),'.clipcraft-export-'));
-      workingFile = path.join(outputDir,'video.mp4');
+      const format=videoFormat(effectiveExport(project).format);
+      if(formatFromPath(outFile)?.id!==format.id)throw Error('Output path extension must match the selected export format');
+      workingFile = path.join(outputDir,'video.'+format.extension);
       const family = effectiveExport(project).codecFamily, fallback = softwareEncoder(family);
       const encoder = await pickEncoder(family);
       if (canceled) throw stopped();
@@ -1423,4 +1438,4 @@ async function sampleFrames(item, from, to, count = 8) {
 
 module.exports = {
   sampleFrames, analysisAudioPlan, speedOf, positive, hex, xfadeName, escapeFilterPath, audioAnalysisKey, buildTimelineAudioArgs,
-  toSdr, stillInput, graphFile, longGraph, pickEncoder, warmEncoders, hasLibx265, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };
+  toSdr, stillInput, graphFile, longGraph, pickEncoder, warmEncoders, hasLibx265, hasVp9, effectiveExport, makeScene, needsProxy, makeProxy, makeQualityProxy, ffmpegPath, ffprobePath, probe, lookFilters, fitSize, narrowClip, buildExportArgs, buildAudioExportArgs, exportAudio, runExport, toM4a, renderMainAudio, renderTimelineAudio, detectSilences, audibleIntervals, makeVisuals };

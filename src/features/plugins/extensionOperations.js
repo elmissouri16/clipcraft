@@ -1,3 +1,4 @@
+import {validateTextStyle} from '../../../shared/pluginStyles.mjs';
 import {isLayerLocked,layerCount} from '../../state/store.js';
 import {TEXT_TEMPLATES} from '../text/catalog.js';
 
@@ -46,7 +47,7 @@ export function captionRead(project,snapshot,targets,input={}) {
  return {documentId:snapshot.documentId,revision:snapshot.revision,total:clips.length,next:cursor+limit<clips.length?cursor+limit:null,cues:clips.slice(cursor,cursor+limit).map(c=>({id:handles.get(c.id)||null,text:c.text,start_sec:c.start,end_sec:c.start+c.duration}))};
 }
 export function captionWrite(project,snapshot,input,extensionId,scope) {
- if(!input||Object.keys(input).some(key=>!['documentId','revision','projectRevision','trackId','mode','cues','newTrack'].includes(key))||input.documentId!==snapshot.documentId||input.revision!==snapshot.revision)throw Error('Caption context is stale or invalid');
+ if(!input||Object.keys(input).some(key=>!['documentId','revision','projectRevision','trackId','mode','cues','newTrack','style'].includes(key))||input.documentId!==snapshot.documentId||input.revision!==snapshot.revision)throw Error('Caption context is stale or invalid');
  if(input.projectRevision!==undefined&&(!scope||input.documentId!==scope.documentId||input.projectRevision!==scope.projectRevision))throw Error('Caption project context is stale');
  const create=input.mode==='create-track';
  if(!['append','replace','create-track'].includes(input.mode)||!Array.isArray(input.cues)||input.cues.length>10000)throw Error('Choose append, replace or create-track and at most 10000 cues');
@@ -58,10 +59,14 @@ export function captionWrite(project,snapshot,input,extensionId,scope) {
   track={id:'text:'+layer,layer};name=spec.name.trim();hidden=spec.hidden===true;language=spec.language;
  }else{if(input.newTrack!==undefined)throw Error('newTrack requires create-track mode');track=captionTrack(project,input.trackId);}
  if(isLayerLocked(project,'text',track.layer)||!create&&track.layer>=layerCount(project,'text'))throw Error('The caption track is locked or unavailable');
- let characters=0;
- const clips=input.cues.map(c=>{
+ let characters=0,styleBytes=0;
+ const style=input.style===undefined?{}:validateTextStyle(input.style);
+ if(style.font?.startsWith('pack:'))throw Error('Caption styles require an installed built-in font');
+ const clips=Array.from(input.cues).map(c=>{
   if(!c||typeof c.text!=='string'||!c.text.trim()||c.text.length>4000||(characters+=c.text.length)>256000||!Number.isFinite(c.start_sec)||!Number.isFinite(c.end_sec)||c.start_sec<0||c.end_sec<=c.start_sec||c.end_sec>1e9)throw Error('Invalid caption cue');
-  return {...TEXT_TEMPLATES.find(template=>template.id==='cap-classic').patch,id:crypto.randomUUID(),caption:true,text:c.text,start:c.start_sec,duration:c.end_sec-c.start_sec,layer:track.layer,size:Math.round(Math.min(project.width,project.height)*.075),template:'cap-classic',x:.5,y:.8,word_timing:'unavailable',source:'extension',extensionId,...(language?{language}:{}),...(create?{captionTrackCreated:true}:{})};
+  if(Object.keys(c).some(key=>!['text','start_sec','end_sec','style'].includes(key)))throw Error('Unknown caption cue field');
+  const cueStyle=c.style===undefined?{}:validateTextStyle(c.style);if(cueStyle.font?.startsWith('pack:'))throw Error('Caption styles require an installed built-in font');styleBytes+=JSON.stringify(cueStyle).length;if(styleBytes>524288)throw Error('Caption style data exceeds 512 KiB');
+  return {...TEXT_TEMPLATES.find(template=>template.id==='cap-classic').patch,id:crypto.randomUUID(),caption:true,text:c.text,start:c.start_sec,duration:c.end_sec-c.start_sec,layer:track.layer,size:Math.round(Math.min(project.width,project.height)*.075),template:'cap-classic',x:.5,y:.8,...style,...cueStyle,...Object.fromEntries(['stroke','shadow','bg','highlight','animIn','animOut','animLoop'].filter(key=>style[key]&&cueStyle[key]).map(key=>[key,{...style[key],...cueStyle[key]}])),word_timing:'unavailable',source:'extension',extensionId,...(language?{language}:{}),...(create?{captionTrackCreated:true}:{})};
  });
  const ids=input.mode==='replace'?project.textClips.filter(c=>c.caption&&(c.layer||0)===track.layer).map(c=>c.id):[];
  if(project.textClips.length-ids.length+clips.length>10000)throw Error('Project text limit reached');

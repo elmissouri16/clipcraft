@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, CircleAlert, CircleCheck, ExternalLink, Eye, EyeOff, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
 import SearchBox from '../../components/ui/SearchBox.jsx';
-import { SettingsGroup } from './SettingsLayout.jsx';
 import { t } from '../../i18n/index.js';
 
 function connections(providers) {
@@ -16,8 +15,6 @@ function connections(providers) {
     { id: 'claude', name: 'Anthropic Claude', slots: [] },
     { id: 'openrouter', name: 'OpenRouter', slots: [] },
     { id: 'deepgram', name: 'Deepgram', url: 'https://console.deepgram.com', slots: [{ id: 'cap-deepgram', kind: 'captions', label: t('services.caption_transcription'), test: key => window.api.testCaptionsCloud('deepgram', key || undefined) }] },
-    { id: 'pixabay', name: 'Pixabay', url: 'https://pixabay.com/api/docs/', slots: [{ id: 'pixabay', kind: 'stock', label: t('services.stock_photos_and_videos'), keyLabel: t('services.pixabay_api_key'), test: key => window.api.stockTest(key) }] },
-    { id: 'soundza', name: 'Soundza', url: 'https://soundza.com/developers/keys', slots: [{ id: 'soundza', kind: 'sfx', label: t('services.sound_effects'), keyLabel: t('services.soundza_api_key'), test: key => window.api.soundzaTest(key) }] },
     { id: 'custom', name: t('services.custom_assistant_service'), slots: [] },
   ];
   // Any other assistant provider that stores a key (a preset row such as xAI, Mistral or DeepSeek) gets its own group.
@@ -88,7 +85,7 @@ export default function ServiceConnections({ saved, onSaved, providers, target, 
   }, [open, targetGroup, target]);
   const query = search.trim().toLowerCase();
   // Search aliases by slot kind (English search terms, next to the displayed labels).
-  const aliases = { assistant: 'assistant chat models', voice: 'voice generation speech text to speech tts narration', captions: 'caption transcription captions subtitles speech to text stt', stock: 'stock photos videos media libraries images b-roll', sfx: 'sound effects media libraries audio sounds sfx' };
+  const aliases = { assistant: 'assistant chat models', voice: 'voice generation speech text to speech tts narration', captions: 'caption transcription captions subtitles speech to text stt' };
   const shown = catalog.filter(g => `${g.name} ${g.slots.map(s => `${s.label} ${s.keyLabel} ${aliases[s.kind] || ''}`).join(' ')}`.toLowerCase().includes(query));
   return <div ref={root} className="service-connections">
     <SearchBox value={search} onChange={setSearch} placeholder={t('services.search_services_or_features')} ariaLabel={t('services.search_api_services')} />
@@ -107,6 +104,5 @@ export default function ServiceConnections({ saved, onSaved, providers, target, 
       </section>;
     })}
     {!shown.length && <p className="empty-note">{t('services.no_services_match_query', { query: search })}</p>}
-    <SettingsGroup label={t('services.no_api_key_needed')} hint={t('services.openverse_works_without_a_key')} />
   </div>;
 }

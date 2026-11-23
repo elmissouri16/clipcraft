@@ -43,6 +43,16 @@ historical names and verification scopes.
 - [x] Reconcile [current author documentation and runnable examples](plugin-authoring-packaged-followup.md).
 - [x] Verify extension installation, native controls, views and cold restart in a
   current macOS packaged app directory; retain the fixture in packaged CI acceptance.
+- [x] Add [native input, status, left-rail/library views and project/timeline menus](plugin-extension-expansion.md).
+- [x] Add [managed byte streams, binary output and persistent local helper servers](plugin-extension-expansion.md).
+- [x] Add [project lifecycle, native Undo, GIF import and typed caption styles](plugin-extension-expansion.md).
+- [x] Add [player/timeline overlays, native floating/modal windows and movable docking](plugin-open-extension-surfaces.md).
+- [x] Add [authored GLSL effects/transitions with shared preview/export](plugin-glsl.md).
+- [x] Implement [custom clip/track types and rendering](plugin-custom-timeline.md).
+- [x] Extend [native effect, curve and speed property bindings](plugin-extension-native-controls.md).
+- [x] Add [native MOV, Matroska and WebM export formats](plugin-extension-exports.md).
+- [x] Add [typed extension-defined hook points](plugin-custom-hooks.md).
+- [x] Add [document close validation/preparation and open/create/close observations](plugin-document-lifecycle-hooks.md).
 - [ ] Exercise complete extension workflows across the installed/platform matrix.
 
 Current development and retained-data behavior is documented

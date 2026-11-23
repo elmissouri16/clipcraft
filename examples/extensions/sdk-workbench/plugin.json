@@ -1,0 +1,307 @@
+{
+  "id": "clipcraft-examples.sdk-workbench",
+  "name": "SDK workbench",
+  "publisher": "ClipCraft",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "id": "move-view",
+        "name": "Move an extension view"
+      },
+      {
+        "id": "prompt",
+        "name": "Ask for a label"
+      },
+      {
+        "id": "binary",
+        "name": "Stream generated audio"
+      },
+      {
+        "id": "start-server",
+        "name": "Start a local helper"
+      },
+      {
+        "id": "stop-server",
+        "name": "Stop the local helper"
+      },
+      {
+        "id": "new-project",
+        "name": "Create a project"
+      },
+      {
+        "id": "save-project",
+        "name": "Save the project"
+      },
+      {
+        "id": "open-project",
+        "name": "Open a project"
+      },
+      {
+        "id": "close-project",
+        "name": "Close the project"
+      },
+      {
+        "id": "undo",
+        "name": "Undo the last edit"
+      },
+      {
+        "id": "captions",
+        "name": "Add styled captions"
+      },
+      {
+        "id": "shader",
+        "name": "Add the Color circuit shader"
+      },
+      {
+        "id": "custom-scene",
+        "name": "Create a custom signal scene"
+      }
+    ],
+    "views": [
+      {
+        "id": "rail",
+        "name": "Extension tools"
+      },
+      {
+        "id": "library",
+        "name": "Extension library"
+      }
+    ],
+    "effects": [
+      {
+        "id": "color-circuit",
+        "name": "Color circuit",
+        "fragment": "vec4 effect(vec2 uv) {\n  vec4 color = ccSample(uv);\n  float wave = 0.5 + 0.5 * sin(T * 6.2831853 + uv.x * 6.2831853);\n  return vec4(mix(color.rgb, color.gbr, {{amount}} * wave), color.a);\n}",
+        "parameters": [
+          {
+            "id": "amount",
+            "name": "Amount",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "default": 0.8
+          }
+        ]
+      },
+      {
+        "id": "signal-field",
+        "name": "Signal field generator",
+        "parameters": [
+          {
+            "id": "radius",
+            "name": "Radius",
+            "min": 0.05,
+            "max": 0.7,
+            "step": 0.01,
+            "default": 0.35
+          },
+          {
+            "id": "red",
+            "name": "Red",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "default": 0.2
+          },
+          {
+            "id": "rate",
+            "name": "Rate",
+            "min": 0,
+            "max": 5,
+            "step": 0.1,
+            "default": 1
+          }
+        ],
+        "fragment": "vec4 effect(vec2 uv) {\n float pulse = 0.5 + 0.5 * sin(T * 6.2831853 * {{rate}});\n float mask = 1.0 - smoothstep({{radius}} - 0.01, {{radius}} + 0.01, length(uv - vec2(0.5)));\n return vec4({{red}}, uv.x, 0.3 + 0.5 * pulse, mask);\n}"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "wave-reveal",
+        "name": "Wave reveal",
+        "duration": 0.5,
+        "fragment": "vec4 transition(vec2 uv, float progress) {\n  float edge = uv.x + 0.1 * sin(uv.y * 6.2831853);\n  float mask = smoothstep(progress - 0.08, progress + 0.08, edge);\n  return mix(ccSampleB(uv), ccSampleA(uv), mask);\n}"
+      }
+    ],
+    "trackTypes": [
+      {
+        "id": "signals",
+        "name": "Signal track",
+        "kind": "visual",
+        "color": "#507aab",
+        "height": 68,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "note": {
+              "type": "string",
+              "maxLength": 160
+            }
+          }
+        },
+        "defaults": {
+          "note": "A custom visual track"
+        }
+      },
+      {
+        "id": "notes",
+        "name": "Control notes",
+        "kind": "metadata",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        },
+        "defaults": {}
+      },
+      {
+        "id": "audio-cues",
+        "name": "Audio cues",
+        "kind": "audio",
+        "color": "#4d8a73",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        },
+        "defaults": {}
+      }
+    ],
+    "clipTypes": [
+      {
+        "id": "signal",
+        "name": "Signal field",
+        "trackType": "signals",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "radius": {
+              "type": "number",
+              "minimum": 0.05,
+              "maximum": 0.7
+            },
+            "red": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "maxItems": 16
+            }
+          },
+          "required": [
+            "title",
+            "radius",
+            "red",
+            "rate",
+            "notes"
+          ]
+        },
+        "defaults": {
+          "title": "Signal field",
+          "radius": 0.35,
+          "red": 0.2,
+          "rate": 1,
+          "notes": [
+            "Created through the SDK"
+          ]
+        },
+        "labels": {
+          "radius": "Radius",
+          "red": "Red channel",
+          "rate": "Pulse rate",
+          "title": "Label",
+          "notes": "Notes"
+        },
+        "labelField": "title",
+        "render": {
+          "kind": "shader",
+          "effect": "signal-field",
+          "parameters": {
+            "radius": "radius",
+            "red": "red",
+            "rate": "rate"
+          }
+        }
+      },
+      {
+        "id": "note",
+        "name": "Control note",
+        "trackType": "notes",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 160
+            }
+          }
+        },
+        "defaults": {
+          "text": "A saved control annotation"
+        },
+        "render": {
+          "kind": "none"
+        },
+        "labelField": "text"
+      },
+      {
+        "id": "audio-cue",
+        "name": "Audio cue",
+        "trackType": "audio-cues",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 160
+            }
+          }
+        },
+        "defaults": {
+          "title": "Audio cue"
+        },
+        "render": {
+          "kind": "media"
+        },
+        "labelField": "title"
+      },
+      {
+        "id": "picture",
+        "name": "Custom picture",
+        "trackType": "signals",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 160
+            }
+          }
+        },
+        "defaults": {
+          "title": "Custom picture"
+        },
+        "render": {
+          "kind": "media"
+        },
+        "labelField": "title"
+      }
+    ]
+  }
+}

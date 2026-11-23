@@ -165,7 +165,7 @@ export function createEditingTools(env) {
         const motion = stateAt(c, left, length);
         actions.push({ type: 'update', track: found.track, id: target, patch: {
           mediaId: still.id, in: 0, out: duration, speed: 1, transform: motion.transform, opacity: motion.opacity,
-          anim: undefined, keyframes: undefined, track: undefined, pin: undefined, enhance: undefined, reversed: undefined,
+          frozenEffectTime: left, anim: undefined, keyframes: undefined, track: undefined, pin: undefined, enhance: undefined, reversed: undefined,
           muted: true, fadeIn: 0, fadeOut: 0, fadeInOffset: 0, fadeOutOffset: 0,
         } });
         let audioId;
@@ -191,7 +191,9 @@ export function createEditingTools(env) {
         if (!media || media.type === 'image') throw Error('Reverse requires a video or audio source.');
         if (c.reversed) {
           // Back to the original, on the part of it this clip (or this piece of it) plays now.
-          dispatch({ type: 'updateMany', updates: unreverseUpdates(p, found.track, c) });
+          const updates = unreverseUpdates(p, found.track, c);
+          if (!updates.length) { throw Error('The original media for this reversed clip is missing from the project.'); }
+          dispatch({ type: 'updateMany', updates });
           return after({ clip_id: c.id, reversed: false });
         }
         if (!api.agentMediaJob) throw Error('Restart ClipCraft to load agent media jobs.');
